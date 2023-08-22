@@ -1,0 +1,54 @@
+[project]
+name = "cedalion"
+description = "A fNIRS analysis framework"
+readme = "README.md"
+authors = [
+    {name = "Eike Middell", email = "middell@tu-berlin.de"}
+]
+# license = TBD
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+]
+dynamic=["version"]
+
+[project.urls]
+Home = "https://github.com/ibs-lab/cedalion/"
+
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+
+[tool.setuptools_scm]
+write_to = "src/cedalion/_version.py"
+
+[tool.ruff]
+select = ["E", "F", "W", "D"]
+ignore = [
+    "D100", # Missing docstring in public module
+    "D104", # Missing docstring in public package
+    "D101", # Missing docstring in public class # FIXME
+    "D102", # Missing docstring in public method # FIXME
+    "D103", # Missing docstring in public function # FIXME
+    "D105", # Missing docstring in magic method # FIXME
+    "D107", # Missing docstring in __init__ # FIXME
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = [
+    "F401", # unused imports
+]
+"test_*.py" = [
+    "D103", # Missing docstring in public function
+]
