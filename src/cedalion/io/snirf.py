@@ -2,7 +2,7 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 from snirf import Snirf
-from snirf.pysnirf2 import MeasurementList, DataElement
+from snirf.pysnirf2 import MeasurementList, DataElement, NirsElement
 from enum import Enum
 import logging
 from numpy.typing import ArrayLike
@@ -51,14 +51,18 @@ class PointType(Enum):
             return NotImplemented
 
 
-# result container for read_snirf
-# FIXME: use a better name to avoid confusion with pysnirf's NirsElement
-class NIRSElement:
-    def __init__(self, data=None, stim=None, geo3d=None, geo2d=None):
+# result container for read_snirf. Corresponds to pysnirf's NirsElement but
+# the data in the attributes have been converted to our data structures
+# FIXME: find a better name
+class Element:
+    data: list
+
+    def __init__(self, data=None, stim=None, geo3d=None, geo2d=None, aux=None):
         self.data = []
         self.stim = pd.DataFrame(columns=["onset", "duration", "value"])
         self.geo3d = xr.DataArray(None, coords={"label": []}, dims=["label", "pos"])
         self.geo2d = xr.DataArray(None, coords={"label": []}, dims=["label", "pos"])
+        self.aux = {}
 
         if data is not None:
             self.data = data
@@ -68,6 +72,8 @@ class NIRSElement:
             self.geo3d = geo3d
         if geo2d is not None:
             self.geo2d = geo2d
+        if aux is not None:
+            self.aux = aux
 
 
 def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
@@ -143,7 +149,7 @@ def labels_and_positions(probe):
     )
 
 
-def geometry_from_probe(nirs_element: NIRSElement):
+def geometry_from_probe(nirs_element: NirsElement):
     probe = nirs_element.probe
 
     length_unit = nirs_element.metaDataTags.LengthUnit
@@ -238,6 +244,29 @@ def stim_to_dataframe(stim):
     return pd.concat(dfs, ignore_index=True)
 
 
+def read_aux(nirs_element: NirsElement):
+    result = {}
+
+    for aux in nirs_element.aux:
+        name = aux.name
+        units = aux.dataUnit
+
+        # FIXME treat unspecified units as dimensionless quantities.
+        if units is None:
+            units = "1"
+
+        x = xr.DataArray(
+            aux.dataTimeSeries,
+            coords={"time": aux.time},  # FIXME time offset
+            dims=["time"],
+            name=name,
+            attrs={"units": units},
+        )
+        result[name] = x.pint.quantify()
+
+    return result
+
+
 def read_data_element(data_element, nirs_element):
     time = data_element.time
     samples = np.arange(len(time))
@@ -314,7 +343,7 @@ def read_data_element(data_element, nirs_element):
 
 
 def _get_time_index_and_coords(
-    nirs_element: NIRSElement,
+    nirs_element: NirsElement,
     data_element: DataElement,
     df_measurement_list: pd.DataFrame,
 ) -> tuple[ArrayLike, dict[str, ArrayLike]]:
@@ -335,7 +364,7 @@ def _get_time_index_and_coords(
 
 
 def _get_channel_index_and_coords(
-    nirs_element: NIRSElement,
+    nirs_element: NirsElement,
     data_element: DataElement,
     df_measurement_list: pd.DataFrame,
 ) -> tuple[ArrayLike, dict[str, ArrayLike]]:
@@ -416,15 +445,13 @@ def read_nirs_element(nirs_element):
         for data_element in nirs_element.data
     ]
 
-    ne = NIRSElement(data, stim, geo3d)  # FIXME geo2d
+    aux = read_aux(nirs_element)
 
-    return ne  # (geo, data, stim)
+    ne = Element(data, stim, geo3d, None, aux)  # FIXME geo2d
+
+    return ne
 
 
 def read_snirf(fname):
     with Snirf(fname, "r") as s:
         return [read_nirs_element(ne) for ne in s.nirs]
-
-
-def write_snirf(fname, *nirs_elements):
-    pass
