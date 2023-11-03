@@ -7,10 +7,16 @@ multimodal fNIRS signals.
 
 ## Development environment
 
-To create a conda environment with `cedalion` and its dependendencies run:
+To create a conda environment with the necessary dependendencies run:
 
 ```
-conda env create -n cedalion -f environment_dev.yml
+$ conda env create -n cedalion -f environment_dev.yml
+```
+
+Afterwards activate the environment and add an editable install of `cedalion` to it:
+```
+$ conda activate cedalion
+$ pip install -e .
 ```
 
 This will also install Jupyter Notebook to run the example notebooks.
