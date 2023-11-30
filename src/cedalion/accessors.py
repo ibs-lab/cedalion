@@ -30,14 +30,24 @@ class CedalionAccessor:
         # end = ts.time.searchsorted(tmp.onset+tmp.duration)
         end = self._obj.time.searchsorted(tmp.onset + after)
 
-        assert len(np.unique(end - start)) == 1  # FIXME
+        # assert len(np.unique(end - start)) == 1  # FIXME
+
+        # find the longest number of samples to cover the epoch
+        # because of numerical precision the number of samples per epoch may differ
+        # by one. Larger discrepancies would have other unhandled causes.
+        # Throw an error for these.
+        durations = end - start
+        assert np.max(durations) - np.min(durations) <= 1
+        duration = np.max(durations)
 
         # FIXME limit reltime precision (to ns?) to avoid
         # conflicts when concatenating epochs
         reltime = np.round(self._obj.time[start[0] : end[0]] - tmp.onset.iloc[0], 9)
         epochs = xr.concat(
             [
-                self._obj[:, :, start[i] : end[i]].drop_vars(["time", "samples"])
+                self._obj[:, :, start[i] : start[i] + duration].drop_vars(
+                    ["time", "samples"]
+                )
                 for i in range(len(start))
             ],
             dim="epoch",
