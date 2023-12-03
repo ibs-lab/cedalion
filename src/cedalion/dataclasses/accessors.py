@@ -70,7 +70,10 @@ class CedalionAccessor:
         array = self._obj
 
         fny = array.cd.sampling_rate / 2
-        b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+        if fmin == 0:
+            b, a = scipy.signal.butter(butter_order, fmax / fny, "lowpass")
+        else:
+            b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
 
         if (units := array.pint.units) is not None:
             array = array.pint.dequantify()
@@ -257,3 +260,18 @@ class StimAccessor:
         stim = self._obj
         for old_trial_type, new_trial_type in rename_dict.items():
             stim.loc[stim.trial_type == old_trial_type, "trial_type"] = new_trial_type
+
+    def conditions(self):
+        return self._obj.trial_type.unique()
+
+    def to_xarray(self, time: xr.DataArray):
+        stim = self._obj
+        conds = self.conditions()
+        stim_arr = xr.DataArray(
+            np.zeros((time.shape[0], len(conds))),
+            dims=["time", "condition"],
+            coords={"time": time, "condition": conds},
+        )
+        for index, row in stim.iterrows():
+            stim_arr.loc[row.onset, row.trial_type] = 1
+        return stim_arr
