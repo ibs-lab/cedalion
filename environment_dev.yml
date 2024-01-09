@@ -1,3 +1,4 @@
+name: cedalion
 channels:
   - conda-forge
 dependencies:
