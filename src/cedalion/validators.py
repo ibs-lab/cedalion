@@ -42,3 +42,8 @@ def has_positions(array: xr.DataArray, npos: Optional[int] = None):
 
 def is_quantified(array: xr.DataArray):
     return isinstance(array.variable.data, pint.Quantity)
+
+
+def check_dimensionality(name: str, q: pint.Quantity, dim: str):
+    if not q.check(dim):
+        raise ValueError(f"quantity '{name}' does not have dimensionality '{dim}'")

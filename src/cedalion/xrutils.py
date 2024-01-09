@@ -1,8 +1,10 @@
+"""Utility functions for xarray objects."""
+
 import numpy as np
 import xarray as xr
 
 
-def pinv(array: xr.DataArray):
+def pinv(array: xr.DataArray) -> xr.DataArray:
     """Calculate the pseudoinverse of a 2D xr.DataArray.
 
     FIXME: handles unitless and quantified DataArrays but not
@@ -39,7 +41,7 @@ def pinv(array: xr.DataArray):
     return array_inv
 
 
-def norm(array: xr.DataArray, dim: str):
+def norm(array: xr.DataArray, dim: str) -> xr.DataArray:
     """Calculate the vector norm along a given dimension."""
     if dim not in array.dims:
         raise ValueError(f"array does not have dimension '{dim}'")

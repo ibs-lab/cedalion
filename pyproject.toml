@@ -43,7 +43,11 @@ ignore = [
     "D103", # Missing docstring in public function # FIXME
     "D105", # Missing docstring in magic method # FIXME
     "D107", # Missing docstring in __init__ # FIXME
+    "D202", # no blank line allowed after function docstring
 ]
+
+[tool.ruff.pydocstyle]
+convention = "google"
 
 [tool.ruff.per-file-ignores]
 "__init__.py" = [

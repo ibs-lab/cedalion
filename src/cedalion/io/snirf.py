@@ -6,9 +6,11 @@ from snirf.pysnirf2 import MeasurementList, DataElement, NirsElement
 from enum import Enum
 import logging
 from numpy.typing import ArrayLike
-from functools import total_ordering
-from typing import Dict
 
+from typing import Dict
+from strenum import StrEnum
+
+from cedalion.dataclasses import PointType
 
 log = logging.getLogger("cedalion")
 
@@ -39,18 +41,86 @@ class DataType(Enum):
     PROCESSED = 99999
 
 
-@total_ordering
-class PointType(Enum):
-    SOURCE = 1
-    DETECTOR = 2
-    LANDMARK = 3
+class DataTypeLabel(StrEnum):
+    # fields specified in SNIRF specs
+    DOD = "dOD"  # Change in optical density
+    DMEAN = "dMean"  # Change in mean time-of-flight
+    DVAR = "dVar"  # Change in variance (2nd central moment)
+    DSKEW = "dSkew"  # Change in skewness (3rd central moment)
+    MUA = "mua"  # Absorption coefficient
+    MUSP = "musp"  # Scattering coefficient
+    HBO = "HbO"  # Oxygenated hemoglobin (oxyhemoglobin) concentration
+    HBR = "HbR"  # Deoxygenated hemoglobin (deoxyhemoglobin) concentration
+    HBT = "HbT"  # Total hemoglobin concentration
+    H2O = "H2O"  # Water content
+    LIPID = "Lipid"  # Lipid concentration
+    BFI = "BFi"  # Blood flow index
+    HRF_DOD = "HRF dOD"  # Hemodynamic response function for change in optical density
+    HRF_DMEAN = "HRF dMean"  # HRF for change in mean time-of-flight
+    HRF_DVAR = "HRF dVar"  # HRF for change in variance (2nd central moment)
+    HRF_DSKEW = "HRF dSkew"  # HRF for change in skewness (3rd central moment)
+    HRF_HBO = "HRF HbO"  # Hemodynamic response function for oxyhemoglobin conc.
+    HRF_HBR = "HRF HbR"  # Hemodynamic response function for deoxyhemoglobin conc.
+    HRF_HBT = "HRF HbT"  # Hemodynamic response function for total hemoglobin conc.
+    HRF_BFI = "HRF BFi"  # Hemodynamic response function for blood flow index
 
-    # provide an ordering of PointTypes so that e.g. np.unique works
-    def __lt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value < other.value
-        else:
-            return NotImplemented
+    # fields introduced by other vendors
+    RAW_SATORI = "RAW"  # Satori CW_AMPLITUDE
+    RAW_NIRX = "raw-DC"  # Satori CW_AMPLITUDE
+
+
+# The snirf standard allows to put different data types into the same
+# data element. At least Satori does this to store processing results.
+# Define groups of data types which we would like to bundle in DataArrays.
+
+DATA_TYPE_GROUPINGS = {
+    (DataType.CW_AMPLITUDE, None): "unprocessed raw",
+    (DataType.CW_AMPLITUDE, DataTypeLabel.RAW_NIRX): "unprocessed raw",
+    # FIXME assume that there are not processed raw channels from different
+    # vendors in the same data element
+    (DataType.PROCESSED, DataTypeLabel.RAW_SATORI): "processed raw",
+    (DataType.PROCESSED, DataTypeLabel.RAW_NIRX): "processed raw",
+    (DataType.PROCESSED, DataTypeLabel.DOD): "processed dOD",
+    (DataType.PROCESSED, DataTypeLabel.HBO): "processed concentrations",
+    (DataType.PROCESSED, DataTypeLabel.HBR): "processed concentrations",
+    (DataType.PROCESSED, DataTypeLabel.HBT): "processed concentrations",
+    (DataType.PROCESSED, DataTypeLabel.H2O): "processed concentrations",
+    (DataType.PROCESSED, DataTypeLabel.LIPID): "processed concentrations",
+    (DataType.PROCESSED, DataTypeLabel.DMEAN): "processed central moments",
+    (DataType.PROCESSED, DataTypeLabel.DVAR): "processed central moments",
+    (DataType.PROCESSED, DataTypeLabel.DSKEW): "processed central moments",
+    (DataType.PROCESSED, DataTypeLabel.BFI): "processed blood flow index",
+    (DataType.PROCESSED, DataTypeLabel.HRF_DOD): "processed HRF dOD",
+    (DataType.PROCESSED, DataTypeLabel.HRF_DMEAN): "processed HRF central moments",
+    (DataType.PROCESSED, DataTypeLabel.HRF_DVAR): "processed HRF central moments",
+    (DataType.PROCESSED, DataTypeLabel.HRF_DSKEW): "processed HRF central moments",
+    (DataType.PROCESSED, DataTypeLabel.HRF_HBO): "processed HRF concentrations",
+    (DataType.PROCESSED, DataTypeLabel.HRF_HBR): "processed HRF concentrations",
+    (DataType.PROCESSED, DataTypeLabel.HRF_HBT): "processed HRF concentrations",
+    (DataType.PROCESSED, DataTypeLabel.HRF_BFI): "processed HRF blood flow index",
+    (DataType.PROCESSED, DataTypeLabel.MUA): "processed absorption coefficient",
+    (DataType.PROCESSED, DataTypeLabel.MUSP): "processed scattering coefficient",
+}
+
+
+def parse_data_type(value):
+    if value is None:
+        return None
+    else:
+        try:
+            return DataType(value)
+        except Exception:
+            raise ValueError(f"unsupported DataType '{value}'")
+
+
+def parse_data_type_label(value):
+    if value is None:
+        return None
+    else:
+        try:
+            return DataTypeLabel(value)
+        except Exception:
+            raise ValueError(f"unsupported DataTypeLabel '{value}'")
 
 
 # result container for read_snirf. Corresponds to pysnirf's NirsElement but
@@ -146,11 +216,11 @@ def labels_and_positions(probe):
     ]  # FIXME we keep only the positional columns
 
     if len(sourcePos3D) > 0 and len(sourceLabels) == 0:
-        log.warn("generating generic source labels")
+        log.warning("generating generic source labels")
         sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos3D))])
 
     if len(detectorPos3D) > 0 and len(detectorLabels) == 0:
-        log.warn("generating generic detector labels")
+        log.warning("generating generic detector labels")
         detectorLabels = np.asarray([f"D{i+1}" for i in range(len(detectorPos3D))])
 
     if len(landmarkLabels) != len(landmarkPos3D):
@@ -300,79 +370,101 @@ def read_aux(nirs_element: NirsElement):
     return result
 
 
-def read_data_element(data_element, nirs_element):
+def read_data_elements(data_element, nirs_element):
     time = data_element.time
+
     samples = np.arange(len(time))
 
     if len(time) != data_element.dataTimeSeries.shape[0]:
         raise ValueError("length of time and dataTimeSeries arrays don't match!")
 
     df_ml = measurement_list_to_dataframe(data_element.measurementList)
+    df_ml = denormalize_measurement_list(df_ml, nirs_element)
 
-    unique_data_types = df_ml.dataType.unique()
-    if not (
-        len(unique_data_types)
-        and DataType(unique_data_types.item()) == DataType.CW_AMPLITUDE
-    ):
-        raise ValueError("currently only CW_AMPLITUDE data is supported")
-
-    wavelengths = nirs_element.probe.wavelengths
-
-    sourceLabels, detectorLabels, landmarkLabels, _, _, _ = labels_and_positions(
-        nirs_element.probe
+    # unique_data_types = df_ml[["dataType", "dataTypeLabel"]].drop_duplicates()
+    data_types = df_ml[["dataType", "dataTypeLabel"]]
+    data_types = data_types.transform(
+        {"dataType": parse_data_type, "dataTypeLabel": parse_data_type_label}
     )
+    df_ml["data_type_group"] = [
+        DATA_TYPE_GROUPINGS[tuple(r)] for r in data_types.to_numpy()
+    ]
 
-    df_labels = pd.DataFrame(
-        [
-            (f"{sl}{dl}", sl, dl)
-            for sl, dl in zip(
-                sourceLabels[df_ml.sourceIndex - 1],
-                detectorLabels[df_ml.detectorIndex - 1],
+    if len(df_ml["data_type_group"].drop_duplicates()) > 1:
+        log.warning("found data element with multiple data types. These will be split.")
+
+    data_arrays = []
+
+    for data_type_group, df in df_ml.groupby("data_type_group"):
+        has_wavelengths = not pd.isna(df.wavelength).all()
+        has_chromo = not pd.isna(df.chromo).all()
+
+        if has_wavelengths and not has_chromo:
+            other_dim = "wavelength"
+        elif has_chromo and not has_wavelengths:
+            other_dim = "chromo"
+        else:
+            raise NotImplementedError(
+                "found channel for which both wavelength "
+                "and chromophore are defined."
             )
-        ],
-        columns=["channel", "source", "detector"],
-    )
 
-    unique_labels = df_labels.drop_duplicates(ignore_index=True)
-    channel_labels = df_labels["channel"].tolist()
-    unique_channel_labels = unique_labels[
-        "channel"
-    ].tolist()  # sorted(set(channel_labels))
+        df_coords = {}
+        df_coords["channel"] = df[["channel", "source", "detector"]].drop_duplicates()
+        df_coords[other_dim] = df[[other_dim]].drop_duplicates()
 
-    timeseries = np.zeros((len(unique_channel_labels), len(wavelengths), len(time)))
+        unique_channel = list(df_coords["channel"]["channel"])
+        unique_other_dim = list(df[other_dim].drop_duplicates())
 
-    for i, r in df_ml.iterrows():
-        i_channel = unique_channel_labels.index(channel_labels[i])
-        i_wavelength = r.wavelengthIndex - 1
-        timeseries[i_channel, i_wavelength, :] = data_element.dataTimeSeries[:, i]
+        df["index_channel"] = [unique_channel.index(c) for c in df.channel]
+        df["index_other_dim"] = [unique_other_dim.index(c) for c in df[other_dim]]
 
-    units = df_ml.dataUnit.unique().item()
-    # FIXME treat unspecified units as dimensionless quantities.
-    if units is None:
-        units = "1"
+        ts3d = np.zeros(
+            (len(unique_channel), len(unique_other_dim), len(time)),
+            dtype=data_element.dataTimeSeries.dtype,
+        )
 
-    da = xr.DataArray(
-        timeseries,
-        dims=["channel", "wavelength", "time"],
-        coords=dict(
-            time=("time", time),
-            samples=("time", samples),
-            wavelength=wavelengths,
-            channel=("channel", unique_labels["channel"]),  # unique_channel_labels
-            source=("channel", unique_labels["source"]),
-            detector=("channel", unique_labels["detector"]),
-        ),
-        attrs={"units": units},
-    )
+        ts2d = data_element.dataTimeSeries
+        for index, row in df.iterrows():
+            ts3d[row.index_channel, row.index_other_dim, :] = ts2d[:, index]
 
-    da.time.attrs["unit"] = nirs_element._metaDataTags.TimeUnit
-    da = da.pint.quantify()
+        coords = {}
+        coords["time"] = ("time", time)
+        coords["samples"] = ("time", samples)
+        coords["channel"] = ("channel", df_coords["channel"]["channel"])
+        coords["source"] = ("channel", df_coords["channel"]["source"])
+        coords["detector"] = ("channel", df_coords["channel"]["detector"])
+        coords[other_dim] = (other_dim, unique_other_dim)
+
+        units = df.dataUnit.unique().item()
+        # FIXME treat unspecified units as dimensionless quantities.
+        if units is None:
+            units = "1"
+
+        da = xr.DataArray(
+            ts3d,
+            dims=["channel", other_dim, "time"],
+            coords=coords,
+            attrs={
+                "units": units,
+                "data_type_group": data_type_group,
+            },
+        )
+        da = da.pint.quantify()
+
+        time_units = nirs_element.metaDataTags.TimeUnit
+        try:
+            da = da.pint.quantify({"time": time_units})
+        except ValueError:
+            pass
+
+        data_arrays.append(da)
 
     # da = da.drop_indexes(["channel", "time"])
     # da = da.set_xindex(["channel", "source", "detector"])
     # da = da.set_xindex(["time", "samples"])
 
-    return da
+    return data_arrays
 
 
 def _get_time_coords(
@@ -418,10 +510,9 @@ def _get_channel_coords(
 def read_nirs_element(nirs_element):
     geo3d = geometry_from_probe(nirs_element)
     stim = stim_to_dataframe(nirs_element.stim)
-    data = [
-        read_data_element(data_element, nirs_element)
-        for data_element in nirs_element.data
-    ]
+    data = []
+    for data_element in nirs_element.data:
+        data.extend(read_data_elements(data_element, nirs_element))
 
     aux = read_aux(nirs_element)
 
@@ -430,9 +521,10 @@ def read_nirs_element(nirs_element):
     measurement_lists = []
     for data_element in nirs_element.data:
         df_ml = measurement_list_to_dataframe(
-            data_element.measurementList, drop_none=True
+            data_element.measurementList, drop_none=False
         )
         df_ml = denormalize_measurement_list(df_ml, nirs_element)
+        df_ml.dropna(axis=1)
         measurement_lists.append(df_ml)
 
     ne = Element(
@@ -458,21 +550,34 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
             "measurement list has row(s) for which source or detector index < 1."
         )
 
+    chromo_types = [
+        DataTypeLabel.HBO,
+        DataTypeLabel.HBR,
+        DataTypeLabel.HBT,
+        DataTypeLabel.LIPID,
+    ]
+
     new_columns = []
     for _, row in df_ml.iterrows():
         sl = sourceLabels[int(row["sourceIndex"]) - 1]
         dl = detectorLabels[int(row["detectorIndex"]) - 1]
         cl = f"{sl}{dl}"
-        if row["wavelengthIndex"] != -1:
+        if not ((row["wavelengthIndex"] == -1) or (row["wavelengthIndex"] is None)):
             wl = wavelengths[int(row["wavelengthIndex"]) - 1]
         else:
             wl = np.nan
 
-        new_columns.append((cl, sl, dl, wl))
+        if row["dataTypeLabel"] in chromo_types:
+            ch = DataTypeLabel(row["dataTypeLabel"])
+        else:
+            ch = None
+
+        new_columns.append((cl, sl, dl, wl, ch))
 
     new_columns = pd.DataFrame(
-        new_columns, columns=["channel", "source", "detector", "wavelength"]
+        new_columns, columns=["channel", "source", "detector", "wavelength", "chromo"]
     )
+
     result = pd.concat((df_ml, new_columns), axis="columns")
     return result
 

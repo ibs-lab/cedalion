@@ -163,3 +163,5 @@ cython_debug/
 
 # automatically created by setuptools_scm
 src/cedalion/_version.py
+
+scratch/

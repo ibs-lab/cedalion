@@ -1,2 +1,3 @@
 from .snirf import read_snirf
-from .mrkjson import read_mrk_json
+from .probe_geometry import read_mrk_json, read_digpts
+from .anatomy import read_segmentation_masks
