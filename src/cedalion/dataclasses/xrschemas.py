@@ -52,6 +52,9 @@ def validate_schemas(func):
             if not isinstance(hint, typing._AnnotatedAlias):
                 continue
 
+            if arg_name == "return":
+                continue
+
             for md in hint.__metadata__:
                 if isinstance(md, DataArraySchema):
                     md.validate(ba.arguments[arg_name])
