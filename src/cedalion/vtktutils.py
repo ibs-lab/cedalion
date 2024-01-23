@@ -30,4 +30,14 @@ def trimesh_to_vtk_polydata(mesh: trimesh.Trimesh):
     vtk_mesh.SetPoints(points)
     vtk_mesh.SetPolys(cells)
 
+    # if the trimesh was textured copy the color information, too
+    if isinstance(mesh.visual, trimesh.visual.color.ColorVisuals):
+        colors = mesh.visual.vertex_colors
+    else:
+        colors = mesh.visual.to_color().vertex_colors
+
+    colors = numpy_to_vtk(colors)
+    colors.SetName("colors")
+    vtk_mesh.GetPointData().SetScalars(colors)
+
     return vtk_mesh

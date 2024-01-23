@@ -14,6 +14,7 @@ dependencies:
   - nipype=1.8.6
   - notebook=6.5.4
   - numpy=1.23.5
+  - opencv=4.6.0
   - pandas=2.0.1
   - pint-xarray=0.3
   - pip=23.1.2

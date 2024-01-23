@@ -19,6 +19,7 @@ from cedalion.vtktutils import trimesh_to_vtk_polydata
 
 @total_ordering
 class PointType(Enum):
+    UNKNOWN = 0
     SOURCE = 1
     DETECTOR = 2
     LANDMARK = 3
@@ -128,6 +129,21 @@ class TrimeshSurface(Surface):
         smoothed = trimesh.smoothing.filter_taubin(self.mesh, lamb=lamb)
         return TrimeshSurface(smoothed, self.crs, self.units)
 
+    def get_vertex_normals(self, points: cdt.LabeledPointCloud):
+        """Get normals of vertices closest to the provided points."""
+
+        assert points.points.crs == self.crs
+        assert points.pint.units == self.units
+        points = points.pint.dequantify()
+
+        _, vertex_indices = self.kdtree.query(points.values, workers=-1)
+
+        return xr.DataArray(
+            self.mesh.vertex_normals[vertex_indices],
+            dims=["label", self.crs],
+            coords={"label": points.label},
+        )
+
 
 @dataclass
 class VTKSurface(Surface):
@@ -154,7 +170,9 @@ class VTKSurface(Surface):
 
     @classmethod
     def from_trimeshsurface(cls, tri_mesh: TrimeshSurface):
-        vtk_mesh = trimesh_to_vtk_polydata(tri_mesh.mesh)
+        mesh = tri_mesh.mesh
+        vtk_mesh = trimesh_to_vtk_polydata(mesh)
+
         return cls(mesh=vtk_mesh, crs=tri_mesh.crs, units=tri_mesh.units)
 
 

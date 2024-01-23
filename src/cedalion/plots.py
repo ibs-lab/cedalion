@@ -2,6 +2,11 @@ import matplotlib.pyplot as p
 import xarray as xr
 
 from cedalion.dataclasses import PointType
+import cedalion.dataclasses as cdc
+import cedalion.typing as cdt
+import pyvista as pv
+from vtk.util.numpy_support import numpy_to_vtk
+import vtk
 
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
@@ -27,16 +32,19 @@ def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
     p.tight_layout()
 
 
-def plot3d(brain_mesh, scalp_mesh, geo3d, timeseries, poly_lines=[]):
-    import pyvista as pv
-
+def plot3d(
+    brain_mesh, scalp_mesh, geo3d, timeseries, poly_lines=[], brain_scalars=None
+):
     pv.set_jupyter_backend("client")
 
     plt = pv.Plotter()
 
     if brain_mesh:
         pv_brain = pv.wrap(brain_mesh)
-        plt.add_mesh(pv_brain, color="w")
+        if brain_scalars is None:
+            plt.add_mesh(pv_brain, color="w")
+        else:
+            plt.add_mesh(pv_brain, scalars=brain_scalars)
     if scalp_mesh:
         pv_scalp = pv.wrap(scalp_mesh)
         plt.add_mesh(pv_scalp, color="w", opacity=0.4)
@@ -80,3 +88,94 @@ def plot3d(brain_mesh, scalp_mesh, geo3d, timeseries, poly_lines=[]):
         plt.add_mesh(lines, color="m")
 
     plt.show()
+
+
+def plot_surface(
+    plotter: pv.Plotter,
+    surface: cdc.Surface,
+    color=None,
+    opacity=1.0,
+    **kwargs,
+):
+    if isinstance(surface, cdc.VTKSurface):
+        mesh = surface.mesh
+    elif isinstance(surface, cdc.TrimeshSurface):
+        mesh = cdc.VTKSurface.from_trimeshsurface(surface).mesh
+    else:
+        raise ValueError("unsupported mesh")
+
+    scalars = mesh.GetPointData().GetScalars()
+
+    if color is None:
+        if scalars is not None:
+            if scalars.GetNumberOfComponents() in [3, 4]:
+                rgb = True
+            else:
+                rgb = False
+        else:
+            rgb = False
+            color = "w"
+    else:
+        rgb = False
+
+    plotter.add_mesh(mesh, color=color, rgb=rgb, opacity=opacity, **kwargs)
+
+
+def plot_labeled_points(
+    plotter: pv.Plotter,
+    points: cdt.LabeledPointCloud,
+    color=None,
+):
+    # FIXME make these configurable
+    default_point_colors = {
+        PointType.UNKNOWN: "gray",
+        PointType.SOURCE: "r",
+        PointType.DETECTOR: "b",
+        PointType.LANDMARK: "g",
+    }
+    default_point_sizes = {
+        PointType.UNKNOWN: 2,
+        PointType.SOURCE: 3,
+        PointType.DETECTOR: 3,
+        PointType.LANDMARK: 2,
+    }
+
+    points = points.pint.to("mm").pint.dequantify()  # FIXME unit handling
+    for type, x in points.groupby("type"):
+        for i_point in range(len(x)):
+            s = pv.Sphere(radius=default_point_sizes[type], center=x[i_point])
+            if color is None:
+                plotter.add_mesh(s, color=default_point_colors[type])
+            else:
+                plotter.add_mesh(s, color=color)
+
+
+def plot_vector_field(
+    plotter: pv.Plotter,
+    points: cdt.LabeledPointCloud,
+    vectors: xr.DataArray,
+):
+    assert len(points) == len(vectors)
+    assert all(points.label.values == vectors.label.values)
+    assert points.points.crs == vectors.dims[1]
+
+    points = points.pint.to("mm").pint.dequantify()
+    vectors = vectors.pint.dequantify()
+
+    ugrid = vtk.vtkUnstructuredGrid()
+
+    vpoints = vtk.vtkPoints()
+    vpoints.SetData(numpy_to_vtk(points.values))
+    ugrid.SetPoints(vpoints)
+    ugrid.GetPointData().SetVectors(numpy_to_vtk(vectors.values))
+
+    hedgehog = vtk.vtkHedgeHog()
+    hedgehog.SetInputData(ugrid)
+    hedgehog.SetScaleFactor(10)
+    mapper = vtk.vtkPolyDataMapper()
+    mapper.SetInputConnection(hedgehog.GetOutputPort())
+    actor = vtk.vtkActor()
+    actor.SetMapper(mapper)
+    actor.GetProperty().SetColor([1.0, 0.0, 0.0])
+
+    plotter.renderer.AddActor(actor)
