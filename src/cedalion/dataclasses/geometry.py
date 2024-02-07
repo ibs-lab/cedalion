@@ -43,6 +43,11 @@ class Surface(ABC):
     def vertices(self) -> cdt.LabeledPointCloud:
         raise NotImplementedError()
 
+    @property
+    @abstractmethod
+    def nvertices(self) -> int:
+        raise NotImplementedError()
+
     @abstractmethod
     def apply_transform(self, transform: cdt.AffineTransform):
         raise NotImplementedError()
@@ -96,6 +101,10 @@ class TrimeshSurface(Surface):
         result = result.pint.quantify()
 
         return result
+
+    @property
+    def nvertices(self) -> int:
+        return len(self.mesh.vertices)
 
     def _build_kdtree(self):
         self._kdtree = KDTree(self.mesh.vertices)
@@ -161,6 +170,10 @@ class VTKSurface(Surface):
         result = result.pint.quantify()
 
         return result
+
+    @property
+    def nvertices(self) -> int:
+        return self.mesh.GetNumberOfPoints()
 
     def _build_kdtree(self):
         self._kdtree = KDTree(self.mesh.GetPoints().GetData())

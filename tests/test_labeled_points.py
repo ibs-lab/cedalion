@@ -2,7 +2,11 @@ import pytest
 import xarray as xr
 import numpy as np
 from cedalion.dataclasses.xrschemas import LabeledPointCloudSchema
-from cedalion.dataclasses import PointType, affine_transform_from_numpy
+from cedalion.dataclasses import (
+    PointType,
+    affine_transform_from_numpy,
+    build_labeled_points,
+)
 from cedalion import units
 
 
@@ -99,3 +103,51 @@ def test_transform_AffineTransform(labeled_points):
     assert labeled_points.dims[1] == "mni"
     assert transformed.dims[1] == "other_crs"
     assert transformed.pint.units == units.cm
+
+
+def test_build_labeled_points_simple():
+    CRS = "a_crs"
+
+    pts = build_labeled_points([[0, 0, 0], [1, 1, 1]], crs=CRS)
+
+    LabeledPointCloudSchema.validate(pts)
+    assert pts.points.crs == CRS
+    assert len(pts) == 2
+    assert pts.pint.units == units.parse_units("1")
+
+
+def test_build_labeled_points_units():
+    CRS = "a_crs"
+
+    pts = build_labeled_points([[0, 0, 0], [1, 1, 1]], crs=CRS, units="mm")
+
+    LabeledPointCloudSchema.validate(pts)
+    assert pts.pint.units == units.mm
+    assert all(pts.type == PointType.UNKNOWN)
+
+
+def test_build_labeled_points_labels():
+    CRS = "a_crs"
+
+    pts = build_labeled_points([[0, 0, 0], [1, 1, 1]], crs=CRS, labels=["A", "B"])
+
+    LabeledPointCloudSchema.validate(pts)
+
+    assert all(pts.label == ["A", "B"])
+    assert all(pts.type == PointType.UNKNOWN)
+
+
+def test_build_labeled_points_dynamic_labels():
+    CRS = "a_crs"
+
+    npoints = [5, 97, 134, 4352]
+    label1 = ["1", "01", "001", "0001"]
+
+    for npts, lbl in zip(npoints, label1):
+        pts = build_labeled_points(
+            np.random.random((npts, 3)),
+            crs=CRS,
+        )
+        LabeledPointCloudSchema.validate(pts)
+
+        assert pts.label.values[1] == lbl

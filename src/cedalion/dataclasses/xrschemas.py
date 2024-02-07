@@ -4,7 +4,11 @@ import typing
 from dataclasses import dataclass
 from typing import Dict, List
 import numpy as np
+from numpy.typing import ArrayLike
 import xarray as xr
+import pint
+from typing import Optional
+import cedalion.dataclasses as cdc
 
 
 class ValidationError(Exception):
@@ -109,3 +113,31 @@ def build_timeseries(
     da = da.pint.quantify({"time": time_units})
 
     return da
+
+
+def build_labeled_points(
+    coordinates: ArrayLike,
+    crs: str,
+    units: Optional[pint.Unit | str] = "1",
+    labels: Optional[list[str]] = None,
+    types: Optional[list[str]] = None,
+):
+    coordinates = np.asarray(coordinates)
+    assert coordinates.ndim == 2
+    npoints = len(coordinates)
+
+    if labels is None:
+        # generate labels "0..0" ... "0..<npoints>" with a dynamic amount of 0-padding
+        template = "%0" + str(int(np.ceil(np.log10(npoints + 1)))) + "d"
+        labels = [template % i for i in range(npoints)]
+
+    if types is None:
+        types = [cdc.PointType.UNKNOWN] * npoints
+
+    labeled_points = xr.DataArray(
+        coordinates,
+        dims=["label", crs],
+        coords={"label": ("label", labels), "type": ("label", types)},
+    ).pint.quantify(units)
+
+    return labeled_points

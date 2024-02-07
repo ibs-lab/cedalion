@@ -140,7 +140,8 @@ def plot_labeled_points(
         PointType.LANDMARK: 2,
     }
 
-    points = points.pint.to("mm").pint.dequantify()  # FIXME unit handling
+    # points = points.pint.to("mm").pint.dequantify()  # FIXME unit handling
+    points = points.pint.dequantify()  # FIXME unit handling
     for type, x in points.groupby("type"):
         for i_point in range(len(x)):
             s = pv.Sphere(radius=default_point_sizes[type], center=x[i_point])

@@ -28,7 +28,3 @@ def test_pinv():
     # matrix product of DataArrays contracts over
     # both dimensions:
     assert Ainv @ A == pytest.approx(2.0)
-
-
-def test_new():
-    assert True

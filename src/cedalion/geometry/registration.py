@@ -6,6 +6,7 @@ from scipy.spatial import KDTree
 import cedalion
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
+import cedalion.xrutils as xrutils
 
 from .utils import m_rot, m_scale1, m_scale3, m_trans
 
@@ -75,6 +76,67 @@ def register_trans_rot(
         [delta_cog[0], delta_cog[1], delta_cog[2], 0.0, 0.0, 0.0],
         args=(coords_target, coords_trafo),
         bounds=bounds,
+    )
+
+    trafo_opt = trafo(result.x)
+    trafo_opt = cdc.affine_transform_from_numpy(
+        trafo_opt,
+        from_crs=from_crs,
+        to_crs=to_crs,
+        from_units=from_units,
+        to_units=to_units,
+    )
+
+    return trafo_opt
+
+
+def _std_distance_to_cog(points: cdt.LabeledPointCloud):
+    dists = xrutils.norm(points - points.mean("label"), points.points.crs)
+    return dists.std("label").item()
+
+
+@cdc.validate_schemas
+def register_trans_rot_isoscale(
+    coords_target: cdt.LabeledPointCloud,
+    coords_trafo: cdt.LabeledPointCloud,
+):
+    common_labels = coords_target.points.common_labels(coords_trafo)
+
+    if len(common_labels) < 3:
+        raise ValueError("less than 3 common coordinates found")
+
+    from_crs = coords_trafo.points.crs
+    from_units = coords_trafo.pint.units
+    to_crs = coords_target.points.crs
+    to_units = coords_target.pint.units
+
+    # restrict to commmon labels and dequantify
+    coords_trafo = coords_trafo.sel(label=common_labels).pint.dequantify()
+    coords_target = coords_target.sel(label=common_labels).pint.dequantify()
+
+    std_trafo = _std_distance_to_cog(coords_trafo)
+    std_target = _std_distance_to_cog(coords_target)
+
+    scale0 = std_target / std_trafo
+
+    # calculate difference between centers of gravity. Use this as initial
+    # parameters for the translational component.
+    delta_cog = (
+        coords_target.mean("label").values - coords_trafo.mean("label").values * scale0
+    )
+
+    def trafo(params):
+        return m_rot(params[3:6]) @ m_trans(params[0:3]) @ m_scale1([params[6]])
+
+    def loss(params, coords_target, coords_trafo):
+        M = trafo(params)
+        tmp = coords_trafo.points._apply_numpy_transform(M, to_crs)
+        return np.power(_subtract(coords_target, tmp), 2).sum()
+
+    result = minimize(
+        loss,
+        [delta_cog[0], delta_cog[1], delta_cog[2], 0.0, 0.0, 0.0, scale0],
+        args=(coords_target, coords_trafo),
     )
 
     trafo_opt = trafo(result.x)

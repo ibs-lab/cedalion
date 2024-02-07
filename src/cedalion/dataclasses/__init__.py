@@ -10,4 +10,8 @@ from .geometry import (
     VTKSurface,
     affine_transform_from_numpy,
 )
-from .xrschemas import validate_schemas
+from .xrschemas import (
+    build_labeled_points,
+    build_timeseries,
+    validate_schemas,
+)
