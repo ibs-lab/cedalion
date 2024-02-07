@@ -20,3 +20,5 @@ $ pip install -e .
 ```
 
 This will also install Jupyter Notebook to run the example notebooks.
+
+If conda is too slow consider using the faster drop-in replacement [mamba](https://mamba.readthedocs.io/en/latest/).
