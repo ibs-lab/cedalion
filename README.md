@@ -22,3 +22,20 @@ $ pip install -e .
 This will also install Jupyter Notebook to run the example notebooks.
 
 If conda is too slow consider using the faster drop-in replacement [mamba](https://mamba.readthedocs.io/en/latest/).
+If you have Miniconda or Anaconda you can install mamba with:
+''' 
+$ conda install mamba -c conda-forge
+'''
+and then create the environment with
+```
+$ mamba env create -n cedalion -f environment_dev.yml
+```
+Please note: If this does not socceed there is another route to go:
+Install the libmamba solver
+'''
+$ conda install -n base conda-libmamba-solver
+'''
+and then build the environment with the --solver=libmamba
+```
+$ conda env create -n cedalion -f environment_dev.yml --solver=libmamba
+```
