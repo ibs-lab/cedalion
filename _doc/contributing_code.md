@@ -46,7 +46,7 @@ Cedalion is using XArrays as main data structures for processing. There are curr
 
 ## Example for contributing new functionality to Cedalion
 In this example we will incorporate two new functions into the toolbox: A function that identifies motion artifacts in fNIRS data and a function to prune bad channels. Both functions are replicating the Homer3 functions "hmR_MotionArtifact" and "hmR_PruneChannels". 
-The corresponding jupyter notebook example to showcase the code in this file is the [Pruning and Motion Artefacts Notebook Example](https://github.com/ibs-lab/cedalion/blob/alex_working/examples/pruning_and_motion_artifacts.ipynb)
+The corresponding jupyter notebook example to showcase the code in this file is the [Pruning and Motion Artefacts Notebook Example](https://github.com/ibs-lab/cedalion/blob/alex_working/examples/pruning_and_motion_artifacts.ipynb). **Please check it out to get an idea of how to get snirf data into a typical xarray structure that the functions are expecing.**
 
 ### Where do these functions belong?
 The function to prune channels belongs to /siproc/quality.py and will simply be called "prune". It will then be available with 
