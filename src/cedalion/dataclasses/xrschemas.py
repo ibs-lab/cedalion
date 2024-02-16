@@ -83,6 +83,12 @@ NDTimeSeriesSchema = DataArraySchema(
 )
 
 
+NDDataSetSchema = DataArraySchema(
+    dims=["channel", "time"],
+    coords={"time": ["time", "samples"], "channel": ["channel"], "geo3d": ["label", "pos"] },
+)
+
+
 # FIXME better location?
 def build_timeseries(
     data: np.ndarray,
