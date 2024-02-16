@@ -40,7 +40,7 @@ Widely used general functionality is part of the files on the top level (e.g. ni
 ## Data Classes and X-Arrays 
 Cedalion is using XArrays as main data structures for processing. There are currently two jupyter notebooks that explain these data structures:
 
-[Using xarray-based data structures for calculating the Beer-Lambert transformation](https://github.com/ibs-lab/cedalion/blob/main/examples/new_conference_example1.ipynb)
+[Using xarray-based data structures for calculating the Beer-Lambert transformation](https://github.com/ibs-lab/cedalion/blob/alex_working/examples/pruning_and_motion_artifacts.ipynb)
 
 [An example finger tapping analysis](https://github.com/ibs-lab/cedalion/blob/main/examples/new_conference_example2.ipynb)
 
