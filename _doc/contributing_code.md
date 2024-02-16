@@ -85,6 +85,7 @@ This generates a new function *function_name* with two input arguments *inputVar
 The input arguments should have expected data types assigned to them. Here, *inputVar1* is expected to be of the data type "NDTimeSeriesSchema", which is an xarray that contains at least two dimensions "channel" and "time". *inputVar2* is expected to be of the data type *Quantity* ==[TBD? @emiddell]==.   
 The function is wrapped by putting `@cdc.validate_schemas`in front, which will check these data types and assert an error at runtime, if the inputs do not match the expected type.
 
+The following examples are implemented in the [quality.py module](https://github.com/ibs-lab/cedalion/blob/alex_working/src/cedalion/sigproc/quality.py)
 Now we can create a small helper function that calculates the SNR of fNIRS channels that will be used in the main `quality.prune()` routine. Using restricting the argument to an xarray time series input type allows us to calculate the SNR in a single line.
 
 ```
