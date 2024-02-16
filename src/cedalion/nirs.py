@@ -50,6 +50,12 @@ def channel_distances(amplitudes: xr.DataArray, geo3d: xr.DataArray):
     return dists
 
 
+def int2od(amplitudes: xr.DataArray):
+    """Calculate optical density from intensity data."""
+    od = - np.log( amplitudes / amplitudes.mean("time") )
+    return od
+
+
 def beer_lambert(
     amplitudes: xr.DataArray,
     geo3d: xr.DataArray,
