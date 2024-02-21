@@ -259,6 +259,36 @@ def prune(data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity,
     return data, drop_list
 ```
 
-## Concluding Remarks
-
+## Concluding Remarks and Documentation
 The example above uses Cedalion's most basic data structures. While the toolbox continues to grow, we will add containers and abstraction layers to simplify and unify usage and code contribution. Whenever possible and especially when you find that the existing environment does not (yet) provide a level of abstraction or a data structure bundling all the data that you need in one container, please develop **bottom up** and write simple functions with (multiple) simple input and output arguments. In the example, once a general container is specified that ties together timeseries data, optode information (such as the `geo3D`) or measurement lists, it is straightforward to refactor the code accordingly. The same is true for more complex processing pipelines tied together in jupyter notebooks. We are working on a mechanism to build pipelines that enables easier and more abstract use by incorporating the lower level functions. Translating a notebook to such a pipeline is then straightforward. 
+
+### Code Documentation
+Please document your code well by commenting relevant steps throughout. At the beginning of each function, please add relevant information according to the following template (for examples see the functions in the previous section). This will make the documentation also available in our Read the Docs page that allows users to browse available functions and their usage.
+
+```
+def your_function(Arg1, Arg2):
+    """One sentence description of function. 
+
+    Some more details on what the function does.
+
+    Reference to related work or source material [1]
+
+    [1] Authors et al., Title, Journal, Year
+
+    INPUTS:
+    Arg1:       Input type and units, explanation.
+    Arg2:       Input type and units, explanation.
+    
+    OUTPUTS:
+    Out1::      Output type and units, explanation.
+
+    DEFAULT PARAMETERS:
+    Arg1:       Suggested default value for Arg1
+    Arg2:       uggested default value for Arg1
+    """
+
+    Out1 = true
+    print(f"i am an example function that returns a boolean {Out1}")
+    
+    return Out1
+```
