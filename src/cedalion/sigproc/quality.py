@@ -61,12 +61,13 @@ def snr_range(amplitudes: cdt.NDTimeSeries, snr_thresh: Quantity):
     # calculate SNR
     snr = amplitudes.mean("time") / amplitudes.std("time")
     # create MeasList and threshold it
-    MeasList = list(amplitudes.coords["channel"].values)
-    # for all active channels in the MeasList check if they meet the conditions or drop them from the list
+    meas_list = list(amplitudes.coords["channel"].values)
+    # for all active channels in the MeasList check if they meet the conditions 
+    # or drop them from the list
     drop_list = snr.where(snr < snr_thresh).dropna(dim="channel").channel.values
-    MeasList = [channel for channel in MeasList if channel not in drop_list]
+    meas_list = [channel for channel in meas_list if channel not in drop_list]
 
-    return snr, MeasList, drop_list
+    return snr, meas_list, drop_list
 
 
 @cdc.validate_schemas
@@ -82,25 +83,26 @@ def amp_range(amplitudes: cdt.NDTimeSeries, amp_threshs: Quantity):
     """
 
     # create MeasList and threshold it
-    MeasList = list(amplitudes.coords["channel"].values)
-    # for all active channels in the MeasList check if they meet the conditions or drop them from the list
+    meas_list = list(amplitudes.coords["channel"].values)
+    # for all active channels in the MeasList check if they meet the conditions
+    # or drop them from the list
     drop_list = amplitudes.mean("time").where(
         (amplitudes.mean("time") < amp_threshs[0]) |
         (amplitudes.mean("time") > amp_threshs[1])
         ).dropna(dim="channel").channel.values
-    MeasList = [channel for channel in MeasList if channel not in drop_list]
+    meas_list = [channel for channel in meas_list if channel not in drop_list]
 
-    return MeasList, drop_list
+    return meas_list, drop_list
 
 
 @cdc.validate_schemas
 def sd_range(amplitudes: cdt.NDTimeSeries, geo3D: Quantity, sd_threshs: Quantity):
-    """Identify and drop channels with a source-detector separation <SDrange(1) or > SDrange(2).
+    """Identify and drop channels with a source-detector separation <sd_threshs(0) or > sd_threshs(1).
 
     INPUTS:
     amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
     geo3D:      Quantity, 3D coordinates of the channels
-    sd_threshs: Quantity, in cm. If source-detector separation <SDrange(1) or > SDrange(2)
+    sd_threshs: Quantity, in mm, cm or m. If source-detector separation <sd_threshs(0) or > sd_threshs(1)
                 then it is excluded as an active channel
     OUTPUTS:
     ch_dist:    channel distances
@@ -108,24 +110,28 @@ def sd_range(amplitudes: cdt.NDTimeSeries, geo3D: Quantity, sd_threshs: Quantity
     """
 
     # calculate channel distances
-    ch_dist = xrutils.norm(geo3D.loc[amplitudes.source] - geo3D.loc[amplitudes.detector], dim="pos").round(3)
+    ch_dist = xrutils.norm(
+        geo3D.loc[amplitudes.source] - geo3D.loc[amplitudes.detector], dim="digitized"
+        ).round(3)
     # create MeasList and threshold it
-    MeasList = list(amplitudes.coords["channel"].values)
-    # for all active channels in the MeasList check if they meet the conditions or drop them from the list
-    drop_list = ch_dist.where((ch_dist < sd_threshs[0]) | (ch_dist > sd_threshs[1])).dropna(dim="channel").channel.values
-    MeasList = [channel for channel in MeasList if channel not in drop_list]
+    meas_list = list(amplitudes.coords["channel"].values)
+    # for all active channels in the MeasList check if they meet the conditions 
+    # or drop them from the list
+    drop_list = ch_dist.where((ch_dist < sd_threshs[0]) | (ch_dist > sd_threshs[1])
+                              ).dropna(dim="channel").channel.values
+    meas_list = [channel for channel in meas_list if channel not in drop_list]
 
-    return ch_dist, MeasList,drop_list
+    return ch_dist, meas_list,drop_list
 
 
 
 @cdc.validate_schemas
-def prune(
-    data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity, amp_threshs: Quantity, sd_threshs: Quantity):
+def prune(data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity,
+          amp_threshs: Quantity, sd_threshs: Quantity):
     """Prune channels from the measurement list.
 
     Prunging criteria are signal strength, standard deviation (SNR), or channel distances.
-    TBD: Include SCI/PSP etc.
+    TODO: Include SCI/PSP etc.
 
     Based on Homer3 [1] v1.80.2 "hmR_PruneChannels.m"
     Boston University Neurophotonics Center
@@ -145,37 +151,37 @@ def prune(
     sd_threshs: Quantity, in cm. If source-detector separation <SDrange(1) or > SDrange(2)
                 then it is excluded as an active channel
     OUTPUTS:
-    MeasList:   list of active channels that meet the conditions
+    meas_list:   list of active channels that meet the conditions
 
     DEFAULT PARAMETERS:
-    dRange: [1e4, 1e7]
-    SNRthresh: 2
-    SDrange: [0.0, 4.5]
+    amp_threshs: [1e4, 1e7]
+    snr_thresh: 2
+    sd_threshs: [0.0, 4.5]
     """
 
     # create MeasList with all channels active
-    MeasList = list(data.coords["channel"].values)
+    meas_list = list(data.coords["channel"].values)
 
     # SNR thresholding
-    snr, MeasList_snr, drop_list_snr = snr_range(data, snr_thresh)
+    snr, meas_list_snr, drop_list_snr = snr_range(data, snr_thresh)
     # keep only the channels in MeasList that are also in MeasList_snr
-    MeasList = [channel for channel in MeasList if channel in MeasList_snr]
+    meas_list = [channel for channel in meas_list if channel in meas_list_snr]
 
     # Source Detector Separation thresholding
-    ch_dist, MeasList_sd, drop_list_sd = sd_range(data, geo3D, sd_threshs)
+    ch_dist, meas_list_sd, drop_list_sd = sd_range(data, geo3D, sd_threshs)
     # keep only the channels in MeasList that are also in MeasList_sd
-    MeasList = [channel for channel in MeasList if channel in MeasList_sd]
+    meas_list = [channel for channel in meas_list if channel in meas_list_sd]
 
     # Amplitude thresholding
-    MeasList_amp, drop_list_amp = amp_range(data, amp_threshs)
+    meas_list_amp, drop_list_amp = amp_range(data, amp_threshs)
     # keep only the channels in MeasList that are also in MeasList_amp
-    MeasList = [channel for channel in MeasList if channel in MeasList_amp]
+    meas_list = [channel for channel in meas_list if channel in meas_list_amp]
 
     # FIXME / TODO
     # SCI thresholding
 
     # drop the channels in data that are not in MeasList
-    data = data.sel(channel=MeasList)
+    data = data.sel(channel=meas_list)
     # also return a list of all dropped channels
     drop_list = list(set(drop_list_snr) | set(drop_list_sd) | set(drop_list_amp))
 

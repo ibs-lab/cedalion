@@ -59,3 +59,8 @@ def norm(array: xr.DataArray, dim: str) -> xr.DataArray:
         normed = normed.pint.quantify(units)
 
     return normed
+
+
+def mask(array: xr.DataArray, initval: bool) -> xr.DataArray:
+    """Create a boolean mask array with the same shape as the input array."""
+    return xr.full_like(array, initval, dtype=bool)
