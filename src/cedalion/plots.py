@@ -10,6 +10,8 @@ import vtk
 
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
+    geo3d = geo3d.pint.dequantify()
+
     f = p.figure()
     ax = f.add_subplot(projection="3d")
     colors = ["r", "b", "gray"]
