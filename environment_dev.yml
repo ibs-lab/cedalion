@@ -39,6 +39,13 @@ dependencies:
   - pyvista
   - trame
   - vtk=9.2.2
+
+  - nbsphinx=0.9.3
+  - nbstripout=0.7.1
+  - sphinx
+  - myst-parser
+  - sphinx-autodoc-typehints
+
   - pip:
       - mne==1.4.0
       - mne-bids==0.12
