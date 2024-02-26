@@ -4,6 +4,12 @@ To avoid misinterpretations and to facilitate studies in naturalistic environmen
 The aim of this toolbox is to facilitate this kind of analyses, i.e. it should allow the easy integration of machine learning techniques and provide unsupervised decomposition techniques for
 multimodal fNIRS signals.
 
+## Documentation
+
+The [documentation](https://eike.middell.net/share/cedalion/docs/) contains
+[installation instructions](https://eike.middell.net/share/cedalion/docs/getting_started/installation.html) as
+well as several [example notebooks](https://eike.middell.net/share/cedalion/docs/examples/index.html)
+that illustrate the functionality of the toolbox.
 
 ## Development environment
 
@@ -23,7 +29,7 @@ This will also install Jupyter Notebook to run the example notebooks.
 
 If conda is too slow consider using the faster drop-in replacement [mamba](https://mamba.readthedocs.io/en/latest/).
 If you have Miniconda or Anaconda you can install mamba with:
-''' 
+'''
 $ conda install mamba -c conda-forge
 '''
 and then create the environment with
