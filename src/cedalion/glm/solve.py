@@ -5,19 +5,22 @@ import xarray as xr
 
 
 def solve_glm(
-    y, design_matrix, add_regressors={"HbO": {}, "HbR": {}}, noise_model="ols"
+    y: xr.DataArray,
+    design_matrix: xr.DataArray,
+    local_regressors={"HbO": {}, "HbR": {}},
+    noise_model="ols",
 ):
     """Solve the GLM for a given design matrix, additional regressors (channel dependent) and data.
 
     inputs:
         y: xarray.DataArray containing the data (time x chromo x channels)
         design_matrix: design matrix used for the GLM (time x regressors x chromo)
-        add_regressors: dictionary containing additional regressors for each chromophore
-                        add_regressors['data']: xarray.DataArray containing the additional regressors (regressor x chromo x channels)
-                        add_regressors['HbO']: dictionary containing the additional regressors for HbO
-                            add_regressors['HbO']['regressor_1']: list of HbO channels assigned to regressor_1
-                        add_regressors['HbR']: dictionary containing the additional regressors for HbR
-                            add_regressors['HbR']['regressor_1']: list of HbR channels assigned to regressor_1
+        local_regressors: dictionary containing additional regressors for each chromophore
+                        local_regressors['data']: xarray.DataArray containing the additional regressors (regressor x chromo x channels)
+                        local_regressors['HbO']: dictionary containing the additional regressors for HbO
+                            local_regressors['HbO']['regressor_1']: list of HbO channels assigned to regressor_1
+                        local_regressors['HbR']: dictionary containing the additional regressors for HbR
+                            local_regressors['HbR']['regressor_1']: list of HbR channels assigned to regressor_1
         noise_model: noise model used for the GLM (default = 'ols')
     return:
         thetas: xarray.DataArray estimated parameters of the GLM (regressors x chromo x channels)
@@ -51,49 +54,49 @@ def solve_glm(
     units = y.pint.units
     y = y.pint.dequantify()
     design_matrix = design_matrix.pint.dequantify()
-    if "data" in add_regressors:
-        add_regressors["data"] = add_regressors["data"].pint.dequantify()
+    if "data" in local_regressors:
+        local_regressors["data"] = local_regressors["data"].pint.dequantify()
 
-    # process add_regressors so that
+    # process local_regressors so that
     # each channel is assigned to not more than one regressor
-    add_regressors["HbO"] = process_regressors(add_regressors["HbO"], y.channel.values)
-    add_regressors["HbR"] = process_regressors(add_regressors["HbR"], y.channel.values)
+    local_regressors["HbO"] = process_regressors(
+        local_regressors["HbO"], y.channel.values
+    )
+    local_regressors["HbR"] = process_regressors(
+        local_regressors["HbR"], y.channel.values
+    )
 
-    hrf_regs = design_matrix.regressor.str.startswith("HRF").values.tolist()
+    hrf_regs = design_matrix.regressor.sel(
+        regressor=design_matrix.regressor.str.startswith("HRF")
+    )
 
     for chromo in y.chromo.values:
-        add_reg_chromo = add_regressors[chromo]
-        for assigned_regs, ch in add_reg_chromo.items():
-            # add ss regressor to design matrix
+        for assigned_regs, ch in local_regressors[chromo].items():
+            # add assigned regressor to design matrix
             if assigned_regs != ():
-                add_reg = add_regressors["data"].sel(
+                add_reg = local_regressors["data"].sel(
                     regressor=np.array(assigned_regs), chromo=chromo
                 )
                 # add_reg = add_reg.pint.quantify("micromolar") / abs(add_reg).max()
                 dm = xr.concat(
                     [design_matrix.sel(chromo=chromo), add_reg], dim="regressor"
                 )
-                hrf_regs_temp = hrf_regs + [
-                    False for i in range(add_reg.regressor.size)
-                ]
             else:
                 dm = design_matrix.sel(chromo=chromo)
-                hrf_regs_temp = hrf_regs.copy()
             # solve GLM for current chromophore and channels
             thetas_temp = run_glm(
                 y.sel(channel=ch, chromo=chromo), dm, noise_model=noise_model
             )
-            predicted_temp = dm.values @ thetas_temp.values
             # store results
             thetas.loc[{"chromo": chromo, "channel": ch}] = thetas_temp.sel(
                 regressor=thetas.regressor
             )
             predicted.loc[{"time": y.time, "chromo": chromo, "channel": ch}] = (
-                predicted_temp
+                dm.values @ thetas_temp.values
             )
             predicted_hrf.loc[{"time": y.time, "chromo": chromo, "channel": ch}] = (
-                dm.sel(regressor=hrf_regs_temp).values
-                @ thetas_temp.sel(regressor=hrf_regs_temp).values
+                dm.sel(regressor=hrf_regs).values
+                @ thetas_temp.sel(regressor=hrf_regs).values
             )
 
     predicted = predicted.pint.quantify(units)
@@ -218,6 +221,9 @@ def get_HRFs(
         hrfs: xarray.DataArray containing HRFs for every condition and every channel (time x chromo x channels x conditions)
     """
 
+    unit = predicted_hrf.pint.units
+    predicted_hrf = predicted_hrf.pint.dequantify()
+
     # get id_stim-th stim onset of each condition
     stim_onsets = stim.groupby("trial_type").onset.nth(id_stim).values
     conds = stim.trial_type.unique()
@@ -257,14 +263,14 @@ def get_HRFs(
                     stim_onsets.sel(condition=cond) + HRFmax,
                 ),
             )
+            # change time axis to relative time
+            hrf = hrf.assign_coords(time=time_hrf)
             # store HRFs
-            hrfs.loc[{"time": time_hrf, "chromo": hrf.chromo, "condition": cond}] = (
-                hrf.values
-            )
+            hrfs.loc[{"time": time_hrf, "chromo": chromo, "condition": cond}] = hrf
 
     # remove baseline
     hrfs = hrfs - hrfs.sel(time=slice(HRFmin, 0)).mean(dim="time")
     # add units
-    hrfs = hrfs.pint.quantify(predicted_hrf.pint.units)
+    hrfs = hrfs.pint.quantify(unit)
 
     return hrfs

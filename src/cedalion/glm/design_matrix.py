@@ -7,15 +7,22 @@ import cedalion.xrutils as xrutils
 
 
 def make_design_matrix(
-    t: xr.DataArray, s, trange: list, idx_basis: str, params_basis, drift_order: int = 0
+    t: xr.DataArray,
+    s,
+    trange: list,
+    idx_basis: str,
+    params_basis,
+    drift_order: int = 0,
+    add_regressors: xr.DataArray = None,
 ):
     """Generate the design matrix for the GLM.
 
     inputs:
         y: xarray.DataArray time axis (time)
         s: pandas.DataFrame or xarray.DataArray of stimulus data (time x conditions)
+        add_regressors: xarray.DataArray containing additional regressors (time x regressor x chromo)
         trange: list of the time range of the HRF regressors [pre, post]
-                (in seconds relative to stimulus onset, for example [-5, 15])
+                    (in seconds relative to stimulus onset, for example [-5, 15])
         idx_basis: string indicating the type of basis function to use
                     "gaussians":    a consecutive sequence of gaussian functions
                     "gamma":        a modified gamma function convolved with a square-
@@ -30,6 +37,7 @@ def make_design_matrix(
                                     Defaults: p=8.6 q=0.547
                                     The peak is at time p*q.  The FWHM is about 2.3*sqrt(p)*q.
                     "individual":   individual selected basis function for each channel
+                                    (xr.DataArray of shape (time x chromo x channels)
         params_basis: parameters for the basis function (depending on idx_basis)
                     "gaussians":    [gms, gstd] where gms is the temporal spacing between
                                     consecutive gaussians and gstd is the width of the
@@ -46,10 +54,11 @@ def make_design_matrix(
                     "individual":   array containing the individual basis functions
                                     (t_hrf x chromo x channels).
         drift_order: order of the polynomial drift regressors to add to the design matrix
-    outputs:
-        A: xarray.DataArray of the design matrix (time x regressors x chromo)
+    return:
+        A: xarray.DataArray of the design matrix (time x regressor x chromo)
     """
 
+    t = t.pint.dequantify()
     # Convert stimulus data to xarray
     if type(s) == pd.DataFrame:
         s = s.cd.to_xarray(t)
@@ -70,9 +79,17 @@ def make_design_matrix(
     regressors.append(drift_regressors)
 
     ###########################################################################
+    # Add additional regressors
+
+    if add_regressors is not None:
+        add_regressors = add_regressors.pint.quantify("micromolar")
+        regressors.append(add_regressors)
+
+    ###########################################################################
     # Stack regressors into design matrix
 
     A = xr.concat(regressors, dim="regressor")
+    A = A.pint.quantify("micromolar")
 
     return A
 
@@ -136,6 +153,12 @@ def make_hrf_regressors(
     if len(tbasis.shape) == 3 and tbasis.shape[2] == 1:
         tbasis = tbasis[:, :, 0]
 
+    regressor_names = []
+
+    for i_cond in range(n_cond):
+        for b in range(nb):
+            regressor_names.append("HRF " + cond_names[i_cond] + " " + str(b + 1))
+
     if idx_basis != "individual":
         a_hrf = np.zeros((nt, nb * n_cond, 2))
         for i_conc in range(2):
@@ -149,6 +172,11 @@ def make_hrf_regressors(
                         clmn = np.convolve(onset[:, i_cond], tbasis[:, b, i_conc])
                     clmn = clmn[:nt]
                     a_hrf[:, i_c, i_conc] = clmn
+        hrf_regs = xr.DataArray(
+            a_hrf,
+            dims=["time", "regressor", "chromo"],
+            coords={"time": t, "regressor": regressor_names, "chromo": ["HbO", "HbR"]},
+        )
 
     elif idx_basis == "individual":
         a_hrf = np.zeros((nt, nb * n_cond, 2, params_basis.shape[2]))
@@ -163,18 +191,17 @@ def make_hrf_regressors(
                         )
                         clmn = clmn[:nt]
                         a_hrf[:, i_c, i_conc, i_ch] = clmn
+        hrf_regs = xr.DataArray(
+            a_hrf,
+            dims=["time", "regressor", "chromo", "channel"],
+            coords={
+                "time": t,
+                "regressor": regressor_names,
+                "chromo": ["HbO", "HbR"],
+                "channel": params_basis.channel.values,
+            },
+        )
 
-    regressor_names = []
-
-    for i_cond in range(n_cond):
-        for b in range(nb):
-            regressor_names.append("HRF " + cond_names[i_cond] + " " + str(b + 1))
-
-    hrf_regs = xr.DataArray(
-        a_hrf,
-        dims=["time", "regressor", "chromo"],
-        coords={"time": t, "regressor": regressor_names, "chromo": ["HbO", "HbR"]},
-    )
     hrf_regs = hrf_regs.pint.quantify("micromolar")
 
     return hrf_regs
@@ -200,6 +227,7 @@ def construct_basis_functions(t_hrf, idx_basis, params_basis):
 
     # Individualized basis function for each channel from a previously estimated HRF
     elif idx_basis == "individual":
+        params_basis.pint.dequantify()
         return construct_individual_basis(t_hrf, params_basis)
 
 
@@ -343,8 +371,8 @@ def construct_individual_basis(t_hrf, params_basis):
 def get_ss_regressors(
     y: xr.DataArray,
     geo3d: xr.DataArray,
-    ssMethod="closest",
-    ssTresh: float = 1.5,
+    ss_method="closest",
+    ss_tresh: float = 1.5,
     as_xarray: bool = False,
 ):
     """Get short separation channels for each long channel.
@@ -352,10 +380,10 @@ def get_ss_regressors(
     inputs:
         y: xarray.DataArray of the data (time x chromo x channels)
         geo3d: xarray.DataArray of the 3D geometry (number of sources/detectors x dim pos)
-        ssMethod: method for determining short separation channels ("nearest", "correlation", "average")
-        ssTresh: threshold for short separation channels (in cm)
+        ss_method: method for determining short separation channels ("nearest", "corr")
+        ss_tresh: threshold for short separation channels (in cm)
         get_data: whether to return the short channel data (True) or the short channel names (False)
-    outputs:
+    return:
         ss: xarray.DataArray of short separation channels (channels x chromo)
     """
 
@@ -367,12 +395,12 @@ def get_ss_regressors(
     )
 
     # Identify short channels
-    short_channels = dists.channel[dists < ssTresh * cedalion.units.cm]
+    short_channels = dists.channel[dists < ss_tresh * cedalion.units.cm]
 
-    if ssMethod == "closest":
+    if ss_method == "closest":
         middle_pos = (geo3d.loc[y.source] + geo3d.loc[y.detector]) / 2
         return closest_short_channel(y, short_channels, middle_pos, as_xarray)
-    elif ssMethod == "corr":
+    elif ss_method == "corr":
         return max_corr_short_channel(y, short_channels, as_xarray)
 
 
@@ -424,24 +452,27 @@ def closest_short_channel(y, short_channels, middle_positions, as_xarray=False):
 
 def max_corr_short_channel(y, short_channels, as_xarray=False):
     # Get indices of short channels
-    lstSS = [np.where(y.channel == ch)[0][0] for ch in short_channels]
+    lst_ss = [np.where(y.channel == ch)[0][0] for ch in short_channels]
+
+    units = y.pint.units
+    y = y.pint.dequantify()
 
     # HbO
-    dc = y[:, 0, :].squeeze()
+    dc = y[:, 0, :].squeeze().values
     dc = (dc - np.mean(dc, axis=0)) / np.std(dc, axis=0)
     cc1 = np.dot(dc.T, dc) / len(dc)
 
     # HbR
-    dc = y[:, 1, :].squeeze()
+    dc = y[:, 1, :].squeeze().values
     dc = (dc - np.mean(dc, axis=0)) / np.std(dc, axis=0)
     cc2 = np.dot(dc.T, dc) / len(dc)
 
     iNearestSS = np.zeros((cc1.shape[0], 2), dtype=int)
     for iML in range(cc1.shape[0]):
-        iNearestSS[iML, 0] = lstSS[np.argmax(cc1[iML, lstSS])]
-        iNearestSS[iML, 1] = lstSS[np.argmax(cc2[iML, lstSS])]
+        iNearestSS[iML, 0] = lst_ss[np.argmax(cc1[iML, lst_ss])]
+        iNearestSS[iML, 1] = lst_ss[np.argmax(cc2[iML, lst_ss])]
 
-    channel_iSS = [y.channel[i] for i in iNearestSS]
+    channel_iSS = [y.channel[i].values.astype("U11") for i in iNearestSS]
 
     if as_xarray:
         # get data not names of short channels
@@ -453,7 +484,7 @@ def max_corr_short_channel(y, short_channels, as_xarray=False):
             ss_data,
             dims=["time", "chromo", "channel"],
             coords={"time": y.time, "channel": y.channel, "chromo": y.chromo},
-        )
+        ).pint.quantify(units)
         # add regressor dimension
         highest_corr_short = highest_corr_short.assign_coords(
             regressor=(["channel", "chromo"], channel_iSS)
@@ -466,7 +497,7 @@ def max_corr_short_channel(y, short_channels, as_xarray=False):
             dims=["channel", "chromo"],
             coords={"channel": y.channel, "chromo": y.chromo},
         )
-        highest_corr_short = make_reg_dict(y, highest_corr_short)
+        highest_corr_short = make_reg_dict(y.pint.quantify(units), highest_corr_short)
 
     return highest_corr_short
 
@@ -476,7 +507,8 @@ def make_reg_dict(y, add_regressors):
 
     inputs:
         y: xarray.DataArray of the data (time x chromo x channels)
-        add_regressors: xarray.DataArray containing the short channel regressors (channels x chromo)
+        add_regressors: xarray.DataArray containing the short channel regressor
+                        (name) for each channel (channels x chromo)
     return:
         add_reg_dict: dictionary with regressors as keys and channels as values
     """
@@ -484,7 +516,6 @@ def make_reg_dict(y, add_regressors):
     unique_short = np.unique(add_regressors.values)
 
     ss_data = y.sel(channel=unique_short)
-    # remove dimensions of data_2
     ss_data = ss_data.drop_vars(["samples", "source", "detector", "sbj"])
     ss_data = ss_data.rename({"channel": "regressor"})
 
