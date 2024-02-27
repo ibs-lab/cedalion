@@ -22,10 +22,6 @@ extensions = [
     "sphinx_autodoc_typehints",
 ]
 
-myst_enable_extensions = [
-    "substitution",
-]
-
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
@@ -35,6 +31,20 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
+
+# fix a margin problem with the rendering of xarray representations in notebooks when
+# using the RTD theme
+html_css_files = [
+    "css/rtd_fixes.css",
+]
+
+# -- Configure MyST -----------------------------------------------------------
+
+myst_enable_extensions = [
+    "substitution",
+]
+
+myst_heading_anchors = 2
 
 # -- Substitutions -----------------------------------------------------------
 
