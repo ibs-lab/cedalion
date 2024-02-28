@@ -70,7 +70,15 @@ class CedalionAccessor:
         array = self._obj
 
         fny = array.cd.sampling_rate / 2
-        b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+        
+        if fmin == 0:
+            b, a = scipy.signal.butter(butter_order, fmax / fny, "low")
+
+        elif fmax == 0:
+            b, a = scipy.signal.butter(butter_order, fmin / fny, "high")
+
+        else:
+            b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
 
         if (units := array.pint.units) is not None:
             array = array.pint.dequantify()
