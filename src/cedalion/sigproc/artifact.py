@@ -27,7 +27,7 @@ def id_motion(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity, t_mask: Quantity,
 
     INPUTS:
     amplitudes:     NDTimeSeries, input fNIRS data array with at least time and channel
-                    dimensions. Expectation is data in optical density units.
+                    dimensions. Expectation is raw or optical density data.
     t_motion:       Quantity, time in seconds for motion artifact detection. Checks for
                     signal change indicative of a motion artifact over time range t_motion.
     t_mask:         Quantity, time in seconds to mask around motion artifacts. Mark data
@@ -62,14 +62,18 @@ def id_motion(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity, t_mask: Quantity,
     global_flag: False
     """
 
-    # assert OD units, otherwise issue a warning
+    # TODO assert OD units, otherwise issue a warning
 
     # initialize a channel mask
     channel_mask = xrutils.mask(fNIRSdata, True)
 
-    # calculate the "std_diff", the standard deviation of the approx 1st derivative of each channel over time
-    std_diff = dat.od.diff(dim="time").std(dim="time")
+    # calculate the "std_diff", the standard deviation of the approx 1st derivative of
+    # each channel over time
+    std_diff = fNIRSdata.diff(dim="time").std(dim="time")
+
     # calulate max_diff across channels for different time delays
+    
+
 
 
     return fNIRSdata

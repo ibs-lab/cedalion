@@ -63,4 +63,58 @@ def norm(array: xr.DataArray, dim: str) -> xr.DataArray:
 
 def mask(array: xr.DataArray, initval: bool) -> xr.DataArray:
     """Create a boolean mask array with the same shape as the input array."""
+
     return xr.full_like(array, initval, dtype=bool)
+
+
+def apply_mask(data_array: xr.DataArray,
+               mask: xr.DataArray, operator: str, dim_collapse: str) -> xr.DataArray:
+    """Apply a boolean mask to a DataArray according to the defined "operator".
+
+    INPUTS:
+    data_array:     NDTimeSeries, input time series data xarray
+    mask:           input bookean mask array with a subset of dimensions matching data_array
+    operator:       operators to apply to the mask and data_array
+        "nan":          inserts NaNs in the data_array where mask is False
+        "drop":         drops value in the data_array where mask is False
+    dim_collapse:   mask dimension to collapse to, merging boolean masks along all other
+                    dimensions. can be skipped with "none".
+                    Example: collapsing to "channel" dimension will drop or nan a channel
+                    if it is "False" along any other dimensions
+
+    OUTPUTS:
+    masked_data_array:    input data_array with applied mask
+    masked_elements:      list of elements in data_array that were masked (e.g. dropped or set to NaN)
+    """
+    flag_collapse = False
+
+    # check if all dimensions in mask are dimensions of data_array
+    if not all(dim in data_array.dims for dim in mask.dims):
+        raise ValueError("mask dimensions must be a subset of data_array dimensions")
+        # check if dim_collapse is a dimension of mask
+    if dim_collapse.lower() != "none":
+        if dim_collapse not in mask.dims:
+            raise ValueError("dim_collapse must be a dimension of mask")
+        else:
+            # collapse to dimension given by "dim_collapse"
+            flag_collapse = True
+            dims2collapse = [dim for dim in mask.dims if dim != dim_collapse]
+            mask = mask.all(dim=dims2collapse)
+            print(f"mask collapsed to {dim_collapse} dimension")
+
+    # apply the mask to data_array according to instructions from "operator" argument
+    if operator.lower() == "nan":
+        # inserts NaNs in the data_array where mask is False
+        masked_data_array = data_array.where(mask, other=np.nan)
+    elif operator.lower() == "drop":
+        # drops value in the data_array where mask is False.
+        # Note: values are only dropped if mask has "False" across the entire  relevant dimension
+        masked_data_array = data_array.where(mask, drop=True)
+
+    # return the masked elements if dimensions were collapsed
+    if flag_collapse:
+        masked_elements = mask.where(~mask, drop=True)[dim_collapse].values
+    else:
+        masked_elements = "N/A" #FIXME clean this up: return the masked elements as a list of indices
+
+    return masked_data_array, masked_elements

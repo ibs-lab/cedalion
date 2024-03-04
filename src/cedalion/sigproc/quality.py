@@ -2,16 +2,26 @@ import numpy as np
 
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
-import cedalion.sigproc
 import cedalion.xrutils as xrutils
 from cedalion import Quantity, units
+from typing import List
+from functools import reduce
 
 from .frequency import freq_filter, sampling_rate
 
 
 @cdc.validate_schemas
-def sci(amplitudes: cdt.NDTimeSeries, window_length: Quantity):
-    """Calculate the scalp-coupling index.
+def sci(amplitudes: cdt.NDTimeSeries, window_length: Quantity, sci_thresh: Quantity):
+    """Calculate the scalp-coupling index based on [1].
+
+    INPUTS:
+    amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
+    sci_thresh: Quantity, sci threshold (unitless).
+                If mean(d)/std(d) < SNRthresh then it is excluded as an active channel
+    OUTPUTS:
+    sci:        xarray with coords from input NDTimeseries containing the scalp-coupling index
+    sci_mask:   boolean mask xarray with coords from sci, true where sci_thresh is met
+
 
     [1] L. Pollonini, C. Olds, H. Abaya, H. Bortfeld, M. S. Beauchamp, and
         J. S. Oghalai, “Auditory cortex activation to natural speech and
@@ -42,96 +52,16 @@ def sci(amplitudes: cdt.NDTimeSeries, window_length: Quantity):
     sci = (windows - windows.mean("window")).prod("wavelength").sum("window") / nsamples
     sci /= windows.std("window").prod("wavelength")
 
-    return sci
+    # create sci mask and update accoording to sci_thresh
+    sci_mask = xrutils.mask(sci, True)
+    sci_mask = sci_mask.where(sci > sci_thresh, False)
+
+    return sci, sci_mask
 
 
 @cdc.validate_schemas
-def snr_range(amplitudes: cdt.NDTimeSeries, snr_thresh: Quantity):
+def snr(amplitudes: cdt.NDTimeSeries, snr_thresh: Quantity):
     """Calculates channel SNR of each channel and wavelength.
-
-    INPUTS:
-    amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
-    snr_thresh:  Quantity, SNR threshold (unitless).
-                If mean(d)/std(d) < SNRthresh then it is excluded as an active channel
-    OUTPUTS:
-    snr:        ratio betwean mean and std of the amplitude signal for all channels.
-    MeasList:   list of active channels that meet the conditions
-
-    """
-    # calculate SNR
-    snr = amplitudes.mean("time") / amplitudes.std("time")
-    # create MeasList and threshold it
-    meas_list = list(amplitudes.coords["channel"].values)
-    # for all active channels in the MeasList check if they meet the conditions 
-    # or drop them from the list
-    drop_list = snr.where(snr < snr_thresh).dropna(dim="channel").channel.values
-    meas_list = [channel for channel in meas_list if channel not in drop_list]
-
-    return snr, meas_list, drop_list
-
-
-@cdc.validate_schemas
-def amp_range(amplitudes: cdt.NDTimeSeries, amp_threshs: Quantity):
-    """Identify and drop channels mean(amplitudes) < dRange(1) or > dRange(2).
-
-    INPUTS:
-    amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
-    amp_threshs:  Quantity, . If mean(d) < dRange(1) or > dRange(2)
-                then it is excluded as an active channel
-    OUTPUTS:
-    MeasList:   list of active channels that meet the conditions
-    """
-
-    # create MeasList and threshold it
-    meas_list = list(amplitudes.coords["channel"].values)
-    # for all active channels in the MeasList check if they meet the conditions
-    # or drop them from the list
-    drop_list = amplitudes.mean("time").where(
-        (amplitudes.mean("time") < amp_threshs[0]) |
-        (amplitudes.mean("time") > amp_threshs[1])
-        ).dropna(dim="channel").channel.values
-    meas_list = [channel for channel in meas_list if channel not in drop_list]
-
-    return meas_list, drop_list
-
-
-@cdc.validate_schemas
-def sd_range(amplitudes: cdt.NDTimeSeries, geo3D: Quantity, sd_threshs: Quantity):
-    """Identify and drop channels with a source-detector separation <sd_threshs(0) or > sd_threshs(1).
-
-    INPUTS:
-    amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
-    geo3D:      Quantity, 3D coordinates of the channels
-    sd_threshs: Quantity, in mm, cm or m. If source-detector separation <sd_threshs(0) or > sd_threshs(1)
-                then it is excluded as an active channel
-    OUTPUTS:
-    ch_dist:    channel distances
-    MeasList:   list of active channels that meet the conditions
-    """
-
-    # calculate channel distances
-    ch_dist = xrutils.norm(
-        geo3D.loc[amplitudes.source] - geo3D.loc[amplitudes.detector], dim="digitized"
-        ).round(3)
-    # create MeasList and threshold it
-    meas_list = list(amplitudes.coords["channel"].values)
-    # for all active channels in the MeasList check if they meet the conditions 
-    # or drop them from the list
-    drop_list = ch_dist.where((ch_dist < sd_threshs[0]) | (ch_dist > sd_threshs[1])
-                              ).dropna(dim="channel").channel.values
-    meas_list = [channel for channel in meas_list if channel not in drop_list]
-
-    return ch_dist, meas_list,drop_list
-
-
-
-@cdc.validate_schemas
-def prune(data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity,
-          amp_threshs: Quantity, sd_threshs: Quantity):
-    """Prune channels from the measurement list.
-
-    Prunging criteria are signal strength, standard deviation (SNR), or channel distances.
-    TODO: Include SCI/PSP etc.
 
     Based on Homer3 [1] v1.80.2 "hmR_PruneChannels.m"
     Boston University Neurophotonics Center
@@ -142,47 +72,131 @@ def prune(data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity,
      Appl Opt, 48(10), D280–D298. https://doi.org/10.1364/ao.48.00d280
 
     INPUTS:
-    data:       NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
-    geo3D:      Quantity, 3D coordinates of the channels
+    amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
     snr_thresh:  Quantity, SNR threshold (unitless).
                 If mean(d)/std(d) < SNRthresh then it is excluded as an active channel
-    amp_threshs:  Quantity, . If mean(d) < dRange(1) or > dRange(2)
-                then it is excluded as an active channel
-    sd_threshs: Quantity, in cm. If source-detector separation <SDrange(1) or > SDrange(2)
-                then it is excluded as an active channel
     OUTPUTS:
-    meas_list:   list of active channels that meet the conditions
+    snr:        xarray with coords from input NDTimeseries containing the ratio between 
+                mean and std of the amplitude signal for all channels.
+    snr_mask:   boolean mask xarray with coords from snr, true where snr_threshold is met
 
     DEFAULT PARAMETERS:
     amp_threshs: [1e4, 1e7]
     snr_thresh: 2
+
+    """
+    # calculate SNR
+    snr = amplitudes.mean("time") / amplitudes.std("time")
+    # create snr mask and update accoording to snr thresholds
+    snr_mask = xrutils.mask(snr, True)
+    snr_mask = snr_mask.where(snr > snr_thresh, False)
+
+    return snr, snr_mask
+
+
+@cdc.validate_schemas
+def mean_amp(amplitudes: cdt.NDTimeSeries, amp_threshs: Quantity):
+    """Calculate and threshold channels with mean(amplitudes) < amp_threshs(0) or > amp_threshs(1).
+
+    Based on Homer3 [1] v1.80.2 "hmR_PruneChannels.m"
+    Boston University Neurophotonics Center
+    https://github.com/BUNPC/Homer3
+
+    [1] Huppert, T. J., Diamond, S. G., Franceschini, M. A., & Boas, D. A. (2009).
+     "HomER: a review of time-series analysis methods for near-infrared spectroscopy of the brain".
+     Appl Opt, 48(10), D280–D298. https://doi.org/10.1364/ao.48.00d280
+
+    INPUTS:
+    amplitudes:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
+    amp_threshs:  Quantity, If mean(amplitudes) < amp_threshs(0) or > amp_threshs(1)
+                then it is excluded as an active channel in amp_mask
+    OUTPUTS:
+    mean_amp:   xarray with coords from input NDTimeseries containing the mean amplitudes
+    amp_mask:   boolean mask xarray with coords from mean_amp, true where amp_threshs are met
+
+    DEFAULT PARAMETERS:
+    amp_threshs: [1e4, 1e7]
+    """
+    # calculate mean amplitude
+    mean_amp = amplitudes.mean("time")
+    # create amplitude mask and update according to amp_range thresholds
+    amp_mask = xrutils.mask(mean_amp, True)
+    amp_mask = amp_mask.where((mean_amp > amp_threshs[0]) & (mean_amp < amp_threshs[1]), False)
+
+    return mean_amp, amp_mask
+
+
+@cdc.validate_schemas
+def sd_dist(amplitudes: cdt.NDTimeSeries, geo3D: Quantity, sd_threshs: Quantity):
+    """Calculate and threshold source-detector separations with <sd_threshs(0) or > sd_threshs(1).
+
+    Based on Homer3 [1] v1.80.2 "hmR_PruneChannels.m"
+    Boston University Neurophotonics Center
+    https://github.com/BUNPC/Homer3
+
+    [1] Huppert, T. J., Diamond, S. G., Franceschini, M. A., & Boas, D. A. (2009).
+     "HomER: a review of time-series analysis methods for near-infrared spectroscopy of the brain".
+     Appl Opt, 48(10), D280–D298. https://doi.org/10.1364/ao.48.00d280
+
+    INPUTS:
+    amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
+    geo3D:      Quantity, 3D coordinates of the channels
+    sd_threshs: Quantity, in mm, cm or m. If source-detector separation <sd_threshs(0) or > sd_threshs(1)
+                then it is excluded as an active channelin sd_mask
+    OUTPUTS:
+    sd_dist:    xarray with coords from input NDTimeseries containing the channel distances
+    sd_mask:    boolean mask xarray with coords from ch_dists, true where sd_threshs are met
+
+    DEFAULT PARAMETERS:
     sd_threshs: [0.0, 4.5]
     """
 
-    # create MeasList with all channels active
-    meas_list = list(data.coords["channel"].values)
+    # calculate channel distances
+    sd_dist = xrutils.norm(
+        geo3D.loc[amplitudes.source] - geo3D.loc[amplitudes.detector], dim="digitized"
+        ).round(3)
+    # create sd_mask and update according to sd_thresh thresholds
+    sd_mask = xrutils.mask(sd_dist, True)
+    sd_mask = sd_mask.where((sd_dist > sd_threshs[0]) & (sd_dist < sd_threshs[1]), False)
 
-    # SNR thresholding
-    snr, meas_list_snr, drop_list_snr = snr_range(data, snr_thresh)
-    # keep only the channels in MeasList that are also in MeasList_snr
-    meas_list = [channel for channel in meas_list if channel in meas_list_snr]
+    return sd_dist, sd_mask
 
-    # Source Detector Separation thresholding
-    ch_dist, meas_list_sd, drop_list_sd = sd_range(data, geo3D, sd_threshs)
-    # keep only the channels in MeasList that are also in MeasList_sd
-    meas_list = [channel for channel in meas_list if channel in meas_list_sd]
 
-    # Amplitude thresholding
-    meas_list_amp, drop_list_amp = amp_range(data, amp_threshs)
-    # keep only the channels in MeasList that are also in MeasList_amp
-    meas_list = [channel for channel in meas_list if channel in meas_list_amp]
 
-    # FIXME / TODO
-    # SCI thresholding
+@cdc.validate_schemas
+def prune_ch(amplitudes: cdt.NDTimeSeries, masks: List[cdt.NDTimeSeries], operator: str):
+    """Prune channels from the the input data array using quality masks.
 
-    # drop the channels in data that are not in MeasList
-    data = data.sel(channel=meas_list)
-    # also return a list of all dropped channels
-    drop_list = list(set(drop_list_snr) | set(drop_list_sd) | set(drop_list_amp))
+    INPUTS:
+    amplitudes:     NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
+    masks:  list of boolean mask xarrays, with coordinates that are a subset of amplitudes
+    operator:       string, operators for combination of masks before pruning data_array
+        "all":          = logical AND, keeps a channel only if it is good across all masks/metrics
+        "any":          = logical OR, keeps channel if it is good in any mask/metric
 
-    return data, drop_list
+    OUTPUTS:
+    amplitudes_pruned:   input data with channels pruned (dropped) according to quality masks
+    prune_list:          list of pruned channels
+    """
+
+    # check if all dimensions in the all the masks are also existing in data_array
+    for mask in masks:
+        if not all(dim in amplitudes.dims for dim in mask.dims):
+            raise ValueError("mask dimensions must be a subset of data_array dimensions")
+
+    # combine quality masks according to operator instruction
+    if operator.lower() == "all":
+        # sets True where all masks (metrics) are true
+        # Combine the DataArrays using a boolean "AND" operation across elements
+        mask = reduce(lambda x, y: x & y, masks)
+
+    elif operator.lower() == "any":
+        # sets True where any mask (metric) is true
+        # Combine the DataArrays using a boolean "OR" operation across elements
+        mask = reduce(lambda x, y: x | y, masks)
+
+    # apply mask to drop channels
+    amplitudes, prune_list = xrutils.apply_mask(amplitudes, mask, "drop", dim_collapse="channel")
+
+
+    return amplitudes, prune_list
