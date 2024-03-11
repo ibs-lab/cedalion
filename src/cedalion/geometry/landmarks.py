@@ -5,6 +5,7 @@ import numpy as np
 import vtk
 import vtk.util.numpy_support as vnp
 import xarray as xr
+import pyvista as pv
 
 import cedalion.plots
 from cedalion.dataclasses import (
@@ -281,10 +282,12 @@ class LandmarksBuilder1010:
         return self.landmarks_mm.pint.quantify()
 
     def plot(self):
-        cedalion.plots.plot3d(
-            None,
-            self.scalp_surface.mesh,
-            self.landmarks_mm.pint.quantify(),
-            None,
-            self.lines,
-        )
+        plt = pv.Plotter()
+        cedalion.plots.plot_surface(plt, self.scalp_surface)
+        cedalion.plots.plot_labeled_points(plt, self.landmarks_mm.pint.quantify())
+
+        for points in self.lines:
+            lines = pv.MultipleLines(points)
+            plt.add_mesh(lines, color="m")
+
+        plt.show()

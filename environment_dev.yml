@@ -33,12 +33,20 @@ dependencies:
   - seaborn=0.12.2
   - statsmodels=0.13.5
   - strenum=0.4.15
-  - xarray=2023.4.2
+  - xarray=2024.2.0
   - cudatoolkit
   - trimesh
   - pyvista
   - trame
   - vtk=9.2.2
+
+  - nbsphinx=0.9.3
+  - nbstripout=0.7.1
+  - sphinx
+  - myst-parser
+  - sphinx-autodoc-typehints
+  - sphinx_rtd_theme
+
   - pip:
       - mne==1.4.0
       - mne-bids==0.12
