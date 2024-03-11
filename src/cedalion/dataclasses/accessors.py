@@ -80,6 +80,10 @@ class CedalionAccessor:
         else:
             b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
 
+        # b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+
+
+
         if (units := array.pint.units) is not None:
             array = array.pint.dequantify()
 
