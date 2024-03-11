@@ -208,7 +208,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
         
         sig = channel.copy()
         sig.values = np.ones(channel.shape) # initialize array for baseline shift detection
-        sig.values[np.where(channel_M.values == False)[0]] = 0 # set indices where motion is detected to 0
+        sig.values[np.where(channel_M.values == True)[0]] = 0 # set indices where motion is detected to 0
         
         # find locations where signal goes from clean -> motion -> clean
         temp = sig.diff('time')
