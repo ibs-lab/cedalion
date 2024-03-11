@@ -6,7 +6,7 @@ import cedalion.xrutils as xrutils
 from cedalion import Quantity, units
 from typing import List
 from functools import reduce
-
+import xarray as xr
 from .frequency import freq_filter, sampling_rate
 
 
