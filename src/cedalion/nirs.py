@@ -51,9 +51,36 @@ def channel_distances(amplitudes: xr.DataArray, geo3d: xr.DataArray):
 
 
 def int2od(amplitudes: xr.DataArray):
-    """Calculate optical density from intensity data."""
+    """Calculate optical density from intensity amplitude  data."""
     od = - np.log( amplitudes / amplitudes.mean("time") )
     return od
+
+
+def od2conc(
+    od: xr.DataArray,
+    geo3d: xr.DataArray,
+    dpf: xr.DataArray,
+    spectrum: str = "prahl",
+):
+    """Calculate concentration changes from optical density data."""
+    validators.has_channel(od)
+    validators.has_wavelengths(od)
+    validators.has_wavelengths(dpf)
+    validators.has_positions(geo3d, npos=3)
+
+    E = get_extinction_coefficients(spectrum, od.wavelength)
+
+    Einv = xrutils.pinv(E)
+
+    dists = channel_distances(od, geo3d)
+    dists = dists.pint.to("mm")
+
+    # conc = Einv @ (optical_density / ( dists * dpf))
+    conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
+    conc = conc.pint.to("micromolar")
+    conc = conc.rename("concentrations")
+
+    return conc
 
 
 def beer_lambert(
@@ -68,17 +95,9 @@ def beer_lambert(
     validators.has_wavelengths(dpf)
     validators.has_positions(geo3d, npos=3)
 
-    E = get_extinction_coefficients(spectrum, amplitudes.wavelength)
-
-    Einv = xrutils.pinv(E)
-
-    dists = channel_distances(amplitudes, geo3d)
-    dists = dists.pint.to("mm")
-
-    optical_density = -np.log(amplitudes / amplitudes.mean("time"))
-    # conc = Einv @ (optical_density / ( dists * dpf))
-    conc = xr.dot(Einv, optical_density / (dists * dpf), dims=["wavelength"])
-    conc = conc.pint.to("micromolar")
-    conc = conc.rename("concentrations")
+    # calculate optical densities
+    od = int2od(amplitudes)
+    # calculate concentrations
+    conc = od2conc(od, geo3d, dpf, spectrum)
 
     return conc
