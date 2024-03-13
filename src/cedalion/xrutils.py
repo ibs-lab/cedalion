@@ -73,7 +73,7 @@ def apply_mask(data_array: xr.DataArray,
 
     INPUTS:
     data_array:     NDTimeSeries, input time series data xarray
-    mask:           input bookean mask array with a subset of dimensions matching data_array
+    mask:           input boolean mask array with a subset of dimensions matching data_array
     operator:       operators to apply to the mask and data_array
         "nan":          inserts NaNs in the data_array where mask is False
         "drop":         drops value in the data_array where mask is False
