@@ -1,12 +1,12 @@
-# Getting started with contributing code to cedalion
+# Getting started with contributing code to Cedalion
 
-This document provides a brief getting started guide for users who would like to contribute code/functionality to cedalion. Our aim is to make the toolbox useful both for both naive users, who would like apply abstract workflows without caring too much about the details of implementation, as well as for developers that would like to build their own methods and contribute new functionality. At the current time, the toolbox is its early stage and both documentation and abstraction levels are continuously growing. For now, if you contribute code, adopt a **bottom up** development approach: write simple functions with simple input arguments and data structures, that can and will later on be wrapped by functions that add abstraction and usability. Develop and test in jupyter notebooks (which you can then contribute as examples for how to use functionality) and migrate code to Cedalion's /src/ when it is tested.
+This document provides a brief getting started guide for users who would like to contribute code/functionality to Cedalion. Our aim is to make the toolbox useful for both naive users, who would like to apply abstract workflows without caring too much about the details of implementation, as well as for developers that would like to build their own methods and contribute new functionality. At the current time, the toolbox is its early stage and both documentation and abstraction levels are continuously growing. For now, if you contribute code, adopt a **bottom up** development approach: write simple functions with simple input arguments and data structures, that can and will later on be wrapped by functions that add abstraction and usability. Develop and test in jupyter notebooks (which you can then contribute as examples for how to use functionality) and migrate code to Cedalion's /src/ when it is tested.
 
 ## Where to get started?
 It is smart to make yourself aware of five resources and concepts that build the foundations for Cedalion:
 1) **Cedalion's documentation page**: For the moment the documentation can be found {{ '[here]({})'.format(docs_url) }}.
 2) **Example Notebooks**: Cedalion provides jupiter notebooks for example pipelines and to display how to apply its functionality. Here you can start to learn from examples by running, adapting and changing code until you feel more familiar. The notebooks are under /examples/ or [here](https://github.com/ibs-lab/cedalion/tree/alex_working/examples)
-3) **Xarrays** are a package that makes work with labelled mult-dimensional arrays very simple. If you develop code for cedalion, you will youse Xarrays. To get started, make yourself acquainted with one of two key data types: *xarray.DataArray* and *xarray.DataSet*. Most functions that you write should expect an xarray DataArray as main input for the data that you want to process, alongside arguments that pass variables for additional info. You can find the official [Xarray documentation here](https://docs.xarray.dev/en/stable/).
+3) **Xarrays** are a package that makes work with labelled mult-dimensional arrays very simple. If you develop code for Cedalion, you will youse Xarrays. To get started, make yourself acquainted with one of two key data types: *xarray.DataArray* and *xarray.DataSet*. Most functions that you write should expect an xarray DataArray as main input for the data that you want to process, alongside arguments that pass variables for additional info. You can find the official [Xarray documentation here](https://docs.xarray.dev/en/stable/).
 4) **Units**: One of the charms of Xarrays that Cedalion is taking advantage of is that functions can implicitly consider units and thus avoid typical errors from (missing) unit conversion. For example, if you work with coordinates for fNIRS optodes or landmarks, as long as they have a proper unit like "m", "cm", "mm" assigned, you do not have to explicitly take care of conversions anymore. To make use of this feature, Cedalion's functions should expect input arguments that are "Quantities" with "units" wherever possible. To assign a unit to your variable, simply import `from cedalion import Quantity, units` and multiply your variable with the right unit. For instance: `sd_distance = 3*units.cm`. Cedalion's units are based on the **pint** package, which is [documented here](https://pint.readthedocs.io/en/stable/index.html).
 5) **Data Containers and Data Structures**: The main objects to pass along your functions and processing pipelines. We are currently working on defining and documenting these. In the meantime, please work with Xarray DataArrays and variables with units as in and outputs for your functions, and be aware that the main format for fNIRS/DOT data that we read and write is the [SNIRF format](https://github.com/fNIRS/snirf). To easily get started, you can:
     1. Check out the example notebook on [Using xarray-based data structures for calculating the Beer-Lambert transformation](https://github.com/ibs-lab/cedalion/blob/main/examples/pruning_and_motion_artifacts.ipynb)
@@ -79,7 +79,7 @@ Please add references to the literature if you are implementing a published algo
 
 ### Where to add my code?
 
-When contributing code to Cedalion (=package), try to incorporate it into the existing file and folder structure, which also defines cedalions package and subpackages. Python files (=modules) contain functions of the same category; folders (subpackages) contain python files of the same family. Examples:
+When contributing code to Cedalion (=package), try to incorporate it into the existing file and folder structure, which also defines Cedalions package and subpackages. Python files (=modules) contain functions of the same category; folders (subpackages) contain python files of the same family. Examples:
 - Two artefact correction methods "SplineSG" and "tPCA" functions should be part of the same python file (module) "artifact.py", which contains all functions of the category "artefact correction"
 - "artifact.py" and "quality.py" belong into the folder (subpackage) "sigproc", which contains all categories(modules) that belong to the"signal processing" family
 
@@ -93,7 +93,7 @@ The Cedalion parent directory is structured into 4 sections:
 1) **doc**: documentation.
 2) **examples**: a directory with jupyter notebooks that exemplify an assembled pipeline or functionality. Should be executable in a standalone fashion and annotated to explain the code to a naive user. If you add significantly complex new functionality, you generate an example notebook here. For contributing new functions, you might want to start with a jupyter notebook, from which you then migrate matured code into functions in the source folder.
 3) **src**: the source folder that is the codebase of the toolbox. More details below.
-4) **tests**: unit tests for cedalion code, are run upon commit on github to check code consistency.
+4) **tests**: unit tests for Cedalion code, are run upon commit on github to check code consistency.
 
 The following gives a brief overview of the **src** directory structure:
 
@@ -104,10 +104,10 @@ Widely used general functionality is part of the files on the top level (e.g. ni
 | **directory** | **explanation** |
 | ----------- | ----------- |
 | **data** | Look up tables and other small datasets often required for ecexuting functions. |
-| **dataclasses** | Dataclass definitions that are used in cedalion. Example: in xrschemas.py you can find that we work with xarray objects (see more detail in the next section). For time series data these have to have at least two dimensions: "time" and "channel".  |
+| **dataclasses** | Dataclass definitions that are used in Cedalion. Example: in xrschemas.py you can find that we work with xarray objects (see more detail in the next section). For time series data these have to have at least two dimensions: "time" and "channel".  |
 | **geometry** | Functions for geometric manipulations, e.g. for optode registration, building landmarks on a 3D head, head segmentation, etc. |
 | **imagereco** | Functions for DOT image reconstruction |
-| **io** | Functions for reading and writing data to and from cedalion. This includes for instance fnirs data in snirf format, probe geometries or reading anatomies (e.g. segmentation masks). |
+| **io** | Functions for reading and writing data to and from Cedalion. This includes for instance fnirs data in snirf format, probe geometries or reading anatomies (e.g. segmentation masks). |
 | **models** | Functions for data modelling, for instance the General Linear Model (GLM).|
 | **sigdecomp** | Functions for signal decomposition methods that are not part of a standard python distribution, e.g. advanced ICA methods.|
 | **sigproc** | Functions for time series signal processing, i.e. filtering, artefact rejection, signal quality assessment.|
@@ -115,18 +115,18 @@ Widely used general functionality is part of the files on the top level (e.g. ni
 
 
 ## Example for contributing new functionality to Cedalion
-In this example we will incorporate add a few simple functions to the toolbox: Some helper functions that use different quality thresholds to differentiate good from bad fNIRS/DOT channels. A function that combines these helper functions to  prune bad channels in a dataset. These are replicating approaches from the Homer3 "hmR_PruneChannels" function.
+In this example we will add a few simple functions to the toolbox: Some helper functions that use different quality thresholds to differentiate good from bad fNIRS/DOT channels. A function that combines these helper functions to  prune bad channels in a dataset. These are replicating approaches from the Homer3 "hmR_PruneChannels" function.
 
 The corresponding jupyter notebook example to showcase the resulging code is the following --> **[Pruning and Motion Artefacts Notebook Example](https://github.com/ibs-lab/cedalion/blob/main/examples/pruning_and_motion_artifacts.ipynb)**. <--
 
-### What functions and where do they functions belong?
+### What functions and where do they belong?
 We will create three helper functions: `snr_range()`, `sd_range()` and `amp_range()` that use the SNR, the source-detector distance, and the signal amplitudes to assess whether they are within a desired (user-specified) range. We will then combine them in a `prune()` function. After browsing the */src/* directory we realize that all these functions should go to */siproc/quality.py* as they are dealing with assessing signal quality. To use these functions later on in our pipelines, we can
 `import cedalion.sigproc.quality as quality` and then use `quality.snr_range` to assess SNR, or `quality.prune` which will make use of the `snr_range function`, amongst others, to prune channels.
 
 Because we develop **bottom up**, we assume that all these functions just have xarray DataArrays as inputs, and variables that have quantities with units wherever possible.
 
 ### Adding a new function
-The barebone structure of a function in cedalion is the following:
+The barebone structure of a function in Cedalion is the following:
 
 ```
 import cedalion.dataclasses as cdc
