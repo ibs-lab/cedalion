@@ -46,7 +46,7 @@ class TwoSurfaceHeadModel:
             "skull": "skull.nii",
             "wm": "wm.nii",
         },
-        landmarks_ras_file: str = "landmarks.mrk.json",
+        landmarks_ras_file: Optional[str] = None,
         brain_seg_types: list[str] = ["gm", "wm"],
         scalp_seg_types: list[str] = ["scalp"],
         smoothing: float = 0.5,
@@ -71,11 +71,14 @@ class TwoSurfaceHeadModel:
 
         # load landmarks. Other than the segmentation masks which are in voxel (ijk)
         # space, these are already in RAS space.
-        if not os.path.isabs(landmarks_ras_file):
-            landmarks_ras_file = os.path.join(segmentation_dir, landmarks_ras_file)
+        if landmarks_ras_file is not None:
+            if not os.path.isabs(landmarks_ras_file):
+                landmarks_ras_file = os.path.join(segmentation_dir, landmarks_ras_file)
 
-        landmarks_ras = cedalion.io.read_mrk_json(landmarks_ras_file, crs=crs_ras)
-        landmarks_ijk = landmarks_ras.points.apply_transform(t_ras2ijk)
+            landmarks_ras = cedalion.io.read_mrk_json(landmarks_ras_file, crs=crs_ras)
+            landmarks_ijk = landmarks_ras.points.apply_transform(t_ras2ijk)
+        else:
+            landmarks_ijk = None
 
         # derive surfaces from segmentation masks
         brain_ijk = surface_from_segmentation(segmentation_masks, brain_seg_types)
@@ -127,13 +130,15 @@ class TwoSurfaceHeadModel:
     @property
     def crs(self):
         assert self.brain.crs == self.scalp.crs
-        assert self.scalp.crs == self.landmarks.points.crs
+        if self.landmarks is not None:
+            assert self.scalp.crs == self.landmarks.points.crs
         return self.brain.crs
 
     def apply_transform(self, transform: cdt.AffineTransform) -> "TwoSurfaceHeadModel":
         brain = self.brain.apply_transform(transform)
         scalp = self.scalp.apply_transform(transform)
-        landmarks = self.landmarks.points.apply_transform(transform)
+        landmarks = self.landmarks.points.apply_transform(transform) \
+                    if self.landmarks is not None else None
 
         return TwoSurfaceHeadModel(
             segmentation_masks=self.segmentation_masks,
@@ -152,6 +157,8 @@ class TwoSurfaceHeadModel:
     def align_and_snap_to_scalp(
         self, points: cdt.LabeledPointCloud
     ) -> cdt.LabeledPointCloud:
+        assert self.landmarks is not None, "Please add landmarks in RAS to head \
+                                            instance."
         t = register_trans_rot_isoscale(self.landmarks, points)
         transformed = points.points.apply_transform(t)
         snapped = self.scalp.snap(transformed)
