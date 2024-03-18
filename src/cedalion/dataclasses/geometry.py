@@ -129,7 +129,12 @@ class TrimeshSurface(Surface):
             The surface with a decimated mesh
         """
 
-        decimated = self.mesh.simplify_quadric_decimation(face_count)
+        try:
+            decimated = self.mesh.simplify_quadric_decimation(face_count)
+        except:
+            # deprecated trimesh function, please update trimesh!
+            decimated = self.mesh.simplify_quadratic_decimation(face_count)
+
         return TrimeshSurface(decimated, self.crs, self.units)
 
     def smooth(self, lamb: float) -> "TrimeshSurface":
