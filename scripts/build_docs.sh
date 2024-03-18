@@ -8,8 +8,17 @@ fi
 path_to_docs=$1
 
 cd ${path_to_docs}
+
+echo "Building example notebook"
+cd examples
+make notebooks
+
+echo "Building html documentation"
+cd ..
 make clean
+
 make html
 
+echo "Building tarball"
 cd _build/html
 tar cvzf ../html.tar.gz *

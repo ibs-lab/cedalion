@@ -1,9 +1,14 @@
-name: pytest
+name: build_docs
 
 on:
   push:
     branches:
       - main
+
+# cancel job if a new push to main occurs while running
+concurrency:
+      group: build_docs
+      cancel-in-progress: true
 
 jobs:
   build_docs:
