@@ -168,8 +168,11 @@ def run_glm(y, dm, noise_model="ols"):
         thetas: xarray.DataArray estimated parameters of the GLM (regressors x chromo x channels)
     """
 
-    y = y.pint.dequantify()
-    dm = dm.pint.dequantify()
+    if y.pint.units:
+        y = y.pint.dequantify()
+
+    if dm.pint.units:
+        dm = dm.pint.dequantify()
 
     # if y contains chromo dimension, run GLM for each chromophore separately
     if "chromo" in y.dims:
@@ -232,8 +235,12 @@ def get_HRFs(
     )
 
     # get time axis for HRFs:
-    dt = 1 / predicted_hrf.cd.sampling_rate
-    time_hrf = np.arange(HRFmin, HRFmax + dt, dt)
+    time_hrf = predicted_hrf.sel(
+        time=slice(
+            stim_onsets.sel(condition=conds[0]) + HRFmin,
+            stim_onsets.sel(condition=conds[0]) + HRFmax,
+        ),
+    ).time - stim_onsets.sel(condition=conds[0])
 
     hrfs = xr.DataArray(
         np.zeros(

@@ -405,47 +405,60 @@ def get_ss_regressors(
 
 
 def closest_short_channel(y, short_channels, middle_positions, as_xarray=False):
-    # Initialize array to store closest short channel for each channel
+    units = y.pint.units
+    y = y.pint.dequantify()
+
+    names_init = np.array([["______", "______"] for i in range(len(y.channel))])
     if as_xarray:
+        # Initialize xarray DataArray to store the closest short channel data
         closest_short = xr.DataArray(
             np.zeros((len(y.time), 2, len(y.channel))),
             dims=["time", "chromo", "channel"],
             coords={"time": y.time, "channel": y.channel, "chromo": y.chromo},
         )
-        # add regressor dimension
-        # closest_short = closest_short.assign_coords(regressor = y.channel)
+        # add regressor dimension with the name of the closest short channel
+        closest_short = closest_short.assign_coords(
+            regressor=(["channel", "chromo"], names_init)
+        )
 
     else:
+        # Initialize for dictionary data structure
+        closest_short = names_init
         closest_short = xr.DataArray(
-            [["______", "______"] for i in range(len(y.channel))],
+            closest_short,
             dims=["channel", "chromo"],
             coords={"channel": y.channel, "chromo": y.chromo},
         )
-    # For each channel, find the closest short channel
+
     for ch in y.channel:
-        # Compute distances from this channel's middle position to all short channel middle positions
         distances_to_short = xrutils.norm(
             middle_positions.loc[short_channels.channel] - middle_positions.loc[ch],
             dim="pos",
         )
-        # Find the closest short channel
+        closest_index = (
+            distances_to_short.argmin().item()
+        )  # Get index of closest short channel
+        closest_name = short_channels.channel[closest_index]
+
         if as_xarray:
-            closest_short_channel = short_channels[(distances_to_short).argmin()]
-            closest_name = short_channels.channel[(distances_to_short).argmin()]
+            # For each channel, fetch the data from the closest short channel and assign it
+            for chromo in y.chromo.values:  # Assuming 2 chromophores: HbO and HbR
+                # [{"time": y.time, "chromo": chromo, "channel": ch}]
+                closest_short.loc[{"chromo": chromo, "channel": ch}] = y.sel(
+                    chromo=chromo, channel=closest_name
+                )
+                # add regressor name
+                closest_short.regressor.loc[y.channel == ch, chromo] = closest_name
         else:
-            closest_short_channel = short_channels.channel[
-                (distances_to_short).argmin()
-            ]
-        # Store the result
-        closest_short.loc[ch, "HbO"] = closest_short_channel
-        closest_short.loc[ch, "HbR"] = closest_short_channel
-        if as_xarray:
-            # get data not names of short channels
-            pass
-            # TODO: adjust the current regressor name to closest_name
-    if not as_xarray:
-        # transform to regressor dictionary
-        closest_short = make_reg_dict(y, closest_short)
+            # Assign the name of the closest short channel for both chromophores
+            closest_short.loc[ch, "HbO"] = closest_name
+            closest_short.loc[ch, "HbR"] = closest_name
+
+    if as_xarray:
+        closest_short = closest_short.pint.quantify(units)
+    else:
+        # Transform to regressor dictionary
+        closest_short = make_reg_dict(y.pint.quantify(units), closest_short)
 
     return closest_short
 
@@ -472,7 +485,7 @@ def max_corr_short_channel(y, short_channels, as_xarray=False):
         iNearestSS[iML, 0] = lst_ss[np.argmax(cc1[iML, lst_ss])]
         iNearestSS[iML, 1] = lst_ss[np.argmax(cc2[iML, lst_ss])]
 
-    channel_iSS = [y.channel[i].values.astype("U11") for i in iNearestSS]
+    channel_iSS = [y.channel[i].values.astype("U6") for i in iNearestSS]
 
     if as_xarray:
         # get data not names of short channels
