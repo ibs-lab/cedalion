@@ -37,7 +37,7 @@ def register_trans_rot(
     from_units = coords_trafo.pint.units
     to_crs = coords_target.points.crs
     to_units = coords_target.pint.units
-
+    
     # allow scaling only to convert between units
     unit_scale_factor = ((1 * from_units) / (1 * to_units)).to_reduced_units()
     assert unit_scale_factor.units == cedalion.units.Unit("1")
@@ -76,9 +76,12 @@ def register_trans_rot(
         [delta_cog[0], delta_cog[1], delta_cog[2], 0.0, 0.0, 0.0],
         args=(coords_target, coords_trafo),
         bounds=bounds,
+        options={'disp': False},
     )
+    
 
     trafo_opt = trafo(result.x)
+    
     trafo_opt = cdc.affine_transform_from_numpy(
         trafo_opt,
         from_crs=from_crs,
@@ -114,6 +117,7 @@ def register_trans_rot_isoscale(
     coords_trafo = coords_trafo.sel(label=common_labels).pint.dequantify()
     coords_target = coords_target.sel(label=common_labels).pint.dequantify()
 
+
     std_trafo = _std_distance_to_cog(coords_trafo)
     std_target = _std_distance_to_cog(coords_target)
 
@@ -140,6 +144,9 @@ def register_trans_rot_isoscale(
     )
 
     trafo_opt = trafo(result.x)
+    
+    
+    
     trafo_opt = cdc.affine_transform_from_numpy(
         trafo_opt,
         from_crs=from_crs,
@@ -149,6 +156,45 @@ def register_trans_rot_isoscale(
     )
 
     return trafo_opt
+
+from numpy.linalg import pinv
+def gen_xform_from_pts(p1, p2):
+    """
+    Calculate the affine transformation matrix T that transforms p1 to p2.
+
+    Parameters:
+    p1 (numpy.ndarray): Source points (p x m) where p is the number of points and m is the number of dimensions.
+    p2 (numpy.ndarray): Target points (p x m) where p is the number of points and m is the number of dimensions.
+
+    Returns:
+    numpy.ndarray: Affine transformation matrix T.
+    """
+
+    T = np.eye(p1.shape[1] + 1)
+    p, m = p1.shape
+    q, n = p2.shape
+
+    if p != q:
+        print("Number of points for p1 and p2 must be the same")
+        return None
+
+    if m != n:
+        print("Number of dimensions for p1 and p2 must be the same")
+        return None
+
+    if p < n:
+        print(
+            f"Cannot solve transformation with fewer anchor points ({p}) than dimensions ({n})."
+        )
+        return None
+
+    A = np.hstack((p1, np.ones((p, 1))))
+
+    for ii in range(n):
+        x = np.dot(pinv(A), p2[:, ii])
+        T[ii, :] = x.T
+
+    return T
 
 
 @cdc.validate_schemas
@@ -224,6 +270,8 @@ def register_icp(
             (-2 * np.pi, 2 * np.pi),
             (-2 * np.pi, 2 * np.pi),
         ]
+        
+        print(coords)
 
         result = minimize(
             loss, current_params, args=(coords_true, coords), bounds=bounds

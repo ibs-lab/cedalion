@@ -68,6 +68,6 @@ def m_rot(angles: np.ndarray) -> np.ndarray:
     # fmt: off
     return np.stack( (ca*cb, ca*sb*sg - sa*cg, ca*sb*cg + sa*sg, 0.,
                       sa*cb, sa*sb*sg + ca*cg, sa*sb*cg - ca*sg, 0.,
-                         sb,            cb*sg,            cb*cg, 0.,
+                        -sb,            cb*sg,            cb*cg, 0.,
                           0.,              0.,               0., 1.)).reshape(4,4)
     # fmt: on
