@@ -27,7 +27,7 @@ class TwoSurfaceHeadModel:
     segmentation_masks: xr.DataArray
     brain: cdc.Surface
     scalp: cdc.Surface
-    landmarks: Optional[cdt.LabledPointCloud]
+    landmarks: Optional[cdt.LabeledPointCloud]
     t_ijk2ras: cdt.AffineTransform
     t_ras2ijk: cdt.AffineTransform
     voxel_to_vertex_brain: scipy.sparse.spmatrix
