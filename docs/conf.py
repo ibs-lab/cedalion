@@ -3,6 +3,8 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+import subprocess
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
@@ -48,4 +50,13 @@ myst_heading_anchors = 2
 
 # -- Substitutions -----------------------------------------------------------
 
-myst_substitutions = {"docs_url": "https://eike.middell.net/share/cedalion/docs/"}
+commit_hash = (
+    subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+    .strip()
+    .decode("ascii")
+)
+
+myst_substitutions = {
+    "docs_url": "https://eike.middell.net/share/cedalion/docs/",
+    "commit_hash": commit_hash,
+}

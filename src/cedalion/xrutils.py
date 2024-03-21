@@ -73,7 +73,7 @@ def apply_mask(data_array: xr.DataArray,
 
     INPUTS:
     data_array:     NDTimeSeries, input time series data xarray
-    mask:           input bookean mask array with a subset of dimensions matching data_array
+    mask:           input boolean mask array with a subset of dimensions matching data_array
     operator:       operators to apply to the mask and data_array
         "nan":          inserts NaNs in the data_array where mask is False
         "drop":         drops value in the data_array where mask is False
@@ -118,3 +118,25 @@ def apply_mask(data_array: xr.DataArray,
         masked_elements = "N/A" #FIXME clean this up: return the masked elements as a list of indices
 
     return masked_data_array, masked_elements
+
+
+def convolve(data_array: xr.DataArray, kernel: np.ndarray, dim: str) -> xr.DataArray:
+    """Convolve a DataArray along a given dimension "dim" with a "kernel"."""
+
+    if dim not in data_array.dims:
+        raise ValueError(f"array does not have dimension '{dim}'")
+
+    if (units := data_array.pint.units) is not None:
+        data_array = data_array.pint.dequantify()
+
+    convolved = xr.apply_ufunc(
+        lambda x: np.convolve(x, kernel, mode='same'),
+        data_array,
+        input_core_dims=[[dim]],
+        output_core_dims=[[dim]],
+        vectorize=True)
+
+    if units is not None:
+        convolved = convolved.pint.quantify(units)
+
+    return convolved

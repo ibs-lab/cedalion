@@ -194,6 +194,8 @@ def prune_ch(amplitudes: cdt.NDTimeSeries, masks: List[cdt.NDTimeSeries], operat
         # sets True where any mask (metric) is true
         # Combine the DataArrays using a boolean "OR" operation across elements
         mask = reduce(lambda x, y: x | y, masks)
+    else:
+        raise ValueError(f"unsupported operator '{operator}'")
 
     # apply mask to drop channels
     amplitudes, prune_list = xrutils.apply_mask(amplitudes, mask, "drop", dim_collapse="channel")
