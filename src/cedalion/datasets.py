@@ -6,6 +6,7 @@ import cedalion.io
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
+    # base_url="https://doc.ml.tu-berlin.de/cedalion/datasets",
     base_url="https://eike.middell.net/share/cedalion",  # FIXME
     env="CEDALION_DATA_DIR",
     registry={
