@@ -57,6 +57,6 @@ commit_hash = (
 )
 
 myst_substitutions = {
-    "docs_url": "https://eike.middell.net/share/cedalion/docs/",
+    "docs_url": "https://doc.ml.tu-berlin.de/cedalion",
     "commit_hash": commit_hash,
 }
