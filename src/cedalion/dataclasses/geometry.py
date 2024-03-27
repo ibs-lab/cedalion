@@ -8,6 +8,7 @@ import numpy as np
 import pint
 import trimesh
 import vtk
+import mne
 import xarray as xr
 from scipy.spatial import KDTree
 from vtk.util.numpy_support import vtk_to_numpy
@@ -129,12 +130,11 @@ class TrimeshSurface(Surface):
             The surface with a decimated mesh
         """
 
-        try:
-            decimated = self.mesh.simplify_quadric_decimation(face_count)
-        except:
-            # deprecated trimesh function, please update trimesh!
-            decimated = self.mesh.simplify_quadratic_decimation(face_count)
-
+        vertices, faces = mne.decimate_surface(self.mesh.vertices,
+                                               self.mesh.faces, face_count,
+                                               method="quadric")
+        decimated = trimesh.Trimesh(vertices, faces)
+        
         return TrimeshSurface(decimated, self.crs, self.units)
 
     def smooth(self, lamb: float) -> "TrimeshSurface":
