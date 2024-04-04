@@ -224,6 +224,8 @@ def get_HRFs(
         hrfs: xarray.DataArray containing HRFs for every condition and every channel (time x chromo x channels x conditions)
     """
 
+    dt = 1 / predicted_hrf.cd.sampling_rate
+
     unit = predicted_hrf.pint.units
     predicted_hrf = predicted_hrf.pint.dequantify()
 
@@ -235,12 +237,20 @@ def get_HRFs(
     )
 
     # get time axis for HRFs:
-    time_hrf = predicted_hrf.sel(
-        time=slice(
-            stim_onsets.sel(condition=conds[0]) + HRFmin,
-            stim_onsets.sel(condition=conds[0]) + HRFmax,
-        ),
-    ).time - stim_onsets.sel(condition=conds[0])
+    
+    # time_hrf = predicted_hrf.sel(
+    #    time=slice(
+    #        stim_onsets.sel(condition=conds[0]) + HRFmin,
+    #        stim_onsets.sel(condition=conds[0]) + HRFmax,
+    #    ),
+    # ).time - stim_onsets.sel(condition=conds[0])
+
+    n_pre = round(HRFmin / dt)
+    n_post = round(HRFmax / dt)
+    # np.arange results can be non-consistent when using non-integer steps
+    # t_hrf = np.arange(n_pre * dt, (n_post + 1) * dt, dt)
+    # using linspace instead
+    time_hrf = np.linspace(HRFmin, HRFmax, abs(n_post) + abs(n_pre) + 1)
 
     hrfs = xr.DataArray(
         np.zeros(
@@ -266,8 +276,12 @@ def get_HRFs(
             hrf = predicted_hrf.sel(
                 chromo=chromo,
                 time=slice(
-                    stim_onsets.sel(condition=cond) + HRFmin,
-                    stim_onsets.sel(condition=cond) + HRFmax,
+                    predicted_hrf.time.sel(
+                        time=stim_onsets.sel(condition=cond) + HRFmin, method="nearest"
+                    ),
+                    predicted_hrf.time.sel(
+                        time=stim_onsets.sel(condition=cond) + HRFmax, method="nearest"
+                    ),
                 ),
             )
             # change time axis to relative time

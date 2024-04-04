@@ -130,7 +130,10 @@ def make_hrf_regressors(
     dt = 1 / t.cd.sampling_rate
     n_pre = round(trange[0] / dt)
     n_post = round(trange[1] / dt)
-    t_hrf = np.arange(n_pre * dt, (n_post + 1) * dt, dt)
+    # np.arange results can be non-consistent when using non-integer steps
+    #t_hrf = np.arange(n_pre * dt, (n_post + 1) * dt, dt)   
+    # using linspace instead
+    t_hrf = np.linspace(trange[0], trange[1], abs(n_post) + abs(n_pre) + 1)
     nt = len(t)
 
     # prune good stim
@@ -139,6 +142,11 @@ def make_hrf_regressors(
     n_cond = len(lst_cond)
     onset = np.zeros((nt, n_cond))
     n_trials = np.zeros(n_cond)
+
+    # handle case of single condition
+    if n_cond == 1:
+        cond_names = np.array([cond_names])
+        s = np.expand_dims(s, axis=1)
 
     for i_cond in range(n_cond):
         lst_t = np.where(s[:, lst_cond[i_cond]] == 1)[0]
