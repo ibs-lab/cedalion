@@ -39,9 +39,8 @@ def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
 
 
 def plot3d(
-    brain_mesh, scalp_mesh, geo3d, timeseries, poly_lines=[], brain_scalars=None, labels = None, plotter = None, ppoints = None
-):
-    pv.set_jupyter_backend("server")
+    brain_mesh, scalp_mesh, geo3d, timeseries, poly_lines=[], brain_scalars=None, plotter = None):
+    #pv.set_jupyter_backend("server")
     
     if plotter is None:
         plt = pv.Plotter()
@@ -68,6 +67,10 @@ def plot3d(
         PointType.DETECTOR: 3,
         PointType.LANDMARK: 2,
     }
+    if geo3d is not None:
+        labels = geo3d.label.values
+    else:
+        labels = None
 
     if geo3d is not None:
         geo3d = geo3d.pint.to("mm").pint.dequantify()  # FIXME unit handling
@@ -98,13 +101,13 @@ def plot3d(
         lines = pv.MultipleLines(points)
         plt.add_mesh(lines, color="m")
         
-    def callback(point):
-        """Create a cube and a label at the click point."""
-        mesh = pv.Sphere(radius=3, center=point)
-        plt.add_mesh(mesh, style='wireframe', color='r')
-        plt.add_point_labels(point, [f"{point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}"])
-    if ppoints is not None:
-        plt.enable_surface_point_picking(callback=callback, show_point=False)
+    #def callback(point):
+    #    mesh = pv.Sphere(radius=3, center=point)
+    #    plt.add_mesh(mesh, style='wireframe', color='r')
+    #    plt.add_point_labels(point, [f"{point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}"])
+        
+    #if ppoints is not None:
+    #    plt.enable_surface_point_picking(callback=callback, show_point=False)
 
     #plt.show()
 
@@ -163,26 +166,6 @@ def plot_surface(
         actors.append(sphere_actor)
         ppoints.append(list(new_point))
     
-    # Function to handle the point placement
-    def place_point(picked_point):
-        if picked_point is not None:
-            point = mesh.points[picked_point]
-            # Add a sphere at the picked point
-            plotter.add_mesh(pv.Sphere(radius=0.1, center=point), color='red')
-            
-    def place_point2(point):
-        """Create a cube and a label at the click point."""
-        mesh = pv.Sphere(radius=3, center=point)
-        plotter.add_mesh(mesh, color='green')
-        ppoints.append(mesh)
-        print(point)
-        plotter.add_point_labels(point, [f"{point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}"])
-        
-    def callback(point):
-        """Create a cube and a label at the click point."""
-        mesh = pv.Sphere(radius=3, center=point)
-        plotter.add_mesh(mesh, style='wireframe', color='r')
-        plotter.add_point_labels(point, [f"{point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}"])
         
     if ppoints is not None:
         plotter.enable_surface_point_picking(callback=place_or_remove_sphere, show_point=False)
@@ -194,9 +177,11 @@ def plot_labeled_points(
     plotter: pv.Plotter,
     points: cdt.LabeledPointCloud,
     color=None,
-    labels = None,
+    show_labels = True,
     ppoints = None,
+    labels = None
 ):
+    pv.set_jupyter_backend("server") 
     # FIXME make these configurable
     default_point_colors = {
         PointType.UNKNOWN: "gray",
@@ -210,6 +195,12 @@ def plot_labeled_points(
         PointType.DETECTOR: 3,
         PointType.LANDMARK: 2,
     }
+    
+    
+    #labels = None
+    if labels == None and show_labels == True:
+        labels = points.label.values
+        
     def on_pick(picked_point):
         nonlocal ppoints
         threshold_distance = 5  # Define how close points have to be to consider them "super close"
@@ -281,7 +272,6 @@ def plot_labeled_points_1(
     plotter: pv.Plotter,
     points: cdt.LabeledPointCloud,
     color=None,
-    labels = None,
     ppoints = None,
 ):
     # FIXME make these configurable
@@ -297,6 +287,9 @@ def plot_labeled_points_1(
         PointType.DETECTOR: 3,
         PointType.LANDMARK: 2,
     }
+    
+    
+    labels = points.label.values
     
     actors = []
     
@@ -450,3 +443,138 @@ class PointCloudVisualizer:
     def enable_picking(self):
         self.plotter.enable_surface_point_picking(callback=self.on_pick, show_message=True, show_point=False)
 
+
+class PointCloudVisualizer2(pv.Plotter):
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)  # Initialize pyvista.Plotter with any additional keyword arguments
+        self.points = None
+        self.actors2 = []
+        self.picked_points = []
+        # Example configuration, you might want to make these configurable externally
+        self.default_point_colors = {
+            PointType.UNKNOWN: "gray",
+            PointType.SOURCE: "r",
+            PointType.DETECTOR: "b",
+            PointType.LANDMARK: "g",
+        }
+        self.default_point_sizes = {
+            PointType.UNKNOWN: 2,
+            PointType.SOURCE: 3,
+            PointType.DETECTOR: 3,
+            PointType.LANDMARK: 2,
+        }
+
+
+    def plot(self, points=None):
+        if points is not None:
+            display("hello")
+            self.points = points
+           
+        display(self.points)
+        points = self.points.pint.dequantify()
+        for point_type, group in points.groupby("type"):
+            color = self.default_point_colors.get(point_type, "gray")
+            size = self.default_point_sizes.get(point_type, 1)
+            for i_point in range(len(group)):
+                # Create a sphere at each point location with the specified size and color
+                sphere = pv.Sphere(radius=size, center=group[i_point])
+                actor = self.add_mesh(sphere, color=color)
+                self.actors2.append(actor)
+                
+
+    def update_visualization(self):
+        self.clear()  # Clear the plotter
+        self.plot()  # Re-plot everything
+
+    def enable_picking(self):
+        self.enable_surface_point_picking(callback=self.on_pick, show_message=False, show_point=False)
+        
+    def on_pick2(self, picked_point):
+        plotter = self.plotter
+        points = self.points
+        ppoints = self.picked_points
+        threshold_distance = 5  # Define how close points have to be to consider them "super close"
+        new_point = np.array(picked_point)
+        
+        # Check if new point is super close to any existing sphere
+        for i, existing_point in enumerate(points.values):
+            if np.linalg.norm(new_point - existing_point) < threshold_distance:
+                #s = pv.Sphere(radius=4, center=existing_point)
+                #plotter.add_mesh(s, color='r')
+                #if i not in ppoints:
+                #    ppoints.append(i)
+
+                idx_to_remove = i
+                indexes = np.arange(len(self.points.label))
+                selected_indexes = np.delete(indexes, idx_to_remove)
+
+                self.points = self.points.isel(label=selected_indexes)
+                self.plotter.remove_actor(self.actors[idx_to_remove])
+                del self.actors[idx_to_remove]
+                
+                return  # Stop the function after removing the sphere
+            
+        existing_labels = self.points.coords['label'].values
+        # Generate a new unique label
+        new_label_number = max([int(label.split('-')[-1]) for label in existing_labels]) + 1
+        new_label = f'O-{new_label_number}'
+        new_group = self.points.coords['group'].values[0]
+        new_type = cdc.PointType.LANDMARK if new_group == 'L' else cdc.PointType.UNKNOWN
+
+        # Create the new entry DataArray
+        new_center_coords = new_point  # Example new coordinates for the single entry
+        
+        new_entry = xr.DataArray(
+            [new_center_coords],  # Encapsulate in a list to fit the dimensionality
+            dims=["label", "digitized"],  # Adjust "coordinate" to match your specific dimension names
+            coords={
+                "label": [new_label],  # Use the newly generated unique label
+                # Assuming all entries share the same 'type' and 'group', you can directly reuse from existing
+                "type": ("label", [new_type]),
+                "group": ("label", [new_group]),
+            }
+        ).pint.quantify(units="mm")
+        
+        #self.points.points.add(new_label, new_center_coords, new_type)
+        
+        s = pv.Sphere(radius=2, center=new_point)
+        
+        sphere_actor = plotter.add_mesh(s, color='r')
+        
+        self.actors.append(sphere_actor)
+        
+        #self.points = xr.concat([self.points, new_entry], dim='label')
+       
+        display(self.points)
+        self.points = self.points.points.add(new_label, new_center_coords, new_type, new_group)
+        display(self.points)
+        
+    def on_pick(self, picked_point):
+        # Assuming points are stored in a structure that supports indexing and deletion
+        # and picked_point is a coordinate in the form [x, y, z]
+        threshold_distance = 5  # Define closeness threshold
+        new_point = np.array(picked_point)
+        display(new_point)
+        
+        # Assume self.points is structured to support this kind of operation
+        if self.points is not None:
+            for i, existing_point in enumerate(self.points.values):  # Adjust enumeration based on your points' structure
+                #existing_point = np.array([point["x"], point["y"], point["z"]])  # Adjust access based on structure
+                if np.linalg.norm(new_point - existing_point) < threshold_distance:
+                    idx_to_remove = i
+                    indexes = np.arange(len(self.points.label))
+                    selected_indexes = np.delete(indexes, idx_to_remove)
+                    self.points = self.points.isel(label=selected_indexes)
+                    self.remove_actor(self.actors2[idx_to_remove])  # Remove from visualization
+                    del self.actors2[i]  # Remove from our list
+                    # Adjust removal from points based on your structure, e.g.:
+                    # self.points = np.delete(self.points, i, 0)
+                    self.update_visualization()
+                    return  # Exit after handling one point
+
+                
+            # If no point is close enough, add a new point
+            sphere = pv.Sphere(radius=2, center=new_point)
+            actor = self.add_mesh(sphere, color='red')  # Add new point
+            self.actors2.append(actor)  # Track new actor

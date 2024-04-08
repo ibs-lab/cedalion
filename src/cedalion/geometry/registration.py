@@ -287,3 +287,136 @@ def register_icp(
 
     # idx_best = np.argmin(losses)
     return losses, trafos
+
+
+
+def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tolerance=1e-5):
+    """
+    Perform Iterative Closest Point (ICP) algorithm with full transformation capabilities.
+
+    Parameters:
+        opt_centers (cdt.LabeledPointCloud): Source point cloud for alignment.
+        montage_points (cdt.LabeledPointCloud): Target reference point cloud.
+        max_iterations (int): Maximum number of iterations for convergence.
+        tolerance (float): Tolerance for convergence check.
+
+    Returns:
+        np.ndarray: Transformed source points.
+        np.ndarray: Transformation parameters [tx, ty, tz, rx, ry, rz, sx, sy, sz].
+    """
+    # Convert to homogeneous coordinates, assuming .values and .pint.dequantify() yield np.ndarray
+    units = "mm"
+    opt_centers_mm = opt_centers.pint.to(units).points.to_homogeneous().pint.dequantify()#.values
+    montage_points_mm = montage_points.pint.to(units).points.to_homogeneous().pint.dequantify()#.values
+
+    # Initialize transformation parameters: [translation, rotation (radians), scaling]
+    current_params = np.zeros(9)  # tx, ty, tz, rx, ry, rz, sx, sy, sz
+    best_loss = np.inf
+    transformations = []
+    transformation_matrix = np.eye(4)
+    
+    to_crs = opt_centers.points.crs
+    
+    def complete_transformation(params):
+        """Generate a complete transformation matrix from params."""
+        
+        translation_matrix = m_trans(params[:3])
+        rotation_matrix = m_rot(params[3:6])
+        scaling_matrix = m_scale3(params[6:9])
+        return translation_matrix @ rotation_matrix @ scaling_matrix
+    
+    def apply_numpy_transform(obj_values, transform: np.ndarray, to_crs=None, obj_units=None):
+
+        rzs = transform[:-1, :-1]  # rotations, zooms, shears
+        trans = transform[:-1, -1]  # translations
+        transformed_values = np.hstack((obj_values, np.ones((obj_values.shape[0], 1)))) @ transform.T
+        transformed_values = transformed_values[:, :-1]  
+        return transformed_values
+
+    for iteration in range(max_iterations):
+
+        #transformed_opt_centers = apply_numpy_transform(opt_centers_mm[:, :3], transformation_matrix)
+        opt_centers_mm[:,:3] = opt_centers_mm[:,:3].points._apply_numpy_transform(transformation_matrix, to_crs)
+        # KDTree for nearest neighbor search
+        kdtree = KDTree(montage_points_mm[:, :3].values)
+        distances, indices = kdtree.query(opt_centers_mm[:,:3].values)
+        matched_montage_points = montage_points_mm[indices, :3].values
+
+        # Define the loss function for optimization
+        def loss(params, coords_to, coords_from):
+            transformation_matrix = complete_transformation(params)
+            transformed_montage = apply_numpy_transform(coords_from[:, :3], transformation_matrix)
+            return np.sum((coords_to - transformed_montage) ** 2)
+        
+        coords_true = matched_montage_points
+        coords = opt_centers_mm[:, :3].values
+        
+        no_bounds = (None, None)
+        bounds = [
+            no_bounds,
+            no_bounds,
+            no_bounds,
+            (-2 * np.pi, 2 * np.pi),
+            (-2 * np.pi, 2 * np.pi),
+            (-2 * np.pi, 2 * np.pi),
+            (0.5, 1.5),
+            (0.5, 1.5),
+            (0.5, 1.5),
+        ]
+        
+        # Optimization step to minimize the loss function
+        result = minimize(
+            loss, current_params, args=(coords_true, coords), bounds=bounds
+        )
+        #result = minimize(loss, current_params,bounds=bounds, method='L-BFGS-B')
+
+        # Update if improvement
+        if result.fun < best_loss:
+            #print("Update if improvement")
+            best_loss = result.fun
+            current_params = result.x
+            #print(best_loss)
+        else:
+            #print("local min")
+            break
+
+        # Convergence check
+        if best_loss < tolerance:
+            #print("converged")
+            break
+            
+        transformation_matrix = complete_transformation(current_params)
+        
+
+    # Apply the final transformation to opt_centers
+    #final_transformation_matrix = complete_transformation(current_params)
+    #opt_centers_mm[:,:3] = opt_centers_mm[:,:3].points._apply_numpy_transform(transformation_matrix, to_crs)
+    #transformed_opt_centers_mm = apply_numpy_transform(opt_centers_mm[:, :3], final_transformation_matrix)
+
+    return opt_centers_mm[:,:3], current_params, indices
+
+def find_spread_points(points_xr):
+    
+    points = points_xr.values
+    if len(points) < 3:
+        return list(range(len(points)))  # Not enough points to select from
+
+    # Construct KDTree from points
+    tree = KDTree(points)
+    
+    # Step 1: Select the initial point (e.g., the first point)
+    initial_point_index = 0
+    initial_point = points[initial_point_index]
+
+    # Step 2: Find the farthest point from the initial point
+    distances, _ = tree.query(initial_point, k=len(points))
+    farthest_point_index = np.argmax(distances)
+
+    # Step 3: Find the "middle-distanced" point from the initial point
+    sorted_distances_indices = np.argsort(distances)
+    median_index = sorted_distances_indices[len(sorted_distances_indices) // 2]
+    middle_distanced_point_index = median_index if median_index != initial_point_index else sorted_distances_indices[len(sorted_distances_indices) // 2 + 1]
+    return points_xr.label.isel(label=[initial_point_index, farthest_point_index, middle_distanced_point_index]).values
+
+
+
