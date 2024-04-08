@@ -17,44 +17,46 @@ def make_design_matrix(
 ):
     """Generate the design matrix for the GLM.
 
-    inputs:
-        y: xarray.DataArray time axis (time)
+    Args:
+        t: xarray.DataArray time axis (time)
         s: pandas.DataFrame or xarray.DataArray of stimulus data (time x conditions)
-        add_regressors: xarray.DataArray containing additional regressors (time x regressor x chromo)
+        add_regressors: xarray.DataArray containing additional regressors
+            (time x regressor x chromo)
         trange: list of the time range of the HRF regressors [pre, post]
-                    (in seconds relative to stimulus onset, for example [-5, 15])
+            (in seconds relative to stimulus onset, for example [-5, 15])
         idx_basis: string indicating the type of basis function to use
-                    "gaussians":    a consecutive sequence of gaussian functions
-                    "gamma":        a modified gamma function convolved with a square-
-                                    wave of duration T. Set T=0 for no convolution.
-                                    The modified gamma function is
-                                    (exp(1)*(t-tau).^2/sigma^2) .* exp(-(tHRF-tau).^2/sigma^2)
-                    "gamma_deriv":  a modified gamma function and its derivative convolved
-                                    with a square-wave of duration T. Set T=0 for no convolution.
-                    "afni_gamma":   GAM function from 3dDeconvolve AFNI convolved with
-                                    a square-wave of duration T. Set T=0 for no convolution.
-                                                    (t/(p*q))^p * exp(p-t/q)
-                                    Defaults: p=8.6 q=0.547
-                                    The peak is at time p*q.  The FWHM is about 2.3*sqrt(p)*q.
-                    "individual":   individual selected basis function for each channel
-                                    (xr.DataArray of shape (time x chromo x channels)
+            "gaussians":    a consecutive sequence of gaussian functions
+            "gamma":        a modified gamma function convolved with a square-
+                            wave of duration T. Set T=0 for no convolution.
+                            The modified gamma function is
+                            (exp(1)*(t-tau).^2/sigma^2) .* exp(-(tHRF-tau).^2/sigma^2)
+            "gamma_deriv":  a modified gamma function and its derivative convolved
+                            with a square-wave of duration T. Set T=0 for no convolution
+            "afni_gamma":   GAM function from 3dDeconvolve AFNI convolved with
+                            a square-wave of duration T. Set T=0 for no convolution.
+                                            (t/(p*q))^p * exp(p-t/q)
+                            Defaults: p=8.6 q=0.547
+                            The peak is at time p*q.  The FWHM is about 2.3*sqrt(p)*q.
+            "individual":   individual selected basis function for each channel
+                            (xr.DataArray of shape (time x chromo x channels)
         params_basis: parameters for the basis function (depending on idx_basis)
-                    "gaussians":    [gms, gstd] where gms is the temporal spacing between
-                                    consecutive gaussians and gstd is the width of the
-                                    gaussian (standard deviation)
-                    "gamma":        [tau sigma T] applied to both HbO and HbR
-                                    or [tau1 sigma1 T1 tau2 sigma2 T2]
-                                    where the 1 (2) indicates the parameters for HbO (HbR).
-                    "gamma_deriv":  [tau sigma T] applied to both HbO and HbR
-                                    or [tau1 sigma1 T1 tau2 sigma2 T2]
-                                    where the 1 (2) indicates the parameters for HbO (HbR).
-                    "afni_gamma":   [p q T] applied to both HbO and HbR
-                                    or [p1 q1 T1 p2 q2 T2]
-                                    where the 1 (2) indicates the parameters for HbO (HbR).
-                    "individual":   array containing the individual basis functions
-                                    (t_hrf x chromo x channels).
-        drift_order: order of the polynomial drift regressors to add to the design matrix
-    return:
+            "gaussians":    [gms, gstd] where gms is the temporal spacing between
+                            consecutive gaussians and gstd is the width of the
+                            gaussian (standard deviation)
+            "gamma":        [tau sigma T] applied to both HbO and HbR
+                            or [tau1 sigma1 T1 tau2 sigma2 T2]
+                            where the 1 (2) indicates the parameters for HbO (HbR).
+            "gamma_deriv":  [tau sigma T] applied to both HbO and HbR
+                            or [tau1 sigma1 T1 tau2 sigma2 T2]
+                            where the 1 (2) indicates the parameters for HbO (HbR).
+            "afni_gamma":   [p q T] applied to both HbO and HbR
+                            or [p1 q1 T1 p2 q2 T2]
+                            where the 1 (2) indicates the parameters for HbO (HbR).
+            "individual":   array containing the individual basis functions
+                            (t_hrf x chromo x channels).
+        drift_order: order of the polynomial drift regressors to add to the
+            design matrix
+    Returns:
         A: xarray.DataArray of the design matrix (time x regressor x chromo)
     """
 
@@ -95,7 +97,6 @@ def make_design_matrix(
 
 
 def make_drift_regressors(t, drift_order):
-
     nt = len(t)
 
     drift_regressors = np.ones((nt, drift_order + 1, 2))
@@ -125,13 +126,12 @@ def make_drift_regressors(t, drift_order):
 def make_hrf_regressors(
     t: xr.DataArray, s: xr.DataArray, trange: list, idx_basis: str, params_basis
 ):
-
     cond_names = s.condition.values
     dt = 1 / t.cd.sampling_rate
     n_pre = round(trange[0] / dt)
     n_post = round(trange[1] / dt)
     # np.arange results can be non-consistent when using non-integer steps
-    #t_hrf = np.arange(n_pre * dt, (n_post + 1) * dt, dt)   
+    # t_hrf = np.arange(n_pre * dt, (n_post + 1) * dt, dt)
     # using linspace instead
     t_hrf = np.linspace(trange[0], trange[1], abs(n_post) + abs(n_pre) + 1)
     nt = len(t)
@@ -216,7 +216,6 @@ def make_hrf_regressors(
 
 
 def construct_basis_functions(t_hrf, idx_basis, params_basis):
-
     # Gaussians
     if idx_basis == "gaussians":
         return construct_gaussian_basis(t_hrf, params_basis)
@@ -352,7 +351,8 @@ def construct_afni_gamma_basis(t_hrf, params_basis):
         bas = t_hrf / (p * q)
         # Numpy does not seem to allow fractional powers of negative numbers, even if
         # the power would not result in a complex number.
-        # tbasis[:, 0, i_conc] = np.array((np.array(bas, dtype=np.complex128)) ** p, dtype=np.float64) * np.exp(p - t_hrf / q)
+        # tbasis[:, 0, i_conc] = np.array((np.array(bas, dtype=np.complex128)) ** p,
+        # dtype=np.float64) * np.exp(p - t_hrf / q)
         tbasis[:, 0, i_conc] = (bas**p) * np.exp(p - t_hrf / q)
 
         if tt > 0:
@@ -385,13 +385,16 @@ def get_ss_regressors(
 ):
     """Get short separation channels for each long channel.
 
-    inputs:
+    Args:
         y: xarray.DataArray of the data (time x chromo x channels)
-        geo3d: xarray.DataArray of the 3D geometry (number of sources/detectors x dim pos)
+        geo3d: xarray.DataArray of the 3D geometry (no. of sources/detectors x dim pos)
         ss_method: method for determining short separation channels ("nearest", "corr")
         ss_tresh: threshold for short separation channels (in cm)
-        get_data: whether to return the short channel data (True) or the short channel names (False)
-    return:
+        get_data: whether to return the short channel data (True) or the short channel
+            names (False)
+        as_xarray: TBD
+
+    Returns:
         ss: xarray.DataArray of short separation channels (channels x chromo)
     """
 
@@ -449,7 +452,7 @@ def closest_short_channel(y, short_channels, middle_positions, as_xarray=False):
         closest_name = short_channels.channel[closest_index]
 
         if as_xarray:
-            # For each channel, fetch the data from the closest short channel and assign it
+            # For each channel, fetch data from the closest short channel and assign it
             for chromo in y.chromo.values:  # Assuming 2 chromophores: HbO and HbR
                 # [{"time": y.time, "chromo": chromo, "channel": ch}]
                 closest_short.loc[{"chromo": chromo, "channel": ch}] = y.sel(
@@ -530,7 +533,8 @@ def make_reg_dict(y, add_regressors):
         y: xarray.DataArray of the data (time x chromo x channels)
         add_regressors: xarray.DataArray containing the short channel regressor
                         (name) for each channel (channels x chromo)
-    return:
+
+    Return:
         add_reg_dict: dictionary with regressors as keys and channels as values
     """
 

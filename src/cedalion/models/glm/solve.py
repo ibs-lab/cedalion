@@ -10,20 +10,25 @@ def solve_glm(
     local_regressors={"HbO": {}, "HbR": {}},
     noise_model="ols",
 ):
-    """Solve the GLM for a given design matrix, additional regressors (channel dependent) and data.
+    """Solve the GLM for a given design matrix, channel-dependent regressors and data.
 
-    inputs:
+    Args:
         y: xarray.DataArray containing the data (time x chromo x channels)
         design_matrix: design matrix used for the GLM (time x regressors x chromo)
-        local_regressors: dictionary containing additional regressors for each chromophore
-                        local_regressors['data']: xarray.DataArray containing the additional regressors (regressor x chromo x channels)
-                        local_regressors['HbO']: dictionary containing the additional regressors for HbO
-                            local_regressors['HbO']['regressor_1']: list of HbO channels assigned to regressor_1
-                        local_regressors['HbR']: dictionary containing the additional regressors for HbR
-                            local_regressors['HbR']['regressor_1']: list of HbR channels assigned to regressor_1
+        local_regressors: dict containing additional regressors for each chromophore
+            local_regressors['data']: xrDataArray containing the additional
+                regressors (regressor x chromo x channels)
+            local_regressors['HbO']: dict containing the additional regressors for HbO
+                local_regressors['HbO']['regressor_1']: list of HbO channels assigned to
+                regressor_1
+            local_regressors['HbR']: dict containing the additional regressors for HbR
+                local_regressors['HbR']['regressor_1']: list of HbR channels assigned to
+                regressor_1
         noise_model: noise model used for the GLM (default = 'ols')
-    return:
-        thetas: xarray.DataArray estimated parameters of the GLM (regressors x chromo x channels)
+
+    Returns:
+        thetas: xarray.DataArray estimated parameters of the GLM
+            (regressors x chromo x channels)
         predicted: xarray.DataArray predicted data (time x chromo x channels)
         predicted_hrf: xarray.DataArray predicted HRFs (time x chromo x channels)
     """
@@ -160,12 +165,14 @@ def process_regressors(regressors, all_channels):
 def run_glm(y, dm, noise_model="ols"):
     """Run the GLM for a given design matrix and data.
 
-    inputs:
-        data: xarray.DataArray containing the data (time x chromo x channels)
+    Args:
+        y: xarray.DataArray containing the data (time x chromo x channels)
         dm: design matrix used for the GLM (time x regressor x chromo)
         noise_model: noise model used for the GLM (default = 'ols')
-    return:
-        thetas: xarray.DataArray estimated parameters of the GLM (regressors x chromo x channels)
+
+    Returns:
+        thetas: xarray.DataArray estimated parameters of the GLM
+            (regressors x chromo x channels)
     """
 
     if y.pint.units:
@@ -214,14 +221,17 @@ def get_HRFs(
 ):
     """Get HRFs for each condition and channel estimated by the GLM.
 
-    inputs:
-        predicted_hrf: xarray.DataArray containing the predicted HRFs (time x chromo x channels)
+    Args:
+        predicted_hrf: xarray.DataArray containing the predicted HRFs
+            (time x chromo x channels)
         stim: pandas.DataFrame containing the stimulus information
         id_stim: id of the stimulus block for which the HRFs are estimated (default = 0)
         HRFmin: minimum relative time of the HRF (default = -2)
         HRFmax: maximum relative time of the HRF (default = 15)
-    return:
-        hrfs: xarray.DataArray containing HRFs for every condition and every channel (time x chromo x channels x conditions)
+
+    Return:
+        hrfs: xarray.DataArray containing HRFs for every condition and every channel
+            (time x chromo x channels x conditions)
     """
 
     dt = 1 / predicted_hrf.cd.sampling_rate
@@ -237,7 +247,7 @@ def get_HRFs(
     )
 
     # get time axis for HRFs:
-    
+
     # time_hrf = predicted_hrf.sel(
     #    time=slice(
     #        stim_onsets.sel(condition=conds[0]) + HRFmin,
