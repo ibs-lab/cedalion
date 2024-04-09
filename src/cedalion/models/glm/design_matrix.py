@@ -4,6 +4,9 @@ import xarray as xr
 import cedalion
 import cedalion.nirs
 import cedalion.xrutils as xrutils
+import cedalion.typing as cdt
+
+from cedalion import Quantity
 
 
 def make_design_matrix(
@@ -415,6 +418,7 @@ def get_ss_regressors(
         return max_corr_short_channel(y, short_channels, as_xarray)
 
 
+"""
 def closest_short_channel(y, short_channels, middle_positions, as_xarray=False):
     units = y.pint.units
     y = y.pint.dequantify()
@@ -472,6 +476,92 @@ def closest_short_channel(y, short_channels, middle_positions, as_xarray=False):
         closest_short = make_reg_dict(y.pint.quantify(units), closest_short)
 
     return closest_short
+"""
+
+
+def split_long_short_channels(
+    ts: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
+    distance_threshold: Quantity = 1.5 * cedalion.units.cm,
+):
+    """Split a time series into two based on channel distances.
+
+    Args:
+        ts: FIXME
+        geo3d : FIXME
+        distance_threshold : FIXME
+
+    Returns:
+        ts_long : time series with channel distances >= distance_threshold
+        ts_short : time series with channel distances < distance_threshold
+    """
+    dists = xrutils.norm(
+        geo3d.loc[ts.source] - geo3d.loc[ts.detector], dim=geo3d.points.crs
+    )
+
+    mask = dists < distance_threshold
+    ts_short = ts.sel(channel=mask)
+    ts_long = ts.sel(channel=~mask)
+
+    return ts_long, ts_short
+
+
+def closest_short_channel(
+    ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries, geo3d: cdt.LabeledPointCloud
+):
+    """Create channel-wise regressors use closest nearby short channel.
+
+    Args:
+        ts_long: FIXME
+        ts_short: FIXME
+        geo3d: FIXME
+
+    Returns:
+        channel-wise regressor
+    """
+    # calculate midpoints between channel optode pairs. dims: (channel, crs)
+    long_channel_pos = (geo3d.loc[ts_long.source] + geo3d.loc[ts_long.detector]) / 2
+    short_channel_pos = (geo3d.loc[ts_short.source] + geo3d.loc[ts_short.detector]) / 2
+
+    # to select the smallest value units are not necassry
+    long_channel_pos = long_channel_pos.pint.dequantify().values
+    short_channel_pos = short_channel_pos.pint.dequantify().values
+
+    # create a (nlong x nshort x 3) array with vectors between all l&s channels
+    dist_vectors = long_channel_pos[:, None, :] - short_channel_pos[None, :, :]
+
+    # calculate distances and find for each long channel the closest short channel
+    dists = np.linalg.norm(dist_vectors, axis=-1)
+    closest_short_ch_indices = np.argmin(dists, axis=1)  # size nlong
+
+    # ts_short = ts_short.rename({"channel" : "short_channel"})
+
+    # pick for each long channel from ts_short the selected closest channel
+    # regressors has same dims as ts_long/ts_short and same channels as ts_long
+    regressors = ts_short.isel(channel=closest_short_ch_indices)
+
+    # coords 'channel' in regressors denotes the short channels selected from ts_short.
+    # rearrange: 'channel' should name the channel for which each regressor should
+    # be used. 'short_channel' names the assigned short channel.
+
+    # furthermore define 'computational groups', blocks of channels for which the GLM
+    # can be solved together, because they have the same channel-wise regressor.
+    # assign this as a temporary additional coordinate to the channel dim.
+
+    coords_short_channels = regressors.channel
+
+    keep_coords = ["time", "samples", "chromo"]
+    drop_coords = [i for i in regressors.coords.keys() if i not in keep_coords]
+    regressors = regressors.drop_vars(drop_coords)
+    regressors = regressors.assign_coords(
+        {
+            "channel": ("channel", ts_long.channel.data),
+            "short_channel": ("channel", coords_short_channels.channel.data),
+            "comp_group": ("channel", closest_short_ch_indices),
+        }
+    )
+
+    return regressors
 
 
 def max_corr_short_channel(y, short_channels, as_xarray=False):

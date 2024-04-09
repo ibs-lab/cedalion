@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from nilearn.glm.first_level import run_glm as nilearn_run_glm
 import xarray as xr
+import cedalion.typing as cdt
 
 
 def solve_glm(
@@ -108,6 +109,95 @@ def solve_glm(
     predicted_hrf = predicted_hrf.pint.quantify(units)
 
     return thetas, predicted, predicted_hrf
+
+
+def solve_glm2(
+    ts: cdt.NDTimeSeries,
+    design_matrix: xr.DataArray,
+    channel_wise_regressors: dict[str, xr.DataArray],
+    noise_model="ols",
+):
+    """Fit design matrix to data.
+
+    Args:
+        ts: the time series to be modeled
+        design_matrix: DataArray with dims time, regressor, chromo
+        channel_wise_regressors: {regressor_name : DataArray}
+        noise_model: must be ols for the moment
+
+    Returns:
+        thetas as a DataArray
+
+    """
+    if noise_model != "ols":
+        raise NotImplementedError("support for other noise models is missing")
+
+    # FIXME: logic for computing groups with more than one channel-wise reg.
+    if len(channel_wise_regressors) > 1:
+        raise NotImplementedError(
+            "currently only one channel-wise regressor is supported"
+        )
+
+    # FIXME: unit handling?
+    # shoud the design matrix be dimensionless? -> thetas will have units
+    ts = ts.pint.dequantify()
+    design_matrix = design_matrix.pint.dequantify()
+
+    reg_name = next(iter(channel_wise_regressors.keys()))
+    channel_wise_regressor = next(iter(channel_wise_regressors.values()))
+
+    channel_wise_regressor = channel_wise_regressor.pint.dequantify()
+
+    computation_groups = np.unique(channel_wise_regressor.comp_group)
+
+    # FIXME
+    assert (ts.channel.values == channel_wise_regressor.channel.values).all()
+
+    thetas = []
+    for chromo in ts.chromo.values:
+        dm_chromo = design_matrix.sel(chromo=chromo)
+
+        thetas_chromo = []
+        for group in computation_groups:
+            cg_mask = channel_wise_regressor.comp_group == group
+
+            reg = (
+                channel_wise_regressor.sel(channel=cg_mask, chromo=chromo)
+                .isel(channel=0)
+                .expand_dims({"regressor": 1})
+                .assign_coords({"regressor": [reg_name]})
+            )
+
+            group_design_matrix = xr.concat((dm_chromo, reg), dim="regressor")
+            group_y = ts.sel(channel=cg_mask, chromo=chromo)
+
+            labels, glm_est = nilearn_run_glm(
+                group_y.values, group_design_matrix.values, noise_model=noise_model
+            )
+
+            assert len(glm_est) == 1  # FIXME
+            glm_est = next(iter(glm_est.values()))
+
+            thetas_chromo.append(
+                xr.DataArray(
+                    glm_est.theta,
+                    dims=("regressor", "channel"),
+                    coords={
+                        "regressor": group_design_matrix.regressor,
+                        "channel": group_y.channel,
+                    },
+                )
+            )
+        thetas_chromo = xr.concat(thetas_chromo, dim="channel")
+        thetas_chromo = thetas_chromo.expand_dims({"chromo": 1}).assign_coords(
+            {"chromo": [chromo]}
+        )
+
+        thetas.append(thetas_chromo)
+
+    thetas = xr.concat(thetas, dim="chromo")
+
+    return thetas
 
 
 def process_regressors(regressors, all_channels):
