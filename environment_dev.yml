@@ -7,6 +7,7 @@ dependencies:
   - flake8=6.0.0
   - h5py=3.8.0
   - ipython=8.13.2
+  - ipywidgets=8.1.2
   - jupyter
   - matplotlib=3.7.1
   - nibabel=5.1.0
