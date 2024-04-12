@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pmcx
 import scipy.sparse
+import trimesh
 import xarray as xr
 
 import cedalion
@@ -27,7 +28,7 @@ class TwoSurfaceHeadModel:
     segmentation_masks: xr.DataArray
     brain: cdc.Surface
     scalp: cdc.Surface
-    landmarks: Optional[cdt.LabeledPointCloud]
+    landmarks: cdt.LabeledPointCloud
     t_ijk2ras: cdt.AffineTransform
     t_ras2ijk: cdt.AffineTransform
     voxel_to_vertex_brain: scipy.sparse.spmatrix
@@ -150,6 +151,70 @@ class TwoSurfaceHeadModel:
             voxel_to_vertex_brain=self.voxel_to_vertex_brain,
             voxel_to_vertex_scalp=self.voxel_to_vertex_scalp,
         )
+    
+    def save(self, foldername: str):
+        # Add foldername if not 
+        if ((not os.path.exists(foldername)) or \
+            (not os.path.isdir(foldername))):
+            os.mkdir(foldername)
+
+        self.segmentation_masks.to_netcdf(os.path.join(foldername,
+                                                       "segmentation_masks.nc"))
+        self.brain.mesh.export(os.path.join(foldername, "brain.ply"),
+                                            file_type="ply")
+        self.scalp.mesh.export(os.path.join(foldername, "scalp.ply"),
+                                            file_type="ply")
+        if self.landmarks is not None:
+            self.landmarks.to_netcdf(os.path.join(foldername, "landmarks.nc"))
+        self.t_ijk2ras.to_netcdf(os.path.join(foldername, "t_ijk2ras.nc"))
+        self.t_ras2ijk.to_netcdf(os.path.join(foldername, "t_ras2ijk.nc"))
+        scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_brain.npz"),
+                                           self.voxel_to_vertex_brain)
+        scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_scalp.npz"),
+                                           self.voxel_to_vertex_scalp)
+        return
+    
+    @classmethod
+    def load(cls, foldername: str):
+        for fn in ["segmentation_masks.nc", "brain.ply", "scalp.ply",
+                   "t_ijk2ras.nc", "t_ras2ijk.nc", "voxel_to_vertex_brain.npz",
+                   "voxel_to_vertex_scalp.npz"]:
+            if not os.path.exists(os.path.join(foldername, fn)):
+                raise ValueError("%s does not exist." % os.path.join(foldername, fn))
+
+        # Load data from folder
+        segmentation_masks = xr.open_dataset(os.path.join(foldername,
+                                                          'segmentation_masks.nc'))
+        brain =  trimesh.load(os.path.join(foldername, 'brain.ply'), process=False)
+        scalp =  trimesh.load(os.path.join(foldername, 'scalp.ply'), process=False)
+        if os.path.exists(os.path.join(foldername, 'landmarks.nc')):
+            landmarks_ijk = xr.open_dataset(os.path.join(foldername, 'landmarks.nc'))
+        else:
+            landmarks_ijk = None
+        t_ijk2ras = xr.open_dataset(os.path.join(foldername, 't_ijk2ras.nc'))
+        t_ras2ijk = xr.open_dataset(os.path.join(foldername, 't_ras2ijk.nc'))
+        voxel_to_vertex_brain = scipy.sparse.load_npz(os.path.join(foldername,
+                                                     'voxel_to_vertex_brain.npz'))
+        voxel_to_vertex_scalp = scipy.sparse.load_npz(os.path.join(foldername,
+                                                      'voxel_to_vertex_scalp.npz'))
+
+        # Construct TwoSurfaceHeadModel
+        brain_ijk = cdc.TrimeshSurface(brain, 'ijk', cedalion.units.Unit("1"))
+        scalp_ijk = cdc.TrimeshSurface(scalp, 'ijk', cedalion.units.Unit("1"))
+        t_ijk2ras = cdc.affine_transform_from_numpy(np.array(t_ijk2ras.to_dataarray()[0]), "ijk", "unknown", "1", "mm")  
+        t_ras2ijk = xrutils.pinv(t_ijk2ras)
+
+        return cls(
+            segmentation_masks=segmentation_masks,
+            brain=brain_ijk,
+            scalp=scalp_ijk,
+            landmarks=landmarks_ijk,
+            t_ijk2ras=t_ijk2ras,
+            t_ras2ijk=t_ras2ijk,
+            voxel_to_vertex_brain=voxel_to_vertex_brain,
+            voxel_to_vertex_scalp=voxel_to_vertex_scalp,
+        )
+
 
     # FIXME maybe this should not be in this class, especially since the
     # algorithm is not good.
