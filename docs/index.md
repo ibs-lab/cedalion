@@ -14,6 +14,7 @@ getting_started/index.md
 data_structures/index.md
 examples/index.md
 api/modules.rst
+references.rst
 ```
 
 This documentation was built from commit {{commit_hash}}.

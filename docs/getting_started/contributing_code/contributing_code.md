@@ -49,23 +49,17 @@ Some relevant conventions in a nutshell:
 
 ### Style Guide for docstrings
 
-Please use [documentation strings](https://docs.python.org/3/tutorial/controlflow.html#documentation-strings) to document modules, classes and functions. There exist several different conventions on how to
-format these docstrings. We will follow the Google style as described in the
+Please use [documentation strings](https://docs.python.org/3/tutorial/controlflow.html#documentation-strings) 
+to document modules, classes and functions. There exist several different conventions on 
+how to dormat these docstrings. We will follow the Google style as described in the
 [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings).
 
-
-Please add references to the literature if you are implementing a published algorithm.
-
-**Example:**
+**Example 1:**
 ```
     def func(arg1 : int, arg2 : str) -> bool:
         """One sentence description of function.
 
         Some more details on what the function does.
-
-        Reference to related work or source material [1]
-
-        [1] Authors et al., Title, Journal, Year
 
         Args:
             arg1: Description of arg1
@@ -76,6 +70,48 @@ Please add references to the literature if you are implementing a published algo
         """
         return True
 ```
+
+**Example 2:**
+```
+    def func(
+        arg1 : cdt.NDTimeSeries, 
+        arg2 : cdt.NDTimeSeries, 
+        arg3 : Quantity
+    ) -> cdt.NDTimeSeries:
+        """Implements algorithm XY based on :cite:t:`BIBTEXLABEL`.
+
+        Some more details on what the function does.
+        
+        Args:
+            arg1 (:class:`NDTimeSeries`, (channel, wavelength, time)): Description of 
+                first argument. For NDTimeSeries we can specify expect dimensions
+                like this.
+            arg2 (:class:`NDTimeSeries`, (time, *)): Some algorithms work only along
+                a given dimension (e.g. frequency filtering) and are agnostic to any
+                other dimensions in the array. This should be documentated like this.
+            arg3 (:class:`Quantity`, [time]): Parameters with physical units (e.g.
+                lengths or time intervals) should be passed as pint.Quantities. The
+                expected dimensionality could should be documented like this.
+
+        Returns:
+            Description of return value. 
+        """
+        return True
+```
+
+Please add references to the literature if you are implementing a published algorithm.
+There is is a global bibtex file under `docs/references.bib` to which reference entries
+should be added with a unique bibtex label. Refer to a reference entry with 
+with ":cite:t:`BIBTEXLABEL`". Further options are documented in the
+[sphinxcontrib-bibtex documentation](https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html#minimal-example).
+
+All references will be listed under [References](../../references.rst).
+
+Additional [docstring sections](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/index.html#docstring-sections)
+may be added, like for example: References, Notes, etc.
+
+
+
 
 ### Where to add my code?
 
@@ -136,10 +172,14 @@ from cedalion import Quantity, units
 
 @cdc.validate_schemas
 def function_name(inputVar1: cdt.NDTimeSeries, inputVar2: Quantity):
+    """What this function does.
 
-    """What does this function do?.
+    Args:
+        inputVar1: ...
+        inputVar2: ...
 
-    [1] Authors et al., "title", Journal vol., year, doi:
+    Returns:
+        description of the return value
     """
 
     #
@@ -157,6 +197,14 @@ The function is wrapped by putting `@cdc.validate_schemas`in front, which will c
 The following examples are implemented in the [quality.py module](https://github.com/ibs-lab/cedalion/blob/main/src/cedalion/sigproc/quality.py)
 
 ### The helper functions
+
+```{admonition} Update needed
+:class: attention
+
+The code examples are not up to date. Please refer to the 
+[current source code](https://github.com/ibs-lab/cedalion/blob/main/src/cedalion/sigproc/quality.py)
+```
+
 Now we can create the small helper functions that calculate and check the SNR, Source-Detector Distances and Amplitudes of fNIRS channels. Using the coordinates and units from Xarrays these are effectively implemented:
 
 `def snr_range():`
@@ -169,7 +217,8 @@ def snr_range(amplitudes: cdt.NDTimeSeries, snr_thresh: Quantity):
     INPUTS:
     amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
     snr_thresh:  Quantity, SNR threshold (unitless).
-                If mean(d)/std(d) < SNRthresh then it is excluded as an active channel
+                If meaArgs:
+        inputVar1:n(d)/std(d) < SNRthresh then it is excluded as an active channel
     OUTPUTS:
     snr:        ratio betwean mean and std of the amplitude signal for all channels.
     MeasList:   list of active channels that meet the conditions
