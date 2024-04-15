@@ -13,7 +13,7 @@ rationale.md
 getting_started/index.md
 data_structures/index.md
 examples/index.md
-api/modules.rst
+API <api/modules.rst>
 references.rst
 ```
 
