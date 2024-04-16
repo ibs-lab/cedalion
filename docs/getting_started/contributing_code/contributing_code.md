@@ -84,14 +84,14 @@ how to dormat these docstrings. We will follow the Google style as described in 
         
         Args:
             arg1 (:class:`NDTimeSeries`, (channel, wavelength, time)): Description of 
-                first argument. For NDTimeSeries we can specify expect dimensions
+                first argument. For NDTimeSeries we can specify expected dimensions
                 like this.
             arg2 (:class:`NDTimeSeries`, (time, *)): Some algorithms work only along
                 a given dimension (e.g. frequency filtering) and are agnostic to any
                 other dimensions in the array. This should be documentated like this.
             arg3 (:class:`Quantity`, [time]): Parameters with physical units (e.g.
                 lengths or time intervals) should be passed as pint.Quantities. The
-                expected dimensionality could should be documented like this.
+                expected dimensionality should be documented like this.
 
         Returns:
             Description of return value. 
@@ -100,17 +100,18 @@ how to dormat these docstrings. We will follow the Google style as described in 
 ```
 
 Please add references to the literature if you are implementing a published algorithm.
-There is is a global bibtex file under `docs/references.bib` to which reference entries
-should be added with a unique bibtex label. Refer to a reference entry with 
-with ":cite:t:`BIBTEXLABEL`". Further options are documented in the
+There is a global bibtex file under `docs/references.bib` to which reference entries
+should be added with a unique bibtex label. Refer to a reference entry with:
+```
+    :cite:t:`BIBTEXLABEL`
+```
+Further options are documented in the 
 [sphinxcontrib-bibtex documentation](https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html#minimal-example).
 
 All references will be listed under [References](../../references.rst).
 
 Additional [docstring sections](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/index.html#docstring-sections)
 may be added, like for example: References, Notes, etc.
-
-
 
 
 ### Where to add my code?
