@@ -34,7 +34,7 @@ def freq_filter(
     timeseries: cdt.NDTimeSeries,
     fmin: Quantity,
     fmax: Quantity,
-    butter_order=4,
+    butter_order: int = 4,
 ) -> cdt.NDTimeSeries:
     """Apply a Butterworth bandpass frequency filter.
 
