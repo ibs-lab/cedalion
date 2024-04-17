@@ -117,7 +117,7 @@ def plot_surface(
     surface: cdc.Surface,
     color=None,
     opacity=1.0,
-    ppoints = None,
+    pick_landmarks = False,
     **kwargs,
 ):
     pv.set_jupyter_backend("server") 
@@ -144,40 +144,78 @@ def plot_surface(
 
     plotter.add_mesh(mesh, color=color, rgb=rgb, opacity=opacity, pickable=True, **kwargs)
     
-    actors = []  # Store sphere actors for removal
-
-    def place_or_remove_sphere(point):
-        nonlocal ppoints, actors
-        threshold_distance = 5  # Define how close points have to be to consider them "super close"
-        new_point = np.array(point)
-        print(point)
-
-        # Check if new point is super close to any existing sphere
-        for i, existing_point in enumerate(ppoints):
-            if np.linalg.norm(new_point - existing_point) < threshold_distance:
-                # Point is super close to an existing sphere, remove the sphere
-                plotter.remove_actor(actors[i])
-                del ppoints[i]
-                del actors[i]
-                return  # Stop the function after removing the sphere
-        # If no sphere is super close, add a new sphere
-        sphere_actor = plotter.add_mesh(pv.Sphere(radius=3, center=point), color='green')
-        #plotter.add_point_labels(point, [f"{point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}"])
-        actors.append(sphere_actor)
-        ppoints.append(list(new_point))
-    
         
-    if ppoints is not None:
-        plotter.enable_surface_point_picking(callback=place_or_remove_sphere, show_point=False)
-    #plotter.show()
+    # Define landmark labels
+    landmark_labels = ['Nz', 'Iz', 'Cz', 'Lpa', 'Rpa']
+    picked_points = []
+    labels = []
+    point_actors = []
+    label_actors = []
+    
+    def place_landmark(point):
+        nonlocal picked_points, point_actors, label_actors, mesh, labels, plotter
+        threshold_distance_squared = 25  # Using squared distance to avoid square root calculation
 
+        new_point = np.array(point)
 
+        # Check if the clicked point is close to any existing point
+        for i, existing_point in enumerate(picked_points):
+            if np.sum((new_point - existing_point) ** 2) < threshold_distance_squared:
+                current_label_index = landmark_labels.index(labels[i])
+                next_label_index = (current_label_index + 1) % len(landmark_labels)
+                next_label = landmark_labels[next_label_index]
+
+                # Check if the next label is the first one in the list
+                if next_label == landmark_labels[0]:
+                    # Delete the point and its label
+                    del picked_points[i]
+                    plotter.remove_actor(label_actors[i])
+                    plotter.remove_actor(point_actors[i])
+                    del point_actors[i]
+                    del label_actors[i]
+                    del labels[i]
+                    return
+
+                labels[i] = next_label
+                plotter.remove_actor(label_actors[i])  # Remove previous label
+                label_actors[i] = plotter.add_point_labels(existing_point, [next_label], font_size=30)
+                return  
+
+        # If no point is close enough, create a new point and assign a label
+        # Check if there are already 5 points placed
+        if len(picked_points) >= 5:
+            return
+
+        landmark_label = landmark_labels[0]
+        # Add new point and label actors
+        point_actor = plotter.add_mesh(pv.Sphere(radius=3, center=new_point), color='green')
+        point_actors.append(point_actor)
+        label_actor = plotter.add_point_labels(new_point, [landmark_label], font_size=30)
+        label_actors.append(label_actor)
+        picked_points.append(new_point)
+        labels.append(landmark_label)
+        
+    # Initialize the labels list
+    # labels = [None] * 5  # Initialize with None for unassigned labels
+
+    if pick_landmarks is True:
+        def get_points_and_labels():
+            
+            if len(labels) < 5:
+                print("Warning: Some labels are missing")
+            elif len(set(labels)) != 5:
+                print("Warning: Some labels are repeated!")
+            return picked_points, labels
+        
+        plotter.enable_surface_point_picking(callback=place_landmark, show_message = "Right click to place or change the landmark label", show_point=False)
+        
+        return get_points_and_labels
 
 def plot_labeled_points(
     plotter: pv.Plotter,
     points: cdt.LabeledPointCloud,
     color=None,
-    show_labels = True,
+    show_labels = False,
     ppoints = None,
     labels = None
 ):
@@ -468,7 +506,6 @@ class PointCloudVisualizer2(pv.Plotter):
 
     def plot(self, points=None):
         if points is not None:
-            display("hello")
             self.points = points
            
         display(self.points)
@@ -491,15 +528,21 @@ class PointCloudVisualizer2(pv.Plotter):
         self.enable_surface_point_picking(callback=self.on_pick, show_message=False, show_point=False)
         
     def on_pick2(self, picked_point):
-        plotter = self.plotter
+        display("pick")
+        #plotter = self.plotter
         points = self.points
         ppoints = self.picked_points
         threshold_distance = 5  # Define how close points have to be to consider them "super close"
         new_point = np.array(picked_point)
+        display(new_point)
+        
+        display("hyhey")
         
         # Check if new point is super close to any existing sphere
         for i, existing_point in enumerate(points.values):
+            display(np.linalg.norm(new_point - existing_point))
             if np.linalg.norm(new_point - existing_point) < threshold_distance:
+                
                 #s = pv.Sphere(radius=4, center=existing_point)
                 #plotter.add_mesh(s, color='r')
                 #if i not in ppoints:
@@ -510,7 +553,7 @@ class PointCloudVisualizer2(pv.Plotter):
                 selected_indexes = np.delete(indexes, idx_to_remove)
 
                 self.points = self.points.isel(label=selected_indexes)
-                self.plotter.remove_actor(self.actors[idx_to_remove])
+                self.remove_actor(self.actors[idx_to_remove])
                 del self.actors[idx_to_remove]
                 
                 return  # Stop the function after removing the sphere
@@ -540,7 +583,7 @@ class PointCloudVisualizer2(pv.Plotter):
         
         s = pv.Sphere(radius=2, center=new_point)
         
-        sphere_actor = plotter.add_mesh(s, color='r')
+        sphere_actor = self.add_mesh(s, color='gray')
         
         self.actors.append(sphere_actor)
         
@@ -556,6 +599,7 @@ class PointCloudVisualizer2(pv.Plotter):
         threshold_distance = 5  # Define closeness threshold
         new_point = np.array(picked_point)
         display(new_point)
+        display("pick")
         
         # Assume self.points is structured to support this kind of operation
         if self.points is not None:
@@ -570,11 +614,34 @@ class PointCloudVisualizer2(pv.Plotter):
                     del self.actors2[i]  # Remove from our list
                     # Adjust removal from points based on your structure, e.g.:
                     # self.points = np.delete(self.points, i, 0)
-                    self.update_visualization()
+                    #self.update_visualization()
                     return  # Exit after handling one point
 
                 
             # If no point is close enough, add a new point
             sphere = pv.Sphere(radius=2, center=new_point)
-            actor = self.add_mesh(sphere, color='red')  # Add new point
+            actor = self.add_mesh(sphere, color='gray')  # Add new point
             self.actors2.append(actor)  # Track new actor
+            
+            existing_labels = self.points.coords['label'].values
+            # Generate a new unique label
+            new_label_number = max([int(label.split('-')[-1]) for label in existing_labels]) + 1
+            new_label = f'O-{new_label_number}'
+            new_group = self.points.coords['group'].values[0]
+            new_type = cdc.PointType.LANDMARK if new_group == 'L' else cdc.PointType.UNKNOWN
+
+            # Create the new entry DataArray
+            new_center_coords = new_point  # Example new coordinates for the single entry
+
+            new_entry = xr.DataArray(
+                [new_center_coords],  # Encapsulate in a list to fit the dimensionality
+                dims=["label", "digitized"],  # Adjust "coordinate" to match your specific dimension names
+                coords={
+                    "label": [new_label],  # Use the newly generated unique label
+                    # Assuming all entries share the same 'type' and 'group', you can directly reuse from existing
+                    "type": ("label", [new_type]),
+                    "group": ("label", [new_group]),
+                }
+            ).pint.quantify(units="mm")
+            display(new_entry)
+            self.points = self.points.points.add(new_label, new_center_coords, new_type, new_group)
