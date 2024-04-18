@@ -110,7 +110,8 @@ def parse_data_type(value):
         try:
             return DataType(value)
         except Exception:
-            raise ValueError(f"unsupported DataType '{value}'")
+            log.warning(f"unsupported DataType '{value}'")
+            return None
 
 
 def parse_data_type_label(value):
@@ -120,7 +121,8 @@ def parse_data_type_label(value):
         try:
             return DataTypeLabel(value)
         except Exception:
-            raise ValueError(f"unsupported DataTypeLabel '{value}'")
+            log.warning(f"unsupported DataTypeLabel '{value}'")
+            return None
 
 
 # result container for read_snirf. Corresponds to pysnirf's NirsElement but
