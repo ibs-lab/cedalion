@@ -3,7 +3,8 @@ EXAMPLE_NOTEBOOKS = new_conference_example1.ipynb \
 					pruning_and_motion_artifacts.ipynb \
 					photogrammetry.ipynb \
 					scalp_coupling_index.ipynb \
-					1010_system.ipynb
+					1010_system.ipynb \
+					image_reconstruction.ipynb
 
 
 
