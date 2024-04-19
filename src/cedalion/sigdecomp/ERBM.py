@@ -1,22 +1,22 @@
-""" Independent Component Analysis by Entropy Bound Rate Minimization (ICA-ERBM) based on :cite:t:`Li2010B` and :cite:t:`Fu2014`."""
+"""Independent Component Analysis by Entropy Bound Rate Minimization (ICA-ERBM) based on :cite:t:`Li2010B` and :cite:t:`Fu2014`."""
 
 import scipy as sp
 import numpy as np
-import matplotlib.pyplot as plt 
-import ICA_EBM as ICA_EBM 
+import matplotlib.pyplot as plt
+from cedalion.sigdecomp import ICA_EBM as ICA_EBM
 
 def ERBM(X, p = np.nan ):
     """ICA-ERBM: ICA by Entropy Bound Rate Minimization (real-valued version).
 
     Args:
-        X (N x T observations/mixtures, (T: time, N: observations )): the input multivariate time series
-        #TODO adopt input type (:class:`NDTimeSeries`, (time, *))
+        X (np.ndarray, [N,T]): the input multivariate time series
+        with dimensionality N observations/channels and T time points
         p (int): the filter length for linear prediction.
 
     Returns:
-        W with dimension N x T: where W is the demixing matrix,  N is the number
-        of observed time series (e.g., channels) and T is the number of time points.
-        To obtain the independent components, the demixed signals can be calculated as S = W @ X.
+        W (np.ndarray, [S,N]): the demixing matrix with weights for dimensions
+        S sources and N observations/channels. To obtain the independent components,
+        the demixed signals can be calculated as S = W @ X.
 
     References:
         This code is based on the matlab version of bss by Xi-Lin Li (:cite:t:`Li2010B`)

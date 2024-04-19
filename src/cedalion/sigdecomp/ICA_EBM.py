@@ -1,4 +1,4 @@
-""" Independent Component Analysis by Entropy Bound Minimization (ICA-EBM) based on :cite:t:`Li2010A`."""
+"""Independent Component Analysis by Entropy Bound Minimization (ICA-EBM) based on :cite:t:`Li2010A`."""
 
 import scipy.io
 import numpy as np
@@ -13,18 +13,19 @@ def ICA_EBM(X):
     are used for entropy bound calculation
 
     Args:
-        X (N x T observations/mixtures, (T: time, N: observations )): the input multivariate time series
-        #TODO adopt input type (:class:`NDTimeSeries`, (time, *))
+        X (np.ndarray, [N,T]): the input multivariate time series
+        with dimensionality N observations/channels and T time points
+        #TODO adopt input type (:class:`NDTimeSeries`, (channel, time, *))
 
     Returns:
-        W with dimension N x T: where W is the demixing matrix,  N is the number of 
-        observed time series (e.g., channels) and T is the number of time points. 
-        To obtain the independent components, the demixed signals can be calculated as S = W @ X.
+        W (np.ndarray, [S,N]): the demixing matrix with weights for dimensions
+        S sources and N observations/channels. To obtain the independent components,
+        the demixed signals can be calculated as S = W @ X.
 
     References:
         This code is based on the matlab version by Xi-Lin Li (:cite:t:`Li2010A`)
         Xi-Lin Li and Tulay Adali, "Independent component analysis by entropy bound minimization," 
-        IEEE Trans. Signal Processing, vol. 58, no. 10, pp. 5151-5164, Oct. 2010. 
+        IEEE Trans. Signal Processing, vol. 58, no. 10, pp. 5151-5164, Oct. 2010.
     """
 
     ###############################################################################################################
@@ -44,7 +45,7 @@ def ICA_EBM(X):
     show_cost = False    # show the cost values vs. iterations at each stage if show_cost== True  - not implemented yet 
 
     # Load 8 measuring functions. But we only use 4 of them.
-    K = 8          
+    K = 8
     table = np.load('measfunc_table.npy', allow_pickle= True)
     nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8 = table[0], table[1], table[2], table[3], table[4], table[5], table[6], table[7]
 
