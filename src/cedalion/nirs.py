@@ -13,7 +13,7 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
 
     Args:
         spectrum (str): The type of spectrum to use. Currently supported options are:
-            - "prahl": Extinction coefficients based on the Prahl absorption spectrum.
+            - "prahl": Extinction coefficients based on the Prahl absorption spectrum (Prahl1998).
         wavelengths (ArrayLike): An array-like object containing the wavelengths at which
             to calculate the extinction coefficients.
 
@@ -25,7 +25,20 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
         with units of "mm^-1 / M".
 
     References:
-        (:cite:t:`Prahl1998`)
+        (Prahl 1998) - taken from Homer2/3, Copyright 2004 - 2006 - The General Hospital Corporation and President and Fellows of Harvard University.
+            "These values for the molar extinction coefficient e in [cm-1/(moles/liter)] 
+            were compiled by Scott Prahl (prahl@ece.ogi.edu) using data from
+            W. B. Gratzer, Med. Res. Council Labs, Holly Hill, London
+            N. Kollias, Wellman Laboratories, Harvard Medical School, Boston
+            To convert this data to absorbance A, multiply by the molar concentration and the pathlength. 
+            For example, if x is the number of grams per liter and a 1 cm cuvette is being used, then the absorbance is given by
+            (e) [(1/cm)/(moles/liter)] (x) [g/liter] (1) [cm]
+            A =  ---------------------------------------------------
+                        66,500 [g/mole]
+            using 66,500 as the gram molecular weight of hemoglobin.
+            To convert this data to absorption coefficient in (cm-1), multiply by the molar concentration and 2.303,
+            µa = (2.303) e (x g/liter)/(66,500 g Hb/mole)
+            where x is the number of grams per liter. A typical value of x for whole blood is x=150 g Hb/liter."
     """
     if spectrum == "prahl":
         with resources.open_text(
