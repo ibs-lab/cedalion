@@ -13,7 +13,8 @@ def ERBM(X: np.ndarray, p: int = np.nan ):
         p: the filter length for linear prediction.
 
     Returns:
-        W: the [S x N] demixing matrix with weights for S sources and N observations/channels. To obtain the independent components,
+        W (np.darray, (Sources, Channels)): the [S x N] demixing matrix with weights for S sources and N observations/channels. 
+            To obtain the independent components,
         the demixed signals can be calculated as S = W @ X.
 
     References:
