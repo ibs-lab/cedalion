@@ -3,11 +3,12 @@
 import pooch
 import os.path
 import cedalion.io
+from gzip import GzipFile
+import pickle
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
-    # base_url="https://doc.ml.tu-berlin.de/cedalion/datasets",
-    base_url="https://eike.middell.net/share/cedalion",  # FIXME
+    base_url="https://doc.ml.tu-berlin.de/cedalion/datasets",
     env="CEDALION_DATA_DIR",
     registry={
         "mne_nirsport2_raw.snirf": "sha256:12e5fabe64ecc7ef4b83f6bcd77abb41f5480d5f17a2b1aae0e2ad0406670944",  # noqa: E501
@@ -15,6 +16,7 @@ DATASETS = pooch.create(
         "fingertapping.zip": "sha256:f2253cca6eef8221d536da54b74d8556b28be93df9143ea53652fdc3bc011875",  # noqa: E501
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
         "photogrammetry_example_scan.zip": "sha256:2828b74526cb501a726753881d59fdd362cf5a6c46cbacacbb9d9649d8ce3d64",  # noqa: E501
+        "image_reconstruction_fluence.pickle.gz": "sha256:b647c07484a3cc2435b5def7abb342ba7a19aef66f749ed6b3cf3c26deec406f",  # noqa: E501
     },
 )
 
@@ -73,3 +75,12 @@ def get_photogrammetry_example_scan():
     fnames = DATASETS.fetch("photogrammetry_example_scan.zip", processor=pooch.Unzip())
     fname = [i for i in fnames if i.endswith(".obj")][0]
     return fname
+
+
+def get_imagereco_example_fluence():
+    fname = DATASETS.fetch("image_reconstruction_fluence.pickle.gz")
+
+    with GzipFile(fname) as fin:
+        fluence_all, fluence_at_optodes = pickle.load(fin)
+
+    return fluence_all, fluence_at_optodes
