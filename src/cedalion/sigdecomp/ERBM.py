@@ -5,17 +5,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 from cedalion.sigdecomp import ICA_EBM as ICA_EBM
 
-def ERBM(X, p = np.nan ):
+def ERBM(X: np.ndarray, p: int = np.nan ):
     """ICA-ERBM: ICA by Entropy Bound Rate Minimization (real-valued version).
 
     Args:
-        X (np.ndarray, [N,T]): the input multivariate time series
-        with dimensionality N observations/channels and T time points
-        p (int): the filter length for linear prediction.
+        X: the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
+        p: the filter length for linear prediction.
 
     Returns:
-        W (np.ndarray, [S,N]): the demixing matrix with weights for dimensions
-        S sources and N observations/channels. To obtain the independent components,
+        W: the [S x N] demixing matrix with weights for S sources and N observations/channels. To obtain the independent components,
         the demixed signals can be calculated as S = W @ X.
 
     References:
