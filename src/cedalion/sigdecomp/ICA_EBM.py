@@ -4,7 +4,7 @@ import scipy.io
 import numpy as np
 import matplotlib.pyplot as plt 
 
-def ICA_EBM(X):
+def ICA_EBM(X: np.ndarray):
     """Calculates signal-to-noise ratio for each channel and other dimension.
 
     ICA-EBM: ICA by Entropy Bound Minimization (real-valued version)
@@ -13,13 +13,11 @@ def ICA_EBM(X):
     are used for entropy bound calculation
 
     Args:
-        X (np.ndarray, [N,T]): the input multivariate time series
-        with dimensionality N observations/channels and T time points
-        #TODO adopt input type (:class:`NDTimeSeries`, (channel, time, *))
+        X: the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
+        p: the filter length for linear prediction.
 
     Returns:
-        W (np.ndarray, [S,N]): the demixing matrix with weights for dimensions
-        S sources and N observations/channels. To obtain the independent components,
+        W: the [S x N] demixing matrix with weights for S sources and N observations/channels. To obtain the independent components,
         the demixed signals can be calculated as S = W @ X.
 
     References:
