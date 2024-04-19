@@ -19,10 +19,8 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
 
     Returns:
         xr.DataArray: A matrix of extinction coefficients with dimensions "chromo"
-        (chromophore) and "wavelength", where "chromo" represents the type of chromophore
-        (e.g., "HbO", "HbR") and "wavelength" represents the wavelengths at which the
-        extinction coefficients are calculated. The returned data array is annotated
-        with units of "mm^-1 / M".
+            (chromophore, e.g. HbO/HbR) and "wavelength" (e.g. 750, 850, ...) at which 
+            the coefficients for each chromophore are given in units of "mm^-1 / M".
 
     References:
         (Prahl 1998) - taken from Homer2/3, Copyright 2004 - 2006 - The General Hospital Corporation and President and Fellows of Harvard University.
@@ -118,8 +116,8 @@ def od2conc(
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc: A data array containing concentration changes with dimensions
-        "channel" and "wavelength".
+        conc (xr.DataArray, (channel, wavelength, *)): A data array containing 
+            concentration changes with dimensions "channel" and "wavelength".
     """
     validators.has_channel(od)
     validators.has_wavelengths(od)
