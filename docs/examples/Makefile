@@ -1,5 +1,5 @@
-EXAMPLE_NOTEBOOKS = new_conference_example1.ipynb \
-					new_conference_example2.ipynb \
+EXAMPLE_NOTEBOOKS = xarray_datastructs_fnirs.ipynb \
+					finger_tapping_lda_classification.ipynb \
 					pruning_and_motion_artifacts.ipynb \
 					photogrammetry.ipynb \
 					scalp_coupling_index.ipynb \
