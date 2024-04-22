@@ -16,7 +16,7 @@ from .frequency import freq_filter, sampling_rate
 
 @cdc.validate_schemas
 def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
-    """Calculate the scalp-coupling index based on :cite:t:`Pollonini2014`.
+    """Calculate the scalp-coupling index based on :cite:t:`Pollonini2014` / :cite:t:`Pollonini2016`.
 
     Args:
         amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
@@ -62,7 +62,7 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
 
 @cdc.validate_schemas
 def snr(amplitudes: cdt.NDTimeSeries, snr_thresh: float = 2.0):
-    r"""Calculates signal-to-noise ratio for each channel and other dimension.
+    """Calculates signal-to-noise ratio for each channel and other dimension.
 
     Args:
         amplitudes (:class:`NDTimeSeries`, (time, *)): the input time series
