@@ -4,12 +4,44 @@ import numpy as np
 from collections import OrderedDict
 
 def read_photogrammetry_einstar(fn):
+    """Read an output file of optodes and fiucials as returned by the
+    photogrammetry pipeline using an einstar device.
+
+    Parameters
+    ----------
+    fn : str
+        The filename of the einstar photogrammatry output file.
+
+    Returns
+    -------
+    fiducials : cedalion.LabeledPoints
+        The fiducials as a cedalion LabeledPoints object.
+    optodes : cedalion.LabeledPoints
+        The optodes as a cedalion LabeledPoints object.
+    """
+
     fiducials, optodes = read_einstar(fn)
     fiducials, optodes = opt_fid_to_xr(fiducials, optodes)
     return fiducials, optodes
 
 
 def read_einstar(fn):
+    """Read an output file of optodes and fiucials as returned by the
+    photogrammetry pipeline using an einstar device.
+
+    Parameters
+    ----------
+    fn : str
+        The filename of the einstar photogrammatry output file.
+
+    Returns
+    -------
+    fiducials : OrderedDict
+        The fiducials as an OrderedDict.
+    optodes : OrderedDict
+        The optodes as an OrderedDict.
+    """
+
     with open(fn, 'r') as f:
         lines = [[l.strip() for l in line.split(',')] for line in f.readlines()]
         lines = [[line[0], [float(l) for l in line[1:]]] for line in lines]
@@ -24,6 +56,23 @@ def read_einstar(fn):
 
 
 def opt_fid_to_xr(fiducials, optodes):
+    """Convert OrderedDicts fiducials and optodes to cedalion LabeledPoints objects.
+
+    Parameters
+    ----------
+    fiducials : OrderedDict
+        The fiducials as an OrderedDict.
+    optodes : OrderedDict
+        The optodes as an OrderedDict.
+
+    Returns
+    -------
+    fiducials : cedalion.LabeledPoints
+        The fiducials as a cedalion LabeledPoints object.
+    optodes : cedalion.LabeledPoints
+        The optodes as a cedalion LabeledPoints object.
+    """
+
     # FIXME: this should get a different CRS
     CRS = "ijk"
     fiducials = cdc.build_labeled_points(np.array(list(fiducials.values())),

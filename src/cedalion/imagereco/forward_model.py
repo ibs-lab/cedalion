@@ -25,6 +25,46 @@ logger = logging.getLogger("cedalion")
 
 @dataclass
 class TwoSurfaceHeadModel:
+    """Head Model class to represent a segmented head. Its main functions are
+    reduced to work on voxel projections to scalp and cortex surfaces.
+
+    ...
+
+    Attributes
+    ----------
+    segmentation_masks : xr.DataArray
+        Segmentation masks of the head for each tissue type.
+    brain : cdc.Surface
+        Surface of the brain.
+    scalp : cdc.Surface
+        Surface of the scalp.
+    landmarks : cdt.LabeledPointCloud
+        Anatomical landmarks in RAS space.
+    t_ijk2ras : cdt.AffineTransform
+        Affine transformation from ijk to RAS space.
+    t_ras2ijk : cdt.AffineTransform
+        Affine transformation from RAS to ijk space.
+    voxel_to_vertex_brain : scipy.sparse.spmatrix
+        Mapping from voxel to brain vertices.
+    voxel_to_vertex_scalp : scipy.sparse.spmatrix
+        Mapping from voxel to scalp vertices.
+    crs : str
+        Coordinate reference system of the head model.
+
+    Methods
+    -------
+    from_segmentation(cls, segmentation_dir, mask_files, landmarks_ras_file, brain_seg_types, scalp_seg_types, smoothing, brain_face_count, scalp_face_count)
+        Construct instance from segmentation masks in NIfTI format.
+    apply_transform(transform)
+        Apply a coordinate transformation to the head model.
+    save(foldername)
+        Save the head model to a folder.
+    load(foldername)
+        Load the head model from a folder.
+    align_and_snap_to_scalp(points)
+        Align and snap optodes or points to the scalp surface.
+    """
+
     segmentation_masks: xr.DataArray
     brain: cdc.Surface
     scalp: cdc.Surface
@@ -54,11 +94,26 @@ class TwoSurfaceHeadModel:
         brain_face_count: Optional[int] = 60000,
         scalp_face_count: Optional[int] = 60000,
     ) -> "TwoSurfaceHeadModel":
-        """Model of a segmented head.
+        """Constructor from binary masks as gained from segmented MRI scans.
 
-        Based on a segmented MRI scan two surfaces are estimated for the brain
-        and the scalp.
+        Parameters
+        ----------
+        segmentation_dir : str
+            Folder containing the segmentation masks in NIFTI format.
+        mask_files : dict[str, str]
+            Dictionary mapping segmentation types to NIFTI filenames.
+        landmarks_ras_file : Optional[str]
+            Filename of the landmarks in RAS space.
+        brain_seg_types : list[str]
+            List of segmentation types to be included in the brain surface.
+        scalp_seg_types : list[str]
+            List of segmentation types to be included in the scalp surface.
+        smoothing : float
+            Smoothing factor for the brain and scalp surfaces.
+        brain_face_count : Optional[int]
+            Number of faces for the brain surface.
         """
+
         # load segmentation mask
         segmentation_masks, t_ijk2ras = cedalion.io.read_segmentation_masks(
             segmentation_dir, mask_files
@@ -130,12 +185,26 @@ class TwoSurfaceHeadModel:
 
     @property
     def crs(self):
+        """Coordinate reference system of the head model."""
         assert self.brain.crs == self.scalp.crs
         if self.landmarks is not None:
             assert self.scalp.crs == self.landmarks.points.crs
         return self.brain.crs
 
     def apply_transform(self, transform: cdt.AffineTransform) -> "TwoSurfaceHeadModel":
+        """Apply a coordinate transformation to the head model.
+
+        Parameters
+        ----------
+        transform : cdt.AffineTransform
+            Affine transformation matrix (4x4) to be applied.
+
+        Returns
+        -------
+        TwoSurfaceHeadModel
+            Transformed head model.
+        """
+
         brain = self.brain.apply_transform(transform)
         scalp = self.scalp.apply_transform(transform)
         landmarks = self.landmarks.points.apply_transform(transform) \
@@ -151,13 +220,26 @@ class TwoSurfaceHeadModel:
             voxel_to_vertex_brain=self.voxel_to_vertex_brain,
             voxel_to_vertex_scalp=self.voxel_to_vertex_scalp,
         )
-    
+
     def save(self, foldername: str):
-        # Add foldername if not 
+        """Save the head model to a folder.
+
+        Parameters
+        ----------
+        foldername : str
+            Folder to save the head model into.
+
+        Returns
+        -------
+        None
+        """
+
+        # Add foldername if not existing
         if ((not os.path.exists(foldername)) or \
             (not os.path.isdir(foldername))):
             os.mkdir(foldername)
 
+        # Save all head model attributes to folder
         self.segmentation_masks.to_netcdf(os.path.join(foldername,
                                                        "segmentation_masks.nc"))
         self.brain.mesh.export(os.path.join(foldername, "brain.ply"),
@@ -173,16 +255,30 @@ class TwoSurfaceHeadModel:
         scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_scalp.npz"),
                                            self.voxel_to_vertex_scalp)
         return
-    
+
     @classmethod
     def load(cls, foldername: str):
+        """Load the head model from a folder.
+
+        Parameters
+        ----------
+        foldername : str
+            Folder to load the head model from.
+
+        Returns
+        -------
+        TwoSurfaceHeadModel
+            Loaded head model.
+        """
+
+        # Check if all files exist
         for fn in ["segmentation_masks.nc", "brain.ply", "scalp.ply",
                    "t_ijk2ras.nc", "t_ras2ijk.nc", "voxel_to_vertex_brain.npz",
                    "voxel_to_vertex_scalp.npz"]:
             if not os.path.exists(os.path.join(foldername, fn)):
                 raise ValueError("%s does not exist." % os.path.join(foldername, fn))
 
-        # Load data from folder
+        # Load all attributes from folder
         segmentation_masks = xr.open_dataset(os.path.join(foldername,
                                                           'segmentation_masks.nc'))
         brain =  trimesh.load(os.path.join(foldername, 'brain.ply'), process=False)
@@ -201,7 +297,7 @@ class TwoSurfaceHeadModel:
         # Construct TwoSurfaceHeadModel
         brain_ijk = cdc.TrimeshSurface(brain, 'ijk', cedalion.units.Unit("1"))
         scalp_ijk = cdc.TrimeshSurface(scalp, 'ijk', cedalion.units.Unit("1"))
-        t_ijk2ras = cdc.affine_transform_from_numpy(np.array(t_ijk2ras.to_dataarray()[0]), "ijk", "unknown", "1", "mm")  
+        t_ijk2ras = cdc.affine_transform_from_numpy(np.array(t_ijk2ras.to_dataarray()[0]), "ijk", "unknown", "1", "mm")
         t_ras2ijk = xrutils.pinv(t_ijk2ras)
 
         return cls(
@@ -222,6 +318,19 @@ class TwoSurfaceHeadModel:
     def align_and_snap_to_scalp(
         self, points: cdt.LabeledPointCloud
     ) -> cdt.LabeledPointCloud:
+        """Align and snap optodes or points to the scalp surface.
+
+        Parameters
+        ----------
+        points : cdt.LabeledPointCloud
+            Points to be aligned and snapped to the scalp surface.
+
+        Returns
+        -------
+        cdt.LabeledPointCloud
+            Points aligned and snapped to the scalp surface.
+        """
+
         assert self.landmarks is not None, "Please add landmarks in RAS to head \
                                             instance."
         t = register_trans_rot_isoscale(self.landmarks, points)
@@ -231,12 +340,53 @@ class TwoSurfaceHeadModel:
 
 
 class ForwardModel:
+    """Forward model for simulating light transport in the head.
+
+    ...
+
+    Attributes
+    ----------
+    head_model : TwoSurfaceHeadModel
+        Head model containing voxel projections to brain and scalp surfaces.
+    optode_pos : cdt.LabeledPointCloud
+        Optode positions.
+    optode_dir : xr.DataArray
+        Optode orientations (directions of light beams).
+    tissue_properties : xr.DataArray
+        Tissue properties for each tissue type.
+    volume : xr.DataArray
+        Voxelated head volume from segmentation masks.
+    unitinmm : float
+        Unit of head model, optodes expressed in mm.
+    measurement_list : pd.DataFrame
+        List of measurements of experiment with source, detector, channel and wavelength.
+
+    Methods
+    -------
+    compute_fluence(nphoton)
+        Compute fluence for each channel and wavelength from photon simulation.
+    compute_sensitivity(fluence_all, fluence_at_optodes)
+        Compute sensitivity matrix from fluence.
+    """
+
     def __init__(
         self,
         head_model: TwoSurfaceHeadModel,
         geo3d: cdt.LabeledPointCloud,
         measurement_list: pd.DataFrame,
     ):
+        """Constructor for the forward model.
+
+        Parameters
+        ----------
+        head_model : TwoSurfaceHeadModel
+            Head model containing voxel projections to brain and scalp surfaces.
+        geo3d : cdt.LabeledPointCloud
+            Optode positions and directions.
+        measurement_list : pd.DataFrame
+            List of measurements of experiment with source, detector, channel and wavelength.
+        """
+
         assert head_model.crs == "ijk"  # FIXME
         assert head_model.crs == geo3d.points.crs
 
@@ -274,6 +424,21 @@ class ForwardModel:
         return length.pint.magnitude.item()
 
     def _get_fluence_from_mcx(self, i_optode: int, nphoton: int):
+        """Run MCX simulation to get fluence for one optode.
+
+        Parameters
+        ----------
+        i_optode : int
+            Index of the optode.
+        nphoton : int
+            Number of photons to simulate.
+
+        Returns
+        -------
+        np.ndarray
+            Fluence in each voxel.
+        """
+
         cfg = {
             "nphoton": nphoton,
             "vol": self.volume,
@@ -299,7 +464,21 @@ class ForwardModel:
         return fluence
 
     def _fluence_at_optodes(self, fluence, emitting_opt):
-        """Fluence caused by one optode at the positions of all other optodes."""
+        """Fluence caused by one optode at the positions of all other optodes.
+
+        Parameters
+        ----------
+        fluence : np.ndarray
+            Fluence in each voxel.
+        emitting_opt : int
+            Index of the emitting optode.
+
+        Returns
+        -------
+        np.ndarray
+            Fluence at all optode positions.
+        """
+
         n_optodes = len(self.optode_pos)
 
         # The fluence in the voxel of the current optode can be zero if
@@ -328,6 +507,19 @@ class ForwardModel:
         return result
 
     def compute_fluence(self, nphoton: int = 1e8):
+        """Compute fluence for each channel and wavelength from photon simulation.
+
+        Parameters
+        ----------
+        nphoton : int
+            Number of photons to simulate.
+
+        Returns
+        -------
+        xr.DataArray
+            Fluence in each voxel for each channel and wavelength.
+        """
+
         wavelengths = self.measurement_list.wavelength.unique()
         n_wavelength = len(wavelengths)
         n_optodes = len(self.optode_pos)
@@ -383,7 +575,91 @@ class ForwardModel:
 
         return fluence_all, fluence_at_optodes
 
+
+    def compute_sensitivity_all(self, fluence_all, fluence_at_optodes):
+        """Compute sensitivity matrix from fluence.
+
+        Parameters
+        ----------
+        fluence_all : xr.DataArray
+            Fluence in each voxel for each wavelength.
+        fluence_at_optodes : xr.DataArray
+            Fluence at all optode positions for each wavelength.
+
+        Returns
+        -------
+        xr.DataArray
+            Sensitivity matrix for each channel, vertex and wavelength.
+        """
+
+        channels = self.measurement_list.channel.unique().tolist()
+        n_channel = len(channels)
+        wavelengths = self.measurement_list.wavelength.unique().tolist()
+        n_wavelength = len(wavelengths)
+
+        n_brain = self.head_model.brain.nvertices
+        n_scalp = self.head_model.scalp.nvertices
+        Adot_brain = np.zeros((n_channel, n_brain, n_wavelength))
+        Adot_scalp = np.zeros((n_channel, n_scalp, n_wavelength))
+        Adot = np.zeros((n_channel, n_voxels, n_wavelength))
+
+        for _, r in self.measurement_list.iterrows():
+            # using the adjoint monte carlo method
+            # see YaoIntesFang2018 and BoasDale2005
+
+            pertubation = (
+                fluence_all.loc[r.source, r.wavelength]
+                * fluence_all.loc[r.detector, r.wavelength]
+            )
+            pertubation = pertubation.values.flatten()
+            normfactor = (
+                fluence_at_optodes.loc[r.source, r.detector, r.wavelength].values
+                + fluence_at_optodes.loc[r.detector, r.source, r.wavelength].values
+            ) / 2
+
+            i_wl = wavelengths.index(r.wavelength)
+            i_ch = channels.index(r.channel)
+
+            Adot_brain[i_ch, :, i_wl] = (
+                pertubation @ self.head_model.voxel_to_vertex_brain / normfactor
+            )
+            Adot_scalp[i_ch, :, i_wl] = (
+                pertubation @ self.head_model.voxel_to_vertex_scalp / normfactor
+            )
+
+        is_brain = np.zeros((n_brain + n_scalp), dtype=bool)
+        is_brain[:n_brain] = True
+
+        # shape [nchannel, nvertices, nwavelength]
+        Adot = np.concatenate([Adot_brain, Adot_scalp], axis=1)
+
+        return xr.DataArray(
+            Adot,
+            dims=["channel", "vertex", "wavelength"],
+            coords={
+                "channel": ("channel", channels),
+                "wavelength": ("wavelength", wavelengths),
+                "is_brain": ("vertex", is_brain),
+            },
+        )
+
+
     def compute_sensitivity(self, fluence_all, fluence_at_optodes):
+        """Compute sensitivity matrix from fluence.
+
+        Parameters
+        ----------
+        fluence_all : xr.DataArray
+            Fluence in each voxel for each wavelength.
+        fluence_at_optodes : xr.DataArray
+            Fluence at all optode positions for each wavelength.
+
+        Returns
+        -------
+        xr.DataArray
+            Sensitivity matrix for each channel, vertex and wavelength.
+        """
+
         channels = self.measurement_list.channel.unique().tolist()
         n_channel = len(channels)
         wavelengths = self.measurement_list.wavelength.unique().tolist()
@@ -437,6 +713,19 @@ class ForwardModel:
     # FIXME: better name for Adot * ext. coeffs
     # FIXME: hardcoded for 2 chromophores (HbO and HbR) and wavelengths
     def compute_stacked_sensitivity(self, sensitivity: xr.DataArray):
+        """Compute stacked HbO and HbR sensitivity matrices from fluence.
+
+        Parameters
+        ----------
+        sensitivity : xr.DataArray
+            Sensitivity matrix for each vertex and wavelength.
+
+        Returns
+        -------
+        xr.DataArray
+            Stacked sensitivity matrix for each channel and vertex.
+        """
+
         wavelengths = self.measurement_list.wavelength.unique()
         assert len(wavelengths) == 2
 
