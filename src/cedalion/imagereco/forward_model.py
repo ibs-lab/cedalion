@@ -247,7 +247,7 @@ class TwoSurfaceHeadModel:
         self.scalp.mesh.export(os.path.join(foldername, "scalp.ply"),
                                             file_type="ply")
         if self.landmarks is not None:
-            self.landmarks.to_netcdf(os.path.join(foldername, "landmarks.nc"))
+            self.landmarks.drop_vars('type').to_netcdf(os.path.join(foldername, "landmarks.nc"))
         self.t_ijk2ras.to_netcdf(os.path.join(foldername, "t_ijk2ras.nc"))
         self.t_ras2ijk.to_netcdf(os.path.join(foldername, "t_ras2ijk.nc"))
         scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_brain.npz"),
@@ -279,12 +279,18 @@ class TwoSurfaceHeadModel:
                 raise ValueError("%s does not exist." % os.path.join(foldername, fn))
 
         # Load all attributes from folder
-        segmentation_masks = xr.open_dataset(os.path.join(foldername,
-                                                          'segmentation_masks.nc'))
+        segmentation_masks = xr.open_dataset(os.path.join(foldername, 'segmentation_masks.nc'))
         brain =  trimesh.load(os.path.join(foldername, 'brain.ply'), process=False)
         scalp =  trimesh.load(os.path.join(foldername, 'scalp.ply'), process=False)
         if os.path.exists(os.path.join(foldername, 'landmarks.nc')):
             landmarks_ijk = xr.open_dataset(os.path.join(foldername, 'landmarks.nc'))
+            landmarks_ijk = xr.DataArray(
+                    landmarks_ijk.to_array()[0],
+				    coords={
+					    "label": ("label", landmarks_ijk.label.values),
+					    "type": ("label", [cdc.PointType.LANDMARK] * len(landmarks_ijk.label)),
+				    },
+			)
         else:
             landmarks_ijk = None
         t_ijk2ras = xr.open_dataset(os.path.join(foldername, 't_ijk2ras.nc'))
@@ -297,7 +303,8 @@ class TwoSurfaceHeadModel:
         # Construct TwoSurfaceHeadModel
         brain_ijk = cdc.TrimeshSurface(brain, 'ijk', cedalion.units.Unit("1"))
         scalp_ijk = cdc.TrimeshSurface(scalp, 'ijk', cedalion.units.Unit("1"))
-        t_ijk2ras = cdc.affine_transform_from_numpy(np.array(t_ijk2ras.to_dataarray()[0]), "ijk", "unknown", "1", "mm")
+        t_ijk2ras = cdc.affine_transform_from_numpy(np.array(t_ijk2ras.to_dataarray()[0]), "ijk",
+                                                    "unknown", "1", "mm")
         t_ras2ijk = xrutils.pinv(t_ijk2ras)
 
         return cls(
