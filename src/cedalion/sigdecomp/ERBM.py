@@ -476,7 +476,7 @@ def lfc(x: np.ndarray, p: int , choice, a0) -> np.ndarray, np.ndarray:
 
 
 def simplified_ppval(pp: dict, xs: float) -> float:
-    """Helper function for ICA EBM: simplified version of ppval. 
+    """Helper function for ERBM ICA: simplified version of ppval. 
         This function evaluates a piecewise polynomial at a specific point. 
     
     Args: 
@@ -635,7 +635,7 @@ def pre_processing(X: np.ndarray) -> np.ndarray, np.ndarray:
     return X, P 
 
 def inv_sqrtmH(B: np.ndarray) -> np.ndarray:    
-    """Helper function for ICA EBM: computes the inverse square root of a matrix.
+    """Helper function for ERBM ICA: computes the inverse square root of a matrix.
     
     Args:
         B (np.ndarray): a square matrix
