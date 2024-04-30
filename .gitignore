@@ -170,4 +170,7 @@ docs/examples/*.ipynb
 # API documentation from sphinx-apidoc
 docs/api/*
 
+# vscode settings
+.vscode
+
 scratch/
