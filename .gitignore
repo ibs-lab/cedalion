@@ -171,6 +171,6 @@ docs/examples/*.ipynb
 docs/api/*
 
 # vscode settings
-.vscode
+.vscode/
 
 scratch/
