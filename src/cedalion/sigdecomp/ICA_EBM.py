@@ -899,7 +899,7 @@ def inv_sqrtmH(B: np.ndarray) -> np.ndarray:
     A = np.dot(np.dot(V, np.diag(d)), V.T)  
     return A
 
-def pre_processing(X: np.ndarray) -> np.ndarray, np.ndarray:
+def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Helper function for ICA EBM: pre-processing (DC removal & spatial pre-whitening).
     
     Args:   

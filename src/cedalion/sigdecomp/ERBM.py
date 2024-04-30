@@ -279,7 +279,7 @@ def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
 ###############################################################################################################  
 
 
-def lfc(x: np.ndarray, p: int , choice, a0) -> np.ndarray, np.ndarray: 
+def lfc(x: np.ndarray, p: int , choice, a0) -> tuple[np.ndarray, np.ndarray]: 
     """Helper function for ERBM ICA: computes the linear filtering coefficients (LFC) with length p for entropy rate estimation, and the estimated entropy rate.
 
     Args:
@@ -521,7 +521,7 @@ def simplified_ppval(pp: dict, xs: float) -> float:
         v = v*xs + c[index, i]
     return v 
 
-def cnstd_and_gain(a: np.ndarray) -> np.ndarray, np.ndarray:
+def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Helper function for ERBM ICA: returns constraint direction used for calculating projected gradient and gain of filter a.
     
     Args:   
@@ -598,7 +598,7 @@ def calculate_cos_sin_mtx(p: int) -> None :
     Simpson_c[n] = 1      
 
 
-def pre_processing(X: np.ndarray) -> np.ndarray, np.ndarray:
+def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Helper function for ERBM ICA: Preprocessing (removal of mean, patial pre-whitening, temporal pre-filtering)
     
     Args:
