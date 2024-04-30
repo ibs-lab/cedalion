@@ -4,8 +4,8 @@ import scipy.io
 import numpy as np
 import matplotlib.pyplot as plt 
 
-def ICA_EBM(X: np.ndarray):
-    """Calculates signal-to-noise ratio for each channel and other dimension.
+def ICA_EBM(X: np.ndarray) -> np.ndarray:
+    """Calculates the blind source separation demixing matrix corresponding to X.
 
     ICA-EBM: ICA by Entropy Bound Minimization (real-valued version)
     Four nonlinearities
@@ -13,13 +13,11 @@ def ICA_EBM(X: np.ndarray):
     are used for entropy bound calculation
 
     Args:
-        X: the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
-        p: the filter length for linear prediction.
+        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
 
     Returns:
-        W (np.darray, (Sources, Channels)):: the [S x N] demixing matrix with weights for S sources and N observations/channels. 
-            To obtain the independent components,
-        the demixed signals can be calculated as S = W @ X.
+        W (np.ndarray, (Channels, Channels)): the [N x N] demixing matrix with weights for  N channels/sources. 
+            To obtain the independent components, the demixed signals can be calculated as S = W @ X.
 
     References:
         This code is based on the matlab version by Xi-Lin Li (:cite:t:`Li2010A`)
@@ -838,8 +836,17 @@ def ICA_EBM(X: np.ndarray):
 ###############################################################################################################
 
 
-def simplified_ppval(pp, xs ):
-    """Helper function for EBM ICA: simplified version of ppval ."""
+def simplified_ppval(pp: dict, xs: float) -> float:
+    """Helper function for ICA EBM: simplified version of ppval. 
+        This function evaluates a piecewise polynomial at a specific point. 
+    
+    Args: 
+        pp (dict): a dictionary containing the piecewise polynomial representation of a function
+        xs (float): the evaluation point
+
+    Returns: 
+        v (float): the value of the function at xs   
+    """
     b = pp['breaks'][0]
     c = pp['coefs']
     l = int(pp['pieces'] ) 
@@ -874,8 +881,15 @@ def simplified_ppval(pp, xs ):
         v = v*xs + c[index, i]
     return v     
 
-def inv_sqrtmH(B):
-    """Helper function for EBM ICA: inverse square root of a matrix."""
+def inv_sqrtmH(B: np.ndarray) -> np.ndarray:    
+    """Helper function for ICA EBM: computes the inverse square root of a matrix.
+    
+    Args:
+        B (np.ndarray): a square matrix
+        
+    Returns:    
+        A (np.ndarray): the inverse square root of B 
+    """
 
     D, V = np.linalg.eig(B) 
     order = np.argsort(D) 
@@ -885,8 +899,16 @@ def inv_sqrtmH(B):
     A = np.dot(np.dot(V, np.diag(d)), V.T)  
     return A
 
-def pre_processing(X):
-    """Helper function for EBM ICA: pre-processing (DC removal & spatial pre-whitening)."""
+def pre_processing(X: np.ndarray) -> np.ndarray, np.ndarray:
+    """Helper function for ICA EBM: pre-processing (DC removal & spatial pre-whitening).
+    
+    Args:   
+        X (np.ndarray, (Channels, Time Points) ): the data matrix [N x T] 
+    
+    Returns:    
+        X (np.ndarray, (Channels, Time Points)): the pre-processed data matrix  [N x T] 
+        P (np.ndarray, (Channels, Channels)): the pre-whitening matrix [N x N] 
+    """ 
 
     # pre-processing program
     N = X.shape[0]
@@ -900,8 +922,15 @@ def pre_processing(X):
     X = np.dot(P, X)    
     return X, P
 
-def symdecor(M): 
-    """Helper function for EBM ICA: fast symmetric orthogonalization."""
+def symdecor(M: np.ndarray) -> np.ndarray: 
+    """Helper function for ICA EBM: fast symmetric orthogonalization.
+    
+    Args:   
+        M (np.ndarray, (Channels, Channels)): the matrix to be orthogonalized [N x N]
+
+    Returns:    
+        W (np.ndarray, (Channels, Channels)): the orthogonalized matrix [N x N]
+    """
 
     D, V = np.linalg.eig(M.dot(M.T))    
     order = np.argsort(D)   
