@@ -1,24 +1,22 @@
-import cedalion
 import cedalion.dataclasses as cdc
 import numpy as np
 from collections import OrderedDict
 
 
 def read_photogrammetry_einstar(fn):
-    """Read an output file of optodes and fiucials as returned by the
+    """Read optodes and fiducials from photogrammetry pipeline.
+
+    This method reads the output file as returned by the
     photogrammetry pipeline using an einstar device.
 
-    Parameters
-    ----------
-    fn : str
-        The filename of the einstar photogrammatry output file.
+    Args:
+        fn: the filename of the einstar photogrammatry output file
 
-    Returns
-    -------
-    fiducials : cedalion.LabeledPoints
-        The fiducials as a cedalion LabeledPoints object.
-    optodes : cedalion.LabeledPoints
-        The optodes as a cedalion LabeledPoints object.
+    Returns:
+        fiducials : cedalion.LabeledPoints
+            The fiducials as a cedalion LabeledPoints object.
+        optodes : cedalion.LabeledPoints
+            The optodes as a cedalion LabeledPoints object.
     """
 
     fiducials, optodes = read_einstar(fn)
@@ -27,25 +25,21 @@ def read_photogrammetry_einstar(fn):
 
 
 def read_einstar(fn):
-    """Read an output file of optodes and fiucials as returned by the
-    photogrammetry pipeline using an einstar device.
+    """Read optodes and fiducials from einstar devices.
 
-    Parameters
-    ----------
-    fn : str
-        The filename of the einstar photogrammatry output file.
+    Args:
+        fn: The filename of the einstar photogrammatry output file.
 
-    Returns
-    -------
-    fiducials : OrderedDict
-        The fiducials as an OrderedDict.
-    optodes : OrderedDict
-        The optodes as an OrderedDict.
+    Returns:
+        fiducials : OrderedDict
+            The fiducials as an OrderedDict.
+        optodes : OrderedDict
+            The optodes as an OrderedDict.
     """
 
     with open(fn, "r") as f:
-        lines = [[l.strip() for l in line.split(",")] for line in f.readlines()]
-        lines = [[line[0], [float(l) for l in line[1:]]] for line in lines]
+        lines = [[ll.strip() for ll in line.split(",")] for line in f.readlines()]
+        lines = [[line[0], [float(ll) for ll in line[1:]]] for line in lines]
     assert lines[0][0] == "Nz"
     assert lines[1][0] == "Iz"
     assert lines[2][0] == "Rpa"
@@ -59,19 +53,17 @@ def read_einstar(fn):
 def opt_fid_to_xr(fiducials, optodes):
     """Convert OrderedDicts fiducials and optodes to cedalion LabeledPoints objects.
 
-    Parameters
-    ----------
-    fiducials : OrderedDict
-        The fiducials as an OrderedDict.
-    optodes : OrderedDict
-        The optodes as an OrderedDict.
+    Args:
+        fiducials : OrderedDict
+            The fiducials as an OrderedDict.
+        optodes : OrderedDict
+            The optodes as an OrderedDict.
 
-    Returns
-    -------
-    fiducials : cedalion.LabeledPoints
-        The fiducials as a cedalion LabeledPoints object.
-    optodes : cedalion.LabeledPoints
-        The optodes as a cedalion LabeledPoints object.
+    Returns:
+        fiducials : cedalion.LabeledPoints
+            The fiducials as a cedalion LabeledPoints object.
+        optodes : cedalion.LabeledPoints
+            The optodes as a cedalion LabeledPoints object.
     """
 
     # FIXME: this should get a different CRS
