@@ -1,4 +1,7 @@
-"""Independent Component Analysis by Entropy Bound Rate Minimization (ICA-ERBM) based on :cite:t:`Li2010B` and :cite:t:`Fu2014`."""
+"""Independent Component Analysis by Entropy Bound Rate Minimization (ICA-ERBM) based on :cite:t:`Li2010B` and :cite:t:`Fu2014`.
+This code is based on converted matlab versions provided by the MLSP Lab at the University of Maryland, 
+which is available here: https://mlsp.umbc.edu/resources.html.
+"""  # noqa: D205
 
 import scipy as sp
 import numpy as np
@@ -21,6 +24,8 @@ def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
         Xi-Lin Li, Tulay Adali, "Blind spatiotemporal separation of second and/or
         higher-order correlated sources by entropy rate minimization,"
         IEEE International Conference on Acoustics, Speech and Signal Processing 2010.
+        The original matlab version is available at https://mlsp.umbc.edu/resources.html
+        under the name "Real-valued ICA by entropy bound minimization (ICA-EBM)"
     """
 
 #################  Part 0: pre-processing #################

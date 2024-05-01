@@ -1,4 +1,7 @@
-"""Independent Component Analysis by Entropy Bound Minimization (ICA-EBM) based on :cite:t:`Li2010A`."""
+"""Independent Component Analysis by Entropy Bound Minimization (ICA-EBM) based on :cite:t:`Li2010A`.
+This code is based on converted matlab versions provided by the MLSP Lab at the University of Maryland, 
+which is available here: https://mlsp.umbc.edu/resources.html.
+"""  # noqa: D205
 
 import scipy.io
 import numpy as np
@@ -23,6 +26,8 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
         This code is based on the matlab version by Xi-Lin Li (:cite:t:`Li2010A`)
         Xi-Lin Li and Tulay Adali, "Independent component analysis by entropy bound minimization," 
         IEEE Trans. Signal Processing, vol. 58, no. 10, pp. 5151-5164, Oct. 2010.
+        The original matlab version is available at https://mlsp.umbc.edu/resources.html
+        under the name "Real-valued ICA by entropy rate bound minimization (ICA-ERBM)"
     """
 
     ###############################################################################################################
