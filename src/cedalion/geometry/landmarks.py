@@ -5,6 +5,7 @@ import numpy as np
 import vtk
 import vtk.util.numpy_support as vnp
 import xarray as xr
+import pyvista as pv
 
 import cedalion.plots
 from cedalion.dataclasses import (
@@ -107,10 +108,12 @@ def _intersect_mesh_with_triangle(
 
 
 class LandmarksBuilder1010:
-    """Construct the 10-10-system on a scalp surface.
+    """Construct the 10-10-system on scalp surface based on :cite:t:`Oostenveld2001`.
 
-    [1] R. Oostenveld and P. Praamstra, “The five percent electrode system for
-        high-resolution EEG and ERP measurements,” Clinical Neurophysiology, 2001.
+    Args:
+        scalp_surface: a triangle-mesh representing the scalp
+        landmarks: positions of "Nz", "Iz", "LPA", "RPA"
+
     """
 
     @validate_schemas
@@ -280,13 +283,15 @@ class LandmarksBuilder1010:
         return self.landmarks_mm.pint.quantify()
 
     def plot(self):
-        cedalion.plots.plot3d(
-            None,
-            self.scalp_surface.mesh,
-            self.landmarks_mm.pint.quantify(),
-            None,
-            self.lines,
-        )
+        plt = pv.Plotter()
+        cedalion.plots.plot_surface(plt, self.scalp_surface)
+        cedalion.plots.plot_labeled_points(plt, self.landmarks_mm.pint.quantify())
+
+        for points in self.lines:
+            lines = pv.MultipleLines(points)
+            plt.add_mesh(lines, color="m")
+
+        plt.show()
 
 def order_ref_points_6(landmarks: xr.DataArray, twoPoints: str) -> xr.DataArray:
     """
@@ -341,3 +346,12 @@ def order_ref_points_6(landmarks: xr.DataArray, twoPoints: str) -> xr.DataArray:
     ordered_landmarks["label"] = new_labels
     
     return ordered_landmarks
+        plt = pv.Plotter()
+        cedalion.plots.plot_surface(plt, self.scalp_surface)
+        cedalion.plots.plot_labeled_points(plt, self.landmarks_mm.pint.quantify())
+
+        for points in self.lines:
+            lines = pv.MultipleLines(points)
+            plt.add_mesh(lines, color="m")
+
+        plt.show()

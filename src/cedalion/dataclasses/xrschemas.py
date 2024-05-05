@@ -2,7 +2,7 @@ import functools
 import inspect
 import typing
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import List
 import numpy as np
 from numpy.typing import ArrayLike
 import xarray as xr
@@ -15,10 +15,10 @@ class ValidationError(Exception):
     pass
 
 
-@dataclass
+@dataclass(frozen=True)
 class DataArraySchema:
-    dims: List[str]
-    coords: Dict[str, List[str]]
+    dims: tuple[str]
+    coords: tuple[tuple[str, tuple[str]]]
 
     def validate(self, data_array: xr.DataArray):
         if not isinstance(data_array, xr.DataArray):
@@ -28,7 +28,7 @@ class DataArraySchema:
             if dim not in data_array.dims:
                 raise ValidationError(f"dimension '{dim}' not found in data array.")
 
-        for dim, coordinate_names in self.coords.items():
+        for dim, coordinate_names in self.coords:
             for name in coordinate_names:
                 if name not in data_array.coords:
                     raise ValidationError(
@@ -73,13 +73,16 @@ def validate_schemas(func):
 # FIXME support wildcards in dims?
 
 LabeledPointCloudSchema = DataArraySchema(
-    dims=["label"], coords={"label": ["label", "type"]}
+    dims=("label",), coords=(("label", ("label", "type")),)
 )
 
 
 NDTimeSeriesSchema = DataArraySchema(
-    dims=["channel", "time"],
-    coords={"time": ["time", "samples"], "channel": ["channel"]},
+    dims=("channel", "time"),
+    coords=(
+        ("time", ("time", "samples")),
+        ("channel", ("channel",)),
+    ),
 )
 
 

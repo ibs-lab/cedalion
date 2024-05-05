@@ -1,0 +1,51 @@
+name: build_docs
+
+on:
+  push:
+    branches:
+      - main
+
+# cancel job if a new push to main occurs while running
+concurrency:
+      group: build_docs
+      cancel-in-progress: true
+
+jobs:
+  build_docs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    strategy:
+      max-parallel: 5
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup headless display
+        uses: pyvista/setup-headless-display-action@v2
+
+      - name: Create conda environment
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: environment_dev.yml
+          micromamba-version: 'latest'
+          cache-environment: true
+
+      - name: Conda info
+        run: conda info
+
+      - name: Install cedalion
+        run: |
+           python -m pip install -e . --no-deps --force-reinstall
+
+      - name: Building docs
+        run: |
+          ./scripts/build_docs.sh docs
+
+      - name: Save website as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs
+          path: docs/_build/html
+          retention-days: 14
