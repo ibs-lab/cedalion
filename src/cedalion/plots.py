@@ -40,6 +40,18 @@ def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
 
 def plot3d(
     brain_mesh, scalp_mesh, geo3d, timeseries, poly_lines=[], brain_scalars=None, plotter = None):
+    """Plots a 3D visualization of brain and scalp meshes
+
+    Args:
+        brain_mesh (TrimeshSurface): The brain mesh as a TrimeshSurface object.
+        scalp_mesh (TrimeshSurface): The scalp mesh as a TrimeshSurface object.
+        geo3d (xarray.Dataset): Dataset containing 3-dimentional point centers.
+        timeseries
+        poly_lines
+        brain_scalars
+        plotter (pv.Plotter, optional): An existing PyVista plotter instance to use for plotting. If None, a new
+            PyVista plotter instance is created. Default is None.
+    """
     #pv.set_jupyter_backend("server")
     
     if plotter is None:
@@ -120,6 +132,20 @@ def plot_surface(
     pick_landmarks = False,
     **kwargs,
 ):
+    #used for picking landmarks in photogrammetry example
+    """Plots a surface mesh with optional landmark picking in a PyVista plotter.
+
+    Args:
+        plotter (pv.Plotter): A PyVista plotter instance used for rendering the surface.
+        surface (cdc.Surface): The surface object to be plotted.
+        color (str or tuple, optional): Color of the mesh.
+        opacity (float): Opacity of the mesh, ranging from 0 (transparent) to 1 (opaque). Default is 1.0.
+        pick_landmarks (bool): If True, enables interactive picking of landmarks on the surface. Default is False.
+
+    Returns:
+        function: If `pick_landmarks` is True, returns a function that when called, provides the current picked points
+        and their labels. This function prints warnings if some labels are missing or are repeated.
+    """
     pv.set_jupyter_backend("server") 
     if isinstance(surface, cdc.VTKSurface):
         mesh = surface.mesh
@@ -219,6 +245,20 @@ def plot_labeled_points(
     ppoints = None,
     labels = None
 ):
+    #used in selecting optode centers in Photogrammetry example. 
+    """Plots a labeled point cloud in a PyVista plotter with optional interaction for picking points.
+
+        This function visualizes a point cloud where each point can have a label. Points can be interactively picked if enabled. Picked point is indicated by increased radius.
+
+    Args:
+        plotter (pv.Plotter): A PyVista plotter instance used for rendering the points.
+        points (cdt.LabeledPointCloud): A labeled point cloud data structure containing points and optional labels.
+        color (str or tuple, optional): Override color for all points. If None, colors are assigned based on point types.
+        show_labels (bool): If True, labels are displayed next to the points. Default is False.
+        ppoints (list, optional): A list to store indices of picked points, enables picking if not None. Default is None.
+        labels (list of str, optional): List of labels to show if `show_labels` is True. If None and `show_labels` is True,
+            the labels from `points` are used.
+    """
     pv.set_jupyter_backend("server") 
     # FIXME make these configurable
     default_point_colors = {
@@ -305,74 +345,33 @@ def plot_vector_field(
 
     plotter.renderer.AddActor(actor)
 
-    
-def plot_labeled_points_1(
-    plotter: pv.Plotter,
-    points: cdt.LabeledPointCloud,
-    color=None,
-    ppoints = None,
-):
-    # FIXME make these configurable
-    default_point_colors = {
-        PointType.UNKNOWN: "gray",
-        PointType.SOURCE: "r",
-        PointType.DETECTOR: "b",
-        PointType.LANDMARK: "g",
-    }
-    default_point_sizes = {
-        PointType.UNKNOWN: 2,
-        PointType.SOURCE: 3,
-        PointType.DETECTOR: 3,
-        PointType.LANDMARK: 2,
-    }
-    
-    
-    labels = points.label.values
-    
-    actors = []
-    
-    def on_pick(picked_point):
-        nonlocal ppoints, actors, points
-        threshold_distance = 5  # Define how close points have to be to consider them "super close"
-        new_point = np.array(picked_point)
-        
-        # Check if new point is super close to any existing sphere
-        for i, existing_point in enumerate(points):
-            if np.linalg.norm(new_point - existing_point) < threshold_distance:
-                s = pv.Sphere(radius=4, center=existing_point)
-                plotter.add_mesh(s, color='r')
-                if i not in ppoints:
-                    ppoints.append(i)
-                    
-                idx_to_remove = i
-                indexes = np.arange(len(points.label))
-                selected_indexes = np.delete(indexes, idx_to_remove)
+class OptodeSelector:
+    """
+    A class for visualizing point clouds with interactive features in PyVista.
 
-                points = points.isel(label=selected_indexes)
-                display(points)
-                return  # Stop the function after removing the sphere
+    This class provides functionality to visualize and interact with labeled point clouds using a PyVista plotter.
+    It allows points to be dynamically added or removed by picking them directly from the plot interface. 
+    
+    Attributes:
+        surface (cdc.Surface): The surface of a head for normals.
+        points (cdt.LabeledPointCloud): The point cloud data containing point coordinates.
+        normals (xr.DataArray): Normal vectors to the points.    
+        plotter (pv.Plotter): A PyVista plotter instance for rendering the point cloud.
+        labels (list of str, optional): Labels corresponding to the points, displayed if provided.
+        actors (list): List of PyVista actor objects representing the points in the visualization.
+        color (str or tuple, optional): Default color for points if not specified by point type.
 
-    # points = points.pint.to("mm").pint.dequantify()  # FIXME unit handling
-    points = points.pint.dequantify()  # FIXME unit handling
-    for type, x in points.groupby("type"):
-        for i_point in range(len(x)):
-            s = pv.Sphere(radius=default_point_sizes[type], center=x[i_point])
-            if color is None:
-                sphere_actor = plotter.add_mesh(s, color=default_point_colors[type])
-            else:
-                sphere_actor = plotter.add_mesh(s, color=color)
-            actors.append(sphere_actor)
-            if labels is not None:
-                plotter.add_point_labels(x[i_point].values, [str(labels[i_point])])
-                
-    if ppoints is not None: 
-        plotter.enable_surface_point_picking(callback=on_pick, show_point=False)
-
-class PointCloudVisualizer:
-    def __init__(self, points, plotter=None, labels = None):
-        self.points = points  # Your LabeledPointCloud or similar
+    Methods:
+        plot(): Renders the point cloud using the current settings.
+        on_pick(picked_point): Callback function for picking points in the visualization.
+        update_visualization(): Clears the existing plot and re-renders the point cloud.
+        enable_picking(): Enables interactive picking of points on the plot.
+    """
+    def __init__(self, surface, points, normals=None, plotter=None, labels = None):
+        self.points = points
+        self.normals = normals
+        self.surface = surface
         self.plotter = plotter if plotter else pv.Plotter()
-        self.picked_points = []
         self.labels = labels
         self.actors = []
         self.color = None
@@ -409,30 +408,23 @@ class PointCloudVisualizer:
                 if self.labels is not None:
                     plotter.add_point_labels(x[i_point].values, [str(labels[i_point])])
 
-        #if self.picked_points is not None: 
-        #    plotter.enable_surface_point_picking(callback=self.on_pick, show_point=False)
-
 
     def on_pick(self, picked_point):
         plotter = self.plotter
         points = self.points
-        ppoints = self.picked_points
         threshold_distance = 5  # Define how close points have to be to consider them "super close"
         new_point = np.array(picked_point)
         
         # Check if new point is super close to any existing sphere
         for i, existing_point in enumerate(points.values):
             if np.linalg.norm(new_point - existing_point) < threshold_distance:
-                #s = pv.Sphere(radius=4, center=existing_point)
-                #plotter.add_mesh(s, color='r')
-                #if i not in ppoints:
-                #    ppoints.append(i)
-
                 idx_to_remove = i
                 indexes = np.arange(len(self.points.label))
                 selected_indexes = np.delete(indexes, idx_to_remove)
 
                 self.points = self.points.isel(label=selected_indexes)
+                if self.normals is not None:
+                    self.normals = self.normals.isel(label=selected_indexes)
                 self.plotter.remove_actor(self.actors[idx_to_remove])
                 del self.actors[idx_to_remove]
                 
@@ -443,205 +435,65 @@ class PointCloudVisualizer:
         new_label_number = max([int(label.split('-')[-1]) for label in existing_labels]) + 1
         new_label = f'O-{new_label_number}'
         new_group = self.points.coords['group'].values[0]
-        new_type = cdc.PointType.LANDMARK if new_group == 'L' else cdc.PointType.UNKNOWN
+        new_type = cdc.PointType.LANDMARK if new_group == 'O' else cdc.PointType.UNKNOWN
 
         # Create the new entry DataArray
-        new_center_coords = new_point  # Example new coordinates for the single entry
+        new_center_coords = new_point 
         
         new_entry = xr.DataArray(
-            [new_center_coords],  # Encapsulate in a list to fit the dimensionality
-            dims=["label", "digitized"],  # Adjust "coordinate" to match your specific dimension names
+            [new_center_coords],  
+            dims=["label", "digitized"],  
             coords={
-                "label": [new_label],  # Use the newly generated unique label
-                # Assuming all entries share the same 'type' and 'group', you can directly reuse from existing
+                "label": [new_label],              
                 "type": ("label", [new_type]),
                 "group": ("label", [new_group]),
             }
-        ).pint.quantify(units="mm")
-        
-        #self.points.points.add(new_label, new_center_coords, new_type)
+        ).pint.quantify(units="mm")        
         
         s = pv.Sphere(radius=2, center=new_point)
-        
-        sphere_actor = plotter.add_mesh(s, color='r')
-        
+        sphere_actor = plotter.add_mesh(s, color='r')        
         self.actors.append(sphere_actor)
         
-        #self.points = xr.concat([self.points, new_entry], dim='label')
-       
-        display(self.points)
+        new_normal = self.find_surface_normal(new_point)
         self.points = self.points.points.add(new_label, new_center_coords, new_type, new_group)
-        display(self.points)
+        self.normals = self.update_normals(new_normal, new_label)
 
     def update_visualization(self):
         # Clear existing plot and re-plot with the updated self.points
         self.plotter.clear()
-        self.plot()  # Re-plot the updated points
+        self.plot()  
 
     def enable_picking(self):
-        self.plotter.enable_surface_point_picking(callback=self.on_pick, show_message=True, show_point=False)
+        self.plotter.enable_surface_point_picking(callback=self.on_pick, show_message = "Right click to place or remove optode", show_point=False, )
 
-
-class PointCloudVisualizer2(pv.Plotter):
+    def find_surface_normal(self, picked_point, radius=6):
+        def pca(vertices: np.ndarray):           
+            eigenvalues, eigenvecs = np.linalg.eigh(np.cov(vertices.T))
+          
+            # sort by increasing eigenvalue
+            indices = np.argsort(eigenvalues)           
+            eigenvalues = eigenvalues[indices]           
+            eigenvecs = eigenvecs[:, indices]
+          
+            return eigenvalues, eigenvecs
+        # Calculate distances from picked point to all vertices in the mesh        
+        distances = np.linalg.norm(self.surface.mesh.vertices - picked_point, axis=1)      
+        close_vertices = self.surface.mesh.vertices[distances < radius]  # Select vertices within the specified radius      
+        eigenvalues, eigenvecs = pca(close_vertices)      
+        normal_vector = eigenvecs[:, 0]          
+        # Optionally, verify the direction of the normal
+        if np.dot(normal_vector, picked_point - np.mean(close_vertices, axis=0)) < 0:
+            normal_vector = -normal_vector  # Ensure the normal points outward    
+        return normal_vector
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)  # Initialize pyvista.Plotter with any additional keyword arguments
-        self.points = None
-        self.actors2 = []
-        self.picked_points = []
-        # Example configuration, you might want to make these configurable externally
-        self.default_point_colors = {
-            PointType.UNKNOWN: "gray",
-            PointType.SOURCE: "r",
-            PointType.DETECTOR: "b",
-            PointType.LANDMARK: "g",
-        }
-        self.default_point_sizes = {
-            PointType.UNKNOWN: 2,
-            PointType.SOURCE: 3,
-            PointType.DETECTOR: 3,
-            PointType.LANDMARK: 2,
-        }
-
-
-    def plot(self, points=None):
-        if points is not None:
-            self.points = points
-           
-        display(self.points)
-        points = self.points.pint.dequantify()
-        for point_type, group in points.groupby("type"):
-            color = self.default_point_colors.get(point_type, "gray")
-            size = self.default_point_sizes.get(point_type, 1)
-            for i_point in range(len(group)):
-                # Create a sphere at each point location with the specified size and color
-                sphere = pv.Sphere(radius=size, center=group[i_point])
-                actor = self.add_mesh(sphere, color=color)
-                self.actors2.append(actor)
-                
-
-    def update_visualization(self):
-        self.clear()  # Clear the plotter
-        self.plot()  # Re-plot everything
-
-    def enable_picking(self):
-        self.enable_surface_point_picking(callback=self.on_pick, show_message=False, show_point=False)
-        
-    def on_pick2(self, picked_point):
-        display("pick")
-        #plotter = self.plotter
-        points = self.points
-        ppoints = self.picked_points
-        threshold_distance = 5  # Define how close points have to be to consider them "super close"
-        new_point = np.array(picked_point)
-        display(new_point)
-        
-        display("hyhey")
-        
-        # Check if new point is super close to any existing sphere
-        for i, existing_point in enumerate(points.values):
-            display(np.linalg.norm(new_point - existing_point))
-            if np.linalg.norm(new_point - existing_point) < threshold_distance:
-                
-                #s = pv.Sphere(radius=4, center=existing_point)
-                #plotter.add_mesh(s, color='r')
-                #if i not in ppoints:
-                #    ppoints.append(i)
-
-                idx_to_remove = i
-                indexes = np.arange(len(self.points.label))
-                selected_indexes = np.delete(indexes, idx_to_remove)
-
-                self.points = self.points.isel(label=selected_indexes)
-                self.remove_actor(self.actors[idx_to_remove])
-                del self.actors[idx_to_remove]
-                
-                return  # Stop the function after removing the sphere
-            
-        existing_labels = self.points.coords['label'].values
-        # Generate a new unique label
-        new_label_number = max([int(label.split('-')[-1]) for label in existing_labels]) + 1
-        new_label = f'O-{new_label_number}'
-        new_group = self.points.coords['group'].values[0]
-        new_type = cdc.PointType.LANDMARK if new_group == 'L' else cdc.PointType.UNKNOWN
-
-        # Create the new entry DataArray
-        new_center_coords = new_point  # Example new coordinates for the single entry
-        
-        new_entry = xr.DataArray(
-            [new_center_coords],  # Encapsulate in a list to fit the dimensionality
-            dims=["label", "digitized"],  # Adjust "coordinate" to match your specific dimension names
+    def update_normals(self, normal_at_picked_point, label):
+        new_normals = xr.DataArray(
+            np.vstack([normal_at_picked_point]),
+            dims=["label", self.surface.crs],
             coords={
-                "label": [new_label],  # Use the newly generated unique label
-                # Assuming all entries share the same 'type' and 'group', you can directly reuse from existing
-                "type": ("label", [new_type]),
-                "group": ("label", [new_group]),
-            }
-        ).pint.quantify(units="mm")
-        
-        #self.points.points.add(new_label, new_center_coords, new_type)
-        
-        s = pv.Sphere(radius=2, center=new_point)
-        
-        sphere_actor = self.add_mesh(s, color='gray')
-        
-        self.actors.append(sphere_actor)
-        
-        #self.points = xr.concat([self.points, new_entry], dim='label')
-       
-        display(self.points)
-        self.points = self.points.points.add(new_label, new_center_coords, new_type, new_group)
-        display(self.points)
-        
-    def on_pick(self, picked_point):
-        # Assuming points are stored in a structure that supports indexing and deletion
-        # and picked_point is a coordinate in the form [x, y, z]
-        threshold_distance = 5  # Define closeness threshold
-        new_point = np.array(picked_point)
-        display(new_point)
-        display("pick")
-        
-        # Assume self.points is structured to support this kind of operation
-        if self.points is not None:
-            for i, existing_point in enumerate(self.points.values):  # Adjust enumeration based on your points' structure
-                #existing_point = np.array([point["x"], point["y"], point["z"]])  # Adjust access based on structure
-                if np.linalg.norm(new_point - existing_point) < threshold_distance:
-                    idx_to_remove = i
-                    indexes = np.arange(len(self.points.label))
-                    selected_indexes = np.delete(indexes, idx_to_remove)
-                    self.points = self.points.isel(label=selected_indexes)
-                    self.remove_actor(self.actors2[idx_to_remove])  # Remove from visualization
-                    del self.actors2[i]  # Remove from our list
-                    # Adjust removal from points based on your structure, e.g.:
-                    # self.points = np.delete(self.points, i, 0)
-                    #self.update_visualization()
-                    return  # Exit after handling one point
+                "label": ("label", [label]),
+                "group": ("label", ["O"]),
+            },
+        ).pint.quantify("1")
 
-                
-            # If no point is close enough, add a new point
-            sphere = pv.Sphere(radius=2, center=new_point)
-            actor = self.add_mesh(sphere, color='gray')  # Add new point
-            self.actors2.append(actor)  # Track new actor
-            
-            existing_labels = self.points.coords['label'].values
-            # Generate a new unique label
-            new_label_number = max([int(label.split('-')[-1]) for label in existing_labels]) + 1
-            new_label = f'O-{new_label_number}'
-            new_group = self.points.coords['group'].values[0]
-            new_type = cdc.PointType.LANDMARK if new_group == 'L' else cdc.PointType.UNKNOWN
-
-            # Create the new entry DataArray
-            new_center_coords = new_point  # Example new coordinates for the single entry
-
-            new_entry = xr.DataArray(
-                [new_center_coords],  # Encapsulate in a list to fit the dimensionality
-                dims=["label", "digitized"],  # Adjust "coordinate" to match your specific dimension names
-                coords={
-                    "label": [new_label],  # Use the newly generated unique label
-                    # Assuming all entries share the same 'type' and 'group', you can directly reuse from existing
-                    "type": ("label", [new_type]),
-                    "group": ("label", [new_group]),
-                }
-            ).pint.quantify(units="mm")
-            display(new_entry)
-            self.points = self.points.points.add(new_label, new_center_coords, new_type, new_group)
+        return xr.concat((self.normals, new_normals), dim="label")

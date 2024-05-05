@@ -301,9 +301,13 @@ def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tole
         tolerance (float): Tolerance for convergence check.
 
     Returns:
-        np.ndarray: Transformed source points.
-        np.ndarray: Transformation parameters [tx, ty, tz, rx, ry, rz, sx, sy, sz].
+        np.ndarray: Transformed source points as a numpy array with their coordinates updated to reflect the best alignment.
+        np.ndarray: Transformation parameters array consisting of [tx, ty, tz, rx, ry, rz, sx, sy, sz], where 't' stands for 
+                    translation components, 'r' for rotation components (in radians), and 's' for scaling components.
+        np.ndarray: Indices of the target points that correspond to each source point as per the nearest neighbor search.
+
     """
+
     # Convert to homogeneous coordinates, assuming .values and .pint.dequantify() yield np.ndarray
     units = "mm"
     opt_centers_mm = opt_centers.pint.to(units).points.to_homogeneous().pint.dequantify()#.values
@@ -396,6 +400,17 @@ def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tole
     return opt_centers_mm[:,:3], current_params, indices
 
 def find_spread_points(points_xr):
+    """
+    Selects three points from a given set of points that are spread apart from each other in the dataset.
+
+
+    Parameters:
+        points_xr (xarray.DataArray): An xarray DataArray containing the points from which to select. 
+                                      
+    Returns:
+        np.ndarray: Indices of the initial, farthest, and median-distanced points from the initial point 
+                    as determined by their positions in the original dataset.
+    """
     
     points = points_xr.values
     if len(points) < 3:
@@ -416,6 +431,7 @@ def find_spread_points(points_xr):
     sorted_distances_indices = np.argsort(distances)
     median_index = sorted_distances_indices[len(sorted_distances_indices) // 2]
     middle_distanced_point_index = median_index if median_index != initial_point_index else sorted_distances_indices[len(sorted_distances_indices) // 2 + 1]
+    
     return points_xr.label.isel(label=[initial_point_index, farthest_point_index, middle_distanced_point_index]).values
 
 
