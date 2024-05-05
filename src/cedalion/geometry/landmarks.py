@@ -346,12 +346,3 @@ def order_ref_points_6(landmarks: xr.DataArray, twoPoints: str) -> xr.DataArray:
     ordered_landmarks["label"] = new_labels
     
     return ordered_landmarks
-        plt = pv.Plotter()
-        cedalion.plots.plot_surface(plt, self.scalp_surface)
-        cedalion.plots.plot_labeled_points(plt, self.landmarks_mm.pint.quantify())
-
-        for points in self.lines:
-            lines = pv.MultipleLines(points)
-            plt.add_mesh(lines, color="m")
-
-        plt.show()
