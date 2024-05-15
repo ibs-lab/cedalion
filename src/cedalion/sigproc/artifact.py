@@ -7,7 +7,7 @@ from cedalion import Quantity, units
 import xarray as xr
 from scipy import signal
 import pint
-
+import pandas as pd
 
 @cdc.validate_schemas
 def id_motion(
@@ -105,14 +105,6 @@ def id_motion(
     return ma_mask
 
 
-
-    # calulate max_diff across channels for different time delays
-    
-
-
-
-    return fNIRSdata
-
 #%%
 
 @cdc.validate_schemas
@@ -192,7 +184,10 @@ def detect_outliers(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity):
     
     return M, M_array
 
+
+
 #%%
+
 @cdc.validate_schemas
 def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
     """Refines motion artifact mask to simplify and quantify motion artifacts.
@@ -274,6 +269,11 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
 
     else:
         raise ValueError(f"unsupported operator '{operator}'")
+
+    return ma_mask_new, ma_info
+
+        
+        
 def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
     """
     Detects baseline shifts in fNIRS data using motion detection and correction techniques.
@@ -317,6 +317,11 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
      
         channel = fNIRSdata_pad.sel(measurement=measurement)
         channel_M = M_pad.sel(measurement=measurement)
+        if sum(channel_M.values) == 0:
+            tinc = np.ones(nT_pad)
+            tInc[:,m] = tinc
+
+            continue
         
         sig = channel.copy()
         sig.values = np.ones(channel.shape) # initialize array for baseline shift detection
@@ -332,7 +337,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
         if len(lstMs) == 0:
             lstMs = [0]
         if len(lstMf) == 0:
-            lstMf = len(sig)-1
+            lstMf = [len(sig)-1]
         if lstMs[0] > lstMf[0]:
             lstMs = np.insert(lstMs, 0, 0)
         if lstMs[-1] > lstMf[-1]:
@@ -379,9 +384,11 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
             ssttdd.extend(tempo2) 
             tempo2 = []
              
+        
         ssttdd = np.array(ssttdd)
         ssttdd_thresh = np.quantile(ssttdd,0.5) # get threshold defined by these differences
-        
+  
+            
         countnoise = 0 # keep track of the number of segments that are longer than Nthresh
         SNR_threshold = []
         for jj in range(len(signoise)):

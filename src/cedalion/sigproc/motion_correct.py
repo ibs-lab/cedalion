@@ -11,7 +11,7 @@ import cedalion.dataclasses as cdc
 from .artifact import detect_outliers, detect_baselineshift, id_motion, id_motion_refine
 
 @cdc.validate_schemas
-def motionCorrectSpline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): #, mlAct:cdt.NDTimeSeries):
+def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): #, mlAct:cdt.NDTimeSeries):
     """
     Apply motion correction using spline interpolation to fNIRS data.
     
@@ -33,7 +33,8 @@ def motionCorrectSpline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): #,
     tIncCh = tIncCh.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
 
     fs =  fNIRSdata.cd.sampling_rate 
-    t = fNIRSdata['time']
+    t = np.arange(0, len(fNIRSdata.time), 1/fs)
+    t = t[:len(fNIRSdata.time)]
 
     dodSpline = fNIRSdata.copy()
 
@@ -66,7 +67,7 @@ def motionCorrectSpline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): #,
             for ii in range(nbMA):
                 idx = np.arange(lstMs[ii],lstMf[ii])
                 
-                if len(idx) > 3:
+                if len(idx) > 3 and sum(np.diff(channel[idx]))>0:
                     splInterp_obj = UnivariateSpline(t[idx], channel[idx])
                     splInterp = splInterp_obj(t[idx])
                     
@@ -76,31 +77,33 @@ def motionCorrectSpline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): #,
             # reconstruct the timeseries by shifting the motion artifact segments to the previous or next non-motion artifact segment
             # for the first MA segment - shirf to previous noMA segment if it exists otherwise shift to next noMA segment
             idx = np.arange(lstMs[0], lstMf[0])
-            SegCurrLength = lstMl[0]
-            windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
-            
-            if lstMs[0] > 0:
-                SegPrevLength = lstMs[0]
-                windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
-                meanPrev = np.mean(dodSpline_chan[idx[0]-windPrev:idx[0]])                      
-                meanCurr = np.mean(dodSpline_chan[idx[0]:idx[0]+windCurr])
-                dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanPrev    
-            else:
-                if nbMA > 1:
-                    SegNextLength = lstMs[1]- lstMf[0]
-                else:
-                    SegNextLength = len(dodSpline_chan) - lstMf[0]
+            if len(idx)> 0 :
+                SegCurrLength = lstMl[0]
+                windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
                 
-                windNext = compute_window(SegNextLength, dtShort, dtLong, fs)
-                meanNext = np.mean(dodSpline_chan[idx[-1]:idx[-1]+windNext])                      
-                meanCurr = np.mean(dodSpline_chan[idx[-1]-windCurr:idx[-1]])
-                dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanNext
-            
+                if lstMs[0] > 0:
+                    SegPrevLength = lstMs[0]
+                    windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
+                    meanPrev = np.mean(dodSpline_chan[idx[0]-windPrev:idx[0]])                      
+                    meanCurr = np.mean(dodSpline_chan[idx[0]:idx[0]+windCurr])
+                    dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanPrev    
+                else:
+                    if nbMA > 1:
+                        SegNextLength = lstMs[1]- lstMf[0]
+                    else:
+                        SegNextLength = len(dodSpline_chan) - lstMf[0]
+                    
+                    windNext = compute_window(SegNextLength, dtShort, dtLong, fs)
+                    meanNext = np.mean(dodSpline_chan[idx[-1]:idx[-1]+windNext])                      
+                    meanCurr = np.mean(dodSpline_chan[idx[-1]-windCurr:idx[-1]])
+                    dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanNext
+                
             # intermediate segments
             for kk in range(nbMA-1):
                 
                 # no motion 
                 idx = np.arange(lstMf[kk], lstMs[kk+1])
+                # if len(idx) > 1:
                 SegPrevLength = lstMl[kk]
                 SegCurrLength = len(idx)
                 
@@ -144,6 +147,7 @@ def motionCorrectSpline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): #,
         dodSpline[:,m] = dodSpline_chan
     
     dodSpline = dodSpline.unstack('measurement').pint.quantify()
+
     return dodSpline
 
 #%%
@@ -170,7 +174,7 @@ def compute_window(SegLength:cdt.NDTimeSeries, dtShort:Quantity, dtLong:Quantity
 
 #%%
 @cdc.validate_schemas
-def motionCorrectSplineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity = 10 ): #, mlAct:cdt.NDTimeSeries):
+def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity = 10 ): #, mlAct:cdt.NDTimeSeries):
     """
     Apply motion correction using spline interpolation and Savitzky-Golay filter to fNIRS data.
 
@@ -193,10 +197,10 @@ def motionCorrectSplineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity = 1
     
     # pad fNIRSdata and tIncCh for motion correction 
     fNIRSdata_lpf2_pad = fNIRSdata_lpf2.pad(time=extend, mode='edge')
-    
+
     tIncCh_pad = tIncCh.pad(time=extend, mode='edge')
-    
-    dodSpline = motionCorrectSpline(fNIRSdata_lpf2_pad, tIncCh_pad)
+
+    dodSpline = motion_correct_spline(fNIRSdata_lpf2_pad, tIncCh_pad)
     
     # remove padding
     dodSpline = dodSpline[extend:-extend,:]
@@ -211,7 +215,8 @@ def motionCorrectSplineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity = 1
     dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline.T, framesize_sec, K).T
     
     dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
-    
+    dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
+
     return dodSplineSG
 
 #%%
