@@ -147,17 +147,27 @@ def detect_outliers(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity):
         
         # detect outliers in std variations of the signal 
         windows = channel_lpf05.rolling(time=window_size).construct("window", stride=1)
+        windows = windows[window_size:]
         sigSTD = windows.std("window")
-        
+
         # define thresholds for std based on the first and fourth quartiles of the signals std
         quants_std = sigSTD.quantile([0.25,0.5,0.75])
+        quants_std = np.quantile(sigSTD, [0.25, 0.5, 0.75])
         IQR_std = quants_std[2] - quants_std[0]
         high_std = quants_std[2] + IQR_std*IQR_STD_THRESH
         low_std = quants_std[0] - IQR_std*IQR_STD_THRESH
         # create mask to identify where std is above or below the two thresholds
-        std_mask = xrutils.mask(sigSTD, True)
-        std_mask = std_mask.where((sigSTD > high_std) | (sigSTD < low_std), False)
+        high = np.where(sigSTD > high_std)[0]
+        low = np.where(sigSTD < low_std)[0]
+        std_mask = np.unique(np.hstack([high, low]))
         
+        # std_mask_temp = xrutils.mask(sigSTD, True)
+        # std_mask = xrutils.mask(channel, True)
+        # std_mask_temp = std_mask_temp.where((sigSTD > high_std) | (sigSTD < low_std), False)
+        
+        offset = np.round(window_size/2).astype(int)
+        std_mask=offset+std_mask;
+
         # detect outliers in gradient of the signal
         grad = xr.apply_ufunc(signal.convolve, channel_lpf2, [-1, 0, 1],'same', input_core_dims=[["time"],[],[]], output_core_dims=[["time"]])    
         
@@ -167,20 +177,28 @@ def detect_outliers(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity):
         high_grad = quants_grad[2] + IQR_grad*IQR_GRAD_THRESH
         low_grad = quants_grad[0] - IQR_grad*IQR_GRAD_THRESH
         # create mask to idenfity where grad is above or below the two thresholds
-        grad_mask = xrutils.mask(grad, True)
-        grad_mask = grad_mask.where((grad > high_grad) | (grad < low_grad), False) 
-  
-        # union of both masks
-        masks = [std_mask, grad_mask]
-        mask_channel = reduce(lambda x, y: x | y, masks)
+        # grad_mask = xrutils.mask(grad, True)
+        # grad_mask = grad_mask.where((grad > high_grad) | (grad < low_grad), False) 
+        # grad_mask.values = np.hstack([True, grad_mask.values[:-1]])
+        high = np.where(grad > high_grad)[0]
+        low = np.where(grad < low_grad)[0]
+        grad_mask = np.unique(np.hstack([high, low]))
         
-        M.values[:,m] = mask_channel.values
+        # union of both masks
+        masks = np.unique(np.hstack([std_mask, grad_mask]))
+        masks = masks
+        # mask_channel = reduce(lambda x, y: x | y, masks)
+        
+        M.values[masks,m] = 0
 
     # apply masks to fNIRSdata
     M_array, M_elements = xrutils.apply_mask(fNIRSdata, M, 'nan', 'none')
     
     M = M.unstack('measurement').pint.quantify()
     M_array = M_array.unstack('measurement').pint.quantify()
+    
+    M = M.transpose("channel","wavelength","time")
+    M_array = M_array.transpose("channel","wavelength","time")
     
     return M, M_array
 
@@ -308,8 +326,8 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
     tInc = xrutils.mask(fNIRSdata_pad, True) # initialize mask for data to indicate timepoints that are included
     mean_SNR_threshold = np.zeros(len(fNIRSdata)) # initialize array for signal to noise ratio threshold per channel
 
-    M_pad = M.copy()
-    M_pad['samples'].values = M_pad['samples'].values + 12 # add 12 to the indices to account for padding
+    M_pad = M.pad(time=extend, mode='edge') # pad M by 12 seconds also
+    M_pad['samples'].values = np.arange(len(M_pad))
 
     mean_SNR_threshold = np.zeros(len(fNIRSdata.measurement))
         
@@ -323,9 +341,11 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
 
             continue
         
-        sig = channel.copy()
-        sig.values = np.ones(channel.shape) # initialize array for baseline shift detection
-        sig.values[np.where(channel_M.values == True)[0]] = 0 # set indices where motion is detected to 0
+        sig = channel_M.copy()
+        sig.values = channel_M.values.astype(int)
+        # sig = channel.copy()
+        # sig.values = np.ones(channel.shape) # initialize array for baseline shift detection
+        # sig.values[np.where(channel_M.values == True)[0]] = 0 # set indices where motion is detected to 0
         
         # find locations where signal goes from clean -> motion -> clean
         temp = sig.diff('time')
@@ -337,11 +357,11 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
         if len(lstMs) == 0:
             lstMs = [0]
         if len(lstMf) == 0:
-            lstMf = [len(sig)-1]
+            lstMf = np.asarray([len(sig)-1])
         if lstMs[0] > lstMf[0]:
             lstMs = np.insert(lstMs, 0, 0)
         if lstMs[-1] > lstMf[-1]:
-            lstMf.append(len(sig)-1)
+            lstMf = np.append(lstMf, len(sig)-1)
         
         # get OD amplitude at starts and finish of each motion segment
         meanpH = channel[lstMs]
@@ -365,7 +385,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
             if sig.values[kk] == 1:
                 a.append(channel.values[kk])
                 b.append(noise.values[kk])
-                if sig.values[kk+1] == 0:
+                if sig.values[kk+1] == 0 and sig.values[kk] == 1:
                     sigtemp.append(a)
                     signoise.append(b)
                     a=[]
@@ -399,7 +419,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
                 SNR_threshold.append(abs(dmean)/(dstd+1e-16)) # get the signal to noise ratio for each segment if segment is longer than 3 seconds
             
         if len(SNR_threshold[1:len(SNR_threshold)-1]) > 0:
-            mean_SNR_threshold[m] = np.mean(SNR_threshold[1:len(SNR_threshold)-1]) # get the mean signal to noise ratio for all segments longer than 3 seconds
+            mean_SNR_threshold[m] = np.mean(SNR_threshold) # get the mean signal to noise ratio for all segments longer than 3 seconds
         
         tinc = np.ones(nT_pad)
         # loop over each motion segment 
@@ -421,22 +441,22 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
         if np.isnan(mean_SNR_threshold[ww]) or mean_SNR_threshold[ww] == 0:
             mean_SNR_threshold[ww] = abs(fNIRSdata.sel(measurement=measurement).mean('time')/fNIRSdata.sel(measurement=measurement).std('time'))
 
-    lent = mean_SNR_threshold.shape[0]//2-1 # get the number of channels 
+    nChan = len(fNIRSdata['channel'])//2  # get the number of channels 
 
     SNRvalue = 3
 
     # make sure the same mask is applied to both channels
-    for ww in range(len(mean_SNR_threshold)//2-1):
+    for ww in range(nChan):
         
-        if mean_SNR_threshold[ww] < SNRvalue and mean_SNR_threshold[ww+lent] < SNRvalue: # if the SNR is less than the threshold for both channels, set channels to ones
-            tInc[:,ww+lent] = np.ones(len(fNIRSdata_pad))
+        if mean_SNR_threshold[ww] < SNRvalue and mean_SNR_threshold[ww+nChan] < SNRvalue: # if the SNR is less than the threshold for both channels, set channels to ones
+            tInc[:,ww+nChan] = np.ones(len(fNIRSdata_pad))
             tInc[:,ww] = np.ones(len(fNIRSdata_pad))
         
-        elif mean_SNR_threshold[ww] > SNRvalue and mean_SNR_threshold[ww+lent] < SNRvalue: # if the SNR is greater than the threshold for the first channel and less than the threshold for the second channel, set the second channel to the first channel
-            tInc[:,ww+lent] = tInc[:,ww]
+        elif mean_SNR_threshold[ww] > SNRvalue and mean_SNR_threshold[ww+nChan] < SNRvalue: # if the SNR is greater than the threshold for the first channel and less than the threshold for the second channel, set the second channel to the first channel
+            tInc[:,ww+nChan] = tInc[:,ww]
         
-        elif mean_SNR_threshold[ww] < SNRvalue and mean_SNR_threshold[ww+lent] > SNRvalue: # if the SNR is less than the threshold for the first channel and greater than the threshold for the second channel, set the first channel to the second channel
-            tInc[:,ww] = tInc[:,ww+lent]
+        elif mean_SNR_threshold[ww] < SNRvalue and mean_SNR_threshold[ww+nChan] > SNRvalue: # if the SNR is less than the threshold for the first channel and greater than the threshold for the second channel, set the first channel to the second channel
+            tInc[:,ww] = tInc[:,ww+nChan]
         
     # remove the padding
     tIncCh = tInc[extend:-extend,:].pint.quantify()

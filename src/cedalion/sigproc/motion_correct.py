@@ -28,7 +28,7 @@ def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): 
     """
     dtShort = 0.3
     dtLong = 3
-    
+    p=0.99
     fNIRSdata = fNIRSdata.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
     tIncCh = tIncCh.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
 
@@ -52,13 +52,13 @@ def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): 
             lstMf = np.where(temp==1)[0]
             
             if len(lstMs) == 0:
-                lstMs = [0]
+                lstMs = np.asarray([0])
             if len(lstMf) == 0:
-                lstMf = len(channel)-1
+                lstMf = np.asarray(len(channel)-1)
             if lstMs[0] > lstMf[0]:
                 lstMs = np.insert(lstMs, 0, 0)
             if lstMs[-1] > lstMf[-1]:
-                lstMf.append(len(channel)-1)
+                lstMf = np.append(lstMf, len(channel)-1)
             
             nbMA = len(lstMs)
             lstMl = lstMf - lstMs
@@ -67,7 +67,7 @@ def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): 
             for ii in range(nbMA):
                 idx = np.arange(lstMs[ii],lstMf[ii])
                 
-                if len(idx) > 3 and sum(np.diff(channel[idx]))>0:
+                if len(idx) > 3 :
                     splInterp_obj = UnivariateSpline(t[idx], channel[idx])
                     splInterp = splInterp_obj(t[idx])
                     
@@ -189,7 +189,8 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
     fs =  fNIRSdata.cd.sampling_rate
     
     M, M_array = detect_outliers(fNIRSdata, 1)
-    
+     
+    #TODO fix this next 
     tInc,tIncCh = detect_baselineshift(fNIRSdata, M)
     
     fNIRSdata_lpf2 = fNIRSdata.cd.freq_filter(0, 2, butter_order=4)
@@ -198,7 +199,7 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
     # pad fNIRSdata and tIncCh for motion correction 
     fNIRSdata_lpf2_pad = fNIRSdata_lpf2.pad(time=extend, mode='edge')
 
-    tIncCh_pad = tIncCh.pad(time=extend, mode='edge')
+    tIncCh_pad = tIncCh.pad(time=extend, mode='constant', constant_values=False)
 
     dodSpline = motion_correct_spline(fNIRSdata_lpf2_pad, tIncCh_pad)
     
