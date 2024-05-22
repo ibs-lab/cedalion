@@ -360,13 +360,22 @@ def read_aux(nirs_element: NirsElement):
         else:
             raise ValueError("aux.dataTimeSeries must have either 1 or 2 dimensions.")
 
-        x = xr.DataArray(
-            aux.dataTimeSeries,
-            coords={"time": aux.time},
-            dims=dims,
-            name=name,
-            attrs={"units": units, "time_offset": time_offset},
-        )
+        try:
+            x = xr.DataArray(
+                aux.dataTimeSeries,
+                coords={"time": aux.time},
+                dims=dims,
+                name=name,
+                attrs={"units": units, "time_offset": time_offset},
+            )
+        except:
+            x = xr.DataArray(
+                aux.dataTimeSeries.T,
+                coords={"time": aux.time},
+                dims=dims,
+                name=name,
+                attrs={"units": units, "time_offset": time_offset},
+            )
         result[name] = x.pint.quantify()
 
     return result

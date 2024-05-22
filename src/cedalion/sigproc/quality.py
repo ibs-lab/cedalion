@@ -15,7 +15,63 @@ from typing import List
 from functools import reduce
 import xarray as xr
 from .frequency import freq_filter, sampling_rate
+from scipy import signal 
+from tqdm import tqdm 
 
+@cdc.validate_schemas
+def psp(amplitudes: NDTimeSeries, window_length: Quantity, psp_thresh: float):
+    
+    # FIXME make these configurable
+    cardiac_fmin = 0.5 * units.Hz
+    cardiac_fmax = 2.5 * units.Hz
+    
+    amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
+    amp = (amp - amp.mean("time")) / amp.std("time")
+    
+    # convert window_length to samples
+    nsamples = (window_length * sampling_rate(amp)).to_base_units()
+    nsamples = int(np.ceil(nsamples))
+    
+    # This creates a new DataArray with a new dimension "window", that is
+    # window_len_samples large. The time dimension will contain the time coordinate of
+    # the first sample in the window. Setting the stride size to the same value as the
+    # window length will result in non-overlapping windows.
+    windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
+
+    fs = amp.cd.sampling_rate
+    
+    psp = np.zeros([ len(windows['channel']), len(windows['time'])])
+    
+    # Vectorized signal extraction and correlation
+    sig = windows.transpose('channel', 'time', 'wavelength','window').values
+    psp = np.zeros((sig.shape[0], sig.shape[1]))
+    
+    for w in range(sig.shape[1]):
+        
+        sig_temp = sig[:,w,:,:]
+        
+        corr = np.array([signal.correlate(sig_temp[ch, 0, :], sig_temp[ch, 1, :], 'full') for ch in range(sig.shape[0])])
+    
+        norm_factor = [np.sqrt(np.sum(sig_temp[ch, 0, :]**2) * np.sum(sig_temp[ch, 1, :]**2)) for ch in range(sig.shape[0]) ]
+        
+        corr /= np.tile(norm_factor, (corr.shape[1],1)).T
+    
+        for ch in range(sig.shape[0]):
+            window = signal.hamming(len(corr[ch,:]))
+            f, pxx = signal.periodogram(corr[ch,:], window=window, nfft=len(corr[ch,:]), fs=fs, scaling='spectrum')
+
+            psp[ch,w] = np.max(pxx)            
+
+
+    
+    psp_xr = amp.isel(time=slice(sig.shape[1]), wavelength=0).copy(data=psp)
+    
+    # Apply threshold mask
+    psp_mask = xrutils.mask(psp_xr, True)
+    psp_mask = psp_mask.where(psp_xr > psp_thresh, False)
+    
+    return psp_xr, psp_mask
+    
 
 @cdc.validate_schemas
 def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
@@ -59,6 +115,7 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
     # create sci mask and update accoording to sci_thresh
     sci_mask = xrutils.mask(sci, True)
     sci_mask = sci_mask.where(sci > sci_thresh, False)
+
 
     return sci, sci_mask
 
