@@ -28,11 +28,15 @@ def test_TwoSurfaceHeadModel():
         SEG_DATADIR,
         mask_files,
         landmarks_file,
-    ) = cedalion.datasets.get_colin27_segmentation()
+    ) = cedalion.datasets.get_colin27_segmentation(downsampled=True)
     head = fw.TwoSurfaceHeadModel.from_segmentation(
         segmentation_dir=SEG_DATADIR,
         mask_files=mask_files,
         landmarks_ras_file=landmarks_file,
+        # disable mesh smoothing and decimation to speed up runtime
+        smoothing=0, 
+        brain_face_count=None,
+        scalp_face_count=None
     )
     # save to folder
 
