@@ -8,6 +8,10 @@ import xarray as xr
 from scipy import signal
 import pint
 import pandas as pd
+import logging
+import time
+
+logger = logging.getLogger("cedalion")
 
 @cdc.validate_schemas
 def id_motion(
@@ -203,6 +207,84 @@ def detect_outliers(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity):
     return M, M_array
 
 
+@cdc.validate_schemas
+def detect_outliers_std(ts: cdt.NDTimeSeries, t_window: Quantity, iqr_threshold=2):
+    """Detect outliers in fNIRSdata based on standard deviation of signal."""
+
+    ts = ts.pint.dequantify()
+    fs = ts.cd.sampling_rate
+
+    # window size in samples TODO t_window units
+    window_size = int(np.round(fs * t_window))
+
+    ts_lowpass = ts.cd.freq_filter(0, 0.5, butter_order=4)
+
+    # stride==1, i.e. there are as many windows as time samples
+    windowed_std = ts_lowpass.rolling(
+        time=window_size, min_periods=1, center=True
+    ).std()
+
+    qmin, qmax = 0.25, 0.75
+    quantiles = windowed_std.quantile([qmin, 0.5, qmax], dim="time")
+
+    IQR = quantiles.sel(quantile=qmax) - quantiles.sel(quantile=qmin)
+    threshold_high = quantiles.sel(quantile=qmax) + iqr_threshold * IQR
+    threshold_low = quantiles.sel(quantile=qmin) - iqr_threshold * IQR
+
+    mask = (windowed_std < threshold_low) | (threshold_high < windowed_std)
+
+    return mask
+
+
+@cdc.validate_schemas
+def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
+    """Detect outliers in fNIRSdata based on gradient of signal."""
+
+    ts = ts.pint.dequantify()
+
+    ts_lowpass = ts.cd.freq_filter(0, 2, butter_order=4)
+
+    axis_time = list(ts_lowpass.dims).index("time")
+    kernel_shape = np.ones(ts.ndim, dtype=int)
+    kernel_shape[axis_time] = 3
+    grad_kernel  = np.asarray([-1,0,1]).reshape(kernel_shape)
+
+    assert ts_lowpass.dims[-1]
+    gradient = xr.apply_ufunc(
+        signal.oaconvolve,
+        ts_lowpass,
+        grad_kernel,
+        kwargs={"mode": "same", "axes": axis_time },
+    )
+
+    qmin, qmax = 0.25, 0.75
+    quantiles = gradient.quantile([qmin, 0.5, qmax], dim="time")
+
+    IQR = quantiles.sel(quantile=qmax) - quantiles.sel(quantile=qmin)
+    threshold_high = quantiles.sel(quantile=qmax) + iqr_threshold * IQR
+    threshold_low = quantiles.sel(quantile=qmin) - iqr_threshold * IQR
+
+    mask = (gradient > threshold_high) | (gradient < threshold_low)
+
+    return mask
+
+
+@cdc.validate_schemas
+def detect_outliers_2(
+    ts: cdt.NDTimeSeries,
+    t_window_std: Quantity,
+    iqr_threshold_std=2,
+    iqr_threshold_grad=1.5,
+):
+    mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
+    mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
+
+    return mask_std | mask_grad
+
+
+
+
+
 
 #%%
 
@@ -309,6 +391,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
         tInc (cdt.NDTimeSeries): xarray containing information from tIncCh collapsed across channels
         
     """
+    t1 = time.time()
     fNIRSdata = fNIRSdata.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
     M = M.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
 
@@ -470,4 +553,9 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
     tInc = tIncall
     tIncCh = tIncCh.unstack('measurement').pint.quantify()
 
+    t2 = time.time()
+    logger.debug(f"finished detect_baselineshift in t2-t1 {t2-t1:.3f}s")
+
     return tInc, tIncCh
+
+    
