@@ -10,6 +10,7 @@ import pint
 import pandas as pd
 import logging
 import time
+from numpy.typing import ArrayLike
 
 logger = logging.getLogger("cedalion")
 
@@ -514,6 +515,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
             if ((lstMf[kk] - lstMs[kk]) > 0.1*fs) and ((lstMf[kk] - lstMs[kk]) < 0.49999*fs): # if the segment is longer than 0.1 seconds and shorter than 0.5 seconds, set the segment to 0
                 tinc[lstMs[kk]:lstMf[kk]] = 0
 
+            # FIXME comparison time and frequency??
             if lstMf[kk] - lstMs[kk] > fs: # if the segment is longer than the sampling frequency, set the segment to 0
                 tinc[lstMs[kk]:lstMf[kk]] = 0
 
@@ -559,3 +561,90 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
     return tInc, tIncCh
 
     
+
+def mask1D_to_segments(mask: ArrayLike):
+    """Find consecutive segments for a boolean mask.
+
+    Given a boolean mask, this function returns an integer array `segements` of 
+    shape (nsegments,3) in which 
+    - segments[:,0] is the first index of the segment
+    - segments[:,1]-1 is the last index of the segment and 
+    - segments[:,2] is the integer-converted mask value in that segment
+    """
+
+    # FIXME decide how to index:
+    # [start,finish[ as currently implemented or [start, finish]
+
+    # pad mask on both ends with guaranteed state changes
+    mask = np.r_[~mask[0], mask, ~mask[-1]]
+
+    # find the indices where mask changes
+    idx = np.flatnonzero(mask[1:] != mask[:-1])
+
+    segments = np.fromiter(zip(idx[:-1], idx[1:], mask[idx[:-1]]), dtype=(int, 3))
+
+    return segments
+
+
+def detect_baselineshift_2(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
+    ts = ts.pint.dequantify()
+    ts = ts.stack(measurement=["channel", "wavelength"]).sortby("wavelength")
+    outlier_mask = outlier_mask.stack(measurement=["channel", "wavelength"]).sortby(
+        "wavelength"
+    )
+
+    fs = ts.cd.sampling_rate
+
+    pad_samples = int(np.round(12 * fs))  # extension for padding. 12s
+    threshold_samples = int(
+        np.round(0.5 * fs)
+    )  # threshold for baseline shift detection
+
+    ts_lowpass = ts.cd.freq_filter(
+        0, 2, butter_order=4
+    )  # filter the data between 0-2Hz
+
+    # pad timeseries for 12s before and after with edge values
+    ts_padded = ts_lowpass.pad(time=pad_samples, mode="edge")
+
+    # FIXME why does the original implementation filter twice?
+    ts_lowpass_padded = ts_padded.cd.freq_filter(
+        0, 2, butter_order=4
+    )  # filter the data between 0-2Hz
+
+    mask_padded = outlier_mask.pad(time=pad_samples, mode="edge")
+
+    for i_m, measurement in enumerate(ts_padded.measurement):
+        channel = ts_padded.sel(measurement=measurement).values
+        channel_lowpass = ts_lowpass_padded.sel(measurement=measurement).values
+        channel_mask = mask_padded.sel(measurement=measurement).values
+
+        segments = mask1D_to_segments(channel_mask)
+
+        # was motion_kind
+        delta_start_end = np.abs(channel[segments[:, 1] - 1] - segments[:, 0])
+
+        # for long segments (>threshold_samples (0.5s)) calculate the absolute
+        # differences of samples that are threshold_samples away from each other
+        long_seg_deltas = [
+            np.abs(
+                channel[i0 + np.arange(threshold_samples, i1 - i0)]
+                - channel[i0 + np.arange(0, i1 - i0 - threshold_samples)]
+            )
+            for i0, i1, _ in segments
+            if i1 - i0 > threshold_samples
+        ]
+        long_seg_deltas = np.hstack(long_seg_deltas)
+        # threshold defined by the 50% quantile of these differences, was ssttdd_thresh
+        long_seg_deltas_thresh = np.quantile(long_seg_deltas, 0.5)
+
+        mean_seg_snr_threshold = np.mean(
+            [
+                seg.mean() / (seg.std() + 1e-16)
+                for i0, i1, _ in segments
+                for seg in [channel[i0:i1]]
+                if i1 - i0 > 3 * fs
+            ]
+        )
+
+    return 1
