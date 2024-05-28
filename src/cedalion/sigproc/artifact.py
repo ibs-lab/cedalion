@@ -220,6 +220,7 @@ def detect_outliers_std(ts: cdt.NDTimeSeries, t_window: Quantity, iqr_threshold=
 
     ts_lowpass = ts.cd.freq_filter(0, 0.5, butter_order=4)
 
+    # FIXME shift due to window center. accounted for in original method but correct?
     # stride==1, i.e. there are as many windows as time samples
     windowed_std = ts_lowpass.rolling(
         time=window_size, min_periods=1, center=True
@@ -515,7 +516,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
             if ((lstMf[kk] - lstMs[kk]) > 0.1*fs) and ((lstMf[kk] - lstMs[kk]) < 0.49999*fs): # if the segment is longer than 0.1 seconds and shorter than 0.5 seconds, set the segment to 0
                 tinc[lstMs[kk]:lstMf[kk]] = 0
 
-            # FIXME comparison time and frequency??
+            # FIXME comparison time and frequency?? bug?
             if lstMf[kk] - lstMs[kk] > fs: # if the segment is longer than the sampling frequency, set the segment to 0
                 tinc[lstMs[kk]:lstMf[kk]] = 0
 
@@ -562,7 +563,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
 
     
 
-def mask1D_to_segments(mask: ArrayLike):
+def _mask1D_to_segments(mask: ArrayLike):
     """Find consecutive segments for a boolean mask.
 
     Given a boolean mask, this function returns an integer array `segements` of 
@@ -581,17 +582,61 @@ def mask1D_to_segments(mask: ArrayLike):
     # find the indices where mask changes
     idx = np.flatnonzero(mask[1:] != mask[:-1])
 
-    segments = np.fromiter(zip(idx[:-1], idx[1:], mask[idx[:-1]]), dtype=(int, 3))
+    segments = np.fromiter(zip(idx[:-1], idx[1:], mask[idx[1:]]), dtype=(int, 3))
 
     return segments
+
+CLEAN = False
+TAINTED = True
+
+def _calculate_snr(ts, fs, segments):
+    # Calculate signal to noise ratio by considering only longer segments.
+    # Only segments longer than 3s are used. Segments may be clean or tainted.
+    long_seg_snr = [
+        abs(seg.mean()) / (seg.std() + 1e-16)
+        for i0, i1, _ in segments
+        for seg in [ts[i0:i1]]
+        if (i1 - i0) > (3 * fs)
+    ]
+    #print(f"long_seg_snr: {long_seg_snr}")
+    if len(long_seg_snr) > 0:
+        snr = np.mean(long_seg_snr) # FIXME was mean and suceptible to outliers
+    else:
+        # if there is no segment longer than 3s calculate snr ratio from all time points
+        snr = abs(ts.mean()) / (ts.std() + 1e-16)
+
+    return snr
+
+def _calculate_delta_threshold(ts, segments, threshold_samples):
+    # for long segments (>threshold_samples (0.5s)) that are not marked as artifacts
+    # calculate the absolute differences of samples that are threshold_samples away 
+    # from each other
+    seg_deltas = [
+        np.abs(
+            ts[np.arange(i0 + threshold_samples, i1)]
+            - ts[np.arange(i0, i1 - threshold_samples)]
+        )
+        for i0, i1, seg_type in segments
+        if (seg_type == CLEAN) and ((i1 - i0) > threshold_samples)
+    ]
+    seg_deltas = np.hstack(seg_deltas)
+    # threshold defined by the 50% quantile of these differences, was ssttdd_thresh
+    seg_deltas_thresh = np.quantile(seg_deltas, 0.5)
+
+    return seg_deltas_thresh
 
 
 def detect_baselineshift_2(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
     ts = ts.pint.dequantify()
-    ts = ts.stack(measurement=["channel", "wavelength"]).sortby("wavelength")
-    outlier_mask = outlier_mask.stack(measurement=["channel", "wavelength"]).sortby(
-        "wavelength"
-    )
+    
+    #ts = ts.stack(measurement=["channel", "wavelength"]).sortby("wavelength")
+    #outlier_mask = outlier_mask.stack(measurement=["channel", "wavelength"]).sortby(
+    #    "wavelength"
+    #)
+
+    # FIXME 
+    assert "channel" in ts.dims
+    assert "wavelength" in ts.dims
 
     fs = ts.cd.sampling_rate
 
@@ -612,39 +657,71 @@ def detect_baselineshift_2(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries)
         0, 2, butter_order=4
     )  # filter the data between 0-2Hz
 
-    mask_padded = outlier_mask.pad(time=pad_samples, mode="edge")
+    outlier_mask_padded = outlier_mask.pad(time=pad_samples, mode="edge")
 
-    for i_m, measurement in enumerate(ts_padded.measurement):
-        channel = ts_padded.sel(measurement=measurement).values
-        channel_lowpass = ts_lowpass_padded.sel(measurement=measurement).values
-        channel_mask = mask_padded.sel(measurement=measurement).values
+    shift_mask = xrutils.mask(ts_padded, CLEAN)
 
-        segments = mask1D_to_segments(channel_mask)
+    snr_thresh = 3
 
-        # was motion_kind
-        delta_start_end = np.abs(channel[segments[:, 1] - 1] - segments[:, 0])
+    for ch in ts_padded.channel.values:
+        channel_snrs = []
+        channel_masks = []
+        for wl in ts.wavelength.values:
+            channel = ts_padded.sel(channel=ch, wavelength=wl).values
+            channel_lowpass = ts_lowpass_padded.sel(channel=ch, wavelength=wl).values
+            channel_mask = outlier_mask_padded.sel(channel=ch, wavelength=wl).values
 
-        # for long segments (>threshold_samples (0.5s)) calculate the absolute
-        # differences of samples that are threshold_samples away from each other
-        long_seg_deltas = [
-            np.abs(
-                channel[i0 + np.arange(threshold_samples, i1 - i0)]
-                - channel[i0 + np.arange(0, i1 - i0 - threshold_samples)]
+            segments = _mask1D_to_segments(channel_mask)
+
+            channel_snrs.append(_calculate_snr(channel, fs, segments))
+
+            # was motion_kind. delta between segment start and end
+            segment_deltas = np.abs(
+                channel[segments[:, 1] - 1] - channel[segments[:, 0]]
             )
-            for i0, i1, _ in segments
-            if i1 - i0 > threshold_samples
-        ]
-        long_seg_deltas = np.hstack(long_seg_deltas)
-        # threshold defined by the 50% quantile of these differences, was ssttdd_thresh
-        long_seg_deltas_thresh = np.quantile(long_seg_deltas, 0.5)
 
-        mean_seg_snr_threshold = np.mean(
-            [
-                seg.mean() / (seg.std() + 1e-16)
-                for i0, i1, _ in segments
-                for seg in [channel[i0:i1]]
-                if i1 - i0 > 3 * fs
-            ]
-        )
+            segment_delta_threshold = _calculate_delta_threshold(
+                channel_lowpass, segments, threshold_samples
+            )
 
-    return 1
+            channel_mask = np.zeros(len(channel), dtype=bool)
+            seg_length_min = 0.1 * fs
+            seg_length_max = 0.49999 * fs
+            for i_seg, (i0, i1, seg_type) in enumerate(segments):
+                if seg_type == CLEAN:
+                    continue
+                
+                seg_length = i1 - i0
+
+                # flag segments where the delta between start and end is too large
+                if segment_deltas[i_seg] > segment_delta_threshold:
+                    channel_mask[i0:i1] = TAINTED
+
+                # flag segments that are too short
+                if (seg_length_min < seg_length) and (seg_length < seg_length_max):
+                    channel_mask[i0:i1] = TAINTED
+
+                # flag segments that are too long?
+                # if seg_length > fs:
+                #    channel_mask[i0:i1] = True
+
+            channel_masks.append(channel_mask)
+
+        channel_snrs = np.asarray(channel_snrs)
+
+        if (channel_snrs < snr_thresh).all():
+            # if all wavelengths for this channel are below the snr threshold
+            # mark all wavelengths as tainted.
+            logger.debug(f"marking complete channel {ch} as TAINTED due to low SNR.")
+            shift_mask.sel(channel=ch).values[:] = TAINTED
+        else:
+            # take the wavelength with the highest SNR and use its mask for all other
+            # wavelengths
+            max_snr_mask = channel_masks[np.argmax(channel_snrs)]
+            for wl in ts.wavelength.values:
+                shift_mask.sel(channel=ch, wavelength=wl).values[:] = max_snr_mask
+
+    # remove padding
+    shift_mask = shift_mask.isel(time=slice(pad_samples,-pad_samples))
+
+    return shift_mask
