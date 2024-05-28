@@ -13,6 +13,7 @@ DATASETS = pooch.create(
     registry={
         "mne_nirsport2_raw.snirf": "sha256:12e5fabe64ecc7ef4b83f6bcd77abb41f5480d5f17a2b1aae0e2ad0406670944",  # noqa: E501
         "colin27_segmentation.zip": "sha256:75adce4289a28640c15ab5efe5f05fbbd6d7d56ac233ac3458974350b3882d18",  # noqa: E501
+        "colin27_segmentation_downsampled_3x3x3.zip": "sha256:ab98b6bae3ef76be6110dc544917f4f2f7ef7233ac697d9cf8bb4a395e81b6cd",  # noqa: E501
         "fingertapping.zip": "sha256:f2253cca6eef8221d536da54b74d8556b28be93df9143ea53652fdc3bc011875",  # noqa: E501
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
         "photogrammetry_example_scan.zip": "sha256:2828b74526cb501a726753881d59fdd362cf5a6c46cbacacbb9d9649d8ce3d64",  # noqa: E501
@@ -26,8 +27,13 @@ def get_snirf_test_data():
     return cedalion.io.read_snirf(fname)
 
 
-def get_colin27_segmentation():
-    fnames = DATASETS.fetch("colin27_segmentation.zip", processor=pooch.Unzip())
+def get_colin27_segmentation(downsampled=False):
+    if downsampled:
+        fnames = DATASETS.fetch(
+            "colin27_segmentation_downsampled_3x3x3.zip", processor=pooch.Unzip()
+        )
+    else:
+        fnames = DATASETS.fetch("colin27_segmentation.zip", processor=pooch.Unzip())
 
     basedir = os.path.dirname(fnames[0])
     mask_files = {
