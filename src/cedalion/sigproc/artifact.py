@@ -110,7 +110,7 @@ def id_motion(
     return ma_mask
 
 
-#%%
+#%% DETECTING OUTLIERS - OLD
 
 @cdc.validate_schemas
 def detect_outliers(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity):
@@ -165,26 +165,19 @@ def detect_outliers(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity):
         high = np.where(sigSTD > high_std)[0]
         low = np.where(sigSTD < low_std)[0]
         std_mask = np.unique(np.hstack([high, low]))
-        
-        # std_mask_temp = xrutils.mask(sigSTD, True)
-        # std_mask = xrutils.mask(channel, True)
-        # std_mask_temp = std_mask_temp.where((sigSTD > high_std) | (sigSTD < low_std), False)
-        
+
         offset = np.round(window_size/2).astype(int)
         std_mask=offset+std_mask;
 
         # detect outliers in gradient of the signal
         grad = xr.apply_ufunc(signal.convolve, channel_lpf2, [-1, 0, 1],'same', input_core_dims=[["time"],[],[]], output_core_dims=[["time"]])    
-        
         # define thresholds for grad based on the first and fourth quartiles of the signal gradient
         quants_grad = grad.quantile([0.25,0.5,0.75])
         IQR_grad = quants_grad[2] - quants_grad[0]
         high_grad = quants_grad[2] + IQR_grad*IQR_GRAD_THRESH
         low_grad = quants_grad[0] - IQR_grad*IQR_GRAD_THRESH
+        
         # create mask to idenfity where grad is above or below the two thresholds
-        # grad_mask = xrutils.mask(grad, True)
-        # grad_mask = grad_mask.where((grad > high_grad) | (grad < low_grad), False) 
-        # grad_mask.values = np.hstack([True, grad_mask.values[:-1]])
         high = np.where(grad > high_grad)[0]
         low = np.where(grad < low_grad)[0]
         grad_mask = np.unique(np.hstack([high, low]))
@@ -192,7 +185,6 @@ def detect_outliers(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity):
         # union of both masks
         masks = np.unique(np.hstack([std_mask, grad_mask]))
         masks = masks
-        # mask_channel = reduce(lambda x, y: x | y, masks)
         
         M.values[masks,m] = 0
 
@@ -207,6 +199,7 @@ def detect_outliers(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity):
     
     return M, M_array
 
+#%% DETECT OUTLIERS - NEW 
 
 @cdc.validate_schemas
 def detect_outliers_std(ts: cdt.NDTimeSeries, t_window: Quantity, iqr_threshold=2):
@@ -285,10 +278,7 @@ def detect_outliers_2(
 
 
 
-
-
-
-#%%
+#%% MOTION ID REFINE
 
 @cdc.validate_schemas
 def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
@@ -375,7 +365,8 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
     return ma_mask_new, ma_info
 
         
-        
+#%% DETECTING BASELINE SHIFTS - OLD
+
 def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
     """
     Detects baseline shifts in fNIRS data using motion detection and correction techniques.
@@ -561,7 +552,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
 
     return tInc, tIncCh
 
-    
+#%% DETECT BASELINE SHIFTS - NEW 
 
 def _mask1D_to_segments(mask: ArrayLike):
     """Find consecutive segments for a boolean mask.
@@ -574,7 +565,7 @@ def _mask1D_to_segments(mask: ArrayLike):
     """
 
     # FIXME decide how to index:
-    # [start,finish[ as currently implemented or [start, finish]
+    # [start,finish] as currently implemented or [start, finish]
 
     # pad mask on both ends with guaranteed state changes
     mask = np.r_[~mask[0], mask, ~mask[-1]]
@@ -619,6 +610,7 @@ def _calculate_delta_threshold(ts, segments, threshold_samples):
         for i0, i1, seg_type in segments
         if (seg_type == CLEAN) and ((i1 - i0) > threshold_samples)
     ]
+    
     seg_deltas = np.hstack(seg_deltas)
     # threshold defined by the 50% quantile of these differences, was ssttdd_thresh
     seg_deltas_thresh = np.quantile(seg_deltas, 0.5)
@@ -725,3 +717,5 @@ def detect_baselineshift_2(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries)
     shift_mask = shift_mask.isel(time=slice(pad_samples,-pad_samples))
 
     return shift_mask
+
+
