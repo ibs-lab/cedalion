@@ -6,6 +6,7 @@ which is available here: https://mlsp.umbc.edu/resources.html.
 import scipy.io
 import numpy as np
 import matplotlib.pyplot as plt 
+from pathlib import Path
 
 def ICA_EBM(X: np.ndarray) -> np.ndarray:
     """Calculates the blind source separation demixing matrix corresponding to X.
@@ -48,7 +49,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
 
     # Load 8 measuring functions. But we only use 4 of them.
     K = 8
-    table = np.load('measfunc_table.npy', allow_pickle= True)
+    table = np.load(Path(__file__).parent / 'measfunc_table.npy', allow_pickle= True) # FIXME path
     nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8 = table[0], table[1], table[2], table[3], table[4], table[5], table[6], table[7]
 
 

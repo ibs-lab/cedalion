@@ -7,6 +7,7 @@ import scipy as sp
 import numpy as np
 import matplotlib.pyplot as plt
 from cedalion.sigdecomp import ICA_EBM as ICA_EBM
+from pathlib import Path
 
 def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
     """ICA-ERBM: ICA by Entropy Rate Bound Minimization (real-valued version).
@@ -32,7 +33,7 @@ def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
 
     # load measuring functions as global variables 
     global nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8   
-    table = np.load('measfunc_table.npy', allow_pickle= True)
+    table = np.load(Path(__file__).parent / 'measfunc_table.npy', allow_pickle= True) # FIXME path
     K = 8 
     nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8 = table[0], table[1], table[2], table[3], table[4], table[5], table[6], table[7]
    
@@ -518,6 +519,7 @@ def simplified_ppval(pp: dict, xs: float) -> float:
                 if low_index == high_index -1:
                     index = low_index   
                     break
+
     # now go to local coordinates
     xs = xs - b[index]  
     # nested multiplication
@@ -526,7 +528,7 @@ def simplified_ppval(pp: dict, xs: float) -> float:
         v = v*xs + c[index, i]
     return v 
 
-def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def cnstd_and_gain_old(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Helper function for ERBM ICA: returns constraint direction used for calculating projected gradient and gain of filter a.
     
     Args:   
@@ -571,6 +573,57 @@ def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return b, G 
 
  
+def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Helper function for ERBM ICA: returns constraint direction used for calculating projected gradient and gain of filter a.
+
+    Args:
+        a (np.ndarray, (p, 1)): the filter coefficients [p x 1]
+
+    Returns:
+        b (np.ndarray, (p, 1)): the constraint direction [p x 1]
+        G (np.ndarray, (1,)): the gain of the filter a
+    """
+
+    global cosmtx, sinmtx, Simpson_c
+    eps = np.finfo(np.float64).eps
+    p = a.shape[0]
+    # calculate the integral
+    # sample omega from 0 to pi
+    n = 10 * p
+    h = np.pi / n
+    # w = np.arange(0, n + 1, 1) * h # FIXME not used?
+
+    # calculate |A(w)|^2
+    #Awr = np.zeros((1, n + 1))  # real part
+    #Awi = np.zeros((1, n + 1))  # imaginary part
+    
+    #for q in range(p):
+    #    Awr = Awr + a[q] * cosmtx[q, :]
+    #    Awi = Awi + a[q] * sinmtx[q, :]
+    Awr = (a * cosmtx).sum(0)
+    Awi = (a * sinmtx).sum(0)
+    
+    Aw2 = 10 * eps + Awr**2 + Awi**2
+
+    # calculate the vector
+    #v = np.zeros((p + 1, n + 1))
+    #inv_Aw2 = 1 / Aw2
+    #for q in range(p):
+    #    v[q, :] = cosmtx[q, :] * inv_Aw2
+    #
+    #v[p, :] = np.log(Aw2) / np.pi
+    inv_Aw2 = 1 / Aw2
+    v = cosmtx * inv_Aw2[None, :]
+    v = np.vstack((v, np.log(Aw2) / np.pi))
+
+    # this is the integral
+    u = h * v.dot(Simpson_c / 3)
+    b = sp.linalg.toeplitz(u[:p]).dot(a)  #
+
+    # gain
+    G = u[p]
+    return b, G
+
 
 def calculate_cos_sin_mtx(p: int) -> None : 
     """Helper function for ERBM ICA: calculates the cos and sin matrix for integral calculation in ERBM ICA.
@@ -600,7 +653,7 @@ def calculate_cos_sin_mtx(p: int) -> None :
     Simpson_c[np.arange(0, n+1, 2)] = 2 
     Simpson_c[np.arange(1, n, 2)] = 4
     Simpson_c[0] = 1
-    Simpson_c[n] = 1      
+    Simpson_c[n] = 1     
 
 
 def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
