@@ -221,7 +221,7 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
     return dodSplineSG
 
 #%%
-@cdc.validate_schemas
+# @cdc.validate_schemas
 def motion_correct_PCA(fNIRSdata:cdt.NDTimeSeries, tInc:cdt.NDTimeSeries, nSV:Quantity = 0.97):
     '''
     Apply motion correction using PCA filter on segments of data idenitfied as motion artefact. 
