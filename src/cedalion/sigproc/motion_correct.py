@@ -314,7 +314,7 @@ def motion_correct_PCA(fNIRSdata:cdt.NDTimeSeries, tInc:cdt.NDTimeSeries, nSV:Qu
           fNIRSdata_cleaned_ts[lst, jj] = fNIRSdata_ts[lst, jj] - fNIRSdata_ts[lst[0], jj] + fNIRSdata_cleaned_ts[lst[0], jj]
          
           lst = np.arange(lstMs[kk + 1], lstMf[kk + 1])
-          fNIRSdata_cleaned_ts[lst, jj] = fNIRSdata_ts[lstMb[kk]+1 :lstMb[kk + 1]+1, jj] - fNIRSdata_ts[lstMb[kk]+1 , jj] + fNIRSdata_cleaned_ts[lst[0], jj]
+          fNIRSdata_cleaned_ts[lst, jj] = yc_ts[lstMb[kk]+1 :lstMb[kk + 1]+1, jj] - yc_ts[lstMb[kk]+1 , jj] + fNIRSdata_cleaned_ts[lst[0], jj]
           
              
         if lstMf[-1] < len(fNIRSdata_ts)-1:
