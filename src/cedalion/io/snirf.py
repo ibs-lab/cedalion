@@ -324,18 +324,21 @@ def stim_to_dataframe(stim):
     for st in stim:
         columns = ["onset", "duration", "value"]
 
-        ncols = st.data.shape[1]
+        if st.data is None:
+            tmp = pd.DataFrame(columns=columns)
+        else:
+            ncols = st.data.shape[1]
 
-        if ncols > 3:
-            if (st.dataLabels is not None) and (len(st.dataLabels) == ncols):
-                for i in range(3, ncols):
-                    columns.append(st.dataLabels[i])
-            else:
-                for i in range(3, ncols):
-                    columns.append(f"col{i}")
+            if ncols > 3:
+                if (st.dataLabels is not None) and (len(st.dataLabels) == ncols):
+                    for i in range(3, ncols):
+                        columns.append(st.dataLabels[i])
+                else:
+                    for i in range(3, ncols):
+                        columns.append(f"col{i}")
 
-        tmp = pd.DataFrame(st.data, columns=columns)
-        tmp["trial_type"] = st.name
+            tmp = pd.DataFrame(st.data, columns=columns)
+            tmp["trial_type"] = st.name
         dfs.append(tmp)
 
     return pd.concat(dfs, ignore_index=True)
