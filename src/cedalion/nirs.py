@@ -12,31 +12,37 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
     """Provide a matrix of extinction coefficients from tabulated data.
 
     Args:
-        spectrum (str): The type of spectrum to use. Currently supported options are:
-            - "prahl": Extinction coefficients based on the Prahl absorption spectrum (Prahl1998).
-        wavelengths (ArrayLike): An array-like object containing the wavelengths at which
-            to calculate the extinction coefficients.
+        spectrum: The type of spectrum to use. Currently supported options are:
+            - "prahl": Extinction coefficients based on the Prahl absorption spectrum
+                       (Prahl1998).
+        wavelengths: An array-like object containing the wavelengths at which to
+            calculate the extinction coefficients.
 
     Returns:
         xr.DataArray: A matrix of extinction coefficients with dimensions "chromo"
-            (chromophore, e.g. HbO/HbR) and "wavelength" (e.g. 750, 850, ...) at which 
+            (chromophore, e.g. HbO/HbR) and "wavelength" (e.g. 750, 850, ...) at which
             the coefficients for each chromophore are given in units of "mm^-1 / M".
 
     References:
-        (Prahl 1998) - taken from Homer2/3, Copyright 2004 - 2006 - The General Hospital Corporation and President and Fellows of Harvard University.
-            "These values for the molar extinction coefficient e in [cm-1/(moles/liter)] 
+        (Prahl 1998) - taken from Homer2/3, Copyright 2004 - 2006 - The General Hospital
+            Corporation and President and Fellows of Harvard University.
+            "These values for the molar extinction coefficient e in [cm-1/(moles/liter)]
             were compiled by Scott Prahl (prahl@ece.ogi.edu) using data from
             W. B. Gratzer, Med. Res. Council Labs, Holly Hill, London
             N. Kollias, Wellman Laboratories, Harvard Medical School, Boston
-            To convert this data to absorbance A, multiply by the molar concentration and the pathlength. 
-            For example, if x is the number of grams per liter and a 1 cm cuvette is being used, then the absorbance is given by
+            To convert this data to absorbance A, multiply by the molar concentration
+            and the pathlength.
+            For example, if x is the number of grams per liter and a 1 cm cuvette is
+            being used, then the absorbance is given by
             (e) [(1/cm)/(moles/liter)] (x) [g/liter] (1) [cm]
             A =  ---------------------------------------------------
                         66,500 [g/mole]
             using 66,500 as the gram molecular weight of hemoglobin.
-            To convert this data to absorption coefficient in (cm-1), multiply by the molar concentration and 2.303,
+            To convert this data to absorption coefficient in (cm-1), multiply by the
+            molar concentration and 2.303,
             µa = (2.303) e (x g/liter)/(66,500 g Hb/mole)
-            where x is the number of grams per liter. A typical value of x for whole blood is x=150 g Hb/liter."
+            where x is the number of grams per liter. A typical value of x for whole
+            blood is x=150 g Hb/liter."
     """
     if spectrum == "prahl":
         with resources.open_text(
@@ -69,19 +75,22 @@ def channel_distances(amplitudes: xr.DataArray, geo3d: xr.DataArray):
     """Calculate distances between channels.
 
     Args:
-        amplitudes (xr.DataArray): A DataArray representing the amplitudes with dimensions (channel, *).
-        geo3d (xr.DataArray): A DataArray containing the 3D coordinates of the channels with dimensions (channel, pos).
+        amplitudes (xr.DataArray): A DataArray representing the amplitudes with
+            dimensions (channel, *).
+        geo3d (xr.DataArray): A DataArray containing the 3D coordinates of the channels
+            with dimensions (channel, pos).
 
     Returns:
-        dists (xr.DataArray): A DataArray containing the calculated distances between source and detector channels. 
-            The resulting DataArray has the dimension 'channel'.
+        dists (xr.DataArray): A DataArray containing the calculated distances between
+            source and detector channels. The resulting DataArray has the dimension
+            'channel'.
     """
     validators.has_channel(amplitudes)
     validators.has_positions(geo3d, npos=3)
     validators.is_quantified(geo3d)
 
     diff = geo3d.loc[amplitudes.source] - geo3d.loc[amplitudes.detector]
-    dists = xrutils.norm(diff, "pos")
+    dists = xrutils.norm(diff, geo3d.points.crs)
     dists = dists.rename("dists")
 
     return dists
@@ -96,7 +105,7 @@ def int2od(amplitudes: xr.DataArray):
     Returns:
         od: (xr.DataArray, (time, channel,*): The optical density data.
     """
-    od = - np.log( amplitudes / amplitudes.mean("time") )
+    od = -np.log(amplitudes / amplitudes.mean("time"))
     return od
 
 
@@ -116,7 +125,7 @@ def od2conc(
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing 
+        conc (xr.DataArray, (channel, wavelength, *)): A data array containing
             concentration changes with dimensions "channel" and "wavelength".
     """
     validators.has_channel(od)
@@ -145,18 +154,19 @@ def beer_lambert(
     dpf: xr.DataArray,
     spectrum: str = "prahl",
 ):
-    """Calculate concentration changes from amplitude data using the modified beer-lambert law.
+    """Calculate concentration changes from amplitude using the modified BL law.
 
     Args:
-        amplitudes (xr.DataArray, (channel, wavelength, *)): The input data array containing the raw intensities.
+        amplitudes (xr.DataArray, (channel, wavelength, *)): The input data array
+            containing the raw intensities.
         geo3d (xr.DataArray): The 3D coordinates of the optodes.
         dpf (xr.DataArray, (wavelength,*)): The differential pathlength factors
         spectrum (str, optional): The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing concentration 
-            changes according to the mBLL
+        conc (xr.DataArray, (channel, wavelength, *)): A data array containing
+            concentration changes according to the mBLL.
     """
     validators.has_channel(amplitudes)
     validators.has_wavelengths(amplitudes)
