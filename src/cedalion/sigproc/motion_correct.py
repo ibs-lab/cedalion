@@ -144,7 +144,7 @@ def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): 
                     
                     dodSpline_chan[idx] = channel[idx] - meanCurr + meanPrev
                 
-                dodSpline.sel(channel-ch, wavelength=wl).values = dodSpline_chan
+                dodSpline.sel(channel=ch, wavelength=wl).values = dodSpline_chan
     
     # dodSpline = dodSpline.unstack('measurement').pint.quantify()
 
@@ -345,7 +345,7 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
     dodSpline = motion_correct_spline(fNIRSdata_lpf2_pad, tIncCh_pad)
     
     # remove padding
-    dodSpline = dodSpline[extend:-extend,:]
+    dodSpline = dodSpline[:,:,extend:-extend]
     dodSpline = dodSpline.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
 
     # apply SG filter
