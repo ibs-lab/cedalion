@@ -2,7 +2,7 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 from snirf import Snirf
-from snirf.pysnirf2 import MeasurementList, DataElement, NirsElement
+from snirf.pysnirf2 import MeasurementList, DataElement, NirsElement, Stim
 from enum import Enum
 import logging
 from numpy.typing import ArrayLike
@@ -314,28 +314,31 @@ def meta_data_tags_to_dict(nirs_element: NirsElement):
     return {f: getattr(mdt, f) for f in fields}
 
 
-def stim_to_dataframe(stim):
+def stim_to_dataframe(stim: Stim):
     dfs = []
 
     if len(stim) == 0:
-        columns = ["onset", "duration", "value"]
+        columns = ["onset", "duration", "value", "trial_type"]
         return pd.DataFrame(columns=columns)
 
     for st in stim:
         columns = ["onset", "duration", "value"]
 
-        ncols = st.data.shape[1]
+        if st.data is None:
+            tmp = pd.DataFrame(columns=columns)
+        else:
+            ncols = st.data.shape[1]
 
-        if ncols > 3:
-            if (st.dataLabels is not None) and (len(st.dataLabels) == ncols):
-                for i in range(3, ncols):
-                    columns.append(st.dataLabels[i])
-            else:
-                for i in range(3, ncols):
-                    columns.append(f"col{i}")
+            if ncols > 3:
+                if (st.dataLabels is not None) and (len(st.dataLabels) == ncols):
+                    for i in range(3, ncols):
+                        columns.append(st.dataLabels[i])
+                else:
+                    for i in range(3, ncols):
+                        columns.append(f"col{i}")
 
-        tmp = pd.DataFrame(st.data, columns=columns)
-        tmp["trial_type"] = st.name
+            tmp = pd.DataFrame(st.data, columns=columns)
+            tmp["trial_type"] = st.name
         dfs.append(tmp)
 
     return pd.concat(dfs, ignore_index=True)
@@ -382,8 +385,12 @@ def read_aux(nirs_element: NirsElement, opts: dict[str, Any]):
     return result
 
 
-def read_data_elements(data_element, nirs_element):
+def read_data_elements(
+    data_element: DataElement, nirs_element: NirsElement, stim: pd.DataFrame
+):
     time = data_element.time
+
+    trial_types = stim["trial_type"].drop_duplicates().values
 
     samples = np.arange(len(time))
 
@@ -411,10 +418,17 @@ def read_data_elements(data_element, nirs_element):
         has_wavelengths = not pd.isna(df.wavelength).all()
         has_chromo = not pd.isna(df.chromo).all()
 
+        is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
+
         if has_wavelengths and not has_chromo:
             other_dim = "wavelength"
         elif has_chromo and not has_wavelengths:
             other_dim = "chromo"
+        elif not has_chromo and not has_wavelengths:
+            raise ValueError(
+                "found channel for which neither wavelength nor "
+                "chromophore is defined."
+            )
         else:
             raise NotImplementedError(
                 "found channel for which both wavelength "
@@ -431,15 +445,6 @@ def read_data_elements(data_element, nirs_element):
         df["index_channel"] = [unique_channel.index(c) for c in df.channel]
         df["index_other_dim"] = [unique_other_dim.index(c) for c in df[other_dim]]
 
-        ts3d = np.zeros(
-            (len(unique_channel), len(unique_other_dim), len(time)),
-            dtype=data_element.dataTimeSeries.dtype,
-        )
-
-        ts2d = data_element.dataTimeSeries
-        for index, row in df.iterrows():
-            ts3d[row.index_channel, row.index_other_dim, :] = ts2d[:, index]
-
         coords = {}
         coords["time"] = ("time", time)
         coords["samples"] = ("time", samples)
@@ -448,20 +453,65 @@ def read_data_elements(data_element, nirs_element):
         coords["detector"] = ("channel", df_coords["channel"]["detector"])
         coords[other_dim] = (other_dim, unique_other_dim)
 
+        ts2d = data_element.dataTimeSeries
+
         units = df.dataUnit.unique().item()
         # FIXME treat unspecified units as dimensionless quantities.
         if units is None:
             units = "1"
 
-        da = xr.DataArray(
-            ts3d,
-            dims=["channel", other_dim, "time"],
-            coords=coords,
-            attrs={
-                "units": units,
-                "data_type_group": data_type_group,
-            },
-        )
+        if is_hrf:
+            channel_trial_types = trial_types[df["dataTypeIndex"].values - 1]
+            used_trial_types = np.unique(channel_trial_types).tolist()
+            df["index_trial_type"] = [
+                used_trial_types.index(i) for i in channel_trial_types
+            ]
+
+            ts4d = np.zeros(
+                (
+                    len(unique_channel),
+                    len(unique_other_dim),
+                    len(used_trial_types),
+                    len(time),
+                ),
+                dtype=data_element.dataTimeSeries.dtype,
+            )
+
+            for index, row in df.iterrows():
+                ts4d[
+                    row.index_channel, row.index_other_dim, row.index_trial_type, :
+                ] = ts2d[:, index]
+
+            coords["trial_type"] = used_trial_types
+
+            da = xr.DataArray(
+                ts4d,
+                dims=["channel", other_dim, "trial_type", "time"],
+                coords=coords,
+                attrs={
+                    "units": units,
+                    "data_type_group": data_type_group,
+                },
+            )
+
+        else:
+            ts3d = np.zeros(
+                (len(unique_channel), len(unique_other_dim), len(time)),
+                dtype=data_element.dataTimeSeries.dtype,
+            )
+
+            for index, row in df.iterrows():
+                ts3d[row.index_channel, row.index_other_dim, :] = ts2d[:, index]
+
+            da = xr.DataArray(
+                ts3d,
+                dims=["channel", other_dim, "time"],
+                coords=coords,
+                attrs={
+                    "units": units,
+                    "data_type_group": data_type_group,
+                },
+            )
         da = da.pint.quantify()
 
         time_units = nirs_element.metaDataTags.TimeUnit
@@ -471,10 +521,6 @@ def read_data_elements(data_element, nirs_element):
             pass
 
         data_arrays.append(da)
-
-    # da = da.drop_indexes(["channel", "time"])
-    # da = da.set_xindex(["channel", "source", "detector"])
-    # da = da.set_xindex(["time", "samples"])
 
     return data_arrays
 
@@ -524,7 +570,7 @@ def read_nirs_element(nirs_element, opts):
     stim = stim_to_dataframe(nirs_element.stim)
     data = []
     for data_element in nirs_element.data:
-        data.extend(read_data_elements(data_element, nirs_element))
+        data.extend(read_data_elements(data_element, nirs_element, stim))
 
     aux = read_aux(nirs_element, opts)
 
@@ -571,6 +617,12 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
         DataTypeLabel.LIPID,
     ]
 
+    hrf_chromo_types = {
+        DataTypeLabel.HRF_HBO: DataTypeLabel.HBO,
+        DataTypeLabel.HRF_HBR: DataTypeLabel.HBR,
+        DataTypeLabel.HRF_HBT: DataTypeLabel.HBT,
+    }
+
     new_columns = []
     for _, row in df_ml.iterrows():
         sl = sourceLabels[int(row["sourceIndex"]) - 1]
@@ -583,6 +635,8 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
 
         if row["dataTypeLabel"] in chromo_types:
             ch = DataTypeLabel(row["dataTypeLabel"])
+        elif row["dataTypeLabel"] in hrf_chromo_types:
+            ch = hrf_chromo_types[row["dataTypeLabel"]]
         else:
             ch = None
 
@@ -597,7 +651,7 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
 
 
 def measurement_list_from_stacked(
-    stacked_array, data_type, stacked_channel="snirf_channel"
+    stacked_array, data_type, trial_types, stacked_channel="snirf_channel"
 ):
     source_labels = list(np.unique(stacked_array.source.values))
     detector_labels = list(np.unique(stacked_array.detector.values))
@@ -624,18 +678,34 @@ def measurement_list_from_stacked(
     elif data_type == "concentration":
         ml["dataType"] = [DataType.PROCESSED.value] * nchannel
         ml["dataTypeLabel"] = stacked_array.chromo.values
+    elif data_type == "hrf":
+        ml["dataType"] = [DataType.PROCESSED.value] * nchannel
+
+        if "chromo" in stacked_array.coords:
+            dtl_map = {
+                "HbO": DataTypeLabel.HRF_HBO,
+                "HbR": DataTypeLabel.HRF_HBR,
+                "HbT": DataTypeLabel.HRF_HBT,
+            }
+            ml["dataTypeLabel"] = [dtl_map[c] for c in stacked_array.chromo.values]
+        elif "wavelength" in stacked_array.coords:
+            ml["dataTypeLabel"] = [DataTypeLabel.HRF_DOD] * nchannel
+
+        ml["dataTypeIndex"] = [
+            trial_types.index(tt) + 1 for tt in stacked_array.trial_type.values
+        ]
 
     if "wavelength" in stacked_array.coords:
         wavelengths = list(np.unique(stacked_array.wavelength.values))
         ml["wavelengthIndex"] = [
             wavelengths.index(w) + 1 for w in stacked_array.wavelength.values
         ]
-    else:
-        ml["wavelengthIndex"] = [-1] * nchannel
 
     ml["dataUnit"] = [stacked_array.attrs["units"]] * nchannel
 
-    return source_labels, detector_labels, wavelengths, pd.DataFrame(ml)
+    ml = pd.DataFrame(ml)
+
+    return source_labels, detector_labels, wavelengths, ml
 
 
 def write_snirf(
@@ -644,19 +714,13 @@ def write_snirf(
     timeseries: xr.DataArray,
     geo3d: xr.DataArray,
     stim: pd.DataFrame,
-    measurement_list: pd.DataFrame,
     aux: dict[str, xr.DataArray] = {},
     meta_data: dict = {},
 ):
-    if data_type not in ["amplitude", "od", "concentration"]:
+    if data_type not in ["amplitude", "od", "concentration", "hrf"]:
         raise ValueError(
-            "data_type must be either 'amplitude', 'od' or 'concentration'."
+            "data_type must be either 'amplitude', 'od','concentration' or 'hrf'."
         )
-
-    assert timeseries.ndim == 3
-
-    assert "channel" in timeseries.dims
-    assert "time" in timeseries.dims
 
     other_dim = None
 
@@ -666,15 +730,39 @@ def write_snirf(
         other_dim = "chromo"
     else:
         raise ValueError(
-            "expect 3-dim timeseries with either 'wavelength' or 'chromo' dimensions"
+            "expect timeseries with either 'wavelength' or 'chromo' dimensions"
         )
 
-    stacked_array = timeseries.stack({"snirf_channel": ["channel", other_dim]})
+    if data_type == "hrf":
+        if "trial_type" not in timeseries.dims:
+            raise ValueError(
+                "to store HRFs the timeseries needs a 'trial_type' dimension"
+            )
+        assert timeseries.ndim == 4
+        assert "channel" in timeseries.dims
+        if "reltime" in timeseries.dims:
+            timeseries = timeseries.rename({"reltime": "time"})
+        elif "time" in timeseries.dims:
+            pass
+        else:
+            raise ValueError("timeseries needs 'time' or 'reltime' dimension.")
+
+        dims_to_stack = ["trial_type", "channel", other_dim]
+    else:
+        assert timeseries.ndim == 3
+        assert "channel" in timeseries.dims
+        assert "time" in timeseries.dims
+
+        dims_to_stack = ["channel", other_dim]
+
+    stacked_array = timeseries.stack({"snirf_channel": dims_to_stack})
     stacked_array = stacked_array.transpose("time", "snirf_channel")
     stacked_array = stacked_array.pint.dequantify()
 
+    trial_types = list(stim["trial_type"].drop_duplicates())
+
     source_labels, detector_labels, wavelengths, df_ml = measurement_list_from_stacked(
-        stacked_array, data_type
+        stacked_array, data_type, trial_types
     )
 
     geo3d = geo3d.pint.dequantify()
@@ -712,7 +800,8 @@ def write_snirf(
                 setattr(ml, k, v)
 
         # save stimulus
-        for trial_type, df in stim.groupby("trial_type"):
+        for trial_type in trial_types:
+            df = stim[stim.trial_type == trial_type]
             ne.stim.appendGroup()
             stim_group = ne.stim[-1]
             df = df.drop(columns="trial_type")

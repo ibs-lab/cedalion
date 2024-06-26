@@ -151,13 +151,22 @@ class TwoSurfaceHeadModel:
             scalp_ijk = scalp_ijk.smooth(smoothing)
 
         # reduce surface face counts
+        # use VTK's decimate_pro algorith as MNE's (VTK's) quadric decimation produced
+        # meshes on which Pycortex geodesic distance function failed.
         if brain_face_count is not None:
-            brain_ijk = brain_ijk.decimate(brain_face_count)
+            # brain_ijk = brain_ijk.decimate(brain_face_count)
+            vtk_brain_ijk = cdc.VTKSurface.from_trimeshsurface(brain_ijk)
+            reduction = 1.0 - brain_face_count / brain_ijk.nfaces
+            vtk_brain_ijk = vtk_brain_ijk.decimate(reduction)
+            brain_ijk = cdc.TrimeshSurface.from_vtksurface(vtk_brain_ijk)
 
         if scalp_face_count is not None:
-            scalp_ijk = scalp_ijk.decimate(scalp_face_count)
+            # scalp_ijk = scalp_ijk.decimate(scalp_face_count)
+            vtk_scalp_ijk = cdc.VTKSurface.from_trimeshsurface(scalp_ijk)
+            reduction = 1.0 - scalp_face_count / scalp_ijk.nfaces
+            vtk_scalp_ijk = vtk_scalp_ijk.decimate(reduction)
+            scalp_ijk = cdc.TrimeshSurface.from_vtksurface(vtk_scalp_ijk)
 
-        #
         brain_mask = segmentation_masks.sel(segmentation_type=brain_seg_types).any(
             "segmentation_type"
         )
