@@ -43,12 +43,13 @@ class CedalionAccessor:
         # by one. Larger discrepancies would have other unhandled causes.
         # Throw an error for these.
         durations = end - start
-        assert np.max(durations) - np.min(durations) <= 1
-        duration = np.max(durations)
+        # assert np.max(durations) - np.min(durations) <= 1
+        duration = np.min(durations)
 
         # FIXME limit reltime precision (to ns?) to avoid
         # conflicts when concatenating epochs
         reltime = np.round(self._obj.time[start[0] : end[0]] - tmp.onset.iloc[0], 9)
+        reltime = reltime[:duration]
         epochs = xr.concat(
             [
                 self._obj[:, :, start[i] : start[i] + duration].drop_vars(
@@ -58,6 +59,12 @@ class CedalionAccessor:
             ],
             dim="epoch",
         )
+        
+        #FIXME was running into the scenario where reltime was one sample shorter than time 
+        # this was quick fix but there is certainly a better way to handle this 
+        if len(reltime) < len(epochs['time']):
+            reltime = reltime.pad({'time':(0,1)}, constant_values=reltime.values[-1]+1/self.sampling_rate)
+            
         epochs = epochs.rename({"time": "reltime"})
         epochs = epochs.assign_coords(
             {"reltime": reltime.values, "trial_type": ("epoch", tmp.trial_type.values)}
@@ -70,7 +77,19 @@ class CedalionAccessor:
         array = self._obj
 
         fny = array.cd.sampling_rate / 2
-        b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+        
+        if fmin == 0:
+            b, a = scipy.signal.butter(butter_order, fmax / fny, "low")
+
+        elif fmax == 0:
+            b, a = scipy.signal.butter(butter_order, fmin / fny, "high")
+
+        else:
+            b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+
+        # b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+
+
 
         if (units := array.pint.units) is not None:
             array = array.pint.dequantify()
