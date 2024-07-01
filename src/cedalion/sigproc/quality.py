@@ -4,7 +4,7 @@ from functools import reduce
 from typing import List
 
 import numpy as np
-
+import cedalion.nirs as nirs
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
@@ -17,6 +17,38 @@ import xarray as xr
 from .frequency import freq_filter, sampling_rate
 from scipy import signal 
 from tqdm import tqdm 
+
+
+def GVTD(amplitudes: NDTimeSeries):
+    '''
+    convert to OD
+    filter
+    find temporal derivative
+    find RMS 
+    add zero for first time time point
+
+    '''
+    fcut_min = 0.01 * units.Hz
+    fcut_max = 0.5 * units.Hz
+    
+    od = nirs.int2od(amplitudes)
+    od = xr.where(np.isinf(od), 0, od)
+    od = xr.where(np.isnan(od), 0, od)
+    
+    
+    od_filtered = freq_filter(od, fcut_min, fcut_max, butter_order=4)
+
+    # Step 1: Find the matrix of the temporal derivatives
+    dataDiff = od_filtered - od_filtered.shift(time=-1)
+    
+    # Step 2: Find the RMS across the channels for each time-point of dataDiff
+    gvtd = np.sqrt((dataDiff[:, :-1]**2).mean(dim="channel"))
+    
+    # Step 3: Add a zero in the beginning for GVTD to have the same number of time-points as your original dataMatrix
+    gvtd = xr.concat([xr.DataArray([0], dims="time"), gvtd], dim="time")
+    
+    return gvtd
+
 
 @cdc.validate_schemas
 def psp(amplitudes: NDTimeSeries, window_length: Quantity, psp_thresh: float):
