@@ -19,7 +19,7 @@ from scipy import signal
 from tqdm import tqdm 
 
 
-def GVTD(amplitudes: NDTimeSeries):
+def gvtd(amplitudes: NDTimeSeries):
     '''
     convert to OD
     filter
@@ -28,26 +28,26 @@ def GVTD(amplitudes: NDTimeSeries):
     add zero for first time time point
 
     '''
-    fcut_min = 0.01 * units.Hz
-    fcut_max = 0.5 * units.Hz
+    fcut_min = 0.01 
+    fcut_max = 0.5 
     
     od = nirs.int2od(amplitudes)
     od = xr.where(np.isinf(od), 0, od)
     od = xr.where(np.isnan(od), 0, od)
     
-    
-    od_filtered = freq_filter(od, fcut_min, fcut_max, butter_order=4)
+    od_filtered = od.cd.freq_filter(fcut_min, fcut_max, 4)
 
     # Step 1: Find the matrix of the temporal derivatives
     dataDiff = od_filtered - od_filtered.shift(time=-1)
     
     # Step 2: Find the RMS across the channels for each time-point of dataDiff
-    gvtd = np.sqrt((dataDiff[:, :-1]**2).mean(dim="channel"))
+    GVTD = np.sqrt((dataDiff[:, :-1]**2).mean(dim="channel"))
     
-    # Step 3: Add a zero in the beginning for GVTD to have the same number of time-points as your original dataMatrix
-    gvtd = xr.concat([xr.DataArray([0], dims="time"), gvtd], dim="time")
+    # # Step 3: Add a zero in the beginning for GVTD to have the same number of time-points as your original dataMatrix
+    GVTD = GVTD.squeeze()
+    GVTD.values = np.hstack([0, GVTD.values[:-1]])
     
-    return gvtd
+    return GVTD
 
 
 @cdc.validate_schemas
@@ -69,14 +69,15 @@ def psp(amplitudes: NDTimeSeries, window_length: Quantity, psp_thresh: float):
     # the first sample in the window. Setting the stride size to the same value as the
     # window length will result in non-overlapping windows.
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
+    windows = windows.dropna('time')
 
     fs = amp.cd.sampling_rate
     
-    psp = np.zeros([ len(windows['channel']), len(windows['time'])])
+    PSP = np.zeros([ len(windows['channel']), len(windows['time'])])
     
     # Vectorized signal extraction and correlation
     sig = windows.transpose('channel', 'time', 'wavelength','window').values
-    psp = np.zeros((sig.shape[0], sig.shape[1]))
+    PSP = np.zeros((sig.shape[0], sig.shape[1]))
     
     for w in range(sig.shape[1]):
         
@@ -92,15 +93,15 @@ def psp(amplitudes: NDTimeSeries, window_length: Quantity, psp_thresh: float):
             window = signal.hamming(len(corr[ch,:]))
             f, pxx = signal.periodogram(corr[ch,:], window=window, nfft=len(corr[ch,:]), fs=fs, scaling='spectrum')
 
-            psp[ch,w] = np.max(pxx)            
+            PSP[ch,w] = np.max(pxx)            
 
 
     
-    psp_xr = amp.isel(time=slice(sig.shape[1]), wavelength=0).copy(data=psp)
+    psp_xr = amp.isel(time=windows.samples.values, wavelength=0).copy(data=PSP)
     
     # Apply threshold mask
     psp_mask = xrutils.mask(psp_xr, True)
-    psp_mask = psp_mask.where(psp_xr > psp_thresh, False)
+    psp_mask = psp_mask.where(psp_xr < psp_thresh, False)
     
     return psp_xr, psp_mask
     
@@ -129,7 +130,7 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
     cardiac_fmax = 2.5 * units.Hz
 
     amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
-    amp = (amp - amp.mean("time")) / amp.std("time")
+    # amp = (amp - amp.mean("time")) / amp.std("time")
 
     # convert window_length to samples
     nsamples = (window_length * sampling_rate(amp)).to_base_units()
@@ -140,16 +141,17 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
     # the first sample in the window. Setting the stride size to the same value as the
     # window length will result in non-overlapping windows.
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
-
-    sci = (windows - windows.mean("window")).prod("wavelength").sum("window") / nsamples
-    sci /= windows.std("window").prod("wavelength")
+    windows = windows.dropna('time')
+    
+    SCI = (windows - windows.mean("window")).prod("wavelength").sum("window") / nsamples
+    SCI /= windows.std("window").prod("wavelength")
 
     # create sci mask and update accoording to sci_thresh
-    sci_mask = xrutils.mask(sci, True)
-    sci_mask = sci_mask.where(sci > sci_thresh, False)
+    SCI_mask = xrutils.mask(SCI, True)
+    SCI_mask = SCI_mask.where(SCI < sci_thresh, False)
 
 
-    return sci, sci_mask
+    return SCI, SCI_mask
 
 
 @cdc.validate_schemas
@@ -171,12 +173,12 @@ def snr(amplitudes: cdt.NDTimeSeries, snr_thresh: float = 2.0):
     """
 
     # calculate SNR
-    snr = amplitudes.mean("time") / amplitudes.std("time")
+    SNR = amplitudes.mean("time") / amplitudes.std("time")
     # create snr mask and update accoording to snr thresholds
-    snr_mask = xrutils.mask(snr, True)
-    snr_mask = snr_mask.where(snr > snr_thresh, False)
+    SNR_mask = xrutils.mask(SNR, True)
+    SNR_mask = SNR_mask.where(SNR > snr_thresh, False)
 
-    return snr, snr_mask
+    return SNR, SNR_mask
 
 
 @cdc.validate_schemas
