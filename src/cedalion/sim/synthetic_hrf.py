@@ -4,37 +4,49 @@ import pandas as pd
 import random
 from scipy import signal
 import pint
+import pyvista as pv
+import cedalion.plots
 from cedalion import Quantity, units
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
+import cortex.polyutils.surface as cps
+import cedalion.imagereco.forward_model as cfm
+import cedalion.geometry.landmarks as cd_landmarks
+import cedalion.xrutils as xrutils
+import scipy.stats as stats
 
 
 def generate_hrf(
-    trange: list,
-    dt: float,
+    time_axis: xr.DataArray,
     stim_dur: float,
     params_basis: list = [0.1000, 3.0000, 1.8000, 3.0000],
-    scale: list = [10, -4],
+    scale: list = [10 * units.micromolar, -4 * units.micromolar],
 ):
     """Generates Hemodynamic Response Function (HRF) basis functions for different chromophores.
 
     This function calculates the HRF basis functions using gamma distributions. It supports
-    adjusting the response scale for HbO and HbR using parameters provided in `paramsBasis`
+    adjusting the response scale for HbO and HbR using parameters provided in `params_basis`
     and `scale`.
 
-    Args:
-        trange (list): Relative start and end time of the resulting HRF (e.g., [-2, 5]).
-        dt (float): Sampling period.
+    Parameters
+    ----------
+        time_axis (xr.DataArray): The time axis for the resulting HRF.
         stim_dur (float): Duration of the stimulus.
         params_basis (list of float): Parameters for tau and sigma for the modified gamma function
                                      for each chromophore. Expected to be a flat list where pairs
                                      represent [tau, sigma] for each chromophore.
         scale (list of float): Scaling factors for each chromophore, typically [HbO scale, HbR scale].
 
-    Returns:
+    Returns
+    -------
         xarray.DataArray: A DataArray object with dimensions "time" and "chromo", containing
                           the HRF basis functions for each chromophore.
     """
+
+    time_axis = time_axis - time_axis[0]
+
+    scale[0] = (scale[0] / units.molar).to_base_units().magnitude
+    scale[1] = (scale[1] / units.molar).to_base_units().magnitude
 
     nConc = len(params_basis) // 2
     if scale is None:
@@ -44,15 +56,14 @@ def generate_hrf(
             f"Length of `params_basis` ({len(params_basis)}) must be twice the length of `scale` ({len(scale)})"
         )
 
-    nPre = int(np.round(trange[0] / dt))
-    nPost_gamma = int(np.round(10 / dt))
-    nPost_stim = int(np.round(trange[1] / dt))
+    tHRF_gamma = time_axis[time_axis <= stim_dur]
+    boxcar = xr.DataArray(
+        np.zeros(len(tHRF_gamma)), dims=["time"], coords={"time": tHRF_gamma}
+    )
+    boxcar.loc[boxcar["time"] <= stim_dur] = 1
+    boxcar.loc[boxcar["time"] < 0] = 0
 
-    tHRF_gamma = np.linspace(nPre * dt, (nPost_gamma - 1) * dt, nPost_gamma - nPre)
-    stimulus = np.zeros([nPost_stim, nConc])
-
-    boxcar = np.zeros(len(tHRF_gamma))
-    boxcar[: int(stim_dur / dt)] = 1
+    stimulus = np.zeros((len(time_axis), nConc))
 
     for iConc in range(nConc):
         tau = params_basis[iConc * 2]
@@ -61,89 +72,218 @@ def generate_hrf(
         gamma = (np.exp(1) * (tHRF_gamma - tau) ** 2 / sigma**2) * np.exp(
             -((tHRF_gamma - tau) ** 2) / sigma**2
         )
-        gamma[tHRF_gamma < 0] = 0  # Set gamma values before time 0 to 0
+        gamma = xr.DataArray(gamma, dims=["time"], coords={"time": tHRF_gamma})
+        gamma = gamma.where(gamma["time"] >= 0, 0)
 
         if tHRF_gamma[0] < tau:
-            # Specifically zero out gamma values before tau
-            gamma[: int(np.ceil((tau - tHRF_gamma[0]) / dt))] = 0
+            gamma = gamma.where(gamma["time"] >= tau, 0)
 
-        convolved = signal.convolve(boxcar, gamma, mode="full")[:nPost_stim]
-        normalized = convolved / np.max(abs(convolved)) * scale[iConc] * 1e-6
-        stimulus[:, iConc] = normalized
+        convolved = signal.convolve(boxcar, gamma, mode="full")
 
-    tHRF_stim = np.linspace(nPre * dt, (nPost_stim - 1) * dt, nPost_stim - nPre)
+        convolved = convolved[: len(time_axis)]
+        normalized = convolved / np.max(np.abs(convolved)) * scale[iConc]
+        stimulus[: convolved.size, iConc] = normalized[: len(time_axis)]
 
     tbasis = xr.DataArray(
         stimulus,
         dims=["time", "chromo"],
-        coords={"time": tHRF_stim},
+        coords={"time": time_axis, "chromo": ["HbO", "HbR"][:nConc]},
     ).T
-    if nConc == 2:
-        tbasis = tbasis.assign_coords(chromo=["HbO", "HbR"])
-    tbasis = tbasis.assign_coords(samples=("time", np.arange(len(tHRF_stim))))
-    tbasis = tbasis.pint.quantify("molar")
+    tbasis = tbasis.assign_coords(samples=("time", np.arange(len(time_axis))))
+    tbasis.pint.units = cedalion.units.molar
 
     return tbasis
 
 
-@cdc.validate_schemas
-def add_hrf_to_od(
-    od: cdt.NDTimeSeries,
-    hrf: xr.DataArray,
-    channels: dict = {},
+def build_blob(
+    head_model: cfm.TwoSurfaceHeadModel,
+    landmark: str,
+    scale: Quantity = 10 * units.mm,
+):
+    """Generates a blob of activity at a seed landmark.
+
+    This function generates a blob of activity on the brain surface.
+    The blob is centered at the vertex closest to the seed landmark.
+
+    Parameters
+    ----------
+        headmodel (cfm.TwoSurfaceHeadModel): Head model with brain and scalp surfaces.
+        landmark (str): Name of the seed landmark.
+        scale (Quantity): Scale of the blob.
+
+    Returns
+    -------
+        xr.DataArray: Blob image with activation values for each vertex.
+    """
+
+    scale = (scale / head_model.brain.units).to_base_units().magnitude
+
+    lmbuilder = cd_landmarks.LandmarksBuilder1010(
+        head_model.scalp, head_model.landmarks
+    )
+    all_landmarks = lmbuilder.build()
+    seed_lm = all_landmarks.sel(label=landmark).pint.dequantify()
+    seed_vertex = head_model.brain.mesh.kdtree.query(seed_lm)[1]
+
+    cortex_surface = cps.Surface(
+        head_model.brain.mesh.vertices, head_model.brain.mesh.faces
+    )
+    distances_from_seed = cortex_surface.geodesic_distance([seed_vertex])
+    # print("distances_max", np.max(distances_from_seed))
+    # print("distances_min", np.min(distances_from_seed))
+    # FIXME: distances are not in mm. they change when mesh is decimated.
+    norm_pdf = stats.norm(scale=scale).pdf
+    blob_img = norm_pdf(distances_from_seed)
+
+    blob_img = blob_img / np.max(blob_img)
+
+    blob_img = xr.DataArray(blob_img, dims=["vertex"])
+
+    return blob_img
+
+
+def hrfs_from_image_reco(
+    blob: xr.DataArray,
+    hrf_model: xr.DataArray,
+    Adot: xr.DataArray,
+    forward_model: cfm.ForwardModel,
+):
+    """Maps an activation blob on the brain to HRFs in channel space.
+
+    Parameters
+    ----------
+        blob (xr.DataArray): Activation values for each vertex.
+        hrf_model (xr.DataArray): HRF model for HbO and HbR.
+        Adot_stacked (xr.DataArray): Sensitivity matrix for the forward model.
+        forward_model (cfm.ForwardModel): Forward model for the image reconstruction.
+
+    Returns
+    -------
+        cdt.NDTimeseries: HRFs in channel space.
+    """
+
+    unit = hrf_model.pint.units
+    hrf_model = hrf_model.pint.dequantify()
+
+    wavelengths = Adot.wavelength.values
+    n_channels = Adot.channel.size
+    n_v_brain = Adot.sel(vertex=Adot.is_brain).vertex.size
+
+    Adot_stacked = forward_model.compute_stacked_sensitivity(Adot)
+    Adot_stacked = Adot_stacked.assign_coords(
+        {
+            "wavelength": (
+                "flat_channel",
+                [wavelengths[0]] * n_channels + [wavelengths[1]] * n_channels,
+            )
+        }
+    )
+    Adot_stacked = Adot_stacked.set_xindex("wavelength")
+
+    Adot_is_brain_stack = xr.concat([Adot.is_brain, Adot.is_brain], dim="vertex")
+    Adot_is_brain_stack = Adot_is_brain_stack.rename({"vertex": "flat_vertex"})
+    Adot_brain_stacked = Adot_stacked.sel(flat_vertex=Adot_is_brain_stack)
+
+    HRF_image = add_hrf_to_vertices(hrf_model, n_v_brain, scale=blob)
+    HRF_chan = Adot_brain_stacked @ HRF_image
+
+    HRF_chan = np.stack([HRF_chan[:n_channels], HRF_chan[n_channels:]], axis=1)
+    HRF_chan = xr.DataArray(
+        HRF_chan,
+        coords=[Adot.channel, Adot.wavelength, hrf_model.time],
+        dims=["channel", "wavelength", "time"],
+    ).assign_coords(samples=("time", np.arange(len(hrf_model.time))))
+
+    # unit workaround because Adot has no units
+    HRF_chan.pint.units = unit
+    HRF_chan = HRF_chan / units.molar
+
+    return HRF_chan
+
+
+def add_hrf_to_vertices(hrf_basis: xr.DataArray, num_vertices: int, scale=None):
+    """Adds hemodynamic response functions (HRF) for HbO and HbR to specified vertices.
+
+    This function applies temporal HRF profiles to vertices, optionally scaling the
+    response by a provided amplitude scale. It generates separate images for HbO and HbR and then combines them.
+
+    Parameters
+    ----------
+        hrf_basis (xarray.DataArray): Dataset containing HRF time series for HbO and HbR.
+        num_vertices (int): Total number of vertices in the image space.
+        scale (np.array, optional): Array of scale factors of shape (num_vertices) to scale the amplitude of HRFs.
+
+    Returns
+    -------
+        np.array: Combined image of HbO and HbR responses across all vertices for all time points.
+    """
+
+    unit = hrf_basis.pint.units
+    num_time_points = len(hrf_basis.time)
+    hbo = hrf_basis.sel({"chromo": "HbO"})
+    hbr = hrf_basis.sel({"chromo": "HbR"})
+    hbo_real_image = (
+        hbo.pint.dequantify().values * np.ones([num_vertices, num_time_points])
+    ).T
+    hbr_real_image = (
+        hbr.pint.dequantify().values * np.ones([num_vertices, num_time_points])
+    ).T
+
+    if scale is not None:
+        scale = scale.pint.dequantify()
+        scale = scale.values
+        scale = scale / np.max(scale)
+        hbo_real_image *= scale
+        hbr_real_image *= scale
+
+    hrf_real_image = np.hstack([hbo_real_image, hbr_real_image])
+
+    hrf_real_image = xr.DataArray(
+        hrf_real_image,
+        dims=["time", "flat_vertex"],
+        coords={
+            "time": hrf_basis.time,
+            "chromo": ("flat_vertex", ["HbO"] * num_vertices + ["HbR"] * num_vertices),
+        },
+    )
+    hrf_real_image.set_xindex("chromo")
+    hrf_real_image.pint.units = unit
+
+    return hrf_real_image
+
+
+def build_stim_df(
+    num_stims: int,
+    stim_dur: float = 10,
+    trial_types: list = ["Stim"],
     min_interval: float = 5,
     max_interval: float = 10,
-    num_stims: int = 15,
     order: str = "alternating",
 ):
-    """Adds Hemodynamic Response Function (HRF) to optical density (OD) data in channel space.
+    """Generates a DataFrame for stimulus metadata based on provided parameters.
 
-    Adds the HRF onto the OD timeseries data at randomly selected intervals between stimuli.
     Stimuli can be added in an 'alternating' or 'random' order, and the inter-stimulus interval
     (ISI) is chosen randomly between the minimum and maximum allowed intervals.
 
-    Args:
-        od (xr.DataArray): OD timeseries data with dimensions ["channel", "wavelength", "time"].
-        hrf (xr.DataArray): HRF timeseries with dimensions ["time", "wavelength"].
-        channels (dict): Mapping of trial types to the channels where HRF should be added.
+    Parameters
+    ----------
+        num_stims (int): Number of stimuli to be added for each trial type.
+        stim_dur (int): Duration of the stimulus in seconds.
+        trial_types (list): List of trial types for the stimuli.
         min_interval (int): Minimum inter-stimulus interval in seconds.
         max_interval (int): Maximum inter-stimulus interval in seconds.
-        num_stims (int): Number of stimuli to be added.
-        order (str): Order of adding HRFs; 'alternating' or 'random'.
+        order (str): Order of adding Stims; 'alternating' or 'random'.
 
-    Returns:
-        Tuple of (xr.DataArray, pd.DataFrame): Updated OD data with added HRF and a DataFrame
-        containing stimulus metadata.
+    Returns
+    -------
+        pd.DataFrame: DataFrame containing stimulus metadata.
     """
 
-    stim_dur = hrf.time.values[-1] - hrf.time.values[0] + 1 / hrf.time.cd.sampling_rate
-    od = od.transpose("channel", "wavelength", "time")
     current_time = -stim_dur
-    onset_idxs = []
     onset_times = []
     onset_trial_types = []
 
-    try:
-        n_tpts_hrf = len(hrf["time"])
-        hrf = hrf.pint.dequantify().values
-    except:
-        n_tpts_hrf = hrf.shape[0]
-        hrf = np.reshape(hrf, [hrf.shape[1] // 2, 2, hrf.shape[0]])
-
-    n_tpts_data = len(od["time"])
-    od_w_hrf = od.pint.dequantify().copy()
-    time = od_w_hrf["time"]
-
-    channel_masks = {}
-
-    # Default case: one trial type, add HRF to all channels
-    if not channels:
-        channels = {"Stim": od.channel.values.tolist()}
-
-    # Create a mask of channels for each trial type
-    for trial_type, channel_list in channels.items():
-        channel_masks[trial_type] = np.where(np.isin(od.channel, channel_list))[0]
-
+    trial_types = [str(tt) for tt in trial_types]
     order = order.lower()
 
     if order not in ["alternating", "random"]:
@@ -153,51 +293,25 @@ def add_hrf_to_od(
 
     if order == "alternating":
         for stim in range(num_stims):
-            for trial_type, channel_mask in channel_masks.items():
-                interval = random.uniform(min_interval, max_interval)
+            for trial_type in trial_types:
+                interval = round(random.uniform(min_interval, max_interval), 2)
                 current_time += stim_dur + interval
-                onset_idx = (np.abs(time - current_time)).argmin()
-
-                if onset_idx + n_tpts_hrf > n_tpts_data:
-                    break  # Stop if the stimulus goes past the data length
-                    print("Stimulus goes past data length. Stopping loop...")
-
-                onset_idxs.append(int(onset_idx))
                 onset_times.append(current_time)
                 onset_trial_types.append(trial_type)
 
-                # Add the HRF at this onset index
-                od_w_hrf[
-                    channel_mask, :, int(onset_idx) : int(onset_idx + n_tpts_hrf)
-                ] += hrf
-
     elif order == "random":
-        stims_left = {trial_type: num_stims for trial_type in channel_masks.keys()}
+        stims_left = {trial_type: num_stims for trial_type in trial_types}
         while any(stims_left.values()):
-            trial_type, channel_mask = random.choices(
-                list(channel_masks.items()),
-                weights=[stims_left[tt] for tt in channel_masks],
+            trial_type = random.choices(
+                list(trial_types),
+                weights=[stims_left[tt] for tt in trial_types],
             )[0]
-            interval = random.uniform(min_interval, max_interval)
+            interval = round(random.uniform(min_interval, max_interval), 1)
             current_time += stim_dur + interval
-            onset_idx = (np.abs(time - current_time)).argmin()
-
-            if onset_idx + n_tpts_hrf > n_tpts_data:
-                break  # Stop if the stimulus goes past the data length
-                print("Stimulus goes past data length. Stopping loop...")
-
-            onset_idxs.append(int(onset_idx))
             onset_times.append(current_time)
             onset_trial_types.append(trial_type)
-
-            # Add the HRF at this onset index
-            od_w_hrf[
-                channel_mask, :, int(onset_idx) : int(onset_idx + n_tpts_hrf)
-            ] += hrf
-
             stims_left[trial_type] -= 1
 
-    # Create DataFrame for stimulus metadata
     stim_df = pd.DataFrame(
         {
             "onset": onset_times,
@@ -207,123 +321,163 @@ def add_hrf_to_od(
         }
     )
 
-    return od_w_hrf.pint.quantify(), stim_df
+    return stim_df
 
 
-def get_connected_vertices(seed, vertex_list, vertices, faces, dist_thresh=10):
-    """Retrieves a connected blob of vertices centered at the seed vertex.
+@cdc.validate_schemas
+def add_hrf_to_od(od: cdt.NDTimeSeries, hrfs: cdt.NDTimeSeries, stim_df: pd.DataFrame):
+    """Adds Hemodynamic Response Functions (HRFs) to optical density (OD) data based on provided stimulus dataframe (stim_df).
 
-    This function finds all vertices within a given distance threshold of the seed vertex and
-    explores all faces that contain a found vertex, adding all vertices from these faces
-    to the blob to ensure connectivity.
+    Parameters
+    ----------
+        od (cdt.NDTimeSeries): OD timeseries data with dimensions ["channel", "wavelength", "time"].
+        hrfs (cdt.NDTimeSeries): HRFs in channel space with dimensions ["channel", "wavelength", "time"] + maybe ["trial_type"].
+        stim_df (pd.DataFrame): DataFrame containing stimulus metadata.
 
-    Args:
-        seed (int): Index of the seed vertex.
-        vertex_list (list): List of vertex indices to consider.
-        vertices (np.array): Array of vertex coordinates.
-        faces (list): List of tuples/lists, each containing indices of vertices that make up a face.
-        dist_thresh (float, optional): Distance threshold for considering vertices to be connected.
-
-    Returns:
-        tuple: A tuple containing:
-            - list: Unique vertex indices within the blob.
-            - dict: Dictionary mapping each vertex index to a list of connected vertex indices.
+    Returns
+    -------
+        cdt.NDTimeSeries: OD data with HRFs added based on the stimulus dataframe.
     """
 
-    blob_vertices = []
-    connectivity_dict = {}
+    if "trial_type" not in hrfs.dims:
+        hrfs = hrfs.expand_dims("trial_type").assign_coords(trial_type=["Stim"])
 
-    for vertex in vertex_list:
-        distance = np.linalg.norm(vertices[vertex, :] - vertices[seed, :])
-        if distance < dist_thresh:
-            blob_vertices.append(vertex)
-            connected_vertices = []
+    od = od.transpose("channel", "wavelength", "time")
+    hrfs = hrfs.transpose("channel", "wavelength", "time", "trial_type")
 
-            for face in faces:
-                if vertex in face:
-                    connected_vertices.extend(face)
+    units_od = od.pint.units
+    hrfs = hrfs.pint.dequantify()
+    od_w_hrf = od.pint.dequantify().copy()
 
-            connected_vertices = list(np.unique(connected_vertices))
-            connectivity_dict[str(vertex)] = connected_vertices
+    n_tpts_hrf = len(hrfs.time)
+    n_tpts_data = len(od.time)
+    time_axis = od.time
 
-    blob_vertices = list(np.unique(blob_vertices))
+    for _, stim_info in stim_df.iterrows():
+        current_time = stim_info["onset"]
+        trial_type = stim_info["trial_type"]
 
-    return blob_vertices, connectivity_dict
+        onset_idx = (np.abs(time_axis - current_time)).argmin()
+
+        # Stop if the stimulus goes past the data length
+        if onset_idx + n_tpts_hrf > n_tpts_data:
+            print(
+                f"Stimulus goes past data length. Onset time: {current_time}. Stopping loop..."
+            )
+            break
+
+        # Add the HRF at this onset index
+        od_w_hrf[:, :, int(onset_idx) : int(onset_idx + n_tpts_hrf)] += hrfs.sel(
+            {"trial_type": trial_type}
+        ).values
+
+    return od_w_hrf.pint.quantify(units_od)
 
 
-def diffusion_operator(
-    seed, vertex_list, vertices, faces, n_iterations=15, n_vertices=20004
+@cdc.validate_schemas
+def hrf_to_long_channels(
+    hrf_model: xr.DataArray,
+    y: cdt.NDTimeSeries,
+    geo3d: xr.DataArray,
+    ss_tresh: Quantity = 1.5 * units.cm,
 ):
-    """Executes a diffusion process starting from a seed vertex over a number of iterations.
+    """Adds Hemodynamic Response Function (HRF) to optical density (OD) data in channel space.
 
-    The function starts by finding a blob of connected vertices around the seed. It initializes the seed's
-    amplitude to 1 and then iteratively sets the amplitude of each vertex in the blob to the average amplitude
-    of its connected vertices. This process simulates the diffusion of values from the seed through the blob.
+    Broadcasts the HRF model to long channels based on the source-detector distances. Short channel hrfs are filled with zeros.
 
-    Args:
-        seed (int): Index of the seed vertex.
-        vertex_list (list): List of vertex indices to consider.
-        vertices (np.array): Array of vertex coordinates.
-        faces (list): List of tuples/lists, each containing indices of vertices that make up a face.
-        n_iterations (int, optional): Number of iterations the diffusion process should run. Defaults to 15.
-        n_vertices (int, optional): Total number of vertices. Defaults to 20004.
+    Parameters
+    ----------
+        hrf_model (xr.DataArray): HRF model with dimensions ["time", "wavelength"].
+        od (cdt.NDTimeSeries): Raw amp / OD / Chromo timeseries data with dimensions ["channel", "time"].
+        geo3d (xr.DataArray): 3D coordinates of sources and detectors.
+        ss_tresh (Quantity): Threshold for short/long channels.
 
-    Returns:
-        tuple: A tuple containing:
-            - list: Vertex indices within the blob.
-            - np.array: Array representing the diffusion amplitudes across all vertices.
+    Returns
+    -------
+        xr.DataArray: HRFs in channel space with dimensions ["channel", "time", "wavelength"].
     """
-    blob_vertices, connectivity_dict = get_connected_vertices(
-        seed, vertex_list, vertices, faces, dist_thresh=10
+
+    # Calculate source-detector distances for each channel
+    dists = (
+        xrutils.norm(geo3d.loc[y.source] - geo3d.loc[y.detector], dim="pos")
+        .pint.to("mm")
+        .round(2)
     )
 
-    diffusion_image = np.zeros(n_vertices)
+    # Identify long channels
+    long_channels = dists.channel[dists > ss_tresh]
 
-    for _ in range(n_iterations):
-        diffusion_image[seed] = 1
+    hrf_long_chans = xr.DataArray(
+        np.zeros((y.channel.size, hrf_model.time.size, hrf_model.wavelength.size)),
+        coords=[y.channel, hrf_model.time, hrf_model.wavelength],
+        dims=["channel", "time", "wavelength"],
+    ).pint.quantify(hrf_model.pint.units)
 
-        for vertex in blob_vertices:
-            if vertex != seed:
-                connected_vertices = connectivity_dict[str(vertex)]
-                diffusion_image[vertex] = np.mean(diffusion_image[connected_vertices])
+    hrf_long_chans.loc[long_channels] = hrf_model
 
-    return blob_vertices, diffusion_image
+    return hrf_long_chans
 
 
-def add_hrf_to_vertices(
-    vertex_list, hrf_basis: xr.DataArray, scale=None, num_vertices=20004
-):
-    """Adds hemodynamic response functions (HRF) for HbO and HbR to specified vertices.
+def get_colors(activations, vertex_colors, log_scale=False, max_scale=None):
+    """Maps activations to colors for visualization.
 
-    This function adds a given HRF to selected vertices, optionally scaling the response by a
-    provided amplitude scale.
+    Parameters
+    ----------
+        activations (xr.DataArray): Activation values for each vertex.
+        vertex_colors (np.array): Vertex color array of the brain mesh.
+        log_scale (bool): Whether to map activations on a logarithmic scale.
+        max_scale (float): Maximum value to scale the activations.
 
-    Args:
-        vertex_list (list): List of vertex indices to which HRFs are added.
-        hrf_basis (xarray.DataArray): Dataset containing HRF time series for HbO and HbR.
-        scale (np.array, optional): Array of scale factors of shape (num_vertices, 1) to scale the amplitude of HRFs.
-        num_vertices (int, optional): Total number of vertices in the image space. Defaults to 20004.
-
-    Returns:
-        np.array: Combined image of HbO and HbR responses across all vertices for all time points.
+    Returns
+    -------
+        np.array: New vertex color array with same shape as `vertex_colors`.
     """
-    num_time_points = len(hrf_basis["time"])
-    hbo_real_image = np.zeros([num_time_points, num_vertices])
-    hbr_real_image = np.zeros([num_time_points, num_vertices])
 
-    hbo = hrf_basis.sel({"chromo": "HbO"})
-    hbr = hrf_basis.sel({"chromo": "HbR"})
-    hbo_real_image[:, vertex_list] = (
-        hbo.pint.dequantify().values * np.ones([len(vertex_list), num_time_points])
-    ).T
-    hbr_real_image[:, vertex_list] = (
-        hbr.pint.dequantify().values * np.ones([len(vertex_list), num_time_points])
-    ).T
+    activations = activations.pint.dequantify()
+    # linear scale:
+    if max_scale is None:
+        max_scale = activations.max()
+    activations = (activations / max_scale) * 255
+    # map on a logarithmic scale to the range [0, 255]
+    if log_scale:
+        activations = np.log(activations + 1)
+        activations = (activations / max_scale) * 255
+    colors = np.zeros((vertex_colors.shape))
+    colors[:, 3] = 255
+    colors[:, 0] = 255
+    activations = 255 - activations
+    colors[:, 1] = activations
+    colors[:, 2] = activations
+    colors[colors < 0] = 0
+    colors[colors > 255] = 255
+    return colors
 
-    if scale is not None:
-        hbo_real_image *= scale
-        hbr_real_image *= scale
 
-    hrf_real_image = np.hstack([hbo_real_image, hbr_real_image])
+def plot_blob(blob_img, brain, title="", log_scale=False):
+    """Plots a blob of activity on the brain.
 
-    return hrf_real_image
+    Parameters
+    ----------
+    blob_img (xr.DataArray): Activation values for each vertex.
+    brain (TrimeshSurface): Brain Surface with brain mesh.
+    title (str): Title for the plot.
+    log_scale (bool): Whether to map activations on a logarithmic scale.
+
+    Returns
+    -------
+    None
+    """
+
+    seed = blob_img.argmax()
+    vertices = brain.mesh.vertices
+    center_brain = np.mean(vertices, axis=0)
+    colors_blob = get_colors(blob_img, brain.mesh.visual.vertex_colors)
+    brain.mesh.visual.vertex_colors = colors_blob
+    plt_pv = pv.Plotter()
+    cedalion.plots.plot_surface(plt_pv, brain)
+    plt_pv.camera.position = (vertices[seed] - center_brain) * 7 + center_brain
+    plt_pv.camera.focal_point = vertices[seed]
+    plt_pv.camera.up = [0, 0, 1]
+
+    plt_pv.add_text(title, position="upper_edge", font_size=20)
+    plt_pv.show()
