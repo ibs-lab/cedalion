@@ -9,11 +9,13 @@ dependencies:
   - ipython=8.13.2
   - ipywidgets=8.1.2
   - jupyter
+  - jupyter_client=7.4.9
   - matplotlib=3.7.1
   - nibabel=5.1.0
   - nilearn=0.10.0
   - nipype=1.8.6
   - notebook=6.5.4
+  - pyzmq=25.1
   - numpy=1.23.5
   - opencv=4.6.0
   - pandas=2.0.1
@@ -39,6 +41,9 @@ dependencies:
   - trimesh
   - pyvista
   - trame
+  - trame-vtk
+  - trame-vuetify
+  - trame-components
   - vtk=9.2.2
 
   - nbsphinx=0.9.3
