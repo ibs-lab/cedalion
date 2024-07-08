@@ -167,6 +167,9 @@ class TwoSurfaceHeadModel:
             vtk_scalp_ijk = vtk_scalp_ijk.decimate(reduction)
             scalp_ijk = cdc.TrimeshSurface.from_vtksurface(vtk_scalp_ijk)
 
+        brain_ijk = brain_ijk.fix_vertex_normals()
+        scalp_ijk = scalp_ijk.fix_vertex_normals()
+
         brain_mask = segmentation_masks.sel(segmentation_type=brain_seg_types).any(
             "segmentation_type"
         )
@@ -412,6 +415,9 @@ class ForwardModel:
             geo3d.type.isin([cdc.PointType.SOURCE, cdc.PointType.DETECTOR])
         ]
 
+        #FIXME make sure that optode is in scalp voxel
+        self.optode_pos = self.optode_pos.round()
+
         self.optode_dir = -head_model.scalp.get_vertex_normals(self.optode_pos)
 
         self.optode_pos = self.optode_pos.pint.dequantify()
@@ -509,6 +515,7 @@ class ForwardModel:
             for i_step in range(MAX_STEPS):
                 pos = self.optode_pos[i_opt] + i_step * self.optode_dir[i_opt]
                 i, j, k = np.floor(pos.values).astype(int)
+
                 if fluence[i, j, k] > 0:
                     result[i_opt] = fluence[i, j, k]
                     break

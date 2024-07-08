@@ -168,6 +168,18 @@ class TrimeshSurface(Surface):
             coords={"label": points.label},
         )
 
+
+    def fix_vertex_normals(self):
+        mesh = self.mesh
+        # again make sure, that normals face outside
+        cog2vert = mesh.vertices - np.mean(mesh.vertices, axis=0)
+        projected_normals = (cog2vert * mesh.vertex_normals).sum(axis=1)
+        flip = np.where(projected_normals < 0, -1., 1. )[:,None]
+        flipped_normals = mesh.vertex_normals * flip
+
+        mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, vertex_normals=flipped_normals)
+        return TrimeshSurface(mesh, self.crs, self.units)
+
     @classmethod
     def from_vtksurface(cls, vtk_surface: "VTKSurface"):
         vtk_polydata = vtk_surface.mesh
