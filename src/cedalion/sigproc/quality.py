@@ -130,7 +130,7 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
     cardiac_fmax = 2.5 * units.Hz
 
     amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
-    # amp = (amp - amp.mean("time")) / amp.std("time")
+    amp = (amp - amp.mean("time")) / amp.std("time")
 
     # convert window_length to samples
     nsamples = (window_length * sampling_rate(amp)).to_base_units()

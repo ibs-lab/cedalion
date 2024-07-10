@@ -12,6 +12,10 @@ import cedalion.io as io
 import os
 import SQE_metrics as sqm
 
+#%%
+import os
+import cedalion.nirs as nirs
+import cedalion.io as io
 subjID = 'sub-01'
 rootDir_data = "/Users/lauracarlton/Documents/DATA/MAFC_raw/"
 
@@ -50,12 +54,13 @@ MD = dqr.generate_report_single_run(elements[0])
 
 #%%
 from snirf import Snirf
+pdb.set_trace()
 snirf_obj = Snirf(file_name)
 sci_val, psp_val, mask = sqm.sci_psp(snirf_obj, mode='montage', ax=None)
 #%% 
 from cedalion.sigproc.quality import sci, psp
 from cedalion import Quantity, units
-# pdb.set_trace()
+pdb.set_trace()
 
 SCI, SCI_mask = sci(elements[0].data[0], 5*units.s, 0.8)
 PSP, PSP_mask = psp(elements[0].data[0], 5*units.s, 0.1)

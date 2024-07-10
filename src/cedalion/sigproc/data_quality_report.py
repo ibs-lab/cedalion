@@ -33,7 +33,6 @@ def get_data_metrics(amplitudes):
     
     masks = [sci_mask, psp_mask]
     
-    #TODO - check that this is still giving a result for each channel 
     scixpsp_mask = xr.where(sci_mask & psp_mask == False, sci_mask, psp_mask)
 
     perc_channel = 1 - scixpsp_mask.sum('time')/scixpsp_mask.shape[1]
@@ -251,7 +250,7 @@ def plot_metrics_on_probe(snirfObj, metric, ax, colormap=plt.cm.bwr, title='DQR'
     plt.axis('off')
     
     if savePath is not None: 
-        plt.savefig(savePath, dpi=1200)
+        plt.savefig(savePath, dpi=500)
     
     pass
 
@@ -265,7 +264,7 @@ def plot_timeseries(GVTD, stim, ax, savePath=None):
     plot_stim_marks(stim)
 
     if savePath != None:
-        plt.savefig(savePath+'GVTD_timecourse.png')
+        plt.savefig(savePath+'GVTD_timecourse.png', dpi=500)
         
     pass
 
@@ -300,7 +299,7 @@ def plot_timeseries_all_channels(scixpsp_mask, stim, ax, title, savePath = None)
 
     plt.tight_layout()
     if savePath != None: 
-        plt.savefig(savePath+'scixpsp_thresholded.png')
+        plt.savefig(savePath+'scixpsp_thresholded.png', dpi=500)
     return
 
 #%% GENERATE REPORTS
@@ -326,7 +325,6 @@ def generate_report_single_run(snirfObj, title=None, savePath=None):
     
     gs = gridspec.GridSpec(3, 3, height_ratios=[8,2,1],figure=fig)
     
-    #TODO need to access each wavelength independently - why is it all red
     threshold_col = metric_dict['SNR'] < 5
     colors=["red","yellow","green"]
     nodes = [0.0, 0.5, 1.0]
