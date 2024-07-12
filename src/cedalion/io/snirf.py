@@ -815,7 +815,7 @@ def write_snirf(
 
         # save aux
 
-        for aux_name, aux_array in aux:
+        for aux_name, aux_array in aux.items():
             ne.aux.appendGroup()
             aux_group = ne.aux[-1]
 
