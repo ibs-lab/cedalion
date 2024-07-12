@@ -7,7 +7,7 @@ import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 from cedalion import Quantity, units
 import xarray as xr
-from .quality import snr, sci, psp, GVTD
+from .quality import snr, sci, psp, gvtd
 from scipy import signal
 import pint
 import pandas as pd
@@ -62,8 +62,8 @@ def get_sci(amplitudes: cdt.NDTimeSeries, window_length: Quantity = 5*units.s, s
     return sci_val, sci_mask
 
 def get_gvtd(amplitudes: cdt.NDTimeSeries):
-    gvtd = GVTD(amplitudes)
-    return gvtd
+    gvtd_val = gvtd(amplitudes)
+    return gvtd_val
 
 #%% PLOTTING MONTAGE METRICS
 
