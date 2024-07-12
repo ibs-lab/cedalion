@@ -51,7 +51,7 @@ def gvtd(amplitudes: NDTimeSeries):
 
 
 @cdc.validate_schemas
-def psp(amplitudes: NDTimeSeries, window_length: Quantity, psp_thresh: float):
+def psp(amplitudes: NDTimeSeries, window_length: Quantity = 5*units.s, psp_thresh: float = 0.1):
     
     # FIXME make these configurable
     cardiac_fmin = 0.5 * units.Hz
@@ -85,13 +85,13 @@ def psp(amplitudes: NDTimeSeries, window_length: Quantity, psp_thresh: float):
         
         corr = np.array([signal.correlate(sig_temp[ch, 0, :], sig_temp[ch, 1, :], 'full') for ch in range(sig.shape[0])])
     
-        norm_factor = [np.sqrt(np.sum(sig_temp[ch, 0, :]**2) * np.sum(sig_temp[ch, 1, :]**2)) for ch in range(sig.shape[0]) ]
+        # norm_factor = [np.sqrt(np.sum(sig_temp[ch, 0, :]**2) * np.sum(sig_temp[ch, 1, :]**2)) for ch in range(sig.shape[0]) ]
         
-        corr /= np.tile(norm_factor, (corr.shape[1],1)).T
+        # corr /= np.tile(norm_factor, (corr.shape[1],1)).T
     
         for ch in range(sig.shape[0]):
             window = signal.hamming(len(corr[ch,:]))
-            f, pxx = signal.periodogram(corr[ch,:], window=window, nfft=len(corr[ch,:]), fs=fs, scaling='spectrum')
+            f, pxx = signal.periodogram(corr[ch,:], window=window, nfft=len(corr[ch,:]), fs=fs, scaling='density')
 
             PSP[ch,w] = np.max(pxx)            
 
@@ -107,7 +107,7 @@ def psp(amplitudes: NDTimeSeries, window_length: Quantity, psp_thresh: float):
     
 
 @cdc.validate_schemas
-def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
+def sci(amplitudes: NDTimeSeries, window_length: Quantity = 5*units.s, sci_thresh: float = 0.7):
     """Calculate the scalp-coupling index based on :cite:t:`Pollonini2014` / :cite:t:`Pollonini2016`.
 
     Args:
