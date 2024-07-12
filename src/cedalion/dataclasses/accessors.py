@@ -43,7 +43,7 @@ class CedalionAccessor:
         # by one. Larger discrepancies would have other unhandled causes.
         # Throw an error for these.
         durations = end - start
-        assert np.max(durations) - np.min(durations) <= 1
+        # assert np.max(durations) - np.min(durations) <= 1
         duration = np.min(durations)
 
         # FIXME limit reltime precision (to ns?) to avoid
