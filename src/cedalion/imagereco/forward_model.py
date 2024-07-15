@@ -93,6 +93,7 @@ class TwoSurfaceHeadModel:
         smoothing: float = 0.5,
         brain_face_count: Optional[int] = 60000,
         scalp_face_count: Optional[int] = 60000,
+        fill_holes: bool = False,
     ) -> "TwoSurfaceHeadModel":
         """Constructor from binary masks as gained from segmented MRI scans.
 
@@ -137,13 +138,13 @@ class TwoSurfaceHeadModel:
             landmarks_ijk = None
 
         # derive surfaces from segmentation masks
-        brain_ijk = surface_from_segmentation(segmentation_masks, brain_seg_types)
+        brain_ijk = surface_from_segmentation(segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes)
 
         # we need the single outer surface from the scalp. The inner border between
         # scalp and skull is not interesting here. Hence, all segmentation types are
         # grouped together, yielding a uniformly filled head volume.
         all_seg_types = segmentation_masks.segmentation_type.values
-        scalp_ijk = surface_from_segmentation(segmentation_masks, all_seg_types)
+        scalp_ijk = surface_from_segmentation(segmentation_masks, all_seg_types, fill_holes_in_mask=fill_holes)
 
         # smooth surfaces
         if smoothing > 0:
