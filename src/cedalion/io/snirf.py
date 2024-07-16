@@ -656,20 +656,15 @@ def write_snirf(
     data_type: str,
     timeseries: xr.DataArray,
     geo3d: xr.DataArray,
+    geo2d: xr.DataArray,
     stim: pd.DataFrame,
-    measurement_list: pd.DataFrame,
     aux: dict[str, xr.DataArray] = {},
     meta_data: dict = {},
 ):
-    if data_type not in ["amplitude", "od", "concentration"]:
+    if data_type not in ["amplitude", "od", "concentration", "hrf"]:
         raise ValueError(
-            "data_type must be either 'amplitude', 'od' or 'concentration'."
+            "data_type must be either 'amplitude', 'od','concentration' or 'hrf'."
         )
-
-    assert timeseries.ndim == 3
-
-    assert "channel" in timeseries.dims
-    assert "time" in timeseries.dims
 
     other_dim = None
 
@@ -679,18 +674,43 @@ def write_snirf(
         other_dim = "chromo"
     else:
         raise ValueError(
-            "expect 3-dim timeseries with either 'wavelength' or 'chromo' dimensions"
+            "expect timeseries with either 'wavelength' or 'chromo' dimensions"
         )
 
-    stacked_array = timeseries.stack({"snirf_channel": ["channel", other_dim]})
+    if data_type == "hrf":
+        if "trial_type" not in timeseries.dims:
+            raise ValueError(
+                "to store HRFs the timeseries needs a 'trial_type' dimension"
+            )
+        assert timeseries.ndim == 4
+        assert "channel" in timeseries.dims
+        if "reltime" in timeseries.dims:
+            timeseries = timeseries.rename({"reltime": "time"})
+        elif "time" in timeseries.dims:
+            pass
+        else:
+            raise ValueError("timeseries needs 'time' or 'reltime' dimension.")
+
+        dims_to_stack = ["trial_type", "channel", other_dim]
+    else:
+        assert timeseries.ndim == 3
+        assert "channel" in timeseries.dims
+        assert "time" in timeseries.dims
+
+        dims_to_stack = ["channel", other_dim]
+
+    stacked_array = timeseries.stack({"snirf_channel": dims_to_stack})
     stacked_array = stacked_array.transpose("time", "snirf_channel")
     stacked_array = stacked_array.pint.dequantify()
 
+    trial_types = list(stim["trial_type"].drop_duplicates())
+
     source_labels, detector_labels, wavelengths, df_ml = measurement_list_from_stacked(
-        stacked_array, data_type
+        stacked_array, data_type, trial_types
     )
 
     geo3d = geo3d.pint.dequantify()
+    geo2d = geo2d.pint.dequantify()
 
     with Snirf(fname, "w") as fout:
         # create and populate nirs element
@@ -709,6 +729,9 @@ def write_snirf(
 
         ne.probe.sourcePos3D = geo3d.loc[source_labels]
         ne.probe.detectorPos3D = geo3d.loc[detector_labels]
+        
+        ne.probe.sourcePos2D = geo2d.loc[source_labels]
+        ne.probe.detectorPos2D = geo2d.loc[detector_labels]
 
         # create and populate data element
         ne.data.appendGroup()
@@ -725,7 +748,8 @@ def write_snirf(
                 setattr(ml, k, v)
 
         # save stimulus
-        for trial_type, df in stim.groupby("trial_type"):
+        for trial_type in trial_types:
+            df = stim[stim.trial_type == trial_type]
             ne.stim.appendGroup()
             stim_group = ne.stim[-1]
             df = df.drop(columns="trial_type")
