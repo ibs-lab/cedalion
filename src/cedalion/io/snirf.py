@@ -394,8 +394,12 @@ def read_aux(nirs_element: NirsElement, opts: dict[str, Any]):
     return result
 
 
-def read_data_elements(data_element, nirs_element):
+def read_data_elements(
+    data_element: DataElement, nirs_element: NirsElement, stim: pd.DataFrame
+):
     time = data_element.time
+
+    trial_types = stim["trial_type"].drop_duplicates().values
 
     samples = np.arange(len(time))
 
@@ -421,12 +425,20 @@ def read_data_elements(data_element, nirs_element):
 
     for data_type_group, df in df_ml.groupby("data_type_group"):
         has_wavelengths = not pd.isna(df.wavelength).all()
-        has_chromo = not pd.isna(df.chromo).all()
+        has_chromo = True
+        # has_chromo = not pd.isna(df.chromo).all()
+
+        is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
 
         if has_wavelengths and not has_chromo:
             other_dim = "wavelength"
         elif has_chromo and not has_wavelengths:
             other_dim = "chromo"
+        elif not has_chromo and not has_wavelengths:
+            raise ValueError(
+                "found channel for which neither wavelength nor "
+                "chromophore is defined."
+            )
         else:
             raise NotImplementedError(
                 "found channel for which both wavelength "
@@ -443,15 +455,6 @@ def read_data_elements(data_element, nirs_element):
         df["index_channel"] = [unique_channel.index(c) for c in df.channel]
         df["index_other_dim"] = [unique_other_dim.index(c) for c in df[other_dim]]
 
-        ts3d = np.zeros(
-            (len(unique_channel), len(unique_other_dim), len(time)),
-            dtype=data_element.dataTimeSeries.dtype,
-        )
-
-        ts2d = data_element.dataTimeSeries
-        for index, row in df.iterrows():
-            ts3d[row.index_channel, row.index_other_dim, :] = ts2d[:, index]
-
         coords = {}
         coords["time"] = ("time", time)
         coords["samples"] = ("time", samples)
@@ -460,20 +463,65 @@ def read_data_elements(data_element, nirs_element):
         coords["detector"] = ("channel", df_coords["channel"]["detector"])
         coords[other_dim] = (other_dim, unique_other_dim)
 
+        ts2d = data_element.dataTimeSeries
+
         units = df.dataUnit.unique().item()
         # FIXME treat unspecified units as dimensionless quantities.
         if units is None:
             units = "1"
 
-        da = xr.DataArray(
-            ts3d,
-            dims=["channel", other_dim, "time"],
-            coords=coords,
-            attrs={
-                "units": units,
-                "data_type_group": data_type_group,
-            },
-        )
+        if is_hrf:
+            channel_trial_types = trial_types[df["dataTypeIndex"].values - 1]
+            used_trial_types = np.unique(channel_trial_types).tolist()
+            df["index_trial_type"] = [
+                used_trial_types.index(i) for i in channel_trial_types
+            ]
+
+            ts4d = np.zeros(
+                (
+                    len(unique_channel),
+                    len(unique_other_dim),
+                    len(used_trial_types),
+                    len(time),
+                ),
+                dtype=data_element.dataTimeSeries.dtype,
+            )
+
+            for index, row in df.iterrows():
+                ts4d[
+                    row.index_channel, row.index_other_dim, row.index_trial_type, :
+                ] = ts2d[:, index]
+
+            coords["trial_type"] = used_trial_types
+
+            da = xr.DataArray(
+                ts4d,
+                dims=["channel", other_dim, "trial_type", "time"],
+                coords=coords,
+                attrs={
+                    "units": units,
+                    "data_type_group": data_type_group,
+                },
+            )
+
+        else:
+            ts3d = np.zeros(
+                (len(unique_channel), len(unique_other_dim), len(time)),
+                dtype=data_element.dataTimeSeries.dtype,
+            )
+
+            for index, row in df.iterrows():
+                ts3d[row.index_channel, row.index_other_dim, :] = ts2d[:, index]
+
+            da = xr.DataArray(
+                ts3d,
+                dims=["channel", other_dim, "time"],
+                coords=coords,
+                attrs={
+                    "units": units,
+                    "data_type_group": data_type_group,
+                },
+            )
         da = da.pint.quantify()
 
         time_units = nirs_element.metaDataTags.TimeUnit
@@ -483,10 +531,6 @@ def read_data_elements(data_element, nirs_element):
             pass
 
         data_arrays.append(da)
-
-    # da = da.drop_indexes(["channel", "time"])
-    # da = da.set_xindex(["channel", "source", "detector"])
-    # da = da.set_xindex(["time", "samples"])
 
     return data_arrays
 
@@ -537,7 +581,7 @@ def read_nirs_element(nirs_element, opts):
     stim = stim_to_dataframe(nirs_element.stim)
     data = []
     for data_element in nirs_element.data:
-        data.extend(read_data_elements(data_element, nirs_element))
+        data.extend(read_data_elements(data_element, nirs_element, stim))
 
     aux = read_aux(nirs_element, opts)
 
@@ -584,6 +628,12 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
         DataTypeLabel.LIPID,
     ]
 
+    hrf_chromo_types = {
+        DataTypeLabel.HRF_HBO: DataTypeLabel.HBO,
+        DataTypeLabel.HRF_HBR: DataTypeLabel.HBR,
+        DataTypeLabel.HRF_HBT: DataTypeLabel.HBT,
+    }
+
     new_columns = []
     for _, row in df_ml.iterrows():
         sl = sourceLabels[int(row["sourceIndex"]) - 1]
@@ -596,6 +646,8 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
 
         if row["dataTypeLabel"] in chromo_types:
             ch = DataTypeLabel(row["dataTypeLabel"])
+        elif row["dataTypeLabel"] in hrf_chromo_types:
+            ch = hrf_chromo_types[row["dataTypeLabel"]]
         else:
             ch = None
 
