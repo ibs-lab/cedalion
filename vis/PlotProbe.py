@@ -14,6 +14,7 @@ from matplotlib.backends.backend_qtagg import \
 from matplotlib.backends.qt_compat import QtWidgets
 from matplotlib.figure import Figure
 import warnings
+import time
 warnings.simplefilter("ignore")
 
 
@@ -212,8 +213,10 @@ class Main(QtWidgets.QMainWindow):
             "SNIRF Files (*.snirf)",
         )[0]
         print('Loading SNIRF...')
+        t0 = time.time()
         self.snirfObj = cedalion.io.read_snirf(self._fname)
-        print('SNIRF Loaded!')
+        t1 = time.time()
+        print(f'SNIRF Loaded in {t1 - t0:.2f} seconds!')
         
         # Initialize certain values to begin
         self.x_scale.setValue(1)
@@ -334,10 +337,13 @@ class Main(QtWidgets.QMainWindow):
         for tidx,trial in enumerate(self.snirfData.trial_type.values):
             self.conditions.insertItem(tidx, trial)
             
+        t2 = time.time()
+        print(f'Calculations complete in {t2-t1:.2f} seconds!')
         self.draw_hrf()
         self.conditions.setCurrentRow(0)
         
     def _change_hrf_vis(self):
+        t0 = time.time()
         for i_con in range(self.trial_types):
             if i_con == self.conditions.currentRow():
                 for i_ch in range(self.channels):
@@ -356,6 +362,8 @@ class Main(QtWidgets.QMainWindow):
                         self.hrf[i_con*self.channels*self.chromophores + i_ch*self.chromophores + i_col].set_color(self.chrom[i_col] + [0])
         
         self._ax.figure.canvas.draw()
+        t1 = time.time()
+        print(f"Visibility changed in {t1-t0:.2f} seconds!")
         
     def _redraw_hrf(self):
         for i_con in range(self.trial_types):
@@ -367,9 +375,12 @@ class Main(QtWidgets.QMainWindow):
         
     def _condition_changed(self, s):
         # Pass the new condition and draw hrf again
-        # print(f"Changing visibility for condition {self.conditions.currentRow()}")
-        self._change_hrf_vis()
-        # print("HRFs should be visible!")
+        if self.conditions.currentItem() is None:
+            pass
+        elif self.conditions.currentItem().text() == "-- Select Condition --":
+            pass
+        else:
+            self._change_hrf_vis()
         
     def _toggle_circles(self):
         if self.opt2circ.isChecked():
@@ -402,6 +413,7 @@ class Main(QtWidgets.QMainWindow):
         self._ax.figure.canvas.draw()
         
     def _xscale_changed(self, i):
+        t0 = time.time()
         # Pass the new xscale and draw hrf again
         self.plot_Xscale = i
         # print(f"Changing x-scale to {self.plot_Xscale}!")
@@ -409,9 +421,11 @@ class Main(QtWidgets.QMainWindow):
         self.xT = [xa1 - self.axWid/8 + (1/4)*self.axWid*((self.t - self.minT)/(self.maxT-self.minT)) for xa1 in self.xa]
         
         self._redraw_hrf()
-        # print("HRFs should have changed!")
+        t1 = time.time()
+        print(f"X scale changed in {t1-t0:.2f} seconds!")
         
     def _yscale_changed(self, i):
+        t0 = time.time()
         # Pass the new yscale and draw hrf again
         self.plot_Yscale = i
         # print(f"Changing y-scale to {self.plot_Yscale}!")
@@ -420,6 +434,8 @@ class Main(QtWidgets.QMainWindow):
             self.hrfT[trial] = self.ya - self.axHgt/8 + (1/4)*self.axHgt*((self.hrf_val[trial] - self.cmin)/(self.cmax - self.cmin))
         
         self._redraw_hrf()
+        t1 = time.time()
+        print(f"Y scale changed in {t1 - t0:.2f} seconds!")
         # print("HRFs should have changed!")
         
     def _mindist_changed(self, i):
@@ -443,6 +459,7 @@ class Main(QtWidgets.QMainWindow):
         
     def draw_hrf(self):
         print("Plotting Optodes!")
+        t0 = time.time()
         self._ax.clear()
         
         # Plot optode dots transparently
@@ -488,7 +505,8 @@ class Main(QtWidgets.QMainWindow):
         self._ax.figure.tight_layout()
         self._ax.figure.canvas.draw()
         
-        print("Everything should be plotted!")
+        t1 = time.time()
+        print(f"Everything plotted in {t1-t0:.2f} seconds!")
 
 
     
