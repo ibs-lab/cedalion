@@ -327,7 +327,7 @@ def stim_to_dataframe(stim):
     dfs = []
 
     if len(stim) == 0:
-        columns = ["onset", "duration", "value"]
+        columns = ["onset", "duration", "value", "trial_type"]
         return pd.DataFrame(columns=columns)
 
     for st in stim:
@@ -425,8 +425,7 @@ def read_data_elements(
 
     for data_type_group, df in df_ml.groupby("data_type_group"):
         has_wavelengths = not pd.isna(df.wavelength).all()
-        has_chromo = True
-        # has_chromo = not pd.isna(df.chromo).all()
+        has_chromo = not pd.isna(df.chromo).all()
 
         is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
 
@@ -662,7 +661,7 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
 
 
 def measurement_list_from_stacked(
-    stacked_array, data_type, stacked_channel="snirf_channel"
+    stacked_array, data_type, trial_types, stacked_channel="snirf_channel"
 ):
     source_labels = list(np.unique(stacked_array.source.values))
     detector_labels = list(np.unique(stacked_array.detector.values))
@@ -689,18 +688,34 @@ def measurement_list_from_stacked(
     elif data_type == "concentration":
         ml["dataType"] = [DataType.PROCESSED.value] * nchannel
         ml["dataTypeLabel"] = stacked_array.chromo.values
+    elif data_type == "hrf":
+        ml["dataType"] = [DataType.PROCESSED.value] * nchannel
+
+        if "chromo" in stacked_array.coords:
+            dtl_map = {
+                "HbO": DataTypeLabel.HRF_HBO,
+                "HbR": DataTypeLabel.HRF_HBR,
+                "HbT": DataTypeLabel.HRF_HBT,
+            }
+            ml["dataTypeLabel"] = [dtl_map[c] for c in stacked_array.chromo.values]
+        elif "wavelength" in stacked_array.coords:
+            ml["dataTypeLabel"] = [DataTypeLabel.HRF_DOD] * nchannel
+
+        ml["dataTypeIndex"] = [
+            trial_types.index(tt) + 1 for tt in stacked_array.trial_type.values
+        ]
 
     if "wavelength" in stacked_array.coords:
         wavelengths = list(np.unique(stacked_array.wavelength.values))
         ml["wavelengthIndex"] = [
             wavelengths.index(w) + 1 for w in stacked_array.wavelength.values
         ]
-    else:
-        ml["wavelengthIndex"] = [-1] * nchannel
 
     ml["dataUnit"] = [stacked_array.attrs["units"]] * nchannel
 
-    return source_labels, detector_labels, wavelengths, pd.DataFrame(ml)
+    ml = pd.DataFrame(ml)
+
+    return source_labels, detector_labels, wavelengths, ml
 
 
 def write_snirf(
