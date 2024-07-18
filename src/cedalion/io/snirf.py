@@ -2,7 +2,7 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 from snirf import Snirf
-from snirf.pysnirf2 import MeasurementList, DataElement, NirsElement
+from snirf.pysnirf2 import MeasurementList, DataElement, NirsElement, Stim
 from enum import Enum
 import logging
 from numpy.typing import ArrayLike
@@ -323,7 +323,7 @@ def meta_data_tags_to_dict(nirs_element: NirsElement):
     return {f: getattr(mdt, f) for f in fields}
 
 
-def stim_to_dataframe(stim):
+def stim_to_dataframe(stim: Stim):
     dfs = []
 
     if len(stim) == 0:
@@ -426,6 +426,8 @@ def read_data_elements(
     for data_type_group, df in df_ml.groupby("data_type_group"):
         has_wavelengths = not pd.isna(df.wavelength).all()
         has_chromo = not pd.isna(df.chromo).all()
+
+        is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
 
         is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
 
