@@ -12,10 +12,11 @@ import mne
 import xarray as xr
 from scipy.spatial import KDTree
 from vtk.util.numpy_support import vtk_to_numpy
+import pyvista as pv
 
 import cedalion
 import cedalion.typing as cdt
-from cedalion.vtktutils import trimesh_to_vtk_polydata
+from cedalion.vtktutils import trimesh_to_vtk_polydata, pyvista_polydata_to_trimesh
 
 
 @total_ordering
@@ -47,6 +48,11 @@ class Surface(ABC):
     @property
     @abstractmethod
     def nvertices(self) -> int:
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def nfaces(self) -> int:
         raise NotImplementedError()
 
     @abstractmethod
@@ -107,6 +113,10 @@ class TrimeshSurface(Surface):
     def nvertices(self) -> int:
         return len(self.mesh.vertices)
 
+    @property
+    def nfaces(self) -> int:
+        return len(self.mesh.faces)
+
     def _build_kdtree(self):
         self._kdtree = KDTree(self.mesh.vertices)
 
@@ -130,11 +140,11 @@ class TrimeshSurface(Surface):
             The surface with a decimated mesh
         """
 
-        vertices, faces = mne.decimate_surface(self.mesh.vertices,
-                                               self.mesh.faces, face_count,
-                                               method="quadric")
+        vertices, faces = mne.decimate_surface(
+            self.mesh.vertices, self.mesh.faces, face_count, method="quadric"
+        )
         decimated = trimesh.Trimesh(vertices, faces)
-        
+
         return TrimeshSurface(decimated, self.crs, self.units)
 
     def smooth(self, lamb: float) -> "TrimeshSurface":
@@ -159,6 +169,26 @@ class TrimeshSurface(Surface):
         )
 
 
+    def fix_vertex_normals(self):
+        mesh = self.mesh
+        # again make sure, that normals face outside
+        cog2vert = mesh.vertices - np.mean(mesh.vertices, axis=0)
+        projected_normals = (cog2vert * mesh.vertex_normals).sum(axis=1)
+        flip = np.where(projected_normals < 0, -1., 1. )[:,None]
+        flipped_normals = mesh.vertex_normals * flip
+
+        mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, vertex_normals=flipped_normals)
+        return TrimeshSurface(mesh, self.crs, self.units)
+
+    @classmethod
+    def from_vtksurface(cls, vtk_surface: "VTKSurface"):
+        vtk_polydata = vtk_surface.mesh
+        pyvista_polydata = pv.wrap(vtk_polydata)
+        mesh = pyvista_polydata_to_trimesh(pyvista_polydata)
+
+        return cls(mesh=mesh, crs=vtk_surface.crs, units=vtk_surface.units)
+
+
 @dataclass
 class VTKSurface(Surface):
     mesh: vtk.vtkPolyData
@@ -180,6 +210,10 @@ class VTKSurface(Surface):
     def nvertices(self) -> int:
         return self.mesh.GetNumberOfPoints()
 
+    @property
+    def nfaces(self) -> int:
+        return self.mesh.GetNumberOfPolys()
+
     def _build_kdtree(self):
         self._kdtree = KDTree(self.mesh.GetPoints().GetData())
 
@@ -192,6 +226,23 @@ class VTKSurface(Surface):
         vtk_mesh = trimesh_to_vtk_polydata(mesh)
 
         return cls(mesh=vtk_mesh, crs=tri_mesh.crs, units=tri_mesh.units)
+
+    def decimate(self, reduction: float, **kwargs) -> "VTKSurface":
+        """Use VTK's decimate_pro method to reduce the number of vertices.
+
+        Args:
+            reduction: Reduction factor. A value of 0.9 will leave 10% of the original
+                number of vertices.
+            **kwargs: additional keyword arguments are passed to decimate_pro
+
+        Returns:
+            The surface with a decimated mesh
+        """
+
+        pyvista_polydata = pv.wrap(self.mesh)
+        decimated = pyvista_polydata.decimate_pro(reduction, **kwargs)
+
+        return VTKSurface(decimated, self.crs, self.units)
 
 
 def affine_transform_from_numpy(

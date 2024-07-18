@@ -93,6 +93,7 @@ class TwoSurfaceHeadModel:
         smoothing: float = 0.5,
         brain_face_count: Optional[int] = 60000,
         scalp_face_count: Optional[int] = 60000,
+        fill_holes: bool = False,
     ) -> "TwoSurfaceHeadModel":
         """Constructor from binary masks as gained from segmented MRI scans.
 
@@ -137,13 +138,13 @@ class TwoSurfaceHeadModel:
             landmarks_ijk = None
 
         # derive surfaces from segmentation masks
-        brain_ijk = surface_from_segmentation(segmentation_masks, brain_seg_types)
+        brain_ijk = surface_from_segmentation(segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes)
 
         # we need the single outer surface from the scalp. The inner border between
         # scalp and skull is not interesting here. Hence, all segmentation types are
         # grouped together, yielding a uniformly filled head volume.
         all_seg_types = segmentation_masks.segmentation_type.values
-        scalp_ijk = surface_from_segmentation(segmentation_masks, all_seg_types)
+        scalp_ijk = surface_from_segmentation(segmentation_masks, all_seg_types, fill_holes_in_mask=fill_holes)
 
         # smooth surfaces
         if smoothing > 0:
@@ -151,13 +152,25 @@ class TwoSurfaceHeadModel:
             scalp_ijk = scalp_ijk.smooth(smoothing)
 
         # reduce surface face counts
+        # use VTK's decimate_pro algorith as MNE's (VTK's) quadric decimation produced
+        # meshes on which Pycortex geodesic distance function failed.
         if brain_face_count is not None:
-            brain_ijk = brain_ijk.decimate(brain_face_count)
+            # brain_ijk = brain_ijk.decimate(brain_face_count)
+            vtk_brain_ijk = cdc.VTKSurface.from_trimeshsurface(brain_ijk)
+            reduction = 1.0 - brain_face_count / brain_ijk.nfaces
+            vtk_brain_ijk = vtk_brain_ijk.decimate(reduction)
+            brain_ijk = cdc.TrimeshSurface.from_vtksurface(vtk_brain_ijk)
 
         if scalp_face_count is not None:
-            scalp_ijk = scalp_ijk.decimate(scalp_face_count)
+            # scalp_ijk = scalp_ijk.decimate(scalp_face_count)
+            vtk_scalp_ijk = cdc.VTKSurface.from_trimeshsurface(scalp_ijk)
+            reduction = 1.0 - scalp_face_count / scalp_ijk.nfaces
+            vtk_scalp_ijk = vtk_scalp_ijk.decimate(reduction)
+            scalp_ijk = cdc.TrimeshSurface.from_vtksurface(vtk_scalp_ijk)
 
-        #
+        brain_ijk = brain_ijk.fix_vertex_normals()
+        scalp_ijk = scalp_ijk.fix_vertex_normals()
+
         brain_mask = segmentation_masks.sel(segmentation_type=brain_seg_types).any(
             "segmentation_type"
         )
@@ -403,6 +416,9 @@ class ForwardModel:
             geo3d.type.isin([cdc.PointType.SOURCE, cdc.PointType.DETECTOR])
         ]
 
+        #FIXME make sure that optode is in scalp voxel
+        self.optode_pos = self.optode_pos.round()
+
         self.optode_dir = -head_model.scalp.get_vertex_normals(self.optode_pos)
 
         self.optode_pos = self.optode_pos.pint.dequantify()
@@ -500,6 +516,7 @@ class ForwardModel:
             for i_step in range(MAX_STEPS):
                 pos = self.optode_pos[i_opt] + i_step * self.optode_dir[i_opt]
                 i, j, k = np.floor(pos.values).astype(int)
+
                 if fluence[i, j, k] > 0:
                     result[i_opt] = fluence[i, j, k]
                     break
