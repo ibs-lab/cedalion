@@ -29,11 +29,11 @@ def has_channel(array: xr.DataArray):
 
 
 def has_positions(array: xr.DataArray, npos: Optional[int] = None):
-    _assert_dims_and_coords(array, ["pos"], [])
+    crs = array.points.crs
+    _assert_dims_and_coords(array, [crs], [])
 
     if npos is not None:
-        axis = array.get_axis_num("pos")
-        npos_found = array.shape[axis]
+        npos_found = array.sizes[crs]
         if npos_found != npos:
             raise AttributeError(
                 f"Expected geometry with {npos} dimensions but found {npos_found}"
