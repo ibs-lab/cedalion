@@ -37,7 +37,6 @@ dependencies:
   - statsmodels=0.13.5
   - strenum=0.4.15
   - xarray=2024.2.0
-  - cudatoolkit
   - trimesh
   - pyvista
   - trame
