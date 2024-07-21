@@ -5,6 +5,7 @@ import os.path
 import cedalion.io
 from gzip import GzipFile
 import pickle
+from pathlib import Path
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
@@ -75,6 +76,11 @@ def get_multisubject_fingertapping_snirf_paths():
     fnames = DATASETS.fetch("multisubject-fingertapping.zip", processor=pooch.Unzip())
     fnames = sorted([i for i in fnames if i.endswith(".snirf")])
     return fnames
+
+
+def get_multisubject_fingertapping_path() -> Path:
+    fnames = DATASETS.fetch("multisubject-fingertapping.zip", processor=pooch.Unzip())
+    return [Path(i).parent for i in fnames if i.endswith("README.md")][0]
 
 
 def get_photogrammetry_example_scan():

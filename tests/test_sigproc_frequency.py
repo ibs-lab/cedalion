@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from cedalion.dataclasses.xrschemas import build_timeseries
+from cedalion.dataclasses import build_timeseries
 from cedalion.sigproc.frequency import freq_filter, sampling_rate
 from cedalion import units
 
