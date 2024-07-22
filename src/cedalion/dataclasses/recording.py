@@ -85,7 +85,7 @@ class Recording:
         if (overwrite is False) and (key in self.masks):
             raise ValueError(f"a mask with key '{key}' already exists!")
 
-        self.mask[key] = value
+        self.masks[key] = value
 
     def get_timeseries_type(self, key):
         if key not in self.timeseries:
