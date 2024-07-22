@@ -18,7 +18,7 @@ import scipy.stats as stats
 
 def generate_hrf(
     time_axis: xr.DataArray,
-    stim_dur: float,
+    stim_dur: Quantity = 10 * units.seconds,
     params_basis: list = [0.1000, 3.0000, 1.8000, 3.0000],
     scale: list = [10 * units.micromolar, -4 * units.micromolar],
 ):
@@ -44,16 +44,20 @@ def generate_hrf(
     """
 
     time_axis = time_axis - time_axis[0]
-
+    stim_dur = (stim_dur / units.seconds).to_base_units().magnitude
     scale[0] = (scale[0] / units.molar).to_base_units().magnitude
     scale[1] = (scale[1] / units.molar).to_base_units().magnitude
 
-    nConc = len(params_basis) // 2
+    n_conc = len(params_basis) // 2
     if scale is None:
-        scale = np.ones(nConc).tolist()
-    if nConc != len(scale):
+        scale = np.ones(n_conc).tolist()
+    if n_conc != len(scale):
         raise ValueError(
             f"Length of `params_basis` ({len(params_basis)}) must be twice the length of `scale` ({len(scale)})"
+        )
+    if stim_dur > time_axis[-1]:
+        raise Warning(
+            "Stimulus duration is longer than the time axis. The stimulus will be cut off."
         )
 
     tHRF_gamma = time_axis[time_axis <= stim_dur]
@@ -63,9 +67,9 @@ def generate_hrf(
     boxcar.loc[boxcar["time"] <= stim_dur] = 1
     boxcar.loc[boxcar["time"] < 0] = 0
 
-    stimulus = np.zeros((len(time_axis), nConc))
+    stimulus = np.zeros((len(time_axis), n_conc))
 
-    for iConc in range(nConc):
+    for iConc in range(n_conc):
         tau = params_basis[iConc * 2]
         sigma = params_basis[iConc * 2 + 1]
 
@@ -87,7 +91,7 @@ def generate_hrf(
     tbasis = xr.DataArray(
         stimulus,
         dims=["time", "chromo"],
-        coords={"time": time_axis, "chromo": ["HbO", "HbR"][:nConc]},
+        coords={"time": time_axis, "chromo": ["HbO", "HbR"][:n_conc]},
     ).T
     tbasis = tbasis.assign_coords(samples=("time", np.arange(len(time_axis))))
     tbasis.pint.units = cedalion.units.molar
@@ -99,6 +103,7 @@ def build_blob(
     head_model: cfm.TwoSurfaceHeadModel,
     landmark: str,
     scale: Quantity = 10 * units.mm,
+    m: float = 10.0,
 ):
     """Generates a blob of activity at a seed landmark.
 
@@ -110,6 +115,9 @@ def build_blob(
         headmodel (cfm.TwoSurfaceHeadModel): Head model with brain and scalp surfaces.
         landmark (str): Name of the seed landmark.
         scale (Quantity): Scale of the blob.
+        m (float): Geodesic distance parameter. Larger values of m will smooth & regularize
+            the distance computation. Smaller values of m will roughen and will usually
+            increase error in the distance computation.
 
     Returns
     -------
@@ -128,15 +136,13 @@ def build_blob(
     cortex_surface = cps.Surface(
         head_model.brain.mesh.vertices, head_model.brain.mesh.faces
     )
-    distances_from_seed = cortex_surface.geodesic_distance([seed_vertex])
-    # print("distances_max", np.max(distances_from_seed))
-    # print("distances_min", np.min(distances_from_seed))
-    # FIXME: distances are not in mm. they change when mesh is decimated.
+    distances_from_seed = cortex_surface.geodesic_distance([seed_vertex], m=m)
+    # distances can be distord due to mesh decimation or unsuitable m value
+
     norm_pdf = stats.norm(scale=scale).pdf
+
     blob_img = norm_pdf(distances_from_seed)
-
     blob_img = blob_img / np.max(blob_img)
-
     blob_img = xr.DataArray(blob_img, dims=["vertex"])
 
     return blob_img
@@ -154,7 +160,7 @@ def hrfs_from_image_reco(
     ----------
         blob (xr.DataArray): Activation values for each vertex.
         hrf_model (xr.DataArray): HRF model for HbO and HbR.
-        Adot_stacked (xr.DataArray): Sensitivity matrix for the forward model.
+        Adot (xr.DataArray): Sensitivity matrix for the forward model.
         forward_model (cfm.ForwardModel): Forward model for the image reconstruction.
 
     Returns
@@ -162,7 +168,6 @@ def hrfs_from_image_reco(
         cdt.NDTimeseries: HRFs in channel space.
     """
 
-    unit = hrf_model.pint.units
     hrf_model = hrf_model.pint.dequantify()
 
     wavelengths = Adot.wavelength.values
@@ -179,7 +184,7 @@ def hrfs_from_image_reco(
         }
     )
     Adot_stacked = Adot_stacked.set_xindex("wavelength")
-
+    # FIXME Adot should have units
     Adot_is_brain_stack = xr.concat([Adot.is_brain, Adot.is_brain], dim="vertex")
     Adot_is_brain_stack = Adot_is_brain_stack.rename({"vertex": "flat_vertex"})
     Adot_brain_stacked = Adot_stacked.sel(flat_vertex=Adot_is_brain_stack)
@@ -194,14 +199,12 @@ def hrfs_from_image_reco(
         dims=["channel", "wavelength", "time"],
     ).assign_coords(samples=("time", np.arange(len(hrf_model.time))))
 
-    # unit workaround because Adot has no units
-    HRF_chan.pint.units = unit
-    HRF_chan = HRF_chan / units.molar
-
     return HRF_chan
 
 
-def add_hrf_to_vertices(hrf_basis: xr.DataArray, num_vertices: int, scale=None):
+def add_hrf_to_vertices(
+    hrf_basis: xr.DataArray, num_vertices: int, scale: np.array = None
+):
     """Adds hemodynamic response functions (HRF) for HbO and HbR to specified vertices.
 
     This function applies temporal HRF profiles to vertices, optionally scaling the
@@ -215,7 +218,7 @@ def add_hrf_to_vertices(hrf_basis: xr.DataArray, num_vertices: int, scale=None):
 
     Returns
     -------
-        np.array: Combined image of HbO and HbR responses across all vertices for all time points.
+        xr.DataArray: Combined image of HbO and HbR responses across all vertices for all time points.
     """
 
     unit = hrf_basis.pint.units
@@ -254,10 +257,10 @@ def add_hrf_to_vertices(hrf_basis: xr.DataArray, num_vertices: int, scale=None):
 
 def build_stim_df(
     num_stims: int,
-    stim_dur: float = 10,
+    stim_dur: Quantity = 10 * units.seconds,
     trial_types: list = ["Stim"],
-    min_interval: float = 5,
-    max_interval: float = 10,
+    min_interval: Quantity = 5 * units.seconds,
+    max_interval: Quantity = 10 * units.seconds,
     order: str = "alternating",
 ):
     """Generates a DataFrame for stimulus metadata based on provided parameters.
@@ -278,6 +281,10 @@ def build_stim_df(
     -------
         pd.DataFrame: DataFrame containing stimulus metadata.
     """
+
+    stim_dur = (stim_dur / units.seconds).to_base_units().magnitude
+    min_interval = (min_interval / units.seconds).to_base_units().magnitude
+    max_interval = (max_interval / units.seconds).to_base_units().magnitude
 
     current_time = -stim_dur
     onset_times = []
@@ -346,6 +353,7 @@ def add_hrf_to_od(od: cdt.NDTimeSeries, hrfs: cdt.NDTimeSeries, stim_df: pd.Data
     hrfs = hrfs.transpose("channel", "wavelength", "time", "trial_type")
 
     units_od = od.pint.units
+
     hrfs = hrfs.pint.dequantify()
     od_w_hrf = od.pint.dequantify().copy()
 
@@ -418,7 +426,12 @@ def hrf_to_long_channels(
     return hrf_long_chans
 
 
-def get_colors(activations, vertex_colors, log_scale=False, max_scale=None):
+def get_colors(
+    activations: xr.DataArray,
+    vertex_colors: np.array,
+    log_scale: bool = False,
+    max_scale: float = None,
+):
     """Maps activations to colors for visualization.
 
     Parameters
@@ -432,8 +445,8 @@ def get_colors(activations, vertex_colors, log_scale=False, max_scale=None):
     -------
         np.array: New vertex color array with same shape as `vertex_colors`.
     """
-
-    activations = activations.pint.dequantify()
+    if not isinstance(activations, np.ndarray):
+        activations = activations.pint.dequantify()
     # linear scale:
     if max_scale is None:
         max_scale = activations.max()
@@ -453,13 +466,20 @@ def get_colors(activations, vertex_colors, log_scale=False, max_scale=None):
     return colors
 
 
-def plot_blob(blob_img, brain, title="", log_scale=False):
+def plot_blob(
+    blob_img: xr.DataArray,
+    brain,
+    seed: int = None,
+    title: str = "",
+    log_scale: bool = False,
+):
     """Plots a blob of activity on the brain.
 
     Parameters
     ----------
     blob_img (xr.DataArray): Activation values for each vertex.
     brain (TrimeshSurface): Brain Surface with brain mesh.
+    seed (int): Seed vertex for the blob.
     title (str): Title for the plot.
     log_scale (bool): Whether to map activations on a logarithmic scale.
 
@@ -468,7 +488,8 @@ def plot_blob(blob_img, brain, title="", log_scale=False):
     None
     """
 
-    seed = blob_img.argmax()
+    if seed is None:
+        seed = blob_img.argmax()
     vertices = brain.mesh.vertices
     center_brain = np.mean(vertices, axis=0)
     colors_blob = get_colors(blob_img, brain.mesh.visual.vertex_colors)
@@ -478,6 +499,5 @@ def plot_blob(blob_img, brain, title="", log_scale=False):
     plt_pv.camera.position = (vertices[seed] - center_brain) * 7 + center_brain
     plt_pv.camera.focal_point = vertices[seed]
     plt_pv.camera.up = [0, 0, 1]
-
     plt_pv.add_text(title, position="upper_edge", font_size=20)
     plt_pv.show()
