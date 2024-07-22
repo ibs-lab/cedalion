@@ -65,16 +65,17 @@ def get_fingertapping():
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
 
-    elements = cedalion.io.read_snirf(fname)
-    geo3d = elements[0].geo3d.points.rename({"NASION": "Nz"})
+    rec = cedalion.io.read_snirf(fname)[0]
+
+    geo3d = rec.geo3d.points.rename({"NASION": "Nz"})
     geo3d = geo3d.rename({"pos": "digitized"})
-    elements[0].geo3d = geo3d
+    rec.geo3d = geo3d
 
-    amp = elements[0].data[0]
+    amp = rec.get_timeseries("amp")
     amp = amp.pint.dequantify().pint.quantify("V")
-    elements[0].data[0] = amp
+    rec.set_timeseries("amp", amp, overwrite=True)
 
-    return elements
+    return [rec]
 
 
 def get_fingertapping_snirf_path():
