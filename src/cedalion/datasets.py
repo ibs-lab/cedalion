@@ -1,12 +1,16 @@
 """Cedalin datasets and utility functions."""
 
-import pooch
 import os.path
-import cedalion.io
-from gzip import GzipFile
 import pickle
+from gzip import GzipFile
 from pathlib import Path
 from cedalion.imagereco.forward_model import TwoSurfaceHeadModel
+
+import pooch
+import xarray as xr
+
+import cedalion.dataclasses as cdc
+import cedalion.io
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
@@ -60,7 +64,7 @@ def get_colin27_headmodel():
     return head_model
 
 
-def get_fingertapping():
+def get_fingertapping() -> cdc.Recording:
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
@@ -75,12 +79,12 @@ def get_fingertapping():
     amp = amp.pint.dequantify().pint.quantify("V")
     rec.set_timeseries("amp", amp, overwrite=True)
 
-    return [rec]
+    return rec
 
 
-def get_fingertapping_snirf_path():
+def get_fingertapping_snirf_path() -> Path:
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
-    fname = [i for i in fnames if i.endswith(".snirf")][0]
+    fname = [Path(i) for i in fnames if i.endswith(".snirf")][0]
     return fname
 
 
@@ -101,7 +105,7 @@ def get_photogrammetry_example_scan():
     return fname
 
 
-def get_imagereco_example_fluence():
+def get_imagereco_example_fluence() -> tuple[xr.DataArray, xr.DataArray]:
     fname = DATASETS.fetch("image_reconstruction_fluence.pickle.gz")
 
     with GzipFile(fname) as fin:

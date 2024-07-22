@@ -611,8 +611,11 @@ def read_nirs_element(nirs_element, opts):
     return rec
 
 
-def read_snirf(fname, squeeze_aux=False) -> list[cdc.Recording]:
+def read_snirf(fname: Path | str, squeeze_aux=False) -> list[cdc.Recording]:
     opts = {"squeeze_aux": squeeze_aux}
+
+    if isinstance(fname, Path):
+        fname = str(fname)
 
     with Snirf(fname, "r") as s:
         return [read_nirs_element(ne, opts) for ne in s.nirs]
@@ -859,10 +862,13 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
 
 def write_snirf(
     fname: Path | str,
-    recordings: list[cdc.Recording],
+    recordings: cdc.Recording | list[cdc.Recording],
 ):
     if isinstance(fname, Path):
         fname = str(fname)
+
+    if isinstance(recordings, cdc.Recording):
+        recordings = [recordings]
 
     with Snirf(fname, "w") as fout:
         for rec in recordings:

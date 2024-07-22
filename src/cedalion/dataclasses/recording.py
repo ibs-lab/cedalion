@@ -37,11 +37,11 @@ class Recording:
 
     def __repr__(self):
         return (
-            f"<Recording\n"
-            f" timeseries: {list(self.timeseries.keys())}\n"
-            f" masks: {list(self.masks.keys())}\n"
-            f" stim: {list(self.trial_types)}\n"
-            f" aux_ts: {list(self.aux_ts.keys())}\n"
+            f"<Recording | "
+            f" timeseries: {list(self.timeseries.keys())}, "
+            f" masks: {list(self.masks.keys())}, "
+            f" stim: {list(self.trial_types)}, "
+            f" aux_ts: {list(self.aux_ts.keys())}, "
             f" aux_obj: {list(self.aux_obj.keys())}>"
         )
 
@@ -55,6 +55,14 @@ class Recording:
             last_key = list(self.timeseries.keys())[-1]
 
             return self.timeseries[last_key]
+
+    # The main objects of interest are timeseries. Make them conveniently
+    # accessible. rec[key] is a shortcut for rec.timeseries[key]
+    def __getitem__(self, key):
+        return self.get_timeseries(key)
+
+    def __setitem__(self, key, value):
+        return self.set_timeseries(key, value, overwrite=True)
 
     def set_timeseries(self, key: str, value: NDTimeSeries, overwrite: bool = False):
         if (overwrite is False) and (key in self.timeseries):
@@ -94,7 +102,7 @@ class Recording:
         elif key == "hrf" or key.startswith("hrf_"):
             return "hrf"
         elif key == "conc" or key.startswith("conc_") or (q.check(["concentration"])):
-            return "conc"
+            return "concentration"
         else:
             raise ValueError(f"could not infer data type of timeseries '{key}'")
 
