@@ -1,0 +1,25 @@
+Bootstrap: docker
+From: continuumio/miniconda3
+
+%setup
+    mkdir $APPTAINER_ROOTFS/app
+
+%post
+    #chmod 1777 /tmp
+    apt-get update 
+    apt-get install -y xvfb
+    apt-get install -y libgl1-mesa-dev
+
+    conda update -n base -c defaults conda -y
+    conda env create -n cedalion -f /app/environment_dev.yml
+    conda run --no-capture-output -n cedalion pip install -e /app
+
+%environment
+    export DISPLAY=:99.0
+    export PYVISTA_OFF_SCREEN=true
+
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate cedalion
+    Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+    sleep 3
+	

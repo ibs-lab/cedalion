@@ -109,10 +109,12 @@ def _intersect_mesh_with_triangle(
 
 
 class LandmarksBuilder1010:
-    """Construct the 10-10-system on a scalp surface.
+    """Construct the 10-10-system on scalp surface based on :cite:t:`Oostenveld2001`.
 
-    [1] R. Oostenveld and P. Praamstra, “The five percent electrode system for
-        high-resolution EEG and ERP measurements,” Clinical Neurophysiology, 2001.
+    Args:
+        scalp_surface: a triangle-mesh representing the scalp
+        landmarks: positions of "Nz", "Iz", "LPA", "RPA"
+
     """
 
     @validate_schemas

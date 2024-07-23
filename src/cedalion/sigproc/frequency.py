@@ -13,7 +13,14 @@ import cedalion.dataclasses as cdc
 def sampling_rate(timeseries: cdt.NDTimeSeries) -> Quantity:
     """Estimate the sampling rate of the timeseries.
 
-    This functions assumes uniform sampling.
+    Note:
+        This functions assumes uniform sampling.
+
+    Args:
+        timeseries (:class:`NDTimeSeries`, (time,*)): the input time series
+
+    Returns:
+        The sampling rate estimated by averaging time differences between samples.
     """
     assert "units" in timeseries.time.attrs
     time_unit = units.Unit(timeseries.time.attrs["units"])
@@ -27,9 +34,19 @@ def freq_filter(
     timeseries: cdt.NDTimeSeries,
     fmin: Quantity,
     fmax: Quantity,
-    butter_order=4,
-):
-    """Apply a Butterworth frequency filter."""
+    butter_order: int = 4,
+) -> cdt.NDTimeSeries:
+    """Apply a Butterworth bandpass frequency filter.
+
+    Args:
+        timeseries (:class:`NDTimeSeries`, (time,*)): the input time series
+        fmin (:class:`Quantity`, [frequency]): lower threshold of the pass band
+        fmax (:class:`Quantity`, [frequency]): higher threshold of the pass band
+        butter_order: order of the filter
+
+    Returns:
+        The frequency-filtered time series
+    """
 
     check_dimensionality("fmin", fmin, "[frequency]")
     check_dimensionality("fax", fmax, "[frequency]")

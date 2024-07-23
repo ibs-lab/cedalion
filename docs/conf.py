@@ -21,6 +21,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.napoleon",
+    "sphinxcontrib.bibtex",
     "sphinx_autodoc_typehints",
 ]
 
@@ -48,7 +49,12 @@ myst_enable_extensions = [
 
 myst_heading_anchors = 2
 
-# -- Substitutions -----------------------------------------------------------
+# -- Configure sphinxcontrib-bibtex -------------------------------------------
+
+bibtex_bibfiles = ['references.bib']
+
+
+# -- Substitutions ------------------------------------------------------------
 
 commit_hash = (
     subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])

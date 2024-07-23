@@ -1,23 +1,32 @@
+"""Independent Component Analysis by Entropy Bound Rate Minimization (ICA-ERBM) based on :cite:t:`Li2010B` and :cite:t:`Fu2014`.
+This code is based on converted matlab versions provided by the MLSP Lab at the University of Maryland, 
+which is available here: https://mlsp.umbc.edu/resources.html.
+"""  # noqa: D205
+
 import scipy as sp
 import numpy as np
-import matplotlib.pyplot as plt 
-import ICA_EBM as ICA_EBM 
+import matplotlib.pyplot as plt
+from cedalion.sigdecomp import ICA_EBM as ICA_EBM
 
-def ERBM(X, p = np.nan ):
-    # BSS, originally introduced  as full BSS
-    # Reference:
-    # This code is based on the matlab version of bss by Xi-Lin Li 
-    # 
-    # Xi-Lin Li, Tulay Adali, "Blind spatiotemporal separation of second and/or 
-    # higher-order correlated sources by entropy rate minimization," 
-    # IEEE International Conference on Acoustics, Speech and Signal Processing 2010. 
+def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
+    """ICA-ERBM: ICA by Entropy Rate Bound Minimization (real-valued version).
 
-    # Inputs:  
-    # X: mixtures 
-    # p: filter length 
-    #
-    # Outputs:
-    # W: estimated demixing matrix
+    Args:
+        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
+        p (int): the filter length for the invertible filter source model, does not need to be specified. Default is p = (11, T/50).
+
+    Returns:
+        W (np.ndarray, (Channels, Channels)): the [N x N] demixing matrix with weights for N channels/sources. To obtain the independent components,
+        the demixed signals can be calculated as S = W @ X.
+
+    References:
+        This code is based on the matlab version of bss by Xi-Lin Li (:cite:t:`Li2010B`)
+        Xi-Lin Li, Tulay Adali, "Blind spatiotemporal separation of second and/or
+        higher-order correlated sources by entropy rate minimization,"
+        IEEE International Conference on Acoustics, Speech and Signal Processing 2010.
+        The original matlab version is available at https://mlsp.umbc.edu/resources.html
+        under the name "Real-valued ICA by entropy bound minimization (ICA-EBM)"
+    """
 
 #################  Part 0: pre-processing #################
 
@@ -32,8 +41,8 @@ def ERBM(X, p = np.nan ):
     X, P = pre_processing(X)
 
     # initialize p if it is not provided    
-    if np.isnan(p): 
-        p = np.min(11, T/ 50)
+    if p is None: 
+        p = int(np.min(11, T/ 50))
 
     # initialize W
     W = ICA_EBM.ICA_EBM(X) 
@@ -70,7 +79,7 @@ def ERBM(X, p = np.nan ):
             max_cost_increase = 3 
             max_iter_north = 200
             tolerance = 1e-5
-        
+
         cost_increase_counter = 0
         W = np.copy(best_W)
         a = np.copy(best_a) 
@@ -85,13 +94,13 @@ def ERBM(X, p = np.nan ):
                 # estimate AR coefficients
                 Y = np.copy(np.dot(W, X) ) 
                 for n in range(N): 
-        
+
                     if iter%6 == 1 or iter<= 5: 
-            
+
                         a1, min_ere1  = lfc(Y[n,:], p , 'unknown', []) 
                         a2, min_ere2 = lfc(Y[n, :], p, [], a[:, n]) 
-                       
-    
+
+
                         # choose the best model 
                         min_ere = np.inf
                         if min_ere > min_ere1: 
@@ -107,7 +116,7 @@ def ERBM(X, p = np.nan ):
                     temp5 =  sp.signal.lfilter(a[:, n].T, 1, X.T , axis = 0 )    
                     Rz[ :, :, n] = np.dot(temp5.T, temp5) / T
                     Z[:, :, n] = np.copy(temp5.T)
-  
+
             Cost[iter-1] = np.copy(- np.log(np.abs(np.linalg.det(W))))
 
             # estimate W 
@@ -122,7 +131,7 @@ def ERBM(X, p = np.nan ):
 
                 # prediction error 
                 y = np.copy(v.T.dot(Z[:, :, n   ]))   
-                
+
                 # evaluate the upper bound of negentropy of the n-th component
                 NE_Bound = np.zeros((K, 1)) 
                 EGx = np.zeros((K, 1))  
@@ -144,7 +153,7 @@ def ERBM(X, p = np.nan ):
                         NE_Bound[0] = 0 
                     else:
                         NE_Bound[0] = simplified_ppval(nf1['pp'], EGx[0] )  
-                    
+
                 # G3(x) = np.abs(x)/ (1 + np.abs(x))
                 EGx[2] = 1 - np.sum(inv_pabs_y)/T
                 if EGx[2] < nf3['min_EGx']: 
@@ -157,7 +166,7 @@ def ERBM(X, p = np.nan ):
 
                     else:
                         NE_Bound[2] = simplified_ppval(nf3['pp'], EGx[2] )
-                    
+
                 # G5(x)  = x* np.abs(x) /(10 + np.abs(x))   
                 EGx[4] = np.sum( y * abs_y * inv_p10abs_y )/T
                 if EGx[4] < nf5['min_EGx']:
@@ -181,12 +190,12 @@ def ERBM(X, p = np.nan ):
                         NE_Bound[6] = simplified_ppval(nf7['pp'], nf7['max_EGx']) + np.abs(NE_Bound[6])
                     else:
                         NE_Bound[6] = simplified_ppval(nf7['pp'], EGx[6] )
-                    
+
                 # select the tightest upper bound
                 max_NE, max_i = np.max(NE_Bound), np.argmax(NE_Bound)  
                 negentropy_array[n] = np.copy(max_NE)
                 Cost[iter -1] = np.copy(Cost[iter-1] - max_NE)  
-    
+
 
                 if stochastic_search == 1:
                     weight = np.random.rand(1, T)
@@ -216,8 +225,8 @@ def ERBM(X, p = np.nan ):
                 v = v.reshape(-1,1) + mu * grad      
                 v = v / np.sqrt(v.T.dot(Rz[:, :, n].dot(v)))   
                 W[n, :] = np.copy(v.T )   
-              
-            
+
+
             if Cost[iter-1]  < min_cost:
                 cost_increase_counter = 0
                 min_cost = np.copy(Cost[iter-1])
@@ -226,10 +235,10 @@ def ERBM(X, p = np.nan ):
                 max_negentropy = np.copy(negentropy_array)   
             else: 
                 cost_increase_counter = cost_increase_counter + 1
-            
+
             min_cost_queue[iter-1] = np.copy(min_cost)  
 
-    
+
             if cost_increase_counter > max_cost_increase: 
                 if stochastic_search == 1: 
                     W1 = np.copy(W)
@@ -261,33 +270,35 @@ def ERBM(X, p = np.nan ):
                         a = np.copy(best_a) 
                         cost_increase_counter = 0   
                         continue    
-                        
+
             last_W = np.copy(W)
-     
+
         W = np.copy(best_W) 
-   
+
     W = np.dot(W, P)    
     return W    
 
 
 ###############################################################################################################
-# These functions are used in the ERBM algorithm.  
+# These functions are used in the ERBM algorithm.
 ###############################################################################################################  
 
 
-def lfc(x, p, choice, a0): 
-    # return the linear filtering coefficients (LFC) with length p for entropy 
-    # rate estimation, and the estimated entropy rate
-    # 
-    # Inputs: 
-    # p: is the filter length
-    # 'choice':  can be 'sub', 'super', or 'unknown'
-    # a0:  is the intial guess
-    # 
-    # Outputs
-    # a:  is the filter coefficients
-    # min_cost: is the entropy rate estimation
-    global nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8   
+def lfc(x: np.ndarray, p: int , choice, a0) -> tuple[np.ndarray, np.ndarray]: 
+    """Helper function for ERBM ICA: computes the linear filtering coefficients (LFC) with length p for entropy rate estimation, and the estimated entropy rate.
+
+    Args:
+        x (np.ndarray, (Time Points, 1)): the source estimate [T x 1]
+        p (int):  the filter length for the source model
+        choice :  can be 'sub', 'super' or 'unknown'; any other input is handled as 'unknown' 
+        a0 (np.ndarray or empty list): is the intial guess [p x 1] or an empty list []     
+
+    Returns:
+        a (np.ndarray, (p, 1)): the filter coefficients [p x 1]
+        min_cost (np.ndarray, (1, 1)): the entropy rate estimation [1 x 1]
+    """
+
+    global nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8
     tolerance = 1e-4 
     T = x.shape[0]
     X0 = sp.linalg.convolution_matrix(x, p, 'full').T 
@@ -327,7 +338,7 @@ def lfc(x, p, choice, a0):
                     break
                 else: 
                     last_a = np.copy(a) 
-        
+
     else: 
         a = np.linalg.solve(P, a0)
 
@@ -344,7 +355,7 @@ def lfc(x, p, choice, a0):
         mu = 16* min_mu
     cost_increase_counter = 0
     Cost = np.zeros((max_iter, 1)) 
-  
+
     for iter in range(max_iter):  
         a = np.copy(np.reshape(a, (-1, 1)) )
         a_original = np.copy(P.dot(a))   
@@ -379,7 +390,7 @@ def lfc(x, p, choice, a0):
                 NE_Bound[0] = 0 
             else:
                 NE_Bound[0] = simplified_ppval(nf1['pp'], EGx[0] )  
-            
+
         # G3(x) = np.abs(x)/ (1 + np.abs(x))
         EGx[2] = 1 - np.sum(inv_pabs_y)/T
         if EGx[2] < nf3['min_EGx']: 
@@ -392,7 +403,7 @@ def lfc(x, p, choice, a0):
 
             else:
                 NE_Bound[2] = simplified_ppval(nf3['pp'], EGx[2] )
-            
+
         # G5(x)  = x* np.abs(x) /(10 + np.abs(x))   
         EGx[4] = np.sum( y * abs_y * inv_p10abs_y )/T
         if EGx[4] < nf5['min_EGx']:
@@ -416,12 +427,12 @@ def lfc(x, p, choice, a0):
                 NE_Bound[6] = simplified_ppval(nf7['pp'], nf7['max_EGx']) + np.abs(NE_Bound[6])
             else:
                 NE_Bound[6] = simplified_ppval(nf7['pp'], EGx[6] )
-            
+
         # select the tightest upper bound
         max_NE, max_i = np.max(NE_Bound), np.argmax(NE_Bound)    
         Cost[iter] = np.copy(Cost[iter] - max_NE)     
         last_a = np.copy(a)   
-       
+
         if Cost[iter] < min_cost:
             cost_increase_counter = 0
             min_cost = np.copy(Cost[iter])
@@ -461,16 +472,26 @@ def lfc(x, p, choice, a0):
         grad = grad- np.reshape(np.dot(grad.T, b)*b/(np.dot(b.T, b)) , (1, -1))
         grad = np.sqrt(sigma2) * grad/ np.linalg.norm(grad)
         a = np.copy(a - mu * grad)   
- 
+
     a = np.reshape(a ,(-1, 1))
     a = np.copy(best_a) 
     a = np.dot(P,a)
 
     return a, min_cost  
- 
 
-def simplified_ppval(pp, xs ):
-    # simplified version of ppval 
+
+def simplified_ppval(pp: dict, xs: float) -> float:
+    """Helper function for ERBM ICA: simplified version of ppval. 
+        This function evaluates a piecewise polynomial at a specific point. 
+    
+    Args: 
+        pp (dict): a dictionary containing the piecewise polynomial representation of a function
+        xs (float): the evaluation point
+
+    Returns: 
+        v (float): the value of the function at xs   
+    """
+
     b = pp['breaks'][0]
     c = pp['coefs']
     l = int(pp['pieces'] ) 
@@ -505,9 +526,17 @@ def simplified_ppval(pp, xs ):
         v = v*xs + c[index, i]
     return v 
 
-def cnstd_and_gain(a):
-    # return constraint direction used for calculating 
-    # projected gradient and Gain of filter a
+def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Helper function for ERBM ICA: returns constraint direction used for calculating projected gradient and gain of filter a.
+    
+    Args:   
+        a (np.ndarray, (p, 1)): the filter coefficients [p x 1]
+    
+    Returns:
+        b (np.ndarray, (p, 1)): the constraint direction [p x 1]
+        G (np.ndarray, (1,)): the gain of the filter a
+    """
+
     global cosmtx, sinmtx, Simpson_c
     eps = np.finfo(np.float64).eps  
     p = a.shape[0]  
@@ -543,7 +572,16 @@ def cnstd_and_gain(a):
 
  
 
-def calculate_cos_sin_mtx(p): 
+def calculate_cos_sin_mtx(p: int) -> None : 
+    """Helper function for ERBM ICA: calculates the cos and sin matrix for integral calculation in ERBM ICA.
+    
+    Args:
+        p (int): the filter length for the invertible filter source model   
+    
+    Returns:
+        None
+    """
+
     # prepare the cos and sin matrix for integral calculation
     global cosmtx, sinmtx, Simpson_c 
 
@@ -565,7 +603,16 @@ def calculate_cos_sin_mtx(p):
     Simpson_c[n] = 1      
 
 
-def pre_processing(X):
+def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Helper function for ERBM ICA: Preprocessing (removal of mean, patial pre-whitening, temporal pre-filtering)
+    
+    Args:
+        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
+    
+    Returns:
+        X (np.ndarray, (Channels, Time Points)): the pre-processed input multivariate time series
+        P (np.ndarray, (Channels, Channels)): the pre-whitening matrix
+    """
     # pre-processing of the data    
     N, T = X.shape
     # remove mean   
@@ -592,8 +639,15 @@ def pre_processing(X):
 
     return X, P 
 
-def inv_sqrtmH(B):
-    # calculate the inverse square root 
+def inv_sqrtmH(B: np.ndarray) -> np.ndarray:    
+    """Helper function for ERBM ICA: computes the inverse square root of a matrix.
+    
+    Args:
+        B (np.ndarray): a square matrix
+        
+    Returns:    
+        A (np.ndarray): the inverse square root of B 
+    """
     D, V = np.linalg.eig(B) 
     order = np.argsort(D) 
     D = D[order]
@@ -601,5 +655,3 @@ def inv_sqrtmH(B):
     d = 1/np.sqrt(D) 
     A = np.dot(np.dot(V, np.diag(d)), V.T)  
     return A
-
- 

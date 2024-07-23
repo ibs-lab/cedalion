@@ -1,24 +1,37 @@
+"""Independent Component Analysis by Entropy Bound Minimization (ICA-EBM) based on :cite:t:`Li2010A`.
+This code is based on converted matlab versions provided by the MLSP Lab at the University of Maryland, 
+which is available here: https://mlsp.umbc.edu/resources.html.
+"""  # noqa: D205
+
 import scipy.io
 import numpy as np
 import matplotlib.pyplot as plt 
 
-# References:
-# This code is based on the matlab version by Xi-Lin Li. 
-# Xi-Lin Li and Tulay Adali, "Independent component analysis by entropy bound minimization," 
-# IEEE Trans. Signal Processing, vol. 58, no. 10, pp. 5151-5164, Oct. 2010. 
+def ICA_EBM(X: np.ndarray) -> np.ndarray:
+    """Calculates the blind source separation demixing matrix corresponding to X.
 
-def ICA_EBM(X):
-    # ICA-EBM: ICA by Entropy Bound Minimization (real-valued version)
-    # Four nonlinearities
-    # x^4,  |x|/(1+|x|),    x|x|/(10+|x|),  and     x/(1+x^2)
-    # are used for entropy bound calculation 
+    ICA-EBM: ICA by Entropy Bound Minimization (real-valued version)
+    Four nonlinearities
+    x^4,  |x|/(1+|x|),    x|x|/(10+|x|),  and     x/(1+x^2)
+    are used for entropy bound calculation
+
+    Args:
+        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
+
+    Returns:
+        W (np.ndarray, (Channels, Channels)): the [N x N] demixing matrix with weights for  N channels/sources. 
+            To obtain the independent components, the demixed signals can be calculated as S = W @ X.
+
+    References:
+        This code is based on the matlab version by Xi-Lin Li (:cite:t:`Li2010A`)
+        Xi-Lin Li and Tulay Adali, "Independent component analysis by entropy bound minimization," 
+        IEEE Trans. Signal Processing, vol. 58, no. 10, pp. 5151-5164, Oct. 2010.
+        The original matlab version is available at https://mlsp.umbc.edu/resources.html
+        under the name "Real-valued ICA by entropy rate bound minimization (ICA-ERBM)"
+    """
+
     ###############################################################################################################
-    # Inputs: 
-    # X:    mixtures
-    # Output:
-    # W:    demixing matrix
-    ###############################################################################################################
-    # Part 0: Preprocessing 
+    # Part 0: Preprocessing
     ###############################################################################################################
     max_iter_fastica = 100
     max_iter_orth = 1000
@@ -34,15 +47,15 @@ def ICA_EBM(X):
     show_cost = False    # show the cost values vs. iterations at each stage if show_cost== True  - not implemented yet 
 
     # Load 8 measuring functions. But we only use 4 of them.
-    K = 8          
+    K = 8
     table = np.load('measfunc_table.npy', allow_pickle= True)
     nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8 = table[0], table[1], table[2], table[3], table[4], table[5], table[6], table[7]
-  
+
 
     N = X.shape[0]
     T = X.shape[1]
     X, P = pre_processing(X)
-    
+
     # make initial guess 
     W = np.random.rand(N, N) 
 
@@ -78,7 +91,7 @@ def ICA_EBM(X):
                     NE_Bound[0] = 0 
                 else:
                     NE_Bound[0] = simplified_ppval(nf1['pp'], EGx[0] )  
-            
+
             # G3(x) = np.abs(x)/ (1 + np.abs(x))
             EGx[2] = 1 - np.sum(inv_pabs_y)/T
             if EGx[2] < nf3['min_EGx']: 
@@ -91,7 +104,7 @@ def ICA_EBM(X):
 
                 else:
                     NE_Bound[2] = simplified_ppval(nf3['pp'], EGx[2] )
-            
+
             # G5(x)  = x* np.abs(x) /(10 + np.abs(x))   
             EGx[4] = np.sum( y * abs_y * inv_p10abs_y )/T
             if EGx[4] < nf5['min_EGx']:
@@ -115,7 +128,7 @@ def ICA_EBM(X):
                     NE_Bound[6] = simplified_ppval(nf7['pp'], nf7['max_EGx']) + np.abs(NE_Bound[6])
                 else:
                     NE_Bound[6] = simplified_ppval(nf7['pp'], EGx[6] )
-            
+
             # select the tightest upper bound
             max_NE, max_i = np.max(NE_Bound), np.argmax(NE_Bound)   
             negentropy_array[n] = np.copy(max_NE)  
@@ -131,7 +144,7 @@ def ICA_EBM(X):
 
         W = np.multiply(np.multiply(Y, Y), Y).dot(X.T) / T - 3 * W
         W = symdecor(W)
-         
+
 
         if 1 - np.min(np.abs(np.diag(W.dot(last_W.T)))) < tolerance: 
             break 
@@ -139,13 +152,13 @@ def ICA_EBM(X):
             last_W = np.copy(W) 
         if cost_increaser_counter > max_cost_increase_number: 
             break 
-    
+
     W = np.copy(best_W)     
     #if show_cost:    insert plots here
 ##############################################################################################################
 #     Part 1: Orthogonal ICA    
 #   varying step size, stochastic gradient search
-##############################################################################################################       
+##############################################################################################################
 
     if verbose:
         print('Orthogonal ICA stage.')
@@ -189,7 +202,7 @@ def ICA_EBM(X):
                     NE_Bound[0] = 0 
                 else:
                     NE_Bound[0] = simplified_ppval(nf1['pp'], EGx[0] )  
-            
+
             # G3(x) = np.abs(x)/ (1 + np.abs(x))
             EGx[2] = 1 - np.sum(inv_pabs_y)/T
             if EGx[2] < nf3['min_EGx']: 
@@ -203,7 +216,6 @@ def ICA_EBM(X):
                 else:
                     NE_Bound[2] = simplified_ppval(nf3['pp'], EGx[2] )
 
-            
             # G5(x)  = x* np.abs(x) /(10 + np.abs(x))   
             EGx[4] = np.sum( y * abs_y * inv_p10abs_y )/T
             if EGx[4] < nf5['min_EGx']:
@@ -227,12 +239,12 @@ def ICA_EBM(X):
                     NE_Bound[6] = simplified_ppval(nf7['pp'], nf7['max_EGx']) + np.abs(NE_Bound[6])
                 else:
                     NE_Bound[6] = simplified_ppval(nf7['pp'], EGx[6] )
-            
+
             # select the tightest upper bound
             max_NE, max_i = np.max(NE_Bound), np.argmax(NE_Bound)   
             negentropy_array[n] = np.copy(max_NE)
             Cost[iter] = np.copy(Cost[iter] - max_NE)
- 
+
             if ~fastica_on: 
                 weight = np.random.rand(1, T)  
 
@@ -277,11 +289,11 @@ def ICA_EBM(X):
                 grad = grad - ((w.T).dot(grad)) * w   
                 grad = grad / np.linalg.norm(grad)  
                 w1 = w + mu * grad 
-    
+
             W[n, :] = np.copy(w1.T)
 
         W = np.copy(symdecor(W) ) 
-       
+
         if Cost[iter] < min_cost:
             cost_increaser_counter = 0  
             min_cost = np.copy(Cost[iter])
@@ -289,7 +301,7 @@ def ICA_EBM(X):
             max_negentropy = np.copy(negentropy_array)
         else: 
             cost_increaser_counter = cost_increaser_counter + 1
-        
+
         min_cost_queue[iter] = np.copy(min_cost)
 
         if fastica_on == True : 
@@ -356,7 +368,7 @@ def ICA_EBM(X):
                             NE_Bound[0] = 0 
                         else:
                             NE_Bound[0] = simplified_ppval(nf1['pp'], EGx[0] )  
-                    
+
                     # G3(x) = np.abs(x)/ (1 + np.abs(x))
                     EGx[2] = 1 - np.sum(inv_pabs_y)/T
                     if EGx[2] < nf3['min_EGx']: 
@@ -369,7 +381,7 @@ def ICA_EBM(X):
 
                         else:
                             NE_Bound[2] = simplified_ppval(nf3['pp'], EGx[2] )
-                    
+
                     # G5(x)  = x* np.abs(x) /(10 + np.abs(x))   
                     EGx[4] = np.sum( y * abs_y * inv_p10abs_y )/T
                     if EGx[4] < nf5['min_EGx']:
@@ -393,7 +405,7 @@ def ICA_EBM(X):
                             NE_Bound[6] = simplified_ppval(nf7['pp'], nf7['max_EGx']) + np.abs(NE_Bound[6])
                         else:
                             NE_Bound[6] = simplified_ppval(nf7['pp'], EGx[6] )
-                        
+
                     # select the tightest upper bound
                     max_NE, max_i = np.max(NE_Bound), np.argmax(NE_Bound)   
                     negentropy1 = max_NE
@@ -406,7 +418,7 @@ def ICA_EBM(X):
                     inv_pabs_y = 1/(1 + abs_y)  
                     inv_pabs_yy = 1/(1+ yy) 
                     inv_p10abs_y = 1/(10+abs_y) 
-                    
+
                     # G1(x) = x^4   
                     EGx[0] = np.sum(yy*yy)/T  
                     if EGx[0] < nf1['min_EGx']: 
@@ -417,7 +429,7 @@ def ICA_EBM(X):
                             NE_Bound[0] = 0 
                         else:
                             NE_Bound[0] = simplified_ppval(nf1['pp'], EGx[0] ) 
-                    
+
                     # G3(x) = np.abs(x)/ (1 + np.abs(x))
                     EGx[2] = 1 - np.sum(inv_pabs_y)/T
                     if EGx[2] < nf3['min_EGx']: 
@@ -430,7 +442,7 @@ def ICA_EBM(X):
 
                         else:
                             NE_Bound[2] = simplified_ppval(nf3['pp'], EGx[2] )
-                    
+
                     # G5(x)  = x* np.abs(x) /(10 + np.abs(x))   
                     EGx[4] = np.sum( y * abs_y * inv_p10abs_y )/T
                     if EGx[4] < nf5['min_EGx']:
@@ -454,7 +466,7 @@ def ICA_EBM(X):
                             NE_Bound[6] = simplified_ppval(nf7['pp'], nf7['max_EGx']) + np.abs(NE_Bound[6])
                         else:
                             NE_Bound[6] = simplified_ppval(nf7['pp'], EGx[6] )
-                        
+
                     # select the tightest upper bound
                     max_NE, max_i = np.max(NE_Bound), np.argmax(NE_Bound)   
                     negentropy2 = max_NE
@@ -471,12 +483,12 @@ def ICA_EBM(X):
                         ym = yr1
                         w1 = np.copy(W[m, :].T  )
                         saddle_tested = True
-                        SADDLE_TESTED = True     
+                        SADDLE_TESTED = True
 
-                   
+
     else: 
         SADDLE_TESTED = False
-    
+
 
     if SADDLE_TESTED == True : 
     ##############################################################################################################
@@ -520,7 +532,7 @@ def ICA_EBM(X):
                         NE_Bound[0] = 0 
                     else:
                         NE_Bound[0] = simplified_ppval(nf1['pp'], EGx[0] )  
-                
+
                 # G3(x) = np.abs(x)/ (1 + np.abs(x))
                 EGx[2] = 1 - np.sum(inv_pabs_y)/T
                 if EGx[2] < nf3['min_EGx']: 
@@ -533,7 +545,7 @@ def ICA_EBM(X):
 
                     else:
                         NE_Bound[2] = simplified_ppval(nf3['pp'], EGx[2] )
-                
+
                 # G5(x)  = x* np.abs(x) /(10 + np.abs(x))   
                 EGx[4] = np.sum( y * abs_y * inv_p10abs_y )/T
                 if EGx[4] < nf5['min_EGx']:
@@ -557,12 +569,12 @@ def ICA_EBM(X):
                         NE_Bound[6] = simplified_ppval(nf7['pp'], nf7['max_EGx']) + np.abs(NE_Bound[6])
                     else:
                         NE_Bound[6] = simplified_ppval(nf7['pp'], EGx[6] )
-                   
+
                 # select the tightest upper bound
                 max_NE, max_i = np.max(NE_Bound), np.argmax(NE_Bound)   
                 negentropy_array[n] = max_NE
                 Cost[iter] = np.copy(Cost[iter] - max_NE)
- 
+
                 # Perform orthogonal ICA   
                 if max_i == 0:
                     # G1(x) = x^4
@@ -606,7 +618,7 @@ def ICA_EBM(X):
                     w1 = w + mu * grad 
 
                 W[n, :] = np.copy(w1.T) 
-        
+
             W = np.copy(symdecor(W) )
 
             if Cost[iter] < min_cost:
@@ -616,7 +628,7 @@ def ICA_EBM(X):
                 max_negentropy = np.copy(negentropy_array)
             else: 
                 cost_increaser_counter = cost_increaser_counter + 1
-                
+
             min_cost_queue[iter] = np.copy(min_cost)
 
 
@@ -633,12 +645,12 @@ def ICA_EBM(X):
                     break
             last_W = np.copy(W)
 
-    W = np.copy(best_W)   
+    W = np.copy(best_W)
     # if show cost:  to do later 
 
     # sort all components 
     max_negentropy, index_sort = np.sort(max_negentropy, axis = 0 )[::-1], np.argsort(max_negentropy, axis = 0)[::-1].flatten()
-    W = W[index_sort, : ]    
+    W = W[index_sort, : ]
 ##############################################################################################################
 # Part 4: non-orthogonal ICA 
 # fix small step size for refinement, gradient search 
@@ -656,7 +668,7 @@ def ICA_EBM(X):
     cost_increaser_counter = 0  
     for iter in range(max_iter_nonorth): 
         Cost[iter] = np.copy(- np.log(np.abs(np.linalg.det(W))))
-     
+
         for n in range(N):  
             if N > 7:  
                 if n == 0: 
@@ -682,9 +694,9 @@ def ICA_EBM(X):
                     inv_Q = inv_Q_plus - (temp1.dot(temp2.T) / (1 + c.T.dot(temp2)))
                     # make inv_Q hermitian
                     inv_Q = np.copy((inv_Q + inv_Q.T )/2 ) 
-      
-                    
-                
+
+
+
                 temp1 = np.random.rand(N, 1) 
                 W_n = np.copy(np.delete(W, n, axis = 0)) 
                 h = temp1 - W_n.T.dot(inv_Q.dot(W_n.dot(temp1))) 
@@ -693,7 +705,7 @@ def ICA_EBM(X):
                 temp1 = np.random.rand(N, 1) 
                 temp2 = np.copy(np.delete(W, n, axis = 0) ) 
                 h = temp1 - temp2.T.dot(np.linalg.inv(temp2.dot(temp2.T)).dot(temp2.dot(temp1)))   
-            
+
             w = np.copy(W[n, :].T ) 
             y = np.copy(w.T.dot(X))
 
@@ -719,7 +731,7 @@ def ICA_EBM(X):
                     NE_Bound[0] = 0 
                 else:
                     NE_Bound[0] = simplified_ppval(nf1['pp'], EGx[0] )  
-                
+
             # G3(x) = np.abs(x)/ (1 + np.abs(x))
             EGx[2] = 1 - np.sum(inv_pabs_y)/T   
 
@@ -733,8 +745,8 @@ def ICA_EBM(X):
 
                 else: 
                     NE_Bound[2] = simplified_ppval(nf3['pp'], EGx[2] )
-           
-                
+
+
             # G5(x)  = x* np.abs(x) /(10 + np.abs(x))   
             EGx[4] = np.sum( y * abs_y * inv_p10abs_y )/T
             if EGx[4] < nf5['min_EGx']:
@@ -758,7 +770,7 @@ def ICA_EBM(X):
                     NE_Bound[6] = simplified_ppval(nf7['pp'], nf7['max_EGx']) + np.abs(NE_Bound[6])
                 else:
                     NE_Bound[6] = simplified_ppval(nf7['pp'], EGx[6] )
-                   
+
             # select the tightest upper bound
             max_NE, max_i = np.max(NE_Bound), np.argmax(NE_Bound)   
             Cost[iter] = np.copy(Cost[iter] - max_NE ) 
@@ -801,7 +813,7 @@ def ICA_EBM(X):
             best_W = np.copy(last_W)
         else:
             cost_increaser_counter = cost_increaser_counter + 1
-        
+
         min_cost_queue[iter] = np.copy(min_cost)
         if cost_increaser_counter > max_cost_increase_number:
             if mu > min_mu:
@@ -825,12 +837,21 @@ def ICA_EBM(X):
 
 
 ###############################################################################################################
-# These functions are used in the ICA-EBM algorithm.  
-###############################################################################################################  
+# These functions are used in the ICA-EBM algorithm.
+###############################################################################################################
 
 
-def simplified_ppval(pp, xs ):
-    # simplified version of ppval 
+def simplified_ppval(pp: dict, xs: float) -> float:
+    """Helper function for ICA EBM: simplified version of ppval. 
+        This function evaluates a piecewise polynomial at a specific point. 
+    
+    Args: 
+        pp (dict): a dictionary containing the piecewise polynomial representation of a function
+        xs (float): the evaluation point
+
+    Returns: 
+        v (float): the value of the function at xs   
+    """
     b = pp['breaks'][0]
     c = pp['coefs']
     l = int(pp['pieces'] ) 
@@ -865,8 +886,16 @@ def simplified_ppval(pp, xs ):
         v = v*xs + c[index, i]
     return v     
 
-def inv_sqrtmH(B):
-    # inverse square root of a matrix   
+def inv_sqrtmH(B: np.ndarray) -> np.ndarray:    
+    """Helper function for ICA EBM: computes the inverse square root of a matrix.
+    
+    Args:
+        B (np.ndarray): a square matrix
+        
+    Returns:    
+        A (np.ndarray): the inverse square root of B 
+    """
+
     D, V = np.linalg.eig(B) 
     order = np.argsort(D) 
     D = D[order]
@@ -875,7 +904,17 @@ def inv_sqrtmH(B):
     A = np.dot(np.dot(V, np.diag(d)), V.T)  
     return A
 
-def pre_processing(X):
+def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Helper function for ICA EBM: pre-processing (DC removal & spatial pre-whitening).
+    
+    Args:   
+        X (np.ndarray, (Channels, Time Points) ): the data matrix [N x T] 
+    
+    Returns:    
+        X (np.ndarray, (Channels, Time Points)): the pre-processed data matrix  [N x T] 
+        P (np.ndarray, (Channels, Channels)): the pre-whitening matrix [N x N] 
+    """ 
+
     # pre-processing program
     N = X.shape[0]
     T = X.shape[1]
@@ -888,8 +927,16 @@ def pre_processing(X):
     X = np.dot(P, X)    
     return X, P
 
-def symdecor(M): 
-    # fast symmetric orthogonalization 
+def symdecor(M: np.ndarray) -> np.ndarray: 
+    """Helper function for ICA EBM: fast symmetric orthogonalization.
+    
+    Args:   
+        M (np.ndarray, (Channels, Channels)): the matrix to be orthogonalized [N x N]
+
+    Returns:    
+        W (np.ndarray, (Channels, Channels)): the orthogonalized matrix [N x N]
+    """
+
     D, V = np.linalg.eig(M.dot(M.T))    
     order = np.argsort(D)   
     D = D[order]

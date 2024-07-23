@@ -62,6 +62,11 @@ def read_segmentation_masks(
                 f"values in '{fpath}'"
             )
 
+        # mask volume should contain integers stored as floating point numbers.
+        # Operations like resampling can introduce small deviations and non-integer
+        # mask ids -> round them.
+        volume = volume.round(6).astype(np.uint8)
+
         volume[volume != 0] = mask_ids[seg_type]
 
         masks.append(
@@ -79,7 +84,7 @@ def read_segmentation_masks(
     for i in range(1, len(affines)):
         assert np.all(affines[i] == affines[i])
 
-    masks = xr.concat(masks, dim="segmentation_type").astype(np.uint8)
+    masks = xr.concat(masks, dim="segmentation_type")
 
     # check for voxel that belong to more than one mask # FIXME too strict?
     if (masks > 0).sum("segmentation_type").max() > 1:

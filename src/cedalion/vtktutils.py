@@ -1,6 +1,7 @@
 import vtk
 from vtk.util.numpy_support import numpy_to_vtkIdTypeArray, numpy_to_vtk
 import trimesh
+import pyvista as pv
 import numpy as np
 
 
@@ -41,3 +42,11 @@ def trimesh_to_vtk_polydata(mesh: trimesh.Trimesh):
     vtk_mesh.GetPointData().SetScalars(colors)
 
     return vtk_mesh
+
+
+def pyvista_polydata_to_trimesh(polydata: pv.PolyData) -> trimesh.Trimesh:
+    vertices = polydata.points
+    faces = polydata.regular_faces
+
+    # FIXME scalars to texture?
+    return trimesh.Trimesh(vertices, faces)

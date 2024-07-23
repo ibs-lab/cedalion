@@ -5,7 +5,7 @@ This document provides a brief getting started guide for users who would like to
 ## Where to get started?
 It is smart to make yourself aware of five resources and concepts that build the foundations for Cedalion:
 1) **Cedalion's documentation page**: For the moment the documentation can be found {{ '[here]({})'.format(docs_url) }}.
-2) **Example Notebooks**: Cedalion provides jupiter notebooks for example pipelines and to display how to apply its functionality. Here you can start to learn from examples by running, adapting and changing code until you feel more familiar. The notebooks are under /examples/ or [here](https://github.com/ibs-lab/cedalion/tree/alex_working/examples)
+2) **Example Notebooks**: Cedalion provides jupiter notebooks for example pipelines and to display how to apply its functionality. Here you can start to learn from examples by running, adapting and changing code until you feel more familiar. The notebooks are under /examples/ [here](https://github.com/ibs-lab/cedalion/tree/main/examples) and can be viewed in a rendered form on the documentation page [here](https://doc.ml.tu-berlin.de/cedalion/docs/examples/index.html)
 3) **Xarrays** are a package that makes work with labelled mult-dimensional arrays very simple. If you develop code for Cedalion, you will youse Xarrays. To get started, make yourself acquainted with one of two key data types: *xarray.DataArray* and *xarray.DataSet*. Most functions that you write should expect an xarray DataArray as main input for the data that you want to process, alongside arguments that pass variables for additional info. You can find the official [Xarray documentation here](https://docs.xarray.dev/en/stable/).
 4) **Units**: One of the charms of Xarrays that Cedalion is taking advantage of is that functions can implicitly consider units and thus avoid typical errors from (missing) unit conversion. For example, if you work with coordinates for fNIRS optodes or landmarks, as long as they have a proper unit like "m", "cm", "mm" assigned, you do not have to explicitly take care of conversions anymore. To make use of this feature, Cedalion's functions should expect input arguments that are "Quantities" with "units" wherever possible. To assign a unit to your variable, simply import `from cedalion import Quantity, units` and multiply your variable with the right unit. For instance: `sd_distance = 3*units.cm`. Cedalion's units are based on the **pint** package, which is [documented here](https://pint.readthedocs.io/en/stable/index.html).
 5) **Data Containers and Data Structures**: The main objects to pass along your functions and processing pipelines. We are currently working on defining and documenting these. In the meantime, please work with Xarray DataArrays and variables with units as in and outputs for your functions, and be aware that the main format for fNIRS/DOT data that we read and write is the [SNIRF format](https://github.com/fNIRS/snirf). To easily get started, you can:
@@ -49,23 +49,17 @@ Some relevant conventions in a nutshell:
 
 ### Style Guide for docstrings
 
-Please use [documentation strings](https://docs.python.org/3/tutorial/controlflow.html#documentation-strings) to document modules, classes and functions. There exist several different conventions on how to
-format these docstrings. We will follow the Google style as described in the
+Please use [documentation strings](https://docs.python.org/3/tutorial/controlflow.html#documentation-strings) 
+to document modules, classes and functions. There exist several different conventions on 
+how to dormat these docstrings. We will follow the Google style as described in the
 [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings).
 
-
-Please add references to the literature if you are implementing a published algorithm.
-
-**Example:**
+**Example 1:**
 ```
     def func(arg1 : int, arg2 : str) -> bool:
         """One sentence description of function.
 
         Some more details on what the function does.
-
-        Reference to related work or source material [1]
-
-        [1] Authors et al., Title, Journal, Year
 
         Args:
             arg1: Description of arg1
@@ -76,6 +70,49 @@ Please add references to the literature if you are implementing a published algo
         """
         return True
 ```
+
+**Example 2:**
+```
+    def func(
+        arg1 : cdt.NDTimeSeries, 
+        arg2 : cdt.NDTimeSeries, 
+        arg3 : Quantity
+    ) -> cdt.NDTimeSeries:
+        """Implements algorithm XY based on :cite:t:`BIBTEXLABEL`.
+
+        Some more details on what the function does.
+        
+        Args:
+            arg1 (:class:`NDTimeSeries`, (channel, wavelength, time)): Description of 
+                first argument. For NDTimeSeries we can specify expected dimensions
+                like this.
+            arg2 (:class:`NDTimeSeries`, (time, *)): Some algorithms work only along
+                a given dimension (e.g. frequency filtering) and are agnostic to any
+                other dimensions in the array. This should be documentated like this.
+            arg3 (:class:`Quantity`, [time]): Parameters with physical units (e.g.
+                lengths or time intervals) should be passed as pint.Quantities. The
+                expected dimensionality should be documented like this.
+
+        Returns:
+            Description of return value. 
+        """
+        return True
+```
+
+Please add references to the literature if you are implementing a published algorithm.
+There is a global bibtex file under `docs/references.bib` to which reference entries
+should be added with a unique bibtex label. Refer to a reference entry with:
+```
+    :cite:t:`BIBTEXLABEL`
+```
+Further options are documented in the 
+[sphinxcontrib-bibtex documentation](https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html#minimal-example).
+
+All references will be listed under [References](../../references.rst).
+
+Additional [docstring sections](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/index.html#docstring-sections)
+may be added, like for example: References, Notes, etc.
+
 
 ### Where to add my code?
 
@@ -136,10 +173,14 @@ from cedalion import Quantity, units
 
 @cdc.validate_schemas
 def function_name(inputVar1: cdt.NDTimeSeries, inputVar2: Quantity):
+    """What this function does.
 
-    """What does this function do?.
+    Args:
+        inputVar1: ...
+        inputVar2: ...
 
-    [1] Authors et al., "title", Journal vol., year, doi:
+    Returns:
+        description of the return value
     """
 
     #
@@ -157,6 +198,14 @@ The function is wrapped by putting `@cdc.validate_schemas`in front, which will c
 The following examples are implemented in the [quality.py module](https://github.com/ibs-lab/cedalion/blob/main/src/cedalion/sigproc/quality.py)
 
 ### The helper functions
+
+```{admonition} Update needed
+:class: attention
+
+The code examples are not up to date. Please refer to the 
+[current source code](https://github.com/ibs-lab/cedalion/blob/main/src/cedalion/sigproc/quality.py)
+```
+
 Now we can create the small helper functions that calculate and check the SNR, Source-Detector Distances and Amplitudes of fNIRS channels. Using the coordinates and units from Xarrays these are effectively implemented:
 
 `def snr_range():`
@@ -169,7 +218,8 @@ def snr_range(amplitudes: cdt.NDTimeSeries, snr_thresh: Quantity):
     INPUTS:
     amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
     snr_thresh:  Quantity, SNR threshold (unitless).
-                If mean(d)/std(d) < SNRthresh then it is excluded as an active channel
+                If meaArgs:
+        inputVar1:n(d)/std(d) < SNRthresh then it is excluded as an active channel
     OUTPUTS:
     snr:        ratio betwean mean and std of the amplitude signal for all channels.
     MeasList:   list of active channels that meet the conditions

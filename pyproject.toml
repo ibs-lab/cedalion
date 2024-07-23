@@ -33,8 +33,10 @@ where = ["src"]
 [tool.setuptools_scm]
 write_to = "src/cedalion/_version.py"
 
-[tool.ruff]
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "D"]
+
 ignore = [
     "D100", # Missing docstring in public module
     "D104", # Missing docstring in public package
@@ -46,13 +48,13 @@ ignore = [
     "D202", # no blank line allowed after function docstring
 ]
 
-[tool.ruff.pydocstyle]
-convention = "google"
-
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = [
     "F401", # unused imports
 ]
 "test_*.py" = [
     "D103", # Missing docstring in public function
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
