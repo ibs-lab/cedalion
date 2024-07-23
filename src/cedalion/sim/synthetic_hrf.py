@@ -102,7 +102,7 @@ def generate_hrf(
 def build_blob(
     head_model: cfm.TwoSurfaceHeadModel,
     landmark: str,
-    scale: Quantity = 10 * units.mm,
+    scale: Quantity = 1 * units.cm,
     m: float = 10.0,
 ):
     """Generates a blob of activity at a seed landmark.
@@ -126,11 +126,7 @@ def build_blob(
 
     scale = (scale / head_model.brain.units).to_base_units().magnitude
 
-    lmbuilder = cd_landmarks.LandmarksBuilder1010(
-        head_model.scalp, head_model.landmarks
-    )
-    all_landmarks = lmbuilder.build()
-    seed_lm = all_landmarks.sel(label=landmark).pint.dequantify()
+    seed_lm = head_model.landmarks.sel(label=landmark).pint.dequantify()
     seed_vertex = head_model.brain.mesh.kdtree.query(seed_lm)[1]
 
     cortex_surface = cps.Surface(
