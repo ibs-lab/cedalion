@@ -14,6 +14,7 @@ from numpy.typing import ArrayLike
 
 logger = logging.getLogger("cedalion")
 
+#%% ID MOTION
 @cdc.validate_schemas
 def id_motion(
     fNIRSdata: cdt.NDTimeSeries,
@@ -109,175 +110,6 @@ def id_motion(
 
     return ma_mask
 
-
-#%% DETECTING OUTLIERS - OLD
-
-@cdc.validate_schemas
-def detect_outliers(fNIRSdata: cdt.NDTimeSeries, t_motion: Quantity):
-    """Detect outliers in fNIRSdata based on standard deviation and gradient of signal 
-    
-    Based on Homer3 [1] v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
-    Boston University Neurophotonics Center
-    https://github.com/BUNPC/Homer3
-
-    INPUTS: 
-        fNIRSdata: NDTimeSeries, input fNIRS data array with at least time and channel dimensions. Data should be in optical density units
-        t_motion: time in seconds for calculating windowed standard deviation 
-        
-    OUTPUTS:
-        M: xarray that has at least dimensions channels and time, units are boolean. Each time point is marked either True to indicate data
-        is an outlier and False to indicate otherwise
-    """
-    IQR_GRAD_THRESH = 1.5
-    IQR_STD_THRESH = 2
-    
-    fNIRSdata = fNIRSdata.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
-
-    fs =  fNIRSdata.cd.sampling_rate
-    window_size = int(np.round(fs*t_motion)) # define window size for calculating std 
-
-    # initialize mask 
-    M = xrutils.mask(fNIRSdata, True)
-    
-
-    for m, measurement in enumerate(fNIRSdata['measurement']):
-        
-        channel = fNIRSdata.sel(measurement=measurement)
-        
-        # filter data between 0-2Hz
-        channel_lpf2 = channel.cd.freq_filter(0, 2, butter_order=4)
-                
-        # filter data between 0-0.5Hz
-        channel_lpf05 = channel.cd.freq_filter(0, 0.5, butter_order=4)
-        
-        # detect outliers in std variations of the signal 
-        windows = channel_lpf05.rolling(time=window_size).construct("window", stride=1)
-        windows = windows[window_size:]
-        sigSTD = windows.std("window")
-
-        # define thresholds for std based on the first and fourth quartiles of the signals std
-        quants_std = sigSTD.quantile([0.25,0.5,0.75])
-        quants_std = np.quantile(sigSTD, [0.25, 0.5, 0.75])
-        IQR_std = quants_std[2] - quants_std[0]
-        high_std = quants_std[2] + IQR_std*IQR_STD_THRESH
-        low_std = quants_std[0] - IQR_std*IQR_STD_THRESH
-        # create mask to identify where std is above or below the two thresholds
-        high = np.where(sigSTD > high_std)[0]
-        low = np.where(sigSTD < low_std)[0]
-        std_mask = np.unique(np.hstack([high, low]))
-
-        offset = np.round(window_size/2).astype(int)
-        std_mask=offset+std_mask;
-
-        # detect outliers in gradient of the signal
-        grad = xr.apply_ufunc(signal.convolve, channel_lpf2, [-1, 0, 1],'same', input_core_dims=[["time"],[],[]], output_core_dims=[["time"]])    
-        # define thresholds for grad based on the first and fourth quartiles of the signal gradient
-        quants_grad = grad.quantile([0.25,0.5,0.75])
-        IQR_grad = quants_grad[2] - quants_grad[0]
-        high_grad = quants_grad[2] + IQR_grad*IQR_GRAD_THRESH
-        low_grad = quants_grad[0] - IQR_grad*IQR_GRAD_THRESH
-        
-        # create mask to idenfity where grad is above or below the two thresholds
-        high = np.where(grad > high_grad)[0]
-        low = np.where(grad < low_grad)[0]
-        grad_mask = np.unique(np.hstack([high, low]))
-        
-        # union of both masks
-        masks = np.unique(np.hstack([std_mask, grad_mask]))
-        masks = masks
-        
-        M.values[masks,m] = 0
-
-    # apply masks to fNIRSdata
-    M_array, M_elements = xrutils.apply_mask(fNIRSdata, M, 'nan', 'none')
-    
-    M = M.unstack('measurement').pint.quantify()
-    M_array = M_array.unstack('measurement').pint.quantify()
-    
-    M = M.transpose("channel","wavelength","time")
-    M_array = M_array.transpose("channel","wavelength","time")
-    
-    return M, M_array
-
-#%% DETECT OUTLIERS - NEW 
-
-@cdc.validate_schemas
-def detect_outliers_std(ts: cdt.NDTimeSeries, t_window: Quantity, iqr_threshold=2):
-    """Detect outliers in fNIRSdata based on standard deviation of signal."""
-
-    ts = ts.pint.dequantify()
-    fs = ts.cd.sampling_rate
-
-    # window size in samples TODO t_window units
-    window_size = int(np.round(fs * t_window))
-
-    ts_lowpass = ts.cd.freq_filter(0, 0.5, butter_order=4)
-
-    # FIXME shift due to window center. accounted for in original method but correct?
-    # stride==1, i.e. there are as many windows as time samples
-    windowed_std = ts_lowpass.rolling(
-        time=window_size, min_periods=1, center=True
-    ).std()
-
-    qmin, qmax = 0.25, 0.75
-    quantiles = windowed_std.quantile([qmin, 0.5, qmax], dim="time")
-
-    IQR = quantiles.sel(quantile=qmax) - quantiles.sel(quantile=qmin)
-    threshold_high = quantiles.sel(quantile=qmax) + iqr_threshold * IQR
-    threshold_low = quantiles.sel(quantile=qmin) - iqr_threshold * IQR
-
-    mask = (windowed_std < threshold_low) | (threshold_high < windowed_std)
-
-    return mask
-
-
-@cdc.validate_schemas
-def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
-    """Detect outliers in fNIRSdata based on gradient of signal."""
-
-    ts = ts.pint.dequantify()
-
-    ts_lowpass = ts.cd.freq_filter(0, 2, butter_order=4)
-
-    axis_time = list(ts_lowpass.dims).index("time")
-    kernel_shape = np.ones(ts.ndim, dtype=int)
-    kernel_shape[axis_time] = 3
-    grad_kernel  = np.asarray([-1,0,1]).reshape(kernel_shape)
-
-    assert ts_lowpass.dims[-1]
-    gradient = xr.apply_ufunc(
-        signal.oaconvolve,
-        ts_lowpass,
-        grad_kernel,
-        kwargs={"mode": "same", "axes": axis_time },
-    )
-
-    qmin, qmax = 0.25, 0.75
-    quantiles = gradient.quantile([qmin, 0.5, qmax], dim="time")
-
-    IQR = quantiles.sel(quantile=qmax) - quantiles.sel(quantile=qmin)
-    threshold_high = quantiles.sel(quantile=qmax) + iqr_threshold * IQR
-    threshold_low = quantiles.sel(quantile=qmin) - iqr_threshold * IQR
-
-    mask = (gradient > threshold_high) | (gradient < threshold_low)
-
-    return mask
-
-
-@cdc.validate_schemas
-def detect_outliers_2(
-    ts: cdt.NDTimeSeries,
-    t_window_std: Quantity,
-    iqr_threshold_std=2,
-    iqr_threshold_grad=1.5,
-):
-    mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
-    mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
-
-    return mask_std | mask_grad
-
-
-
 #%% MOTION ID REFINE
 
 @cdc.validate_schemas
@@ -365,194 +197,91 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
     return ma_mask_new, ma_info
 
         
-#%% DETECTING BASELINE SHIFTS - OLD
 
-def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
-    """
-    Detects baseline shifts in fNIRS data using motion detection and correction techniques.
 
-    Based on Homer3 [1] v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
-    Boston University Neurophotonics Center
-    https://github.com/BUNPC/Homer3
-    Inputs:
-        fNIRSdata (cdt.NDTimeSeries): The fNIRS data as a NDTimeSeries object.
-        M (xr.DataArray): The motion detection array.
+#%% DETECT OUTLIERS
 
-    Returns:
-        tIncCh (cdt.NDTimeSeries): xarray that has at least dimensions time, units are boolean. Each time point is marked either True to indicate data
-        is an outlier and False to indicate otherwise - collapsed across channels
-        tInc (cdt.NDTimeSeries): xarray containing information from tIncCh collapsed across channels
-        
-    """
-    t1 = time.time()
-    fNIRSdata = fNIRSdata.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
-    M = M.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
+@cdc.validate_schemas
+def detect_outliers_std(ts: cdt.NDTimeSeries, t_window: Quantity, iqr_threshold=2):
+    """Detect outliers in fNIRSdata based on standard deviation of signal."""
 
-    fs = fNIRSdata.cd.sampling_rate
+    ts = ts.pint.dequantify()
+    fs = ts.cd.sampling_rate
 
-    extend = int(np.round(12*fs)) # extension for padding
-    Nthresh = int(np.round(0.5*fs)) # threshold for baseline shift detection (samples in 0.5 sec)
+    # window size in samples TODO t_window units
+    window_size = int(np.round(fs * t_window))
 
-    fNIRSdata_lpf2 = fNIRSdata.cd.freq_filter(0, 2, butter_order=4) # fitler the data between 0-2Hz
+    ts_lowpass = ts.cd.freq_filter(0, 0.5, butter_order=4)
 
-    fNIRSdata_pad = fNIRSdata_lpf2.pad(time=extend, mode='edge') # pad data by 12 seconds 
-    fNIRSdata_pad['samples'].values = np.arange(len(fNIRSdata_pad))
-    nT_pad = len(fNIRSdata_pad.samples)
+    # FIXME shift due to window center. accounted for in original method but correct?
+    # stride==1, i.e. there are as many windows as time samples
+    windowed_std = ts_lowpass.rolling(
+        time=window_size, min_periods=1, center=True
+    ).std()
 
-    tInc = xrutils.mask(fNIRSdata_pad, True) # initialize mask for data to indicate timepoints that are included
-    mean_SNR_threshold = np.zeros(len(fNIRSdata)) # initialize array for signal to noise ratio threshold per channel
+    qmin, qmax = 0.25, 0.75
+    quantiles = windowed_std.quantile([qmin, 0.5, qmax], dim="time")
 
-    M_pad = M.pad(time=extend, mode='edge') # pad M by 12 seconds also
-    M_pad['samples'].values = np.arange(len(M_pad))
+    IQR = quantiles.sel(quantile=qmax) - quantiles.sel(quantile=qmin)
+    threshold_high = quantiles.sel(quantile=qmax) + iqr_threshold * IQR
+    threshold_low = quantiles.sel(quantile=qmin) - iqr_threshold * IQR
 
-    mean_SNR_threshold = np.zeros(len(fNIRSdata.measurement))
-        
-    for m,measurement in enumerate(fNIRSdata.measurement):
-     
-        channel = fNIRSdata_pad.sel(measurement=measurement)
-        channel_M = M_pad.sel(measurement=measurement)
-        if sum(channel_M.values) == 0:
-            tinc = np.ones(nT_pad)
-            tInc[:,m] = tinc
+    mask = (windowed_std < threshold_low) | (threshold_high < windowed_std)
 
-            continue
-        
-        sig = channel_M.copy()
-        sig.values = channel_M.values.astype(int)
-        # sig = channel.copy()
-        # sig.values = np.ones(channel.shape) # initialize array for baseline shift detection
-        # sig.values[np.where(channel_M.values == True)[0]] = 0 # set indices where motion is detected to 0
-        
-        # find locations where signal goes from clean -> motion -> clean
-        temp = sig.diff('time')
-        
-        # create lists that indicate the start and finish of each motion segment
-        lstMs = np.where(temp==-1)[0]
-        lstMf = np.where(temp==1)[0]
-        
-        if len(lstMs) == 0:
-            lstMs = [0]
-        if len(lstMf) == 0:
-            lstMf = np.asarray([len(sig)-1])
-        if lstMs[0] > lstMf[0]:
-            lstMs = np.insert(lstMs, 0, 0)
-        if lstMs[-1] > lstMf[-1]:
-            lstMf = np.append(lstMf, len(sig)-1)
-        
-        # get OD amplitude at starts and finish of each motion segment
-        meanpH = channel[lstMs]
-        meanpL = channel[lstMf]
+    return mask
 
-        motion_kind = abs(meanpH.values-meanpL.values) # take the difference between the start and finish of each segment
 
-        
-        noise = channel.copy() # define the noise of the signal
-        channel = channel.cd.freq_filter(0, 2, butter_order=4) # refilter the data 
-       
-        tt=0
-        a=[]
-        b=[]
-        sigtemp=[]
-        signoise=[]
-        
-        # create list of segments on either side of a baseline shift  
-        for kk in range(len(sig)-1):
-        
-            if sig.values[kk] == 1:
-                a.append(channel.values[kk])
-                b.append(noise.values[kk])
-                if sig.values[kk+1] == 0 and sig.values[kk] == 1:
-                    sigtemp.append(a)
-                    signoise.append(b)
-                    a=[]
-                    b=[]
-                    tt=tt+1
-                    
-        ssttdd = []
-        tempo2=[]
-        # for each segment, if it is longer than Nthresh, find difference between elements separated by Nthresh
-        for ss in range(tt):
-            tempo = sigtemp[ss]
-            if len(tempo)>Nthresh:
-                for jj in range(len(tempo)-Nthresh):
-                    tempo2.append((abs(tempo[jj+Nthresh]-tempo[jj])))
-                    
-            ssttdd.extend(tempo2) 
-            tempo2 = []
-             
-        # TODO fix this 
-        ssttdd = np.array(ssttdd)
-        ssttdd_thresh = np.quantile(ssttdd,0.5) # get threshold defined by these differences
-  
-            
-        countnoise = 0 # keep track of the number of segments that are longer than Nthresh
-        SNR_threshold = []
-        for jj in range(len(signoise)):
-            if len(signoise[jj]) > 3*fs:
-                countnoise = countnoise+1
-                dmean = np.mean(signoise[jj]);
-                dstd = np.std(signoise[jj]);
-                SNR_threshold.append(abs(dmean)/(dstd+1e-16)) # get the signal to noise ratio for each segment if segment is longer than 3 seconds
-            
-        if len(SNR_threshold[1:len(SNR_threshold)-1]) > 0:
-            mean_SNR_threshold[m] = np.mean(SNR_threshold) # get the mean signal to noise ratio for all segments longer than 3 seconds
-        
-        tinc = np.ones(nT_pad)
-        # loop over each motion segment 
-        for kk in range(len(lstMs)):
-            
-            if motion_kind[kk] > ssttdd_thresh: # if the difference between the start and finish of a segment is greater than the threshold, set the segment to 0
-                tinc[lstMs[kk]:lstMf[kk]] = 0
-                
-            if ((lstMf[kk] - lstMs[kk]) > 0.1*fs) and ((lstMf[kk] - lstMs[kk]) < 0.49999*fs): # if the segment is longer than 0.1 seconds and shorter than 0.5 seconds, set the segment to 0
-                tinc[lstMs[kk]:lstMf[kk]] = 0
+@cdc.validate_schemas
+def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
+    """Detect outliers in fNIRSdata based on gradient of signal."""
 
-            # FIXME comparison time and frequency?? bug?
-            if lstMf[kk] - lstMs[kk] > fs: # if the segment is longer than the sampling frequency, set the segment to 0
-                tinc[lstMs[kk]:lstMf[kk]] = 0
+    ts = ts.pint.dequantify()
 
-        tInc[:,m] = tinc
+    ts_lowpass = ts.cd.freq_filter(0, 2, butter_order=4)
 
-    # get SNR for all channels if it has not already been calculated 
-    for ww, measurement in enumerate(fNIRSdata['measurement']):
-        if np.isnan(mean_SNR_threshold[ww]) or mean_SNR_threshold[ww] == 0:
-            mean_SNR_threshold[ww] = abs(fNIRSdata.sel(measurement=measurement).mean('time')/fNIRSdata.sel(measurement=measurement).std('time'))
+    axis_time = list(ts_lowpass.dims).index("time")
+    kernel_shape = np.ones(ts.ndim, dtype=int)
+    kernel_shape[axis_time] = 3
+    grad_kernel  = np.asarray([-1,0,1]).reshape(kernel_shape)
 
-    nChan = len(fNIRSdata['channel'])//2  # get the number of channels 
+    assert ts_lowpass.dims[-1]
+    gradient = xr.apply_ufunc(
+        signal.oaconvolve,
+        ts_lowpass,
+        grad_kernel,
+        kwargs={"mode": "same", "axes": axis_time },
+    )
 
-    SNRvalue = 3
+    qmin, qmax = 0.25, 0.75
+    quantiles = gradient.quantile([qmin, 0.5, qmax], dim="time")
 
-    # make sure the same mask is applied to both channels
-    for ww in range(nChan):
-        
-        if mean_SNR_threshold[ww] < SNRvalue and mean_SNR_threshold[ww+nChan] < SNRvalue: # if the SNR is less than the threshold for both channels, set channels to ones
-            tInc[:,ww+nChan] = np.ones(len(fNIRSdata_pad))
-            tInc[:,ww] = np.ones(len(fNIRSdata_pad))
-        
-        elif mean_SNR_threshold[ww] > SNRvalue and mean_SNR_threshold[ww+nChan] < SNRvalue: # if the SNR is greater than the threshold for the first channel and less than the threshold for the second channel, set the second channel to the first channel
-            tInc[:,ww+nChan] = tInc[:,ww]
-        
-        elif mean_SNR_threshold[ww] < SNRvalue and mean_SNR_threshold[ww+nChan] > SNRvalue: # if the SNR is less than the threshold for the first channel and greater than the threshold for the second channel, set the first channel to the second channel
-            tInc[:,ww] = tInc[:,ww+nChan]
-        
-    # remove the padding
-    tIncCh = tInc[extend:-extend,:].pint.quantify()
+    IQR = quantiles.sel(quantile=qmax) - quantiles.sel(quantile=qmin)
+    threshold_high = quantiles.sel(quantile=qmax) + iqr_threshold * IQR
+    threshold_low = quantiles.sel(quantile=qmin) - iqr_threshold * IQR
 
-    tIncall = tIncCh[:,0]
+    mask = (gradient > threshold_high) | (gradient < threshold_low)
 
-    # get the union of the masks for all channels
-    for kk in range(tInc.shape[1]):
-        tIncall = tIncall * tIncCh[:,kk]
+    return mask
 
-    tInc = tIncall
-    tIncCh = tIncCh.unstack('measurement').pint.quantify()
 
-    t2 = time.time()
-    logger.debug(f"finished detect_baselineshift in t2-t1 {t2-t1:.3f}s")
+@cdc.validate_schemas
+def detect_outliers(
+    ts: cdt.NDTimeSeries,
+    t_window_std: Quantity,
+    iqr_threshold_std=2,
+    iqr_threshold_grad=1.5,
+):
+    mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
+    mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
 
-    return tInc, tIncCh
+    return mask_std | mask_grad
 
-#%% DETECT BASELINE SHIFTS - NEW 
+
+
+
+
+
+#%% DETECT BASELINE SHIFTS 
 
 def _mask1D_to_segments(mask: ArrayLike):
     """Find consecutive segments for a boolean mask.
@@ -618,7 +347,7 @@ def _calculate_delta_threshold(ts, segments, threshold_samples):
     return seg_deltas_thresh
 
 
-def detect_baselineshift_2(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
+def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
     ts = ts.pint.dequantify()
     
     #ts = ts.stack(measurement=["channel", "wavelength"]).sortby("wavelength")
