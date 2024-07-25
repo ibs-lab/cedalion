@@ -148,7 +148,6 @@ def hrfs_from_image_reco(
     blob: xr.DataArray,
     hrf_model: xr.DataArray,
     Adot: xr.DataArray,
-    forward_model: cfm.ForwardModel,
 ):
     """Maps an activation blob on the brain to HRFs in channel space.
 
@@ -157,30 +156,20 @@ def hrfs_from_image_reco(
         blob (xr.DataArray): Activation values for each vertex.
         hrf_model (xr.DataArray): HRF model for HbO and HbR.
         Adot (xr.DataArray): Sensitivity matrix for the forward model.
-        forward_model (cfm.ForwardModel): Forward model for the image reconstruction.
 
     Returns
     -------
         cdt.NDTimeseries: HRFs in channel space.
     """
 
+    hrf_model = hrf_model.pint.to(units.molar)
     hrf_model = hrf_model.pint.dequantify()
 
-    wavelengths = Adot.wavelength.values
     n_channels = Adot.channel.size
     n_v_brain = Adot.sel(vertex=Adot.is_brain).vertex.size
 
-    Adot_stacked = forward_model.compute_stacked_sensitivity(Adot)
-    Adot_stacked = Adot_stacked.assign_coords(
-        {
-            "wavelength": (
-                "flat_channel",
-                [wavelengths[0]] * n_channels + [wavelengths[1]] * n_channels,
-            )
-        }
-    )
-    Adot_stacked = Adot_stacked.set_xindex("wavelength")
-    # FIXME Adot should have units
+    Adot_stacked = cfm.ForwardModel.compute_stacked_sensitivity(Adot)
+    # Adot should have units
     Adot_is_brain_stack = xr.concat([Adot.is_brain, Adot.is_brain], dim="vertex")
     Adot_is_brain_stack = Adot_is_brain_stack.rename({"vertex": "flat_vertex"})
     Adot_brain_stacked = Adot_stacked.sel(flat_vertex=Adot_is_brain_stack)
