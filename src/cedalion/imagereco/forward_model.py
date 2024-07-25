@@ -736,7 +736,7 @@ class ForwardModel:
 
     # FIXME: better name for Adot * ext. coeffs
     # FIXME: hardcoded for 2 chromophores (HbO and HbR) and wavelengths
-    def compute_stacked_sensitivity(self, sensitivity: xr.DataArray):
+    def compute_stacked_sensitivity(sensitivity: xr.DataArray):
         """Compute stacked HbO and HbR sensitivity matrices from fluence.
 
         Parameters
@@ -750,7 +750,8 @@ class ForwardModel:
             Stacked sensitivity matrix for each channel and vertex.
         """
 
-        wavelengths = self.measurement_list.wavelength.unique()
+        assert "wavelength" in sensitivity.dims
+        wavelengths = sensitivity.wavelength.values
         assert len(wavelengths) == 2
 
         ec = cedalion.nirs.get_extinction_coefficients("prahl", wavelengths)
