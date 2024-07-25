@@ -480,7 +480,7 @@ def detect_baselineshift(fNIRSdata: cdt.NDTimeSeries, M: cdt.NDTimeSeries):
             ssttdd.extend(tempo2) 
             tempo2 = []
              
-        
+        # TODO fix this 
         ssttdd = np.array(ssttdd)
         ssttdd_thresh = np.quantile(ssttdd,0.5) # get threshold defined by these differences
   
