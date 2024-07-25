@@ -330,9 +330,9 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
     
     fs =  fNIRSdata.cd.sampling_rate
     
-    M = detect_outliers_2(fNIRSdata, 1)
+    M = detect_outliers(fNIRSdata, 1)
      
-    tIncCh = detect_baselineshift_2(fNIRSdata, M)
+    tIncCh = detect_baselineshift(fNIRSdata, M)
     
     fNIRSdata_lpf2 = fNIRSdata.cd.freq_filter(0, 2, butter_order=4)
     extend = int(np.round(12*fs)) # extension for padding
