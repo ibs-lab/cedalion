@@ -8,7 +8,7 @@ from scipy.linalg import svd
 import cedalion.typing as cdt
 from cedalion import Quantity, units
 import cedalion.dataclasses as cdc
-from .artifact import detect_outliers_2, detect_baselineshift_2, id_motion, id_motion_refine
+from .artifact import detect_outliers, detect_baselineshift, id_motion, id_motion_refine
 
 @cdc.validate_schemas
 def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): #, mlAct:cdt.NDTimeSeries):
