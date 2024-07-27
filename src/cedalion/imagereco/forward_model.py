@@ -736,7 +736,7 @@ class ForwardModel:
 
     # FIXME: better name for Adot * ext. coeffs
     # FIXME: hardcoded for 2 chromophores (HbO and HbR) and wavelengths
-    def compute_stacked_sensitivity(sensitivity: xr.DataArray):
+    def compute_stacked_sensitivity(self, sensitivity: xr.DataArray):
         """Compute stacked HbO and HbR sensitivity matrices from fluence.
 
         Parameters
