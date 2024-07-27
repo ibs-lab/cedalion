@@ -5,18 +5,13 @@ import xarray as xr
 import cedalion
 import cedalion.sim.synthetic_hrf as syn
 import cedalion.imagereco.forward_model as fw
+import cedalion.datasets
 from cedalion import units
 
 
 @pytest.fixture
 def head_model():
-    # load head model with 60k brain faces
-    hm_folder = "/home/thomas/Dokumente/SHK/Data/headmodel/colin2SHM_60k"
-    head_model = fw.TwoSurfaceHeadModel.load(hm_folder)
-    head_model.brain.units = cedalion.units.mm
-    head_model.scalp.units = cedalion.units.mm
-    return head_model
-
+    return cedalion.datasets.get_colin27_headmodel()
 
 @pytest.fixture
 def od():
