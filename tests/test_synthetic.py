@@ -3,11 +3,19 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import cedalion
-import cedalion.sim.synthetic_hrf as syn
 import cedalion.imagereco.forward_model as fw
 import cedalion.datasets
 from cedalion import units
+try:
+    import cedalion.sim.synthetic_hrf as syn
+    PYCORTEX_UNAVAILABLE = False
+except ImportError:
+    PYCORTEX_UNAVAILABLE = True
 
+
+skip_if_pycortex_unavailable = pytest.mark.skipif(
+    PYCORTEX_UNAVAILABLE, reason="pycortex not available"
+)
 
 @pytest.fixture
 def head_model():
@@ -37,7 +45,7 @@ def od():
 def time_axis_hrf(od):
     return od.time.sel(time=(od.time < 20))
 
-
+@skip_if_pycortex_unavailable
 def test_generate_hrf(time_axis_hrf):
     stim_dur = 10 * units.seconds
     params_basis = np.random.random(4)
@@ -51,7 +59,7 @@ def test_generate_hrf(time_axis_hrf):
     assert hrf.sizes["time"] == len(time_axis_hrf)
     assert hrf.sizes["chromo"] == 2
 
-
+@skip_if_pycortex_unavailable
 def test_build_blob(head_model):
     landmarks = ["C2", "C3"]
     scale_small = 10 * units.mm
@@ -84,7 +92,7 @@ def test_build_blob(head_model):
         assert 0.35 < blob_small[close_vertices_small].sum() / sum_blob_small < 0.45
         assert 0.35 < blob_big[close_vertices_big].sum() / sum_blob_big < 0.45
 
-
+@skip_if_pycortex_unavailable
 def test_hrfs_from_image_reco(head_model, od, time_axis_hrf):
     blob = xr.DataArray(
         np.random.random(len(head_model.brain.mesh.vertices)), dims=["vertex"]
@@ -118,7 +126,7 @@ def test_hrfs_from_image_reco(head_model, od, time_axis_hrf):
     assert "wavelength" in hrfs.dims
     assert "time" in hrfs.dims
 
-
+@skip_if_pycortex_unavailable
 def test_add_hrf_to_vertices():
     num_vertices = 100
     time_axis = xr.DataArray(
@@ -134,7 +142,7 @@ def test_add_hrf_to_vertices():
     assert "flat_vertex" in hrf_real_image.dims
     assert hrf_real_image.sizes["flat_vertex"] == num_vertices * 2
 
-
+@skip_if_pycortex_unavailable
 def test_build_stim_df():
     num_stims = 10
     stim_dur = 10 * units.seconds
@@ -154,7 +162,7 @@ def test_build_stim_df():
     assert "trial_type" in stim_df.columns
     assert len(stim_df) == num_stims * len(trial_types)
 
-
+@skip_if_pycortex_unavailable
 def test_add_hrf_to_od(od, time_axis_hrf):
     hrfs = xr.DataArray(
         np.random.random((len(od.channel), len(od.wavelength), len(time_axis_hrf))),

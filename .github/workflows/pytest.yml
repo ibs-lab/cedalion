@@ -16,10 +16,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create conda environment
+      - name: Create conda environment for Linux and MacOS
+        if: startsWith(${{matrix.os}}, 'ubuntu') || startsWith(${{matrix.os}}, 'macos')
         uses: mamba-org/setup-micromamba@v1
         with:
           environment-file: environment_dev.yml
+          micromamba-version: 'latest'
+          cache-environment: true
+
+      - name: Create conda environment for windows
+        if: startsWith(${{matrix.os}}, 'windows')
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: environment_dev_windows.yml
           micromamba-version: 'latest'
           cache-environment: true
 
