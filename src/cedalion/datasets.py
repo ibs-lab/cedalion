@@ -6,6 +6,7 @@ import cedalion.io
 from gzip import GzipFile
 import pickle
 from pathlib import Path
+from cedalion.imagereco.forward_model import TwoSurfaceHeadModel
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
@@ -19,6 +20,7 @@ DATASETS = pooch.create(
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
         "photogrammetry_example_scan.zip": "sha256:2828b74526cb501a726753881d59fdd362cf5a6c46cbacacbb9d9649d8ce3d64",  # noqa: E501
         "image_reconstruction_fluence.pickle.gz": "sha256:b647c07484a3cc2435b5def7abb342ba7a19aef66f749ed6b3cf3c26deec406f",  # noqa: E501
+        "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
     },
 )
 
@@ -47,6 +49,15 @@ def get_colin27_segmentation(downsampled=False):
     landmarks_ras_file = "landmarks.mrk.json"
 
     return basedir, mask_files, landmarks_ras_file
+
+
+def get_colin27_headmodel():
+    fnames = DATASETS.fetch("colin2SHM.zip", processor=pooch.Unzip())
+    directory = Path(fnames[0]).parent
+    head_model = TwoSurfaceHeadModel.load(directory)
+    head_model.brain.units = cedalion.units.mm
+    head_model.scalp.units = cedalion.units.mm
+    return head_model
 
 
 def get_fingertapping():
