@@ -4,12 +4,14 @@ on: [push, pull_request]
 
 jobs:
   run_pytest:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-13, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash -l {0}
-    strategy:
-      max-parallel: 5
+
 
     steps:
       - uses: actions/checkout@v3
@@ -20,9 +22,6 @@ jobs:
           environment-file: environment_dev.yml
           micromamba-version: 'latest'
           cache-environment: true
-
-      - name: Conda info
-        run: conda info
 
       - name: Install cedalion
         run: |

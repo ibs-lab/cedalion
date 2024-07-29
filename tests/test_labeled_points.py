@@ -1,7 +1,7 @@
 import pytest
 import xarray as xr
 import numpy as np
-from cedalion.dataclasses.xrschemas import LabeledPointCloudSchema
+from cedalion.dataclasses.schemas import LabeledPointCloudSchema
 from cedalion.dataclasses import (
     PointType,
     affine_transform_from_numpy,

@@ -9,6 +9,7 @@ import xarray as xr
 import pint
 from typing import Optional
 import cedalion.dataclasses as cdc
+import pandas as pd
 
 
 class ValidationError(Exception):
@@ -144,3 +145,9 @@ def build_labeled_points(
     ).pint.quantify(units)
 
     return labeled_points
+
+
+def validate_stim_schema(df: pd.DataFrame):
+    for column_name in ["onset", "duration", "value", "trial_type"]:
+        if column_name not in df:
+            raise ValidationError(f"DataFrame misses required column '{column_name}'.")

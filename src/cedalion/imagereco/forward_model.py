@@ -5,7 +5,6 @@ import os.path
 
 import numpy as np
 import pandas as pd
-import pmcx
 import scipy.sparse
 import trimesh
 import xarray as xr
@@ -292,11 +291,11 @@ class TwoSurfaceHeadModel:
                 raise ValueError("%s does not exist." % os.path.join(foldername, fn))
 
         # Load all attributes from folder
-        segmentation_masks = xr.open_dataset(os.path.join(foldername, 'segmentation_masks.nc'))
+        segmentation_masks = xr.load_dataset(os.path.join(foldername, 'segmentation_masks.nc'))
         brain =  trimesh.load(os.path.join(foldername, 'brain.ply'), process=False)
         scalp =  trimesh.load(os.path.join(foldername, 'scalp.ply'), process=False)
         if os.path.exists(os.path.join(foldername, 'landmarks.nc')):
-            landmarks_ijk = xr.open_dataset(os.path.join(foldername, 'landmarks.nc'))
+            landmarks_ijk = xr.load_dataset(os.path.join(foldername, 'landmarks.nc'))
             landmarks_ijk = xr.DataArray(
                     landmarks_ijk.to_array()[0],
 				    coords={
@@ -306,8 +305,8 @@ class TwoSurfaceHeadModel:
 			)
         else:
             landmarks_ijk = None
-        t_ijk2ras = xr.open_dataset(os.path.join(foldername, 't_ijk2ras.nc'))
-        t_ras2ijk = xr.open_dataset(os.path.join(foldername, 't_ras2ijk.nc'))
+        t_ijk2ras = xr.load_dataset(os.path.join(foldername, 't_ijk2ras.nc'))
+        t_ras2ijk = xr.load_dataset(os.path.join(foldername, 't_ras2ijk.nc'))
         voxel_to_vertex_brain = scipy.sparse.load_npz(os.path.join(foldername,
                                                      'voxel_to_vertex_brain.npz'))
         voxel_to_vertex_scalp = scipy.sparse.load_npz(os.path.join(foldername,
@@ -479,6 +478,7 @@ class ForwardModel:
             "unitinmm": self.unitinmm,
         }
 
+        import pmcx
         result = pmcx.run(cfg)
 
         fluence = result["flux"][:, :, :, 0]  # there is only one time bin
