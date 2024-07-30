@@ -292,7 +292,7 @@ def motion_correct_spline_2(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries)
     return dodSpline
 
 
-#%%
+#%% COMPUTE WINDOW
 def compute_window(SegLength:cdt.NDTimeSeries, dtShort:Quantity, dtLong:Quantity, fs:Quantity):
     """
     Computes the window size based on the segment length, short time interval, long time interval, and sampling frequency.
@@ -314,7 +314,7 @@ def compute_window(SegLength:cdt.NDTimeSeries, dtShort:Quantity, dtLong:Quantity
         wind = np.floor(SegLength / 10)
     return int(wind)
 
-#%%
+#%% SPLINESG
 @cdc.validate_schemas
 def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity = 10 ): #, mlAct:cdt.NDTimeSeries):
     """
@@ -361,7 +361,7 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
 
     return dodSplineSG
 
-#%%
+#%% PCA
 # @cdc.validate_schemas
 def motion_correct_PCA(fNIRSdata:cdt.NDTimeSeries, tInc:cdt.NDTimeSeries, nSV:Quantity = 0.97):
     '''
@@ -474,7 +474,7 @@ def motion_correct_PCA(fNIRSdata:cdt.NDTimeSeries, tInc:cdt.NDTimeSeries, nSV:Qu
     return fNIRSdata_cleaned, nSV, svs
   
     
-#%%
+#%% PCA RECURSE
 def motion_correct_PCA_recurse(fNIRSdata:cdt.NDTimeSeries, t_motion:Quantity = 0.5, t_mask:Quantity = 1, stdev_thresh:Quantity = 20, amp_thresh:Quantity = 5, nSV:Quantity = 0.97, maxIter:Quantity = 5):
     '''
     Identify motion artefacts in input fNIRSdata. If any active channel exhibits signal change greater than STDEVthresh or AMPthresh, 
@@ -507,7 +507,7 @@ def motion_correct_PCA_recurse(fNIRSdata:cdt.NDTimeSeries, t_motion:Quantity = 0
     
           nI = nI+1
         
-          fNIRSdata_cleaned, nSV, svs = motion_correct_PCA(fNIRSdata_cleaned, tInc, nSV=nSV)
+          fNIRSdata_cleaned, nSV_ret, svs = motion_correct_PCA(fNIRSdata_cleaned, tInc, nSV=nSV)
             
 
           tIncCh = id_motion(fNIRSdata_cleaned, t_motion, t_mask, stdev_thresh, amp_thresh)
@@ -515,7 +515,7 @@ def motion_correct_PCA_recurse(fNIRSdata:cdt.NDTimeSeries, t_motion:Quantity = 0
           tInc.values = np.hstack([False, tInc.values[:-1]])
           
           
-    return fNIRSdata_cleaned, svs, nSV, tInc
+    return fNIRSdata_cleaned, svs, nSV_ret, tInc
 
   
 
