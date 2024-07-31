@@ -12,6 +12,7 @@ from numpy.typing import ArrayLike
 from snirf import Snirf
 from snirf.pysnirf2 import DataElement, MeasurementList, NirsElement, Stim
 from strenum import StrEnum
+import pint
 
 import cedalion.dataclasses as cdc
 from cedalion.typing import NDTimeSeries
@@ -327,14 +328,36 @@ def read_aux(
 ) -> OrderedDict[str, xr.DataArray]:
     result = OrderedDict()
 
+    # units that need to be converted to pint units
+    ureg = pint.UnitRegistry()
+    unit_conversions = {
+        'o/s': 'deg/s',
+        'º/s': 'deg/s',
+        'oC': 'degC',
+        'Ohm': 'ohm',
+        }
+
     for aux in nirs_element.aux:
         name = aux.name
         units = aux.dataUnit
         time_offset = aux.timeOffset
 
-        # FIXME treat unspecified units as dimensionless quantities.
+        # FIXME treat unspecified units as dimensionless quantities - Last update by AvL 31.07.24
+        # Default to dimensionless if units are None
         if units is None:
             units = "1"
+        else:
+            # Strip whitespace
+            units = units.strip()
+            try:
+                ureg(units)
+            except pint.errors.UndefinedUnitError:
+                # Convert units if not recognized
+                if units in unit_conversions:
+                    units = unit_conversions[units]
+                else:
+                    print(f"Warning: Unrecognized unit '{units}', treating as dimensionless.")
+                    units = "1"
 
         ntimes = len(aux.time)
 
