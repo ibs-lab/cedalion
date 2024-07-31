@@ -54,7 +54,7 @@ def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): 
                 if len(lstMs) == 0:
                     lstMs = np.asarray([0])
                 if len(lstMf) == 0:
-                    lstMf = np.asarray(len(channel)-1)
+                    lstMf = np.asarray([len(channel)-1])
                 if lstMs[0] > lstMf[0]:
                     lstMs = np.insert(lstMs, 0, 0)
                 if lstMs[-1] > lstMf[-1]:
@@ -195,7 +195,7 @@ def motion_correct_spline_2(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries)
                 if len(lstMs) == 0:
                     lstMs = np.asarray([0])
                 if len(lstMf) == 0:
-                    lstMf = np.asarray(len(channel)-1)
+                    lstMf = np.asarray([len(channel)-1])
                 if lstMs[0] > lstMf[0]:
                     lstMs = np.insert(lstMs, 0, 0)
                 if lstMs[-1] > lstMf[-1]:
