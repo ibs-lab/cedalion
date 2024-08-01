@@ -172,7 +172,6 @@ class PointsAccessor:
 
         rzs = transform[:-1, :-1]  # rotations, zooms, shears
         trans = transform[:-1, -1]  # translatations
-
         transformed = obj.values @ rzs.T + trans
 
         transformed = xr.DataArray(
@@ -196,44 +195,58 @@ class PointsAccessor:
         current = self.crs
         return self._obj.rename({current: value})
 
-    def add(
-        self,
-        label: Union[str, List[str]],
-        coordinates: ArrayLike,
-        type: Union[cdc.PointType, List[cdc.PointType]],
-    ) -> cdt.LabeledPointCloud:
-        if isinstance(label, str):  # add single point
-            assert isinstance(type, cdc.PointType)
+    def add(self,
+           label: Union[str, List[str]],
+           coordinates: ArrayLike,
+           type: Union[cdc.PointType, List[cdc.PointType]],
+           group: Union[str, List[str]] = None) -> cdt.LabeledPointCloud:
+        # Handle the single point case
+        if isinstance(label, str):
+            assert isinstance(type, cdc.PointType), "Type must be a PointType for a single label"
             coordinates = np.asarray(coordinates)
-            assert coordinates.ndim == 1
+            assert coordinates.ndim == 1, "Coordinates for a single point must be 1-dimensional"
 
             if label in self._obj.label:
                 raise KeyError(f"there is already a point with label '{label}'")
 
+            coords_dict = {"label": ("label", [label]), "type": ("label", [type])}
+            if group is not None:
+                assert isinstance(group, str), "Group must be a string for a single label"
+                coords_dict["group"] = ("label", [group])
+
             tmp = xr.DataArray(
                 coordinates.reshape(1, -1),
                 dims=self._obj.dims,
-                coords={"label": ("label", [label]), "type": ("label", [type])},
+                coords=coords_dict,
             )
+
+        # Handle the case where multiple points are added
         else:
-            assert len(label) == len(type)
-            assert len(label) == len(coordinates)
+            assert len(label) == len(type), "Labels and types must have the same length"
+            if group is not None:
+                assert len(label) == len(group), "Labels and groups must have the same length"
 
             for lbl in label:
                 if lbl in self._obj.label:
                     raise KeyError(f"there is already a point with label '{lbl}'")
 
+            coords_dict = {"label": ("label", label), "type": ("label", type)}
+            if group is not None:
+                coords_dict["group"] = ("label", group)
+
             tmp = xr.DataArray(
                 coordinates,
                 dims=self._obj.dims,
-                coords={"label": ("label", label), "type": ("label", type)},
+                coords=coords_dict,
             )
 
+        # Quantify the temporary DataArray with units from the original object
         tmp = tmp.pint.quantify(self._obj.pint.units)
+
+        # Merge the new points into the existing DataArray
         merged = xr.concat((self._obj, tmp), dim="label")
 
         return merged
-
     def remove(self, label):
         raise NotImplementedError()
 
