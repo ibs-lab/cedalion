@@ -43,12 +43,13 @@ class CedalionAccessor:
         # by one. Larger discrepancies would have other unhandled causes.
         # Throw an error for these.
         durations = end - start
-        # assert np.max(durations) - np.min(durations) <= 1
-        duration = np.min(durations)
+        assert np.max(durations) - np.min(durations) <= 1
+        duration = np.max(durations)
+        duration_idx = np.argmax(durations)
 
         # FIXME limit reltime precision (to ns?) to avoid
         # conflicts when concatenating epochs
-        reltime = np.round(self._obj.time[start[0] : end[0]] - tmp.onset.iloc[0], 9)
+        reltime = np.round(self._obj.time[start[duration_idx] : end[duration_idx]] - tmp.onset.iloc[0], 9)
         reltime = reltime[:duration]
         epochs = xr.concat(
             [
@@ -62,8 +63,8 @@ class CedalionAccessor:
         
         #FIXME was running into the scenario where reltime was one sample shorter than time 
         # this was quick fix but there is certainly a better way to handle this 
-        if len(reltime) < len(epochs['time']):
-            reltime = reltime.pad({'time':(0,1)}, constant_values=reltime.values[-1]+1/self.sampling_rate)
+        #if len(reltime) < len(epochs['time']):
+            #reltime = reltime.pad({'time':(0,1)}, constant_values=reltime.values[-1]+1/self.sampling_rate)
             
         epochs = epochs.rename({"time": "reltime"})
         epochs = epochs.assign_coords(
