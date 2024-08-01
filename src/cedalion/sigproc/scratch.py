@@ -14,12 +14,10 @@ import SQE_metrics as sqm
 
 #%%
 import os
-import cedalion.nirs as nirs
-import cedalion.io as io
 subjID = 'sub-01'
-rootDir_data = "/Users/lauracarlton/Documents/DATA/MAFC_raw/"
+rootDir_data = "/projectnb/nphfnirs/ns/lcarlton/DATA/MAFC_raw/"
 
-subj_temp = subjID + '/' + subjID + '_task-squats_run-01_nirs_wStim.snirf'
+subj_temp = subjID + '/nirs/' + subjID + '_task-squats_run-01_nirs.snirf'
 file_name = os.path.join(rootDir_data, subj_temp)
 
 elements = io.read_snirf(file_name)
