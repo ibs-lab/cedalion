@@ -105,6 +105,11 @@ def int2od(amplitudes: xr.DataArray):
     Returns:
         od: (xr.DataArray, (time, channel,*): The optical density data.
     """
+    # check negative values in amplitudes and issue an error if yes
+    if np.any(amplitudes < 0):
+        raise AssertionError("Error: DataArray contains negative values. Please fix, for example by setting them to NaN with \"amplitudes = amplitudes.where(amplitudes >= 0, np.nan)\"")
+
+    # conversion to optical density
     od = -np.log(amplitudes / amplitudes.mean("time"))
     return od
 
