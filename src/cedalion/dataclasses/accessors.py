@@ -45,10 +45,11 @@ class CedalionAccessor:
         durations = end - start
         assert np.max(durations) - np.min(durations) <= 1
         duration = np.max(durations)
+        duration_idx = np.argmax(durations)
 
-        # FIXME limit reltime precision (to ns?) to avoid
-        # conflicts when concatenating epochs
-        reltime = np.round(self._obj.time[start[0] : end[0]] - tmp.onset.iloc[0], 9)
+        # FIXME limit reltime precision (to ns?) to avoid conflicts when concatenating epochs
+        # - different fix by DBoas & AvL on 01.08.24: Use times of longest epoch
+        reltime = np.round(self._obj.time[start[duration_idx] : end[duration_idx]] - tmp.onset.iloc[0], 9)
         epochs = xr.concat(
             [
                 self._obj[:, :, start[i] : start[i] + duration].drop_vars(
