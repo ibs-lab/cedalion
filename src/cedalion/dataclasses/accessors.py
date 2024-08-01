@@ -61,11 +61,6 @@ class CedalionAccessor:
             dim="epoch",
         )
         
-        #FIXME was running into the scenario where reltime was one sample shorter than time 
-        # this was quick fix but there is certainly a better way to handle this 
-        #if len(reltime) < len(epochs['time']):
-            #reltime = reltime.pad({'time':(0,1)}, constant_values=reltime.values[-1]+1/self.sampling_rate)
-            
         epochs = epochs.rename({"time": "reltime"})
         epochs = epochs.assign_coords(
             {"reltime": reltime.values, "trial_type": ("epoch", tmp.trial_type.values)}
