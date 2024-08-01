@@ -50,7 +50,7 @@ class CedalionAccessor:
         # FIXME limit reltime precision (to ns?) to avoid
         # conflicts when concatenating epochs
         reltime = np.round(self._obj.time[start[duration_idx] : end[duration_idx]] - tmp.onset.iloc[0], 9)
-        reltime = reltime[:duration]
+
         epochs = xr.concat(
             [
                 self._obj[:, :, start[i] : start[i] + duration].drop_vars(
