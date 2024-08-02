@@ -177,18 +177,13 @@ def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
     return labels
 
 
-def labels_and_positions(probe, dim: int = 3):
+def labels_and_positions(probe):
     def convert_none(probe, attrname, default):
         attr = getattr(probe, attrname)
         if attr is None:
             return default
         else:
             return attr
-
-    if dim not in [2, 3]:
-        raise AttributeError(f"dim must be '2' or '3' but got {dim}")
-    else:
-        dim = int(dim)
 
     sourceLabels = convert_none(probe, "sourceLabels", np.asarray([], dtype=str))
     detectorLabels = convert_none(probe, "detectorLabels", np.asarray([], dtype=str))
@@ -197,38 +192,34 @@ def labels_and_positions(probe, dim: int = 3):
     if sourceLabels.ndim > 1:
         sourceLabels = reduce_ndim_sourceLabels(sourceLabels)
 
-    sourcePos = convert_none(probe, f"sourcePos{dim}D", np.zeros((0, dim)))
-    detectorPos = convert_none(probe, f"detectorPos{dim}D", np.zeros((0, dim)))
-    landmarkPos = convert_none(probe, f"landmarkPos{dim}D", np.zeros((0, dim + 1)))[
-        :, :dim
+    sourcePos3D = convert_none(probe, "sourcePos3D", np.zeros((0, 3)))
+    detectorPos3D = convert_none(probe, "detectorPos3D", np.zeros((0, 3)))
+    landmarkPos3D = convert_none(probe, "landmarkPos3D", np.zeros((0, 3)))[
+        :, :3
     ]  # FIXME we keep only the positional columns
 
-    if len(sourcePos) > 0 and len(sourceLabels) == 0:
+    if len(sourcePos3D) > 0 and len(sourceLabels) == 0:
         log.warning("generating generic source labels")
-        sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos))])
+        sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos3D))])
 
-    if len(detectorPos) > 0 and len(detectorLabels) == 0:
+    if len(detectorPos3D) > 0 and len(detectorLabels) == 0:
         log.warning("generating generic detector labels")
-        detectorLabels = np.asarray([f"D{i+1}" for i in range(len(detectorPos))])
+        detectorLabels = np.asarray([f"D{i+1}" for i in range(len(detectorPos3D))])
 
-    if len(landmarkPos) != len(landmarkLabels):
-        if len(landmarkPos) > 0:
-            raise ValueError("landmark positions were provided but no labels")
-        else:
-            log.warning("landmark labels were provided but not their positions. Removing labels")
-            landmarkLabels = np.asarray([], dtype=str)
+    if len(landmarkLabels) != len(landmarkPos3D):
+        raise ValueError("landmark positions were provided but no labels")
 
     return (
         sourceLabels,
         detectorLabels,
         landmarkLabels,
-        sourcePos,
-        detectorPos,
-        landmarkPos,
+        sourcePos3D,
+        detectorPos3D,
+        landmarkPos3D,
     )
 
 
-def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
+def geometry_from_probe(nirs_element: NirsElement):
     probe = nirs_element.probe
 
     length_unit = nirs_element.metaDataTags.LengthUnit
@@ -237,10 +228,10 @@ def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
         sourceLabels,
         detectorLabels,
         landmarkLabels,
-        sourcePos,
-        detectorPos,
-        landmarkPos,
-    ) = labels_and_positions(probe, dim)
+        sourcePos3D,
+        detectorPos3D,
+        landmarkPos3D,
+    ) = labels_and_positions(probe)
 
     types = (
         [cdc.PointType.SOURCE] * len(sourceLabels)
@@ -249,7 +240,7 @@ def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
     )
 
     labels = np.hstack([sourceLabels, detectorLabels, landmarkLabels])
-    positions = np.vstack([sourcePos, detectorPos, landmarkPos])
+    positions = np.vstack([sourcePos3D, detectorPos3D, landmarkPos3D])
 
     coords = {"label": ("label", labels), "type": ("label", types)}
     dims = ["label", "pos"]
@@ -448,8 +439,6 @@ def read_data_elements(
 
         is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
 
-        is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
-
         if has_wavelengths and not has_chromo:
             other_dim = "wavelength"
         elif has_chromo and not has_wavelengths:
@@ -596,8 +585,7 @@ def _get_channel_coords(
 
 
 def read_nirs_element(nirs_element, opts):
-    geo2d = geometry_from_probe(nirs_element, dim=2)
-    geo3d = geometry_from_probe(nirs_element, dim=3)
+    geo3d = geometry_from_probe(nirs_element)
     stim = stim_to_dataframe(nirs_element.stim)
 
     timeseries = OrderedDict()
