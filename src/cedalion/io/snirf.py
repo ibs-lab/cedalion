@@ -882,7 +882,6 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
         aux_group.time = aux_array.time
         aux_group.timeOffset = aux_array.attrs["time_offset"]
 
-
 def write_snirf(
     fname: Path | str,
     recordings: cdc.Recording | list[cdc.Recording],
