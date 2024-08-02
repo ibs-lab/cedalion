@@ -58,6 +58,11 @@ class CedalionAccessor:
             ],
             dim="epoch",
         )
+        
+        # Laura's reltime fix 
+        if len(reltime) < len(epochs['time']):
+            reltime = reltime.pad({'time':(0,1)}, mode='edge')
+        
         epochs = epochs.rename({"time": "reltime"})
         epochs = epochs.assign_coords(
             {"reltime": reltime.values, "trial_type": ("epoch", tmp.trial_type.values)}

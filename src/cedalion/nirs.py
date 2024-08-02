@@ -71,26 +71,27 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
         raise ValueError(f"unsupported spectrum '{spectrum}'")
 
 
-def channel_distances(amplitudes: xr.DataArray, geo3d: xr.DataArray):
+def channel_distances(amplitudes: xr.DataArray, geo: xr.DataArray, dim: int = 3):
     """Calculate distances between channels.
 
     Args:
-        amplitudes (xr.DataArray): A DataArray representing the amplitudes with
-            dimensions (channel, *).
-        geo3d (xr.DataArray): A DataArray containing the 3D coordinates of the channels
-            with dimensions (channel, pos).
+        amplitudes (xr.DataArray): A DataArray representing the amplitudes
+            with dimensions (channel, *).
+        geo (xr.DataArray): A DataArray containing the 2D or 3D coordinates of
+            the channels with dimensions (channel, pos).
+        dim (int, optional): Geometry dimension, must be 2 or 3. Default 3.
 
     Returns:
-        dists (xr.DataArray): A DataArray containing the calculated distances between
-            source and detector channels. The resulting DataArray has the dimension
-            'channel'.
+        dists (xr.DataArray): A DataArray containing the calculated distances
+            between source and detector channels. The resulting DataArray
+            has the dimension 'channel'.
     """
     validators.has_channel(amplitudes)
-    validators.has_positions(geo3d, npos=3)
-    validators.is_quantified(geo3d)
+    validators.has_positions(geo, npos=dim)
+    validators.is_quantified(geo)
 
-    diff = geo3d.loc[amplitudes.source] - geo3d.loc[amplitudes.detector]
-    dists = xrutils.norm(diff, geo3d.points.crs)
+    diff = geo.loc[amplitudes.source] - geo.loc[amplitudes.detector]
+    dists = xrutils.norm(diff, "pos")
     dists = dists.rename("dists")
 
     return dists
@@ -111,18 +112,20 @@ def int2od(amplitudes: xr.DataArray):
 
 def od2conc(
     od: xr.DataArray,
-    geo3d: xr.DataArray,
+    geo: xr.DataArray,
     dpf: xr.DataArray,
     spectrum: str = "prahl",
+    dim: int = 3
 ):
     """Calculate concentration changes from optical density data.
 
     Args:
         od (xr.DataArray, (channel, wavelength, *)): The optical density data array
-        geo3d (xr.DataArray): The 3D coordinates of the optodes.
+        geo (xr.DataArray): The 2D or 3D coordinates of the optodes.
         dpf (xr.DataArray, (wavelength, *)): The differential pathlength factor data
         spectrum (str, optional): The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
+        dim (int, optional): Geometry dimension, must be 2 or 3. Default 3.
 
     Returns:
         conc (xr.DataArray, (channel, wavelength, *)): A data array containing
@@ -131,13 +134,13 @@ def od2conc(
     validators.has_channel(od)
     validators.has_wavelengths(od)
     validators.has_wavelengths(dpf)
-    validators.has_positions(geo3d, npos=3)
+    validators.has_positions(geo, npos=dim)
 
     E = get_extinction_coefficients(spectrum, od.wavelength)
 
     Einv = xrutils.pinv(E)
 
-    dists = channel_distances(od, geo3d)
+    dists = channel_distances(od, geo, dim)
     dists = dists.pint.to("mm")
 
     # conc = Einv @ (optical_density / ( dists * dpf))
@@ -150,32 +153,39 @@ def od2conc(
 
 def beer_lambert(
     amplitudes: xr.DataArray,
-    geo3d: xr.DataArray,
+    geo: xr.DataArray,
     dpf: xr.DataArray,
     spectrum: str = "prahl",
+    dim: int = 3,
 ):
     """Calculate concentration changes from amplitude using the modified BL law.
 
     Args:
-        amplitudes (xr.DataArray, (channel, wavelength, *)): The input data array
-            containing the raw intensities.
-        geo3d (xr.DataArray): The 3D coordinates of the optodes.
+        amplitudes (xr.DataArray, (channel, wavelength, *)): The input data array containing the raw intensities.
+        geo (xr.DataArray): The 2D or 3D coordinates of the optodes.
         dpf (xr.DataArray, (wavelength,*)): The differential pathlength factors
         spectrum (str, optional): The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
+        dim (int, optional): Geometry dimension, must be 2 or 3. Default 3.
 
     Returns:
         conc (xr.DataArray, (channel, wavelength, *)): A data array containing
             concentration changes according to the mBLL.
     """
+
+    if dim not in [2, 3]:
+        raise AttributeError(f"dim must be '2' or '3' but got {dim}")
+    else:
+        dim = int(dim)
+
     validators.has_channel(amplitudes)
     validators.has_wavelengths(amplitudes)
     validators.has_wavelengths(dpf)
-    validators.has_positions(geo3d, npos=3)
+    validators.has_positions(geo, npos=dim)
 
     # calculate optical densities
     od = int2od(amplitudes)
     # calculate concentrations
-    conc = od2conc(od, geo3d, dpf, spectrum)
+    conc = od2conc(od, geo, dpf, spectrum, dim)
 
     return conc
