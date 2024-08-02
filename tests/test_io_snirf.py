@@ -4,7 +4,8 @@ import pytest
 import os
 from pathlib import Path
 import cedalion.io
-
+import cedalion.io.snirf
+from tempfile import TemporaryDirectory
 
 # Edge cases in the handling of snirf files are often discovered in files provided
 # by users. Ideally, we assemble a zoo of such edge case files and regularly test
@@ -28,3 +29,26 @@ if "SNIRF_ZOO" in os.environ:
 @pytest.mark.parametrize("fname", testfiles)
 def test_read_snirf(fname):
     cedalion.io.read_snirf(fname)
+
+
+@skip_if_snirf_zoo_unavailable
+@pytest.mark.parametrize("fname", testfiles)
+def test_write_snirf(fname):
+    recs = cedalion.io.read_snirf(fname)
+
+    with TemporaryDirectory() as tmpdirname:
+        fname = Path(tmpdirname) / "test.snirf"
+        cedalion.io.snirf.write_snirf(fname, recs)
+
+
+
+def test_add_number_to_name():
+    keys = ["amp"]
+    assert cedalion.io.snirf.add_number_to_name("amp", keys) == "amp_02"
+
+    keys = ["amp", "amp_02"]
+    assert cedalion.io.snirf.add_number_to_name("amp", keys) == "amp_03"
+
+    keys = ["amp", "od", "od_02", "od_03", "amp_02"]
+    assert cedalion.io.snirf.add_number_to_name("amp", keys) == "amp_03"
+    assert cedalion.io.snirf.add_number_to_name("od", keys) == "od_04"

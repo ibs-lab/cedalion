@@ -5,7 +5,7 @@ from scipy.interpolate import interp1d
 
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
-from importlib import resources
+from importlib.resources import files
 
 
 def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
@@ -45,9 +45,9 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
             blood is x=150 g Hb/liter."
     """
     if spectrum == "prahl":
-        with resources.open_text(
-            "cedalion.data", "prahl_absorption_spectrum.tsv"
-        ) as fin:
+        pkg = "cedalion.data"
+        resource = "prahl_absorption_spectrum.tsv"
+        with files(pkg).joinpath(resource).open("r") as fin:
             coeffs = np.loadtxt(fin, comments="#")
 
         chromophores = ["HbO", "HbR"]

@@ -14,4 +14,6 @@ from .schemas import (
     build_labeled_points,
     build_timeseries,
     validate_schemas,
+    build_stim_dataframe,
 )
+from .recording import Recording
