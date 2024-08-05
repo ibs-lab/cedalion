@@ -811,13 +811,36 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
             assert timeseries.ndim == 4
             assert "channel" in timeseries.dims
             if "reltime" in timeseries.dims:
-                timeseries = timeseries.rename({"reltime": "time"})
-            elif "time" in timeseries.dims:
+                # timeseries = timeseries.rename({"reltime": "time"})
                 pass
+            elif "time" in timeseries.dims:
+                # pass
+                timeseries = timeseries.rename({"time":"reltime"})
             else:
                 raise ValueError("timeseries needs 'time' or 'reltime' dimension.")
 
             dims_to_stack = ["trial_type", "channel", other_dim]
+            
+            stacked_array = timeseries.stack({"snirf_channel": dims_to_stack})
+            stacked_array = stacked_array.transpose("reltime", "snirf_channel")
+            stacked_array = stacked_array.pint.dequantify()
+            
+            # FIXME refactor
+            _, _, _, df_ml = measurement_list_from_stacked(
+                stacked_array,
+                data_type,
+                trial_types,
+                source_labels=rec.source_labels,
+                detector_labels=rec.detector_labels,
+                wavelengths=rec.wavelengths,
+            )
+    
+            # create and populate data element
+            ne.data.appendGroup()
+            data = ne.data[-1]
+    
+            data.dataTimeSeries = stacked_array.values
+            data.reltime = stacked_array.reltime.values
         else:
             assert timeseries.ndim == 3
             assert "channel" in timeseries.dims
@@ -825,26 +848,26 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
 
             dims_to_stack = ["channel", other_dim]
 
-        stacked_array = timeseries.stack({"snirf_channel": dims_to_stack})
-        stacked_array = stacked_array.transpose("time", "snirf_channel")
-        stacked_array = stacked_array.pint.dequantify()
+            stacked_array = timeseries.stack({"snirf_channel": dims_to_stack})
+            stacked_array = stacked_array.transpose("time", "snirf_channel")
+            stacked_array = stacked_array.pint.dequantify()
 
-        # FIXME refactor
-        _, _, _, df_ml = measurement_list_from_stacked(
-            stacked_array,
-            data_type,
-            trial_types,
-            source_labels=rec.source_labels,
-            detector_labels=rec.detector_labels,
-            wavelengths=rec.wavelengths,
-        )
-
-        # create and populate data element
-        ne.data.appendGroup()
-        data = ne.data[-1]
-
-        data.dataTimeSeries = stacked_array.values
-        data.time = stacked_array.time.values
+            # FIXME refactor
+            _, _, _, df_ml = measurement_list_from_stacked(
+                stacked_array,
+                data_type,
+                trial_types,
+                source_labels=rec.source_labels,
+                detector_labels=rec.detector_labels,
+                wavelengths=rec.wavelengths,
+            )
+    
+            # create and populate data element
+            ne.data.appendGroup()
+            data = ne.data[-1]
+    
+            data.dataTimeSeries = stacked_array.values
+            data.time = stacked_array.time.values
 
         # build measurement list
         for i, row in df_ml.iterrows():
