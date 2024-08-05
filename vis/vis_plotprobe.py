@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Jul 15 12:44:19 2024
+Created on Thu Jul 18 17:34 2024
 
 @author: ahns97
 """
@@ -19,9 +19,13 @@ warnings.simplefilter("ignore")
 
 
 class Main(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, snirfData = None, measList = None, geo2d = None, geo3d = None):
         # Initialize
         super().__init__()
+        self.snirfData = snirfData
+        self.measList = measList
+        self.geo2d = geo2d
+        self.geo3d = geo3d
         
         # Set central widget
         self._main = QtWidgets.QWidget()
@@ -203,6 +207,20 @@ class Main(QtWidgets.QMainWindow):
         file_menu = menu.addMenu("&File")
         file_menu.addAction(open_btn)
         
+        if self.snirfData is not None:
+            
+            if np.shape(self.snirfData)[1] != len(self.snirfData.channel):
+                self.snirfData = self.snirfData.transpose("trial_type", "channel", "chromo", "reltime")
+            
+            self.sPos = self.geo2d.sel(label = ["S" in str(s.values) for s in self.geo2d.label])
+            self.dPos = self.geo2d.sel(label = ["D" in str(s.values) for s in self.geo2d.label])
+            
+            self.sourcePos3D = self.geo3d.sel(label = ["S" in str(s.values) for s in self.geo3d.label])
+            self.detectorPos3D = self.geo3d.sel(label = ["D" in str(s.values) for s in self.geo3d.label])
+            
+            print("starting calculations!")
+            self.init_calc()
+        
     
     def open_dialog(self):
         # Grab the appropriate SNIRF file
@@ -217,6 +235,21 @@ class Main(QtWidgets.QMainWindow):
         self.snirfObj = cedalion.io.read_snirf(self._fname)
         t1 = time.time()
         print(f'SNIRF Loaded in {t1 - t0:.2f} seconds!')
+        
+        # Extract necessary data
+        self.snirfData = self.snirfObj[0].data[0]
+        self.measList = self.snirfObj[0].measurement_lists[0]
+
+        self.sPos = self.snirfObj[0].geo2d.sel(label = ["S" in str(s.values) for s in self.snirfObj[0].geo2d.label])
+        self.dPos = self.snirfObj[0].geo2d.sel(label = ["D" in str(s.values) for s in self.snirfObj[0].geo2d.label])
+
+        self.sourcePos3D = self.snirfObj[0].geo3d.sel(label = ["S" in str(s.values) for s in self.snirfObj[0].geo3d.label])
+        self.detectorPos3D = self.snirfObj[0].geo3d.sel(label = ["D" in str(s.values) for s in self.snirfObj[0].geo3d.label])
+        
+        self.init_calc()
+    
+    def init_calc(self):
+        t0 = time.time()
         
         # Initialize certain values to begin
         self.x_scale.setValue(1)
@@ -241,16 +274,6 @@ class Main(QtWidgets.QMainWindow):
         self.color_HbO = [0.862, 0.078, 0.235] ##### Connect?
         self.color_HbR = [0,     0,     0.8  ] ##### Connect?
         self.chrom = {0: self.color_HbO, 1: self.color_HbR}
-        
-        # Extract necessary data
-        self.snirfData = self.snirfObj[0].data[0]
-        self.measList = self.snirfObj[0].measurement_lists[0]
-
-        self.sPos = self.snirfObj[0].geo2d.sel(label = ["S" in str(s.values) for s in self.snirfObj[0].geo2d.label])
-        self.dPos = self.snirfObj[0].geo2d.sel(label = ["D" in str(s.values) for s in self.snirfObj[0].geo2d.label])
-
-        self.sourcePos3D = self.snirfObj[0].geo3d.sel(label = ["S" in str(s.values) for s in self.snirfObj[0].geo3d.label])
-        self.detectorPos3D = self.snirfObj[0].geo3d.sel(label = ["D" in str(s.values) for s in self.snirfObj[0].geo3d.label])
         
         self.sPosVal = self.sPos.values
         self.dPosVal = self.dPos.values
@@ -297,7 +320,16 @@ class Main(QtWidgets.QMainWindow):
         self.dy = self.dPosVal[:,1] - self.axYoff
         
         # Extract time information
-        self.t = self.snirfData.time.values
+        try:
+            self.t = self.snirfData.time.values
+        except:
+            pass
+        
+        try:
+            self.t = self.snirfData.reltime.values
+        except:
+            pass
+        
         self.minT = min(self.t)
         self.maxT = max(self.t)
         
@@ -335,15 +367,14 @@ class Main(QtWidgets.QMainWindow):
         
         # Update Conditions in list widget
         for tidx,trial in enumerate(self.snirfData.trial_type.values):
-            self.conditions.insertItem(tidx, trial)
+            self.conditions.insertItem(tidx, str(trial))
             
-        t2 = time.time()
-        print(f'Calculations complete in {t2-t1:.2f} seconds!')
+        t1 = time.time()
+        print(f'Calculations complete in {t1-t0:.2f} seconds!')
         self.draw_hrf()
         self.conditions.setCurrentRow(0)
         
     def _change_hrf_vis(self):
-        t0 = time.time()
         for i_con in range(self.trial_types):
             if i_con == self.conditions.currentRow():
                 for i_ch in range(self.channels):
@@ -362,8 +393,6 @@ class Main(QtWidgets.QMainWindow):
                         self.hrf[i_con*self.channels*self.chromophores + i_ch*self.chromophores + i_col].set_color(self.chrom[i_col] + [0])
         
         self._ax.figure.canvas.draw()
-        t1 = time.time()
-        print(f"Visibility changed in {t1-t0:.2f} seconds!")
         
     def _redraw_hrf(self):
         for i_con in range(self.trial_types):
@@ -413,7 +442,6 @@ class Main(QtWidgets.QMainWindow):
         self._ax.figure.canvas.draw()
         
     def _xscale_changed(self, i):
-        t0 = time.time()
         # Pass the new xscale and draw hrf again
         self.plot_Xscale = i
         # print(f"Changing x-scale to {self.plot_Xscale}!")
@@ -421,11 +449,8 @@ class Main(QtWidgets.QMainWindow):
         self.xT = [xa1 - self.axWid/8 + (1/4)*self.axWid*((self.t - self.minT)/(self.maxT-self.minT)) for xa1 in self.xa]
         
         self._redraw_hrf()
-        t1 = time.time()
-        print(f"X scale changed in {t1-t0:.2f} seconds!")
         
     def _yscale_changed(self, i):
-        t0 = time.time()
         # Pass the new yscale and draw hrf again
         self.plot_Yscale = i
         # print(f"Changing y-scale to {self.plot_Yscale}!")
@@ -434,8 +459,6 @@ class Main(QtWidgets.QMainWindow):
             self.hrfT[trial] = self.ya - self.axHgt/8 + (1/4)*self.axHgt*((self.hrf_val[trial] - self.cmin)/(self.cmax - self.cmin))
         
         self._redraw_hrf()
-        t1 = time.time()
-        print(f"Y scale changed in {t1 - t0:.2f} seconds!")
         # print("HRFs should have changed!")
         
     def _mindist_changed(self, i):
@@ -516,10 +539,27 @@ if __name__ == "__main__":
     main_gui.show()
     sys.exit(app.exec())
 
+def run_vis(snirfData = None, measList = None, geo2d = None, geo3d = None):
+    
+    if snirfData is None:
+        print("Please provide snirfData!")
+    elif measList is None:
+        print("Please provide measList!")
+    elif geo2d is None:
+        print("Please provide geo2d!")
+    elif geo3d is None:
+        print("Please provide geo3d!")
+    else:
+        app = QtWidgets.QApplication(sys.argv)
+        main_gui = Main(snirfData = snirfData, measList = measList, geo2d = geo2d, geo3d = geo3d)
+        main_gui.show()
+        sys.exit(app.exec())
+        return
 
-
-
-
+    app = QtWidgets.QApplication(sys.argv)
+    main_gui = Main()
+    main_gui.show()
+    sys.exit(app.exec())
 
 
 
