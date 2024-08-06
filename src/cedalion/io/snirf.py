@@ -820,7 +820,21 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
                 raise ValueError("timeseries needs 'time' or 'reltime' dimension.")
 
             dims_to_stack = ["trial_type", "channel", other_dim]
+        elif data_type == "concentration":
+            if "epoch" not in timeseries.dims:
+                raise ValueError(
+                    "to store epoch concentrations the timeseries needs a 'trial_type' dimension"
+                )
+            assert timeseries.ndim == 4
+            assert "channel" in timeseries.dims
+            if "reltime" in timeseries.dims:
+                timeseries = timeseries.rename({"reltime": "time"})
+            elif "time" in timeseries.dims:
+                pass
+            else:
+                raise ValueError("timeseries needs 'time' or 'reltime' dimension.")
             
+            dims_to_stack = ["epoch", "channel", other_dim]
         else:
             assert timeseries.ndim == 3
             assert "channel" in timeseries.dims
