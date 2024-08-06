@@ -1,12 +1,17 @@
 """Registrating optodes to scalp surfaces."""
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize,linear_sum_assignment
 from scipy.spatial import KDTree
+
+from numpy.linalg import pinv
+
+import xarray as xr
 
 import cedalion
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
+import cedalion.imagereco.forward_model as fw
 
 from .utils import m_rot, m_scale1, m_scale3, m_trans
 
@@ -37,7 +42,7 @@ def register_trans_rot(
     from_units = coords_trafo.pint.units
     to_crs = coords_target.points.crs
     to_units = coords_target.pint.units
-    
+
     # allow scaling only to convert between units
     unit_scale_factor = ((1 * from_units) / (1 * to_units)).to_reduced_units()
     assert unit_scale_factor.units == cedalion.units.Unit("1")
@@ -78,10 +83,10 @@ def register_trans_rot(
         bounds=bounds,
         options={'disp': False},
     )
-    
+
 
     trafo_opt = trafo(result.x)
-    
+
     trafo_opt = cdc.affine_transform_from_numpy(
         trafo_opt,
         from_crs=from_crs,
@@ -144,9 +149,9 @@ def register_trans_rot_isoscale(
     )
 
     trafo_opt = trafo(result.x)
-    
-    
-    
+
+
+
     trafo_opt = cdc.affine_transform_from_numpy(
         trafo_opt,
         from_crs=from_crs,
@@ -157,10 +162,9 @@ def register_trans_rot_isoscale(
 
     return trafo_opt
 
-from numpy.linalg import pinv
+
 def gen_xform_from_pts(p1, p2):
-    """
-    Calculate the affine transformation matrix T that transforms p1 to p2.
+    """Calculate the affine transformation matrix T that transforms p1 to p2.
 
     Parameters:
     p1 (numpy.ndarray): Source points (p x m) where p is the number of points and m is the number of dimensions.
@@ -270,7 +274,7 @@ def register_icp(
             (-2 * np.pi, 2 * np.pi),
             (-2 * np.pi, 2 * np.pi),
         ]
-        
+
         print(coords)
 
         result = minimize(
@@ -290,9 +294,8 @@ def register_icp(
 
 
 
-def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tolerance=1e-5):
-    """
-    Perform Iterative Closest Point (ICP) algorithm with full transformation capabilities.
+def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tolerance=500):
+    """Perform Iterative Closest Point (ICP) algorithm with full transformation capabilities.
 
     Parameters:
         opt_centers (cdt.LabeledPointCloud): Source point cloud for alignment.
@@ -305,56 +308,46 @@ def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tole
         np.ndarray: Transformation parameters array consisting of [tx, ty, tz, rx, ry, rz, sx, sy, sz], where 't' stands for 
                     translation components, 'r' for rotation components (in radians), and 's' for scaling components.
         np.ndarray: Indices of the target points that correspond to each source point as per the nearest neighbor search.
-
     """
 
     # Convert to homogeneous coordinates, assuming .values and .pint.dequantify() yield np.ndarray
     units = "mm"
-    opt_centers_mm = opt_centers.pint.to(units).points.to_homogeneous().pint.dequantify()#.values
-    montage_points_mm = montage_points.pint.to(units).points.to_homogeneous().pint.dequantify()#.values
+    opt_centers_mm = opt_centers.pint.to(units).points.to_homogeneous().pint.dequantify()
+    montage_points_mm = montage_points.pint.to(units).points.to_homogeneous().pint.dequantify()
 
     # Initialize transformation parameters: [translation, rotation (radians), scaling]
     current_params = np.zeros(9)  # tx, ty, tz, rx, ry, rz, sx, sy, sz
     best_loss = np.inf
-    transformations = []
     transformation_matrix = np.eye(4)
-    
-    to_crs = opt_centers.points.crs
-    
+
     def complete_transformation(params):
         """Generate a complete transformation matrix from params."""
-        
+
         translation_matrix = m_trans(params[:3])
         rotation_matrix = m_rot(params[3:6])
         scaling_matrix = m_scale3(params[6:9])
         return translation_matrix @ rotation_matrix @ scaling_matrix
-    
-    def apply_numpy_transform(obj_values, transform: np.ndarray, to_crs=None, obj_units=None):
 
-        rzs = transform[:-1, :-1]  # rotations, zooms, shears
-        trans = transform[:-1, -1]  # translations
+    def apply_numpy_transform(obj_values, transform: np.ndarray, to_crs=None, obj_units=None):
         transformed_values = np.hstack((obj_values, np.ones((obj_values.shape[0], 1)))) @ transform.T
-        transformed_values = transformed_values[:, :-1]  
+        transformed_values = transformed_values[:, :-1]
         return transformed_values
 
     for iteration in range(max_iterations):
+        opt_centers_mm[:, :3] = apply_numpy_transform(opt_centers_mm[:, :3],transformation_matrix)
 
-        #transformed_opt_centers = apply_numpy_transform(opt_centers_mm[:, :3], transformation_matrix)
-        opt_centers_mm[:,:3] = opt_centers_mm[:,:3].points._apply_numpy_transform(transformation_matrix, to_crs)
-        # KDTree for nearest neighbor search
-        kdtree = KDTree(montage_points_mm[:, :3].values)
-        distances, indices = kdtree.query(opt_centers_mm[:,:3].values)
-        matched_montage_points = montage_points_mm[indices, :3].values
+        # Use the Hungarian algorithm to find the optimal assignment
+        cost_matrix = np.linalg.norm(opt_centers_mm[:, :3].values[:, np.newaxis] - montage_points_mm[:, :3].values, axis=2)
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
-        # Define the loss function for optimization
+        coords_true = montage_points_mm[col_ind, :3].values
+        coords = opt_centers_mm[row_ind, :3].values
+
         def loss(params, coords_to, coords_from):
             transformation_matrix = complete_transformation(params)
             transformed_montage = apply_numpy_transform(coords_from[:, :3], transformation_matrix)
             return np.sum((coords_to - transformed_montage) ** 2)
-        
-        coords_true = matched_montage_points
-        coords = opt_centers_mm[:, :3].values
-        
+
         no_bounds = (None, None)
         bounds = [
             no_bounds,
@@ -367,58 +360,47 @@ def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tole
             (0.5, 1.5),
             (0.5, 1.5),
         ]
-        
+
         # Optimization step to minimize the loss function
         result = minimize(
             loss, current_params, args=(coords_true, coords), bounds=bounds
         )
-        #result = minimize(loss, current_params,bounds=bounds, method='L-BFGS-B')
-
+        # print(result.fun)
         # Update if improvement
         if result.fun < best_loss:
-            #print("Update if improvement")
             best_loss = result.fun
             current_params = result.x
-            #print(best_loss)
-        else:
-            #print("local min")
-            break
+            best_idx = col_ind
 
         # Convergence check
         if best_loss < tolerance:
-            #print("converged")
             break
-            
+
         transformation_matrix = complete_transformation(current_params)
-        
 
-    # Apply the final transformation to opt_centers
-    #final_transformation_matrix = complete_transformation(current_params)
-    #opt_centers_mm[:,:3] = opt_centers_mm[:,:3].points._apply_numpy_transform(transformation_matrix, to_crs)
-    #transformed_opt_centers_mm = apply_numpy_transform(opt_centers_mm[:, :3], final_transformation_matrix)
+    return best_idx
 
-    return opt_centers_mm[:,:3], current_params, indices
+
+
 
 def find_spread_points(points_xr):
-    """
-    Selects three points from a given set of points that are spread apart from each other in the dataset.
-
+    """Selects three points from a given set of points that are spread apart from each other in the dataset.
 
     Parameters:
         points_xr (xarray.DataArray): An xarray DataArray containing the points from which to select. 
-                                      
+
     Returns:
         np.ndarray: Indices of the initial, farthest, and median-distanced points from the initial point 
                     as determined by their positions in the original dataset.
     """
-    
+
     points = points_xr.values
     if len(points) < 3:
         return list(range(len(points)))  # Not enough points to select from
 
     # Construct KDTree from points
     tree = KDTree(points)
-    
+
     # Step 1: Select the initial point (e.g., the first point)
     initial_point_index = 0
     initial_point = points[initial_point_index]
@@ -431,8 +413,43 @@ def find_spread_points(points_xr):
     sorted_distances_indices = np.argsort(distances)
     median_index = sorted_distances_indices[len(sorted_distances_indices) // 2]
     middle_distanced_point_index = median_index if median_index != initial_point_index else sorted_distances_indices[len(sorted_distances_indices) // 2 + 1]
-    
+
     return points_xr.label.isel(label=[initial_point_index, farthest_point_index, middle_distanced_point_index]).values
 
 
+@cdc.validate_schemas
+def update_geo3D(geo3D: cdt.LabeledPointCloud,
+                 head: fw.TwoSurfaceHeadModel,
+                 scalp_coords: cdt.LabeledPointCloud,
+                 landmarks: cdt.LabeledPointCloud):
+    """Update geo3D with optode and landmark positions from photogrammetric coregistration.
 
+        Parameters:
+        geo3D (cdt.LabeledPointCloud): original geo3D coordinates (e.g. from an atlas).
+        scalp_coords (cdt.LabeledPointCloud): 3D coordinates of optodes on the scalp (e.g. from photogrammetric coregistration).
+        landmarks (cdt.LabeledPointCloud): 3D coordinates of landmarks on the scalp (e.g. from photogrammetric coregistration).
+
+    Returns:
+         geo3D (cdt.LabeledPointCloud): Updated geo3D with new optode and landmark positions.
+    """
+
+    # FIXME: what to do with 10-10 landmarks in input geo3D?
+
+    # merge landmarks and scalp_coords
+    pg_points = xr.concat([scalp_coords, landmarks], dim='label')
+
+    # iterate through all points and in type set PointType if PointType.UNKNOWN
+    for label in pg_points.label:
+        if pg_points.type.sel(label=label) == cdc.PointType.UNKNOWN:
+            
+            if 'S' in label:
+                pg_points.type.sel(label=label).values = cdc.PointType.SOURCE
+            elif 'D' in label:
+                pg_points.type.sel(label=label).values = cdc.PointType.DETECTOR
+            elif 'L' in label:
+                pg_points.type.sel(label=label).values = cdc.PointType.LANDMARK
+
+    # transform coordinates from photogrammetry to headmodel coordinates
+    geo3D_pg = head.align_and_snap_to_scalp(pg_points)
+
+    return geo3D_pg

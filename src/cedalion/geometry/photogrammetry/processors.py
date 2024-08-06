@@ -350,11 +350,11 @@ class ColoredStickerProcessor(ScanProcessor):
         print(mean_radius)
         sorted_indices = np.argsort(differences_from_mean)
         
-        sorted_indices = sorted_indices[:46]
-        
-        detail_circles = np.array(detail_circles)[sorted_indices]
+        #sorted_indices = sorted_indices[:46]
+        #FIXME the following errors lead tp ValueErros
+        """ detail_circles = np.array(detail_circles)[sorted_indices]
         detail_coords = np.array(detail_coords)[sorted_indices]
-        detail_colors = np.array(detail_colors)[sorted_indices]
+        detail_colors = np.array(detail_colors)[sorted_indices] """
         sticker_centers = np.array(sticker_centers)[sorted_indices]
         sticker_normals = np.array(sticker_normals)[sorted_indices]
         labels = np.array(labels)[sorted_indices]

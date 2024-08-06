@@ -40,7 +40,7 @@ def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
 
 def plot3d(
     brain_mesh, scalp_mesh, geo3d, timeseries, poly_lines=[], brain_scalars=None, plotter = None):
-    """Plots a 3D visualization of brain and scalp meshes
+    """Plots a 3D visualization of brain and scalp meshes.
 
     Args:
         brain_mesh (TrimeshSurface): The brain mesh as a TrimeshSurface object.
@@ -53,7 +53,7 @@ def plot3d(
             PyVista plotter instance is created. Default is None.
     """
     #pv.set_jupyter_backend("server")
-    
+
     if plotter is None:
         plt = pv.Plotter()
     else:
@@ -87,6 +87,7 @@ def plot3d(
     if geo3d is not None:
         geo3d = geo3d.pint.to("mm").pint.dequantify()  # FIXME unit handling
         for type, x in geo3d.groupby("type"):
+            labels = x.label.values
             for i_point in range(len(x)):
                 s = pv.Sphere(radius=point_sizes[type], center=x[i_point])
                 plt.add_mesh(s, color=point_colors[type])
@@ -112,12 +113,12 @@ def plot3d(
     for points in poly_lines:
         lines = pv.MultipleLines(points)
         plt.add_mesh(lines, color="m")
-        
+
     #def callback(point):
     #    mesh = pv.Sphere(radius=3, center=point)
     #    plt.add_mesh(mesh, style='wireframe', color='r')
     #    plt.add_point_labels(point, [f"{point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}"])
-        
+
     #if ppoints is not None:
     #    plt.enable_surface_point_picking(callback=callback, show_point=False)
 
@@ -169,15 +170,15 @@ def plot_surface(
         rgb = False
 
     plotter.add_mesh(mesh, color=color, rgb=rgb, opacity=opacity, pickable=True, **kwargs)
-    
-        
+
+
     # Define landmark labels
     landmark_labels = ['Nz', 'Iz', 'Cz', 'Lpa', 'Rpa']
     picked_points = []
     labels = []
     point_actors = []
     label_actors = []
-    
+
     def place_landmark(point):
         nonlocal picked_points, point_actors, label_actors, mesh, labels, plotter
         threshold_distance_squared = 25  # Using squared distance to avoid square root calculation
@@ -205,7 +206,7 @@ def plot_surface(
                 labels[i] = next_label
                 plotter.remove_actor(label_actors[i])  # Remove previous label
                 label_actors[i] = plotter.add_point_labels(existing_point, [next_label], font_size=30)
-                return  
+                return
 
         # If no point is close enough, create a new point and assign a label
         # Check if there are already 5 points placed
@@ -220,21 +221,21 @@ def plot_surface(
         label_actors.append(label_actor)
         picked_points.append(new_point)
         labels.append(landmark_label)
-        
+
     # Initialize the labels list
     # labels = [None] * 5  # Initialize with None for unassigned labels
 
     if pick_landmarks is True:
         def get_points_and_labels():
-            
+
             if len(labels) < 5:
                 print("Warning: Some labels are missing")
             elif len(set(labels)) != 5:
                 print("Warning: Some labels are repeated!")
             return picked_points, labels
-        
-        plotter.enable_surface_point_picking(callback=place_landmark, show_message = "Right click to place or change the landmark label", show_point=False)
-        
+
+        plotter.enable_surface_point_picking(callback=place_landmark, show_message = "Right click to place or change the landmark label", show_point=False, tolerance = 0.005)
+
         return get_points_and_labels
 
 def plot_labeled_points(
@@ -259,7 +260,7 @@ def plot_labeled_points(
         labels (list of str, optional): List of labels to show if `show_labels` is True. If None and `show_labels` is True,
             the labels from `points` are used.
     """
-    pv.set_jupyter_backend("server") 
+    pv.set_jupyter_backend("server")
     # FIXME make these configurable
     default_point_colors = {
         PointType.UNKNOWN: "gray",
@@ -273,17 +274,17 @@ def plot_labeled_points(
         PointType.DETECTOR: 3,
         PointType.LANDMARK: 2,
     }
-    
-    
+
+
     #labels = None
     if labels == None and show_labels == True:
         labels = points.label.values
-        
+
     def on_pick(picked_point):
         nonlocal ppoints
         threshold_distance = 5  # Define how close points have to be to consider them "super close"
         new_point = np.array(picked_point)
-        
+
         # Check if new point is super close to any existing sphere
         for i, existing_point in enumerate(points):
             if np.linalg.norm(new_point - existing_point) < threshold_distance:
@@ -304,8 +305,8 @@ def plot_labeled_points(
                 plotter.add_mesh(s, color=color)
             if labels is not None:
                 plotter.add_point_labels(x[i_point].values, [str(labels[i_point])])
-                
-    if ppoints is not None: 
+
+    if ppoints is not None:
         plotter.enable_surface_point_picking(callback=on_pick, show_point=False)
 
 
@@ -319,7 +320,7 @@ def plot_vector_field(
     assert len(points) == len(vectors)
     assert all(points.label.values == vectors.label.values)
     assert points.points.crs == vectors.dims[1]
-    
+
 
     points = points.pint.to("mm").pint.dequantify()
     vectors = vectors.pint.dequantify()
@@ -330,7 +331,7 @@ def plot_vector_field(
     vpoints.SetData(numpy_to_vtk(points.values))
     ugrid.SetPoints(vpoints)
     ugrid.GetPointData().SetVectors(numpy_to_vtk(vectors.values))
-    
+
     points = ugrid.GetPoints()
     highlight_coords = points.GetPoint(0)
 
@@ -346,16 +347,15 @@ def plot_vector_field(
     plotter.renderer.AddActor(actor)
 
 class OptodeSelector:
-    """
-    A class for visualizing point clouds with interactive features in PyVista.
+    """A class for visualizing point clouds with interactive features in PyVista.
 
     This class provides functionality to visualize and interact with labeled point clouds using a PyVista plotter.
     It allows points to be dynamically added or removed by picking them directly from the plot interface. 
-    
+
     Attributes:
         surface (cdc.Surface): The surface of a head for normals.
         points (cdt.LabeledPointCloud): The point cloud data containing point coordinates.
-        normals (xr.DataArray): Normal vectors to the points.    
+        normals (xr.DataArray): Normal vectors to the points.
         plotter (pv.Plotter): A PyVista plotter instance for rendering the point cloud.
         labels (list of str, optional): Labels corresponding to the points, displayed if provided.
         actors (list): List of PyVista actor objects representing the points in the visualization.
@@ -375,7 +375,7 @@ class OptodeSelector:
         self.labels = labels
         self.actors = []
         self.color = None
-    
+
     def plot(self):
         plotter = self.plotter
         points = self.points
@@ -398,7 +398,7 @@ class OptodeSelector:
         points = points.pint.dequantify()  # FIXME unit handling
         for type, x in points.groupby("type"):
             for i_point in range(len(x)):
-                
+
                 s = pv.Sphere(radius=default_point_sizes[type], center=x[i_point])
                 if color is None:
                     sphere_actor = plotter.add_mesh(s, color=default_point_colors[type])
@@ -414,7 +414,7 @@ class OptodeSelector:
         points = self.points
         threshold_distance = 5  # Define how close points have to be to consider them "super close"
         new_point = np.array(picked_point)
-        
+
         # Check if new point is super close to any existing sphere
         for i, existing_point in enumerate(points.values):
             if np.linalg.norm(new_point - existing_point) < threshold_distance:
@@ -427,9 +427,9 @@ class OptodeSelector:
                     self.normals = self.normals.isel(label=selected_indexes)
                 self.plotter.remove_actor(self.actors[idx_to_remove])
                 del self.actors[idx_to_remove]
-                
+
                 return  # Stop the function after removing the sphere
-            
+
         existing_labels = self.points.coords['label'].values
         # Generate a new unique label
         new_label_number = max([int(label.split('-')[-1]) for label in existing_labels]) + 1
@@ -439,7 +439,7 @@ class OptodeSelector:
 
         # Create the new entry DataArray
         new_center_coords = new_point 
-        
+
         new_entry = xr.DataArray(
             [new_center_coords],  
             dims=["label", "digitized"],  
@@ -448,12 +448,12 @@ class OptodeSelector:
                 "type": ("label", [new_type]),
                 "group": ("label", [new_group]),
             }
-        ).pint.quantify(units="mm")        
-        
+        ).pint.quantify(units="mm")
+
         s = pv.Sphere(radius=2, center=new_point)
-        sphere_actor = plotter.add_mesh(s, color='r')        
+        sphere_actor = plotter.add_mesh(s, color='r')
         self.actors.append(sphere_actor)
-        
+
         new_normal = self.find_surface_normal(new_point)
         self.points = self.points.points.add(new_label, new_center_coords, new_type, new_group)
         self.normals = self.update_normals(new_normal, new_label)
@@ -464,28 +464,28 @@ class OptodeSelector:
         self.plot()  
 
     def enable_picking(self):
-        self.plotter.enable_surface_point_picking(callback=self.on_pick, show_message = "Right click to place or remove optode", show_point=False, )
+        self.plotter.enable_surface_point_picking(callback=self.on_pick, show_message = "Right click to place or remove optode", show_point=False, tolerance = 0.005)
 
     def find_surface_normal(self, picked_point, radius=6):
-        def pca(vertices: np.ndarray):           
+        def pca(vertices: np.ndarray):
             eigenvalues, eigenvecs = np.linalg.eigh(np.cov(vertices.T))
-          
+
             # sort by increasing eigenvalue
-            indices = np.argsort(eigenvalues)           
-            eigenvalues = eigenvalues[indices]           
+            indices = np.argsort(eigenvalues)
+            eigenvalues = eigenvalues[indices]
             eigenvecs = eigenvecs[:, indices]
-          
+
             return eigenvalues, eigenvecs
-        # Calculate distances from picked point to all vertices in the mesh        
-        distances = np.linalg.norm(self.surface.mesh.vertices - picked_point, axis=1)      
+        # Calculate distances from picked point to all vertices in the mesh
+        distances = np.linalg.norm(self.surface.mesh.vertices - picked_point, axis=1)
         close_vertices = self.surface.mesh.vertices[distances < radius]  # Select vertices within the specified radius      
-        eigenvalues, eigenvecs = pca(close_vertices)      
-        normal_vector = eigenvecs[:, 0]          
+        eigenvalues, eigenvecs = pca(close_vertices)
+        normal_vector = eigenvecs[:, 0]
         # Optionally, verify the direction of the normal
         if np.dot(normal_vector, picked_point - np.mean(close_vertices, axis=0)) < 0:
-            normal_vector = -normal_vector  # Ensure the normal points outward    
+            normal_vector = -normal_vector  # Ensure the normal points outward 
         return normal_vector
-    
+
     def update_normals(self, normal_at_picked_point, label):
         new_normals = xr.DataArray(
             np.vstack([normal_at_picked_point]),
