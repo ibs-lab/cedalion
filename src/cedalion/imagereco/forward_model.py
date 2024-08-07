@@ -798,14 +798,15 @@ def update_geo3D_from_scan(geo3D: cdt.LabeledPointCloud,
 
     # iterate through all points and in type set PointType if PointType.UNKNOWN
     for label in pg_points.label:
-        if pg_points.type.sel(label=label) == cdc.PointType.UNKNOWN:
-            
-            if 'S' in label:
-                pg_points.type.sel(label=label).values = cdc.PointType.SOURCE
-            elif 'D' in label:
-                pg_points.type.sel(label=label).values = cdc.PointType.DETECTOR
-            elif 'L' in label:
-                pg_points.type.sel(label=label).values = cdc.PointType.LANDMARK
+        point = pg_points.sel(label=label)
+        if point.coords['type'] == cdc.PointType.UNKNOWN:
+            # check if point is a source, detector or landmark by looking up its label. Set the PointType accordingly 
+            if (np.char.find(point.coords['label'].values, 'S') != -1).any():
+                pg_points['type'].loc[{'label': label}] = cdc.PointType.SOURCE
+            elif (np.char.find(point.coords['label'].values, 'D') != -1).any():
+                pg_points['type'].loc[{'label': label}] = cdc.PointType.DETECTOR
+            elif (np.char.find(point.coords['label'].values, 'L') != -1).any():
+                pg_points['type'].loc[{'label': label}] = cdc.PointType.LANDMARK
 
     # transform coordinates from photogrammetry to headmodel coordinates
     geo3D_pg = head.align_and_snap_to_scalp(pg_points)
