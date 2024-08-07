@@ -18,7 +18,6 @@ import cedalion
 import cedalion.typing as cdt
 from cedalion.vtktutils import trimesh_to_vtk_polydata, pyvista_polydata_to_trimesh
 
-import numexpr as ne
 from scipy import sparse
 
 
@@ -519,9 +518,8 @@ class PycortexSurface(Surface):
         pu1, pu2, pu3 = pu.T
         fa = self.face_areas
 
-        gradu = np.nan_to_num(
-            ne.evaluate("(fe12 * pu3 + fe23 * pu1 + fe31 * pu2) / (2 * fa)").T
-        )
+        gradu = np.nan_to_num(((fe12 * pu3 + fe23 * pu1 + fe31 * pu2) / (2 * fa)).T)
+
 
         if at_verts:
             return (self.connected.dot(gradu).T / self.connected.sum(1).A.squeeze()).T
@@ -613,8 +611,8 @@ class PycortexSurface(Surface):
 
         # Compute X (normalized grad u)
         graduT = gradu.T
-        gusum = ne.evaluate("sum(gradu ** 2, 1)")
-        X = np.nan_to_num(ne.evaluate("-graduT / sqrt(gusum)").T)
+        gusum = np.sum(gradu ** 2, axis=1)
+        X = np.nan_to_num((-gradu.T / np.sqrt(gusum)).T)
 
         # III. "Solve the Poisson equation ∆φ = ∇·X"
         # ------------------------------------------
