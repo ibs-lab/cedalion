@@ -446,6 +446,7 @@ def read_data_elements(
         has_chromo = not pd.isna(df.chromo).all()
 
         is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
+        is_conc = (not pd.isna(df.dataTypeIndex).all()) and ("conc" in data_type_group)
 
         if has_wavelengths and not has_chromo:
             other_dim = "wavelength"
@@ -520,7 +521,48 @@ def read_data_elements(
                     "data_type_group": data_type_group,
                 },
             )
+        
+        elif is_conc:
+            channel_trial_types = trial_types[df["dataTypeIndex"].values - 1]
+            used_trial_types = np.unique(channel_trial_types).tolist()
+            no_epochs = int(len(df)/(len(unique_channel)*len(unique_other_dim)))
+            df["index_trial_type"] = [
+                used_trial_types.index(i) for i in channel_trial_types
+            ]
+            df["index_epoch"] = np.repeat(np.arange(no_epochs),len(unique_channel)*len(unique_other_dim))
 
+            ts4d = np.zeros(
+                (
+                    len(unique_channel),
+                    len(unique_other_dim),
+                    no_epochs,
+                    len(time),
+                ),
+                dtype=data_element.dataTimeSeries.dtype,
+            )
+
+            for index, row in df.iterrows():
+                ts4d[
+                    row.index_channel, row.index_other_dim, row.index_epoch, :
+                ] = ts2d[:, index]
+
+            da = xr.DataArray(
+                ts4d,
+                dims=["channel", other_dim, "epoch", "time"],
+                coords=coords,
+                attrs={
+                    "units": units,
+                    "data_type_group": data_type_group,
+                },
+            )
+            
+            da["trial_type"] = (
+                "epoch",
+                channel_trial_types[
+                    np.arange(len(df),step=len(unique_channel)*len(unique_other_dim))
+                    ]
+                )
+            
         else:
             ts3d = np.zeros(
                 (len(unique_channel), len(unique_other_dim), len(time)),
@@ -539,6 +581,7 @@ def read_data_elements(
                     "data_type_group": data_type_group,
                 },
             )
+        
         da = da.pint.quantify()
 
         time_units = nirs_element.metaDataTags.TimeUnit
@@ -741,15 +784,15 @@ def measurement_list_from_stacked(
         elif "wavelength" in stacked_array.coords:
             ml["dataTypeLabel"] = [DataTypeLabel.HRF_DOD] * nchannel
 
-        ml["dataTypeIndex"] = [
-            trial_types.index(tt) + 1 for tt in stacked_array.trial_type.values
-        ]
-
     if "wavelength" in stacked_array.coords:
         wavelengths = list(np.unique(stacked_array.wavelength.values))
         ml["wavelengthIndex"] = [
             wavelengths.index(w) + 1 for w in stacked_array.wavelength.values
         ]
+
+    ml["dataTypeIndex"] = [
+        trial_types.index(tt) + 1 for tt in stacked_array.trial_type.values
+    ]
 
     ml["dataUnit"] = [stacked_array.attrs["units"]] * nchannel
 

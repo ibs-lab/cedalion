@@ -19,10 +19,10 @@ warnings.simplefilter("ignore")
 
 
 class Main(QtWidgets.QMainWindow):
-    def __init__(self, snirfData = None):
+    def __init__(self, snirfRec = None):
         # Initialize
         super().__init__()
-        self.snirfObj = snirfData
+        self.snirfRec = snirfRec
         
         # Set central widget
         self._main = QtWidgets.QWidget()
@@ -70,6 +70,22 @@ class Main(QtWidgets.QMainWindow):
         window_layout.addWidget(control_panel, stretch=1)
         
         
+        # Create Timeseries Controls Layout
+        ts_layout = QtWidgets.QGridLayout()
+        ts_layout.setAlignment(QtCore.Qt.AlignTop)
+        control_panel_layout.addLayout(ts_layout,)
+        
+        ## Create Timeseries Controls
+        self.ts = QtWidgets.QListWidget()
+        self.ts.addItems(["None"])
+        self.ts.setCurrentRow(0)
+        self.ts.setFixedHeight(60)
+        self.ts.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.ts.currentTextChanged.connect(self.ts_changed)
+        ts_layout.addWidget(QtWidgets.QLabel("Timeseries:"), 0,0)
+        ts_layout.addWidget(self.ts, 0,1)
+        
+        
         # Create Aux selector Layout
         aux_layout = QtWidgets.QGridLayout()
         aux_layout.setAlignment(QtCore.Qt.AlignTop)
@@ -78,7 +94,8 @@ class Main(QtWidgets.QMainWindow):
         ## Aux Selector
         self.auxs = QtWidgets.QComboBox()
         self.auxs.addItems(["None"])
-        self.auxs.currentTextChanged.connect(self.aux_changed) # Connect! <<<<<<<<<<<<<<<
+        self.auxs.setCurrentIndex(0)
+        self.auxs.currentTextChanged.connect(self.aux_changed)
         aux_layout.addWidget(QtWidgets.QLabel("Aux:"), 0,0)
         aux_layout.addWidget(self.auxs, 0,1)
         
@@ -99,19 +116,20 @@ class Main(QtWidgets.QMainWindow):
         wv_layout.setAlignment(QtCore.Qt.AlignTop)
         control_panel_layout.addLayout(wv_layout,)
         
-        ## Create Wavelength Controls
+        ## Create Wavelength / Concentration Controls
         self.wv = QtWidgets.QListWidget()
         self.wv.setFixedHeight(45)
         self.wv.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.wv.currentTextChanged.connect(self.wv_changed) # Connect!
-        wv_layout.addWidget(QtWidgets.QLabel("Wavelength(s):"), 0,0)
+        self.wv.currentTextChanged.connect(self.wv_changed)
+        self.wv_label = QtWidgets.QLabel("Wavelength/Concentration:")
+        wv_layout.addWidget(self.wv_label, 0,0)
         wv_layout.addWidget(self.wv, 0,1)
         
         
         # Create Opt2Circ Button
         self.opt2circ = QtWidgets.QCheckBox("View optodes as circles")
         self.opt2circ.stateChanged.connect(self._toggle_circles)
-        control_panel_layout.addWidget(self.opt2circ)
+        control_panel_layout.addWidget(self.opt2circ,alignment=QtCore.Qt.AlignTop)
         
         ## Spacer
         control_panel_layout.addStretch()
@@ -131,8 +149,8 @@ class Main(QtWidgets.QMainWindow):
         file_menu = menu.addMenu("&File")
         file_menu.addAction(open_btn)
         
-        # In case there is snirfData
-        if self.snirfObj is not None:
+        # In case there is snirfRec
+        if self.snirfRec is not None:
             self.init_calc()
             
         
@@ -147,20 +165,21 @@ class Main(QtWidgets.QMainWindow):
         )[0]
         self.statbar.showMessage("Loading SNIRF File...")
         t0 = time.time()
-        self.snirfObj = cedalion.io.read_snirf(self._fname)
+        cread = cedalion.io.read_snirf(self._fname)
+        self.snirfRec = cread[0]
         t1 = time.time()
         self.statbar.showMessage(f'File Loaded in {t1 - t0:.2f} seconds!')
         self.auxs.setCurrentIndex(0)
+        self.ts.setCurrentRow(0)
         self.aux_window.setText('0')
         self.init_calc()
         
     def init_calc(self):
         # Extract necessary data
-        self.snirfData = self.snirfObj[0].timeseries['amp']
-        self.measList = self.snirfObj[0]._measurement_lists['amp']
+        self.snirfData = self.snirfRec.timeseries[list(self.snirfRec.timeseries.keys())[0]]
         
-        self.sPos = self.snirfObj[0].geo2d.sel(label = ["S" in str(s.values) for s in self.snirfObj[0].geo2d.label])
-        self.dPos = self.snirfObj[0].geo2d.sel(label = ["D" in str(s.values) for s in self.snirfObj[0].geo2d.label])
+        self.sPos = self.snirfRec.geo2d.sel(label = ["S" in str(s.values) for s in self.snirfRec.geo2d.label])
+        self.dPos = self.snirfRec.geo2d.sel(label = ["D" in str(s.values) for s in self.snirfRec.geo2d.label])
         self.sPosVal = self.sPos.values
         self.dPosVal = self.dPos.values
         
@@ -187,9 +206,6 @@ class Main(QtWidgets.QMainWindow):
         self.sdx = np.append(self.sx, self.dx)
         self.sdy = np.append(self.sy, self.dy)
         
-        # Extract time information
-        self.t = self.snirfData.time.values
-        
         # Initialize holders to control each part of the plot
         self.src_label = [0]*len(self.sx)
         self.det_label = [0]*len(self.dx)
@@ -197,16 +213,15 @@ class Main(QtWidgets.QMainWindow):
         self.aux_sel = []
         self.aux_rect_width = 0
         
-        # Create aux channels
-        for i_a, aux_type in enumerate(self.snirfObj[0].aux_ts.keys()):
-            self.auxs.insertItem(i_a+1, aux_type)
-            
-        # Wavelength picker
-        self.wv.clear()
-        for i_w, wvl in enumerate(self.snirfData.wavelength.values):
-            self.wv.insertItem(i_w,str(wvl))
-        self.wv.setCurrentRow(0)
+        # Create timeseries picker
+        for i_ts, timser in enumerate(self.snirfRec.timeseries.keys()):
+            self.ts.insertItem(i_ts+1,str(timser))
         
+        # Create aux channels
+        for i_a, aux_type in enumerate(self.snirfRec.aux_ts.keys()):
+            self.auxs.insertItem(i_a+1, aux_type)
+        
+        self.snirfData = None
         self.draw_optodes()
         
         
@@ -258,16 +273,19 @@ class Main(QtWidgets.QMainWindow):
             return
 
 
-    def optode_picked(self, event):        
+    def optode_picked(self, event):      
+        if self.ts.currentItem().text() == "None":
+            return
+        
         if not self.shift_pressed:
             self.selected = []
         
         if event.artist != self.picker:
-            return True
+            return
         
         N = len(event.ind)
         if not N:
-            return True
+            return
         
         # Click location
         x = event.mouseevent.xdata
@@ -298,14 +316,52 @@ class Main(QtWidgets.QMainWindow):
             self.optodes.set_visible(False)
                 
         self._optode_ax.figure.canvas.draw()
+
         
     
     def wv_changed(self, s):
+        self.draw_timeseries()
+        
+
+    def ts_changed(self, s):
+        # Extract data
+        if s == "None":
+            self.snirfData = None
+            self._dataTimeSeries_ax.clear()
+            return
+
+        self.snirfData = self.snirfRec.timeseries[s]
+        
+        # Determine wavelength/concentration
+        if "wavelength" in self.snirfData.dims:
+            self.wv_label.setText("Wavelength:")
+            self.wv.clear()
+            
+            for i_w, wvl in enumerate(self.snirfData.wavelength.values):
+                self.wv.insertItem(i_w,str(wvl))
+            self.wv.setCurrentRow(0)
+            
+        elif "chromo" in self.snirfData.dims:
+            self.wv_label.setText("Concentration:")
+            self.wv.clear()
+            
+            for i_w, wvl in enumerate(self.snirfData.chromo.values):
+                self.wv.insertItem(i_w,f"[{str(wvl)}]")
+            self.wv.setCurrentRow(0)
+
         self.draw_timeseries()
 
 
     def draw_timeseries(self):
         self._dataTimeSeries_ax.clear()
+        
+        if self.snirfData is None:
+            return
+        if len(self.selected) == 0:
+            return
+        
+        # Extract time information
+        self.t = self.snirfData.time.values
         
         opt_sel = self.opt_label[self.selected]
         chan_sel = []
@@ -316,11 +372,11 @@ class Main(QtWidgets.QMainWindow):
         # Grab relevant data
         for opt in opt_sel:
             if 'S' in opt:
-                chan_sel += self.snirfData[self.snirfData.source == opt].channel.values.tolist()
+                chan_sel += self.snirfData.source[self.snirfData.source == opt].channel.values.tolist()
                 x_opt_sel.append(self.sx[self.slabel == opt])
                 y_opt_sel.append(self.sy[self.slabel == opt])
             elif 'D' in opt:
-                chan_sel += self.snirfData[self.snirfData.detector == opt].channel.values.tolist()
+                chan_sel += self.snirfData.detector[self.snirfData.detector == opt].channel.values.tolist()
                 x_opt_sel.append(self.dx[self.dlabel == opt])
                 y_opt_sel.append(self.dy[self.dlabel == opt])
         
@@ -328,10 +384,20 @@ class Main(QtWidgets.QMainWindow):
         chan_sel_idx = [np.arange(0,self.no_channels)[self.clabel == chan][0] for chan in chan_sel]
         
         ## Grab coordinates
-        x_chan_sel = [[self.sx[self.slabel == src][0] for src in self.snirfData[chan_sel_idx].source.values],
-                      [self.dx[self.dlabel == det][0] for det in self.snirfData[chan_sel_idx].detector.values]]
-        y_chan_sel = [[self.sy[self.slabel == src][0] for src in self.snirfData[chan_sel_idx].source.values],
-                      [self.dy[self.dlabel == det][0] for det in self.snirfData[chan_sel_idx].detector.values]]
+        x_chan_sel = [[],[]]
+        y_chan_sel = [[],[]]
+        
+        for i_ch in chan_sel_idx:
+            if not np.isnan(self.snirfData.isel(channel=i_ch)[0][0]):
+                x_chan_sel[0].append(self.sx[self.slabel == self.snirfData.isel(channel=i_ch).source.values][0])
+                x_chan_sel[1].append(self.dx[self.dlabel == self.snirfData.isel(channel=i_ch).detector.values][0])
+                y_chan_sel[0].append(self.sy[self.slabel == self.snirfData.isel(channel=i_ch).source.values][0])
+                y_chan_sel[1].append(self.dy[self.dlabel == self.snirfData.isel(channel=i_ch).detector.values][0])
+            else:
+                x_chan_sel[0].append(np.nan)
+                x_chan_sel[1].append(np.nan)
+                y_chan_sel[0].append(np.nan)
+                y_chan_sel[1].append(np.nan)
         
         wvl_idx = self.wv.currentRow()
         wvl_ls = ['-', ':']
@@ -343,7 +409,10 @@ class Main(QtWidgets.QMainWindow):
         self._optode_ax.figure.canvas.draw()
         
         # Plot timeseries
-        self.timeSeries = self._dataTimeSeries_ax.plot(self.t, self.snirfData[chan_sel_idx,wvl_idx].T,ls=wvl_ls[wvl_idx],zorder=5)
+        if "wavelength" in self.snirfData.dims:
+            self.timeSeries = self._dataTimeSeries_ax.plot(self.t, self.snirfData.isel(channel=chan_sel_idx,wavelength=wvl_idx).T,ls=wvl_ls[wvl_idx],zorder=5)
+        elif "chromo" in self.snirfData.dims:
+            self.timeSeries = self._dataTimeSeries_ax.plot(self.t, self.snirfData.isel(channel=chan_sel_idx)[wvl_idx].T,ls=wvl_ls[wvl_idx],zorder=5)
         
         # Plot lines or rectangles of aux
         if len(self.aux_sel) != 0:
@@ -356,26 +425,39 @@ class Main(QtWidgets.QMainWindow):
                 for rx in aux_marks:
                     self._dataTimeSeries_ax.axvline(rx,c="k",lw=1,zorder=0)
             else:
-                ry = max(self.snirfData[chan_sel_idx,wvl_idx].values.ravel())
+                if "wavelength" in self.snirfData.dims:
+                    y_val = self.snirfData[chan_sel_idx,wvl_idx].values.ravel()
+                    y_val = y_val[~np.isnan(y_val)]
+                elif "chromo" in self.snirfData.dims:
+                    y_val = self.snirfData.isel(channel=chan_sel_idx)[wvl_idx].values.ravel()
+                    y_val = y_val[~np.isnan(y_val)]
+                
+                ry = max(y_val)
+                ry2 = min(y_val)
+                ry2 = min(ry2,0)
+                
                 for rx in aux_marks:
                     rx2 = rx + self.aux_rect_width
                     self._dataTimeSeries_ax.fill(
                                                  [rx, rx, rx2, rx2],
-                                                 [0, ry, ry, 0],
+                                                 [ry2, ry, ry, ry2],
                                                  color=[0.7,0.7,0.7,0.4],
                                                  zorder=0,
                                                  )
         
+        self._dataTimeSeries_ax.grid("True",axis="y")
         self._dataTimeSeries_ax.figure.canvas.draw()
+        
+        self.statbar.showMessage("Timeseries Drawn!")
     
-    def aux_changed(self,s):
+    def aux_changed(self,s): # TODO
         if s == 'None':
             return
         
         if s == 'dark signal':
             return
         elif s == 'digital':
-            self.aux_sel = self.snirfObj[0].aux_ts[s]
+            self.aux_sel = self.snirfRec.aux_ts[s]
         else:
             return
             
@@ -386,21 +468,32 @@ class Main(QtWidgets.QMainWindow):
         
         self.draw_timeseries()
     
-if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
-    main_gui = Main()
-    main_gui.show()
-    sys.exit(app.exec())
+# if __name__ == "__main__":
+#     app = QtWidgets.QApplication(sys.argv)
+#     main_gui = Main()
+#     main_gui.show()
+#     sys.exit(app.exec())
 
-def run_vis(snirfObj = None):
-    if snirfObj is None:
+
+def run_vis(snirfRec = None):
+    """
+
+    Parameters
+    ----------
+    snirfRec : Recording, optional
+        Pass the cedalion Recording. The default is None.
+
+    Opens a gui that loads the recording, if given.
+
+    """
+    if type(snirfRec) is not cedalion.dataclasses.recording.Recording:
         app = QtWidgets.QApplication(sys.argv)
         main_gui = Main()
         main_gui.show()
         sys.exit(app.exec())
     else:
         app = QtWidgets.QApplication(sys.argv)
-        main_gui = Main(snirfData = snirfObj)
+        main_gui = Main(snirfRec = snirfRec)
         main_gui.show()
         sys.exit(app.exec())
 
