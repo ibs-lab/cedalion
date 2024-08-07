@@ -19,11 +19,10 @@ warnings.simplefilter("ignore")
 
 
 class Main(QtWidgets.QMainWindow):
-    def __init__(self, snirfData = None, measList = None, geo2d = None, geo3d = None):
+    def __init__(self, snirfData = None, geo2d = None, geo3d = None):
         # Initialize
         super().__init__()
         self.snirfData = snirfData
-        self.measList = measList
         self.geo2d = geo2d
         self.geo3d = geo3d
         
@@ -238,7 +237,6 @@ class Main(QtWidgets.QMainWindow):
         
         # Extract necessary data
         self.snirfData = self.snirfObj[0].data[0]
-        self.measList = self.snirfObj[0].measurement_lists[0]
 
         self.sPos = self.snirfObj[0].geo2d.sel(label = ["S" in str(s.values) for s in self.snirfObj[0].geo2d.label])
         self.dPos = self.snirfObj[0].geo2d.sel(label = ["D" in str(s.values) for s in self.snirfObj[0].geo2d.label])
@@ -539,19 +537,17 @@ if __name__ == "__main__":
     main_gui.show()
     sys.exit(app.exec())
 
-def run_vis(snirfData = None, measList = None, geo2d = None, geo3d = None):
+def run_vis(snirfData = None, geo2d = None, geo3d = None):
     
     if snirfData is None:
         print("Please provide snirfData!")
-    elif measList is None:
-        print("Please provide measList!")
     elif geo2d is None:
         print("Please provide geo2d!")
     elif geo3d is None:
         print("Please provide geo3d!")
     else:
         app = QtWidgets.QApplication(sys.argv)
-        main_gui = Main(snirfData = snirfData, measList = measList, geo2d = geo2d, geo3d = geo3d)
+        main_gui = Main(snirfData = snirfData, geo2d = geo2d, geo3d = geo3d)
         main_gui.show()
         sys.exit(app.exec())
         return
