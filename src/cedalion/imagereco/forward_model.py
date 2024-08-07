@@ -24,8 +24,9 @@ logger = logging.getLogger("cedalion")
 
 @dataclass
 class TwoSurfaceHeadModel:
-    """Head Model class to represent a segmented head. Its main functions are
-    reduced to work on voxel projections to scalp and cortex surfaces.
+    """Head Model class to represent a segmented head.
+
+    Its main functions arereduced to work on voxel projections to scalp and cortex surfaces.
 
     ...
 
@@ -772,3 +773,41 @@ class ForwardModel:
         A = xr.DataArray(A, dims=("flat_channel", "flat_vertex"))
 
         return A
+
+
+@cdc.validate_schemas
+def update_geo3D_from_scan(geo3D: cdt.LabeledPointCloud,
+                 head: TwoSurfaceHeadModel,
+                 scalp_coords: cdt.LabeledPointCloud,
+                 landmarks: cdt.LabeledPointCloud):
+    """Update geo3D with optode and landmark positions from photogrammetric coregistration.
+
+        Parameters:
+        geo3D (cdt.LabeledPointCloud): original geo3D coordinates (e.g. from an atlas).
+        scalp_coords (cdt.LabeledPointCloud): 3D coordinates of optodes on the scalp (e.g. from photogrammetric coregistration).
+        landmarks (cdt.LabeledPointCloud): 3D coordinates of landmarks on the scalp (e.g. from photogrammetric coregistration).
+
+    Returns:
+         geo3D (cdt.LabeledPointCloud): Updated geo3D with new optode and landmark positions.
+    """
+
+    # FIXME: what to do with 10-10 landmarks in input geo3D?
+
+    # merge landmarks and scalp_coords
+    pg_points = xr.concat([scalp_coords, landmarks], dim='label')
+
+    # iterate through all points and in type set PointType if PointType.UNKNOWN
+    for label in pg_points.label:
+        if pg_points.type.sel(label=label) == cdc.PointType.UNKNOWN:
+            
+            if 'S' in label:
+                pg_points.type.sel(label=label).values = cdc.PointType.SOURCE
+            elif 'D' in label:
+                pg_points.type.sel(label=label).values = cdc.PointType.DETECTOR
+            elif 'L' in label:
+                pg_points.type.sel(label=label).values = cdc.PointType.LANDMARK
+
+    # transform coordinates from photogrammetry to headmodel coordinates
+    geo3D_pg = head.align_and_snap_to_scalp(pg_points)
+
+    return geo3D_pg
