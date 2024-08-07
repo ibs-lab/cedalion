@@ -50,6 +50,7 @@ class CedalionAccessor:
         # FIXME limit reltime precision (to ns?) to avoid conflicts when concatenating epochs
         # - different fix by DBoas & AvL on 01.08.24: Use times of longest epoch
         reltime = np.round(self._obj.time[start[duration_idx] : end[duration_idx]] - tmp.onset.iloc[0], 9)
+
         epochs = xr.concat(
             [
                 self._obj[:, :, start[i] : start[i] + duration].drop_vars(
@@ -59,6 +60,7 @@ class CedalionAccessor:
             ],
             dim="epoch",
         )
+        
         epochs = epochs.rename({"time": "reltime"})
         epochs = epochs.assign_coords(
             {"reltime": reltime.values, "trial_type": ("epoch", tmp.trial_type.values)}
@@ -71,7 +73,19 @@ class CedalionAccessor:
         array = self._obj
 
         fny = array.cd.sampling_rate / 2
-        b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+        
+        if fmin == 0:
+            b, a = scipy.signal.butter(butter_order, fmax / fny, "low")
+
+        elif fmax == 0:
+            b, a = scipy.signal.butter(butter_order, fmin / fny, "high")
+
+        else:
+            b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+
+        # b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+
+
 
         if (units := array.pint.units) is not None:
             array = array.pint.dequantify()

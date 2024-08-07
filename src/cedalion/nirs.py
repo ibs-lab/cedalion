@@ -2,6 +2,7 @@ import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 from scipy.interpolate import interp1d
+from cedalion import units
 
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
@@ -146,7 +147,11 @@ def od2conc(
     dists = dists.pint.to("mm")
 
     # conc = Einv @ (optical_density / ( dists * dpf))
-    conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
+    if dpf[0] != 1:
+        conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
+    else:        
+        conc = xr.dot(Einv, od / (dpf * 1*units.mm), dims=["wavelength"])
+
     conc = conc.pint.to("micromolar")
     conc = conc.rename("concentration")
 
