@@ -9,11 +9,10 @@ import cedalion.plots
 from cedalion import Quantity, units
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
-import cortex.polyutils.surface as cps
 import cedalion.imagereco.forward_model as cfm
-import cedalion.geometry.landmarks as cd_landmarks
 import cedalion.xrutils as xrutils
 import scipy.stats as stats
+import cedalion.dataclasses.geometry as cdg
 
 
 def generate_hrf(
@@ -129,9 +128,8 @@ def build_blob(
     seed_lm = head_model.landmarks.sel(label=landmark).pint.dequantify()
     seed_vertex = head_model.brain.mesh.kdtree.query(seed_lm)[1]
 
-    cortex_surface = cps.Surface(
-        head_model.brain.mesh.vertices, head_model.brain.mesh.faces
-    )
+    cortex_surface = cdg.PycortexSurface.from_trimeshsurface(head_model.brain)
+
     distances_from_seed = cortex_surface.geodesic_distance([seed_vertex], m=m)
     # distances can be distord due to mesh decimation or unsuitable m value
 

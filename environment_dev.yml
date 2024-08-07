@@ -56,4 +56,3 @@ dependencies:
       - snirf==0.8
       - pmcx==0.3.3
       - sphinxcontrib-bibtex
-      - pycortex==1.2.8
