@@ -49,7 +49,7 @@ class CedalionAccessor:
 
         # FIXME limit reltime precision (to ns?) to avoid conflicts when concatenating epochs
         # - different fix by DBoas & AvL on 01.08.24: Use times of longest epoch
-        reltime = np.round(self._obj.time[start[duration_idx] : end[duration_idx]] - tmp.onset.iloc[0], 9)
+        reltime = np.round(self._obj.time[start[duration_idx] : end[duration_idx]] - tmp.onset.iloc[duration_idx], 9)
 
         epochs = xr.concat(
             [
