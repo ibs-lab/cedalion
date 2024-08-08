@@ -776,7 +776,7 @@ class ForwardModel:
 
 
 @cdc.validate_schemas
-def update_geo3D_from_scan(geo3D: cdt.LabeledPointCloud,
+def update_geo3D_from_scan(geo3d: cdt.LabeledPointCloud,
                  head: TwoSurfaceHeadModel,
                  scalp_coords: cdt.LabeledPointCloud,
                  landmarks: cdt.LabeledPointCloud):
@@ -791,7 +791,7 @@ def update_geo3D_from_scan(geo3D: cdt.LabeledPointCloud,
          geo3D (cdt.LabeledPointCloud): Updated geo3D with new optode and landmark positions.
     """
 
-    # FIXME: what to do with 10-10 landmarks in input geo3D?
+    # FIXME: what to do with 10-10 landmarks in input geo3d?
 
     # merge landmarks and scalp_coords
     pg_points = xr.concat([scalp_coords, landmarks], dim='label')
@@ -810,5 +810,9 @@ def update_geo3D_from_scan(geo3D: cdt.LabeledPointCloud,
 
     # transform coordinates from photogrammetry to headmodel coordinates
     geo3D_pg = head.align_and_snap_to_scalp(pg_points)
+
+    # assign units (currently 'dimensionless')
+    geo3D_pg = geo3D_pg.pint.dequantify()
+    geo3D_pg = geo3D_pg.pint.quantify(geo3d.pint.units)
 
     return geo3D_pg
