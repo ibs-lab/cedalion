@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import cedalion
-import cedalion.imagereco.forward_model as fw
 import cedalion.datasets
 from cedalion import units
 try:
