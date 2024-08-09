@@ -203,6 +203,10 @@ def labels_and_positions(probe, dim: int = 3):
         :, :dim
     ]  # FIXME we keep only the positional columns
 
+    sourcePos = sourcePos[:,0:dim]
+    detectorPos = detectorPos[:,0:dim]
+    landmarkPos = landmarkPos[:,0:dim]
+
     if len(sourcePos) > 0 and len(sourceLabels) == 0:
         log.warning("generating generic source labels")
         sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos))])
