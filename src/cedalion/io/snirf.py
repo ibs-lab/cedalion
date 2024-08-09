@@ -177,13 +177,18 @@ def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
     return labels
 
 
-def labels_and_positions(probe):
+def labels_and_positions(probe, dim: int = 3):
     def convert_none(probe, attrname, default):
         attr = getattr(probe, attrname)
         if attr is None:
             return default
         else:
             return attr
+
+    if dim not in [2, 3]:
+        raise AttributeError(f"dim must be '2' or '3' but got {dim}")
+    else:
+        dim = int(dim)
 
     sourceLabels = convert_none(probe, "sourceLabels", np.asarray([], dtype=str))
     detectorLabels = convert_none(probe, "detectorLabels", np.asarray([], dtype=str))
@@ -192,34 +197,41 @@ def labels_and_positions(probe):
     if sourceLabels.ndim > 1:
         sourceLabels = reduce_ndim_sourceLabels(sourceLabels)
 
-    sourcePos3D = convert_none(probe, "sourcePos3D", np.zeros((0, 3)))
-    detectorPos3D = convert_none(probe, "detectorPos3D", np.zeros((0, 3)))
-    landmarkPos3D = convert_none(probe, "landmarkPos3D", np.zeros((0, 3)))[
-        :, :3
+    sourcePos = convert_none(probe, f"sourcePos{dim}D", np.zeros((0, dim)))
+    detectorPos = convert_none(probe, f"detectorPos{dim}D", np.zeros((0, dim)))
+    landmarkPos = convert_none(probe, f"landmarkPos{dim}D", np.zeros((0, dim + 1)))[
+        :, :dim
     ]  # FIXME we keep only the positional columns
 
-    if len(sourcePos3D) > 0 and len(sourceLabels) == 0:
+    sourcePos = sourcePos[:,0:dim]
+    detectorPos = detectorPos[:,0:dim]
+    landmarkPos = landmarkPos[:,0:dim]
+
+    if len(sourcePos) > 0 and len(sourceLabels) == 0:
         log.warning("generating generic source labels")
-        sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos3D))])
+        sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos))])
 
-    if len(detectorPos3D) > 0 and len(detectorLabels) == 0:
+    if len(detectorPos) > 0 and len(detectorLabels) == 0:
         log.warning("generating generic detector labels")
-        detectorLabels = np.asarray([f"D{i+1}" for i in range(len(detectorPos3D))])
+        detectorLabels = np.asarray([f"D{i+1}" for i in range(len(detectorPos))])
 
-    if len(landmarkLabels) != len(landmarkPos3D):
-        raise ValueError("landmark positions were provided but no labels")
+    if len(landmarkPos) != len(landmarkLabels):
+        if len(landmarkPos) > 0:
+            raise ValueError("landmark positions were provided but no labels")
+        else:
+            log.warning("landmark labels were provided but not their positions. Removing labels")
+            landmarkLabels = np.asarray([], dtype=str)
 
     return (
         sourceLabels,
         detectorLabels,
         landmarkLabels,
-        sourcePos3D,
-        detectorPos3D,
-        landmarkPos3D,
+        sourcePos,
+        detectorPos,
+        landmarkPos,
     )
 
-
-def geometry_from_probe(nirs_element: NirsElement):
+def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
     probe = nirs_element.probe
 
     length_unit = nirs_element.metaDataTags.LengthUnit
@@ -228,10 +240,10 @@ def geometry_from_probe(nirs_element: NirsElement):
         sourceLabels,
         detectorLabels,
         landmarkLabels,
-        sourcePos3D,
-        detectorPos3D,
-        landmarkPos3D,
-    ) = labels_and_positions(probe)
+        sourcePos,
+        detectorPos,
+        landmarkPos,
+    ) = labels_and_positions(probe, dim)
 
     types = (
         [cdc.PointType.SOURCE] * len(sourceLabels)
@@ -240,7 +252,7 @@ def geometry_from_probe(nirs_element: NirsElement):
     )
 
     labels = np.hstack([sourceLabels, detectorLabels, landmarkLabels])
-    positions = np.vstack([sourcePos3D, detectorPos3D, landmarkPos3D])
+    positions = np.vstack([sourcePos, detectorPos, landmarkPos])
 
     coords = {"label": ("label", labels), "type": ("label", types)}
     dims = ["label", "pos"]
@@ -438,6 +450,7 @@ def read_data_elements(
         has_chromo = not pd.isna(df.chromo).all()
 
         is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
+        is_conc = (not pd.isna(df.dataTypeIndex).all()) and ("conc" in data_type_group)
 
         if has_wavelengths and not has_chromo:
             other_dim = "wavelength"
@@ -512,7 +525,48 @@ def read_data_elements(
                     "data_type_group": data_type_group,
                 },
             )
+        
+        elif is_conc:
+            channel_trial_types = trial_types[df["dataTypeIndex"].values - 1]
+            used_trial_types = np.unique(channel_trial_types).tolist()
+            no_epochs = int(len(df)/(len(unique_channel)*len(unique_other_dim)))
+            df["index_trial_type"] = [
+                used_trial_types.index(i) for i in channel_trial_types
+            ]
+            df["index_epoch"] = np.repeat(np.arange(no_epochs),len(unique_channel)*len(unique_other_dim))
 
+            ts4d = np.zeros(
+                (
+                    len(unique_channel),
+                    len(unique_other_dim),
+                    no_epochs,
+                    len(time),
+                ),
+                dtype=data_element.dataTimeSeries.dtype,
+            )
+
+            for index, row in df.iterrows():
+                ts4d[
+                    row.index_channel, row.index_other_dim, row.index_epoch, :
+                ] = ts2d[:, index]
+
+            da = xr.DataArray(
+                ts4d,
+                dims=["channel", other_dim, "epoch", "time"],
+                coords=coords,
+                attrs={
+                    "units": units,
+                    "data_type_group": data_type_group,
+                },
+            )
+            
+            da["trial_type"] = (
+                "epoch",
+                channel_trial_types[
+                    np.arange(len(df),step=len(unique_channel)*len(unique_other_dim))
+                    ]
+                )
+            
         else:
             ts3d = np.zeros(
                 (len(unique_channel), len(unique_other_dim), len(time)),
@@ -531,6 +585,7 @@ def read_data_elements(
                     "data_type_group": data_type_group,
                 },
             )
+        
         da = da.pint.quantify()
 
         time_units = nirs_element.metaDataTags.TimeUnit
@@ -585,7 +640,8 @@ def _get_channel_coords(
 
 
 def read_nirs_element(nirs_element, opts):
-    geo3d = geometry_from_probe(nirs_element)
+    geo2d = geometry_from_probe(nirs_element, dim=2)
+    geo3d = geometry_from_probe(nirs_element, dim=3)
     stim = stim_to_dataframe(nirs_element.stim)
 
     timeseries = OrderedDict()
@@ -608,23 +664,10 @@ def read_nirs_element(nirs_element, opts):
 
     meta_data = meta_data_tags_to_dict(nirs_element)
 
-    # measurement_lists = []
-    # for data_element in nirs_element.data:
-    #    df_ml = measurement_list_to_dataframe(
-    #        data_element.measurementList, drop_none=False
-    #    )
-    #    df_ml = denormalize_measurement_list(df_ml, nirs_element)
-    #    df_ml.dropna(axis=1)
-    #    measurement_lists.append(df_ml)
-
-    # ne = Element(
-    #    timeseries, stim, geo3d, None, aux, meta_data, measurement_lists
-    # )  # FIXME geo2d
-
-    # FIXME measurement lists
     rec = cdc.Recording(
         timeseries=timeseries,
         geo3d=geo3d,
+        geo2d=geo2d,
         stim=stim,
         aux_ts=aux,
         meta_data=meta_data,
@@ -745,15 +788,15 @@ def measurement_list_from_stacked(
         elif "wavelength" in stacked_array.coords:
             ml["dataTypeLabel"] = [DataTypeLabel.HRF_DOD] * nchannel
 
-        ml["dataTypeIndex"] = [
-            trial_types.index(tt) + 1 for tt in stacked_array.trial_type.values
-        ]
-
     if "wavelength" in stacked_array.coords:
         wavelengths = list(np.unique(stacked_array.wavelength.values))
         ml["wavelengthIndex"] = [
             wavelengths.index(w) + 1 for w in stacked_array.wavelength.values
         ]
+
+    ml["dataTypeIndex"] = [
+        trial_types.index(tt) + 1 for tt in stacked_array.trial_type.values
+    ]
 
     ml["dataUnit"] = [stacked_array.attrs["units"]] * nchannel
 
@@ -772,6 +815,7 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
         setattr(ne.metaDataTags, k, v)
 
     geo3d = rec.geo3d.pint.dequantify()
+    geo2d = rec.geo2d.pint.dequantify()
     ne.metaDataTags.LengthUnit = geo3d.attrs["units"]
 
     # probe information
@@ -781,6 +825,9 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
 
     ne.probe.sourcePos3D = geo3d.loc[rec.source_labels]
     ne.probe.detectorPos3D = geo3d.loc[rec.detector_labels]
+    
+    ne.probe.sourcePos2D = geo2d.loc[rec.source_labels]
+    ne.probe.detectorPos2D = geo2d.loc[rec.detector_labels]
 
     trial_types = list(rec.stim["trial_type"].drop_duplicates())
 
@@ -812,12 +859,29 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
             assert "channel" in timeseries.dims
             if "reltime" in timeseries.dims:
                 timeseries = timeseries.rename({"reltime": "time"})
+                # pass
             elif "time" in timeseries.dims:
                 pass
+                # timeseries = timeseries.rename({"time":"reltime"})
             else:
                 raise ValueError("timeseries needs 'time' or 'reltime' dimension.")
 
             dims_to_stack = ["trial_type", "channel", other_dim]
+        elif data_type == "concentration":
+            if "epoch" not in timeseries.dims:
+                raise ValueError(
+                    "to store epoch concentrations the timeseries needs a 'trial_type' dimension"
+                )
+            assert timeseries.ndim == 4
+            assert "channel" in timeseries.dims
+            if "reltime" in timeseries.dims:
+                timeseries = timeseries.rename({"reltime": "time"})
+            elif "time" in timeseries.dims:
+                pass
+            else:
+                raise ValueError("timeseries needs 'time' or 'reltime' dimension.")
+            
+            dims_to_stack = ["epoch", "channel", other_dim]
         else:
             assert timeseries.ndim == 3
             assert "channel" in timeseries.dims

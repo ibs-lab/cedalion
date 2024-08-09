@@ -24,6 +24,7 @@ class Recording:
     timeseries: OrderedDict[str, NDTimeSeries] = field(default_factory=OrderedDict)
     masks: OrderedDict[str, xr.DataArray] = field(default_factory=OrderedDict)
     geo3d: LabeledPointCloud = field(default_factory=cdc.build_labeled_points)
+    geo2d: LabeledPointCloud = field(default_factory=cdc.build_labeled_points)
     stim: pd.DataFrame = field(default_factory=cdc.build_stim_dataframe)
     aux_ts: OrderedDict[str, NDTimeSeries] = field(default_factory=OrderedDict)
     aux_obj: OrderedDict[str, Any] = field(default_factory=OrderedDict)
@@ -125,9 +126,9 @@ class Recording:
     @property
     def wavelengths(self):
         wl = [
-            ts.wavelength.values
-            for ts in self.timeseries.values()
-            if "wavelength" in ts.coords
+            ml["wavelength"].tolist()
+            for key, ml in self._measurement_lists.items()
+            if "wavelength" in ml.columns
         ]
         return list(np.unique(np.hstack(wl)))
 
