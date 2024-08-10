@@ -477,7 +477,6 @@ class Main(QtWidgets.QMainWindow):
 
 def run_vis(snirfRec = None):
     """
-
     Parameters
     ----------
     snirfRec : Recording, optional
