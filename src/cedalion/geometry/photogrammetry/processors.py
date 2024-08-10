@@ -396,3 +396,40 @@ class ColoredStickerProcessor(ScanProcessor):
             return sticker_centers, sticker_normals, csdetails
         else:
             return sticker_centers, sticker_normals
+
+
+
+@cdc.validate_schemas
+def geo3d_from_scan(scalp_coords: cdt.LabeledPointCloud,
+                 landmarks: cdt.LabeledPointCloud):
+    """Creates a geo3D with optode and landmark positions from photogrammetric coregistration.
+
+        Parameters:
+        scalp_coords (cdt.LabeledPointCloud): 3D coordinates of optodes on the scalp from photogrammetric coregistration.
+        landmarks (cdt.LabeledPointCloud): 3D coordinates of landmarks on the scalp from photogrammetric coregistration.
+
+    Returns:
+         geo3D (cdt.LabeledPointCloud): geo3D with optode and landmark positions
+    """
+
+    # FIXME: what to do with 10-10 landmarks in input geo3d?
+
+    # merge landmarks and scalp_coords
+    geo3d = xr.concat([scalp_coords, landmarks], dim='label')
+
+    # iterate through all points and in type set PointType if PointType.UNKNOWN
+    for label in geo3d.label:
+        point = geo3d.sel(label=label)
+        if point.coords['type'] == cdc.PointType.UNKNOWN:
+            # check if point is a source, detector or landmark by looking up its label. Set the PointType accordingly 
+            if (np.char.find(point.coords['label'].values, 'S') != -1).any():
+                geo3d['type'].loc[{'label': label}] = cdc.PointType.SOURCE
+            elif (np.char.find(point.coords['label'].values, 'D') != -1).any():
+                geo3d['type'].loc[{'label': label}] = cdc.PointType.DETECTOR
+            elif (np.char.find(point.coords['label'].values, 'L') != -1).any():
+                geo3d['type'].loc[{'label': label}] = cdc.PointType.LANDMARK
+    # add mm units
+    geo3d.attrs.update({'units': 'mm'})
+
+
+    return geo3d
