@@ -10,6 +10,7 @@ from cedalion import Quantity, units
 import cedalion.dataclasses as cdc
 from .artifact import detect_outliers, detect_baselineshift, id_motion, id_motion_refine
 
+#%% SPLINE
 @cdc.validate_schemas
 def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): #, mlAct:cdt.NDTimeSeries):
     """Apply motion correction using spline interpolation to fNIRS data.
@@ -27,7 +28,6 @@ def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): 
     """
     dtShort = 0.3
     dtLong = 3
-    p=0.99
 
     fs =  fNIRSdata.cd.sampling_rate 
     t = np.arange(0, len(fNIRSdata.time), 1/fs)
@@ -145,146 +145,6 @@ def motion_correct_spline(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): 
 
                 dodSpline.sel(channel=ch, wavelength=wl).values = dodSpline_chan
 
-    # dodSpline = dodSpline.unstack('measurement').pint.quantify()
-
-    return dodSpline
-
-#%% motion correct spline - new 
-
-@cdc.validate_schemas
-def motion_correct_spline_2(fNIRSdata:cdt.NDTimeSeries, tIncCh:cdt.NDTimeSeries): #, mlAct:cdt.NDTimeSeries):
-    """Apply motion correction using spline interpolation to fNIRS data.
-    
-    Based on Homer3 [1] v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
-    Boston University Neurophotonics Center
-    https://github.com/BUNPC/Homer3
-
-    Inputs:
-        fNIRSdata (cdt.NDTimeSeries): The fNIRS data to be motion corrected.
-        tIncCh (cdt.NDTimeSeries): The time series indicating the presence of motion artifacts.
-
-    Returns:
-        dodSpline (cdt.NDTimeSeries): The motion-corrected fNIRS data.
-    """
-    dtShort = 0.3
-    dtLong = 3
-
-    fs =  fNIRSdata.cd.sampling_rate 
-    t = np.arange(0, len(fNIRSdata.time), 1/fs)
-    t = t[:len(fNIRSdata.time)]
-
-    dodSpline = fNIRSdata.copy()
-    
-    for ch in fNIRSdata.channel.values:
-    
-         for wl in fNIRSdata.wavelength.values:
-             
-            channel = fNIRSdata.sel(channel=ch, wavelength=wl).values
-            tInc_channel = tIncCh.sel(channel=ch, wavelength=wl)
-            dodSpline_chan = channel.copy()
-    
-            # get list of start and finish of each motion artifact segment
-            lstMA = np.where(tInc_channel == 0)[0]
-            if len(lstMA) != 0:
-                temp = tInc_channel.diff()
-                lstMs = np.where(temp==-1)[0]
-                lstMf = np.where(temp==1)[0]
-                
-                if len(lstMs) == 0:
-                    lstMs = np.asarray([0])
-                if len(lstMf) == 0:
-                    lstMf = np.asarray([len(channel)-1])
-                if lstMs[0] > lstMf[0]:
-                    lstMs = np.insert(lstMs, 0, 0)
-                if lstMs[-1] > lstMf[-1]:
-                    lstMf = np.append(lstMf, len(channel)-1)
-                
-                nbMA = len(lstMs)
-                lstMl = lstMf - lstMs
-                
-                # apply spline interpolation to each motion artifact segment
-                for ii in range(nbMA):
-                    idx = np.arange(lstMs[ii],lstMf[ii])
-                    
-                    if len(idx) > 3 :
-                        splInterp_obj = UnivariateSpline(t[idx], channel[idx])
-                        splInterp = splInterp_obj(t[idx])
-                        
-                        dodSpline_chan[idx] = channel[idx] - splInterp
-    
-           
-                # reconstruct the timeseries by shifting the motion artifact segments to the previous or next non-motion artifact segment
-                # for the first MA segment - shift to previous noMA segment if it exists otherwise shift to next noMA segment
-                idx = np.arange(lstMs[0], lstMf[0])
-                if len(idx)> 0 :
-                    SegCurrLength = lstMl[0]
-                    windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
-                    
-                    if lstMs[0] > 0:
-                        SegPrevLength = lstMs[0]
-                        windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
-                        meanPrev = np.mean(dodSpline_chan[idx[0]-windPrev:idx[0]])                      
-                        meanCurr = np.mean(dodSpline_chan[idx[0]:idx[0]+windCurr])
-                        dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanPrev    
-                    else:
-                        if nbMA > 1:
-                            SegNextLength = lstMs[1]- lstMf[0]
-                        else:
-                            SegNextLength = len(dodSpline_chan) - lstMf[0]
-                        
-                        windNext = compute_window(SegNextLength, dtShort, dtLong, fs)
-                        meanNext = np.mean(dodSpline_chan[idx[-1]:idx[-1]+windNext])                      
-                        meanCurr = np.mean(dodSpline_chan[idx[-1]-windCurr:idx[-1]])
-                        dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanNext
-                    
-                # intermediate segments
-                for kk in range(nbMA-1):
-                    
-                    # no motion 
-                    idx = np.arange(lstMf[kk], lstMs[kk+1])
-                    # if len(idx) > 1:
-                    SegPrevLength = lstMl[kk]
-                    SegCurrLength = len(idx)
-                    
-                    windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
-                    windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
-        
-                    meanPrev = np.mean(dodSpline_chan[idx[0]-windPrev:idx[0]])                      
-                    meanCurr = np.mean(channel[idx[0]:idx[0]+windCurr])
-                    
-                    dodSpline_chan[idx] = channel[idx] - meanCurr + meanPrev
-                    
-                    # motion 
-                    idx = np.arange(lstMs[kk+1], lstMf[kk+1])
-        
-                    SegPrevLength = SegCurrLength
-                    SegCurrLength = lstMl[kk+1]
-                    
-                    windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
-                    windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
-        
-                    meanPrev = np.mean(dodSpline_chan[idx[0]-windPrev:idx[0]])                      
-                    meanCurr = np.mean(dodSpline_chan[idx[0]:idx[0]+windCurr])
-                    
-                    dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanPrev
-        
-                
-                # last not MA segment
-                if lstMf[-1] < len(dodSpline_chan):
-                    idx = np.arange(lstMf[-1], len(dodSpline_chan))
-                    SegPrevLength = lstMl[-1]
-                    SegCurrLength = len(idx)
-                    
-                    windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
-                    windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
-                            
-                    meanPrev = np.mean(dodSpline_chan[idx[0]-windPrev:idx[0]])                      
-                    meanCurr = np.mean(channel[idx[0]:idx[0]+windCurr])
-                    
-                    dodSpline_chan[idx] = channel[idx] - meanCurr + meanPrev
-                
-                dodSpline.sel(channel-ch, wavelength=wl).values = dodSpline_chan
-    
     # dodSpline = dodSpline.unstack('measurement').pint.quantify()
 
     return dodSpline
