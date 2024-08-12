@@ -552,10 +552,10 @@ def run_vis(snirfData = None, geo2d = None, geo3d = None):
         sys.exit(app.exec())
         return
 
-    app = QtWidgets.QApplication(sys.argv)
-    main_gui = Main()
-    main_gui.show()
-    sys.exit(app.exec())
+    #app = QtWidgets.QApplication(sys.argv)
+    #main_gui = Main()
+    #main_gui.show()
+    #sys.exit(app.exec())
 
 
 
