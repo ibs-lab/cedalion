@@ -101,8 +101,9 @@ def get_multisubject_fingertapping_path() -> Path:
 
 def get_photogrammetry_example_scan():
     fnames = DATASETS.fetch("photogrammetry_example_scan.zip", processor=pooch.Unzip())
-    fname = [i for i in fnames if i.endswith(".obj")][0]
-    return fname
+    fname_scan = [i for i in fnames if i.endswith(".obj")][0]
+    fname_snirf = [i for i in fnames if i.endswith(".snirf")][0]
+    return fname_scan, fname_snirf
 
 
 def get_imagereco_example_fluence() -> tuple[xr.DataArray, xr.DataArray]:
