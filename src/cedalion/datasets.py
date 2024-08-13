@@ -25,6 +25,8 @@ DATASETS = pooch.create(
         "photogrammetry_example_scan.zip": "sha256:2828b74526cb501a726753881d59fdd362cf5a6c46cbacacbb9d9649d8ce3d64",  # noqa: E501
         "image_reconstruction_fluence.pickle.gz": "sha256:b647c07484a3cc2435b5def7abb342ba7a19aef66f749ed6b3cf3c26deec406f",  # noqa: E501
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
+        "ICBM152(2020).zip": "sha256:143f281135c01ece41ef28f1ed4681a48a833a8cbc4a0a640dcec6ee99923e2d",
+        "image_reconstruction_parcellations_fluence.pickle.gz": "sha:b226b4a14ea304f056eb1599d6ba29008994e1c85d1c4eb767d961846a2df430"
     },
 )
 
@@ -49,6 +51,27 @@ def get_colin27_segmentation(downsampled=False):
         "scalp": "mask_skin.nii",
         "skull": "mask_bone.nii",
         "wm": "mask_white.nii",
+    }
+    landmarks_ras_file = "landmarks.mrk.json"
+
+    return basedir, mask_files, landmarks_ras_file
+
+
+def get_icbm152_segmentation():
+
+    fnames = DATASETS.fetch("ICBM152(2020).zip", processor=pooch.Unzip())
+
+    basedir = os.path.dirname(fnames[-1]) # TODO: Upload compressed file without __macosx
+
+    # basedir = "/Users/shakiba/Documents/cedalion/ICBM152(2020)_HeadModel/"
+    mask_files = {
+        "csf": "mask_csf.nii",
+        "gm": "mask_gray.nii",
+        "scalp": "mask_skin.nii",
+        "skull": "mask_bone.nii",
+        "wm": "mask_white.nii",
+        "air": "mask_air.nii",
+        "parcels": "parcellation_mask_600.nii"
     }
     landmarks_ras_file = "landmarks.mrk.json"
 
@@ -107,6 +130,15 @@ def get_photogrammetry_example_scan():
 
 def get_imagereco_example_fluence() -> tuple[xr.DataArray, xr.DataArray]:
     fname = DATASETS.fetch("image_reconstruction_fluence.pickle.gz")
+
+    with GzipFile(fname) as fin:
+        fluence_all, fluence_at_optodes = pickle.load(fin)
+
+    return fluence_all, fluence_at_optodes
+
+def get_parcel_example_fluence() -> tuple[xr.DataArray, xr.DataArray]:
+    # fname = DATASETS.fetch("image_reconstruction_parcellations_fluence.pickle.gz")
+    fname = "path_to_local_file"
 
     with GzipFile(fname) as fin:
         fluence_all, fluence_at_optodes = pickle.load(fin)
