@@ -569,7 +569,7 @@ def run_vis(snirfData = None, geo2d = None, geo3d = None):
         main_gui = Main(snirfData = snirfData, geo2d = geo2d, geo3d = geo3d)
         main_gui.show()
         sys.exit(app.exec())
-        
+
 
 
 
