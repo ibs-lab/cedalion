@@ -15,13 +15,8 @@ import pint_xarray
 import math
 import pandas as pd
 import matplotlib
-import scipy.stats as stats
-import matplotlib.colors as clrs
-from scipy import signal 
-import seaborn as sns
-import cedalion 
-import cedalion.nirs
 import cedalion.xrutils as xrutils
+from importlib.resources import files
 
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
@@ -512,12 +507,12 @@ class OptodeSelector:
 
 
 
-def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_ind = None, threshold_col = None, saturation=None, vmin=0, vmax=1, savePath = None, remove_short=0, flagFontSize=0, flagMarkerSize=8):
+def scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, threshold_ind = None, threshold_col = None, saturation=None, vmin=0, vmax=1, savePath = None, remove_short=0, flagFontSize=0, flagMarkerSize=8):
     '''
     CREATE A 2D MONTAGE OF OPTODES WITH CHANNELS COLOURED ACCORDING TO A GIVEN METRIC
     
     Parameters:
-        snirfObj -> valid snirfObj to extract the measurement list
+        geo3d -> probe information 
         ax -> axis object to plot the montage
         metric -> metric to plot onto the channels
         colormap -> colormap to use to color the channels (default = jet)
@@ -552,30 +547,19 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
         y = y/norm_factor
         return x, y
     
-    channels_df = pd.read_excel('10-5-System_Mastoids_EGI129.xlsx') 
+    pkg = "cedalion.data"
+    resource = "10-5-System_Mastoids_EGI129.tsv"
+    with files(pkg).joinpath(resource).open("r") as fin:
+        channels_df = pd.read_csv(fin, sep='\t') 
+
     probe_landmark_pos3D = []
     circular_landmark_pos3D = []
-    geo3d = snirfObj.geo3d
+    geo3d = recording.geo3d
     
-    # landmarks = geo3d.loc[geo3d.type == cedalion.io.snirf.PointType.LANDMARK]
-    # sources = geo3d.loc[geo3d.type == cedalion.io.snirf.PointType.SOURCE]
-    # detectors = geo3d.loc[geo3d.type == cedalion.io.snirf.PointType.DETECTOR]
+    landmarks = geo3d.loc[geo3d.type == cdc.PointType.LANDMARK]
+    sources = geo3d.loc[geo3d.type == cdc.PointType.SOURCE]
+    detectors = geo3d.loc[geo3d.type == cdc.PointType.DETECTOR]
     
-
-    # extracts all datapoints from geo3d that have the label 'SOURCE'
-    sourcetype = cedalion.dataclasses.geometry.PointType(1)
-    # yields a boolean xarray with True where the type is equal to the sourcetype
-    bool_idx = geo3d.coords['type'] == sourcetype
-    # extracts the data from geo3D where x is True. Result is another geo3D xarray reduced to this subset
-    sources = geo3d.where(bool_idx, drop=True)
-
-    detectortype = cedalion.dataclasses.geometry.PointType(2)
-    bool_idx = geo3d.coords['type'] == detectortype
-    detectors = geo3d.where(bool_idx, drop=True)
-
-    landmarktype = cedalion.dataclasses.geometry.PointType(3)
-    bool_idx = geo3d.coords['type'] == landmarktype
-    landmarks = geo3d.where(bool_idx, drop=True)
 
     #### find the landmarks in the probe ####
     for u in range(len(landmarks)):
@@ -593,14 +577,11 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
     norm_factor = max(np.sqrt(np.add(np.square(x),np.square(y))))
     temp = np.linalg.inv(np.matmul(np.transpose(probe_landmark_pos3D),probe_landmark_pos3D))
     tranformation_matrix = np.matmul(temp,np.matmul(np.transpose(probe_landmark_pos3D),circular_landmark_pos3D))        
-    tranformation_matrix = tranformation_matrix
-    # tranformation_matrix = np.linalg.lstsq(probe_landmark_pos3D, circular_landmark_pos3D, rcond=None)
-        
-    # measurements = snirfObj.nirs[0].data[0].measurementList
+
     skipped_channels = []
     skipped_detectors = []
     skipped_metrics = []
-    data = snirfObj["amp"] # .data[0]
+    data = recording["amp"] # .data[0]
     nMeas = len(data.channel)
     
     if remove_short == 1: # then remove any channels that are less than 10mm 
@@ -613,10 +594,6 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
             
             dist = xrutils.norm(geo3d.loc[data.source[u]] - geo3d.loc[data.detector[u]], dim="pos")
 
-
-            # x = snirfObj.nirs[0].probe.sourcePos3D[sourceIndex-1]
-            # y= snirfObj.nirs[0].probe.detectorPos3D[detectorIndex-1]
-            # dist = math.dist(x,y)
                 
             if dist < 10:
                     skipped_channels.append([sourceIndex, detectorIndex])
@@ -634,14 +611,6 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
     #### scale indices #####
     sourcePos2DX , sourcePos2DY = convert_optodePos3D_to_circular2D(sources, tranformation_matrix, norm_factor)
     detectorPos2DX , detectorPos2DY = convert_optodePos3D_to_circular2D(detectors, tranformation_matrix, norm_factor)
-    
-    # sourcePos2D = snirfObj.nirs[0].probe.sourcePos2D
-    # sourcePos2DX = sourcePos2D[:,0]
-    # sourcePos2DY = sourcePos2D[:,1]
-    # detectorPos2D = snirfObj.nirs[0].probe.detectorPos2D
-    # detectorPos2DX = detectorPos2D[:,0]
-    # detectorPos2DY = detectorPos2D[:,1]
-    
     
     scale = 1.3
     sourcePos2DX = sourcePos2DX*scale
@@ -714,8 +683,6 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
             ax.plot(sourcePos2DX[u] , sourcePos2DY[u], 'r.', markersize=flagMarkerSize)
         
         for u in range(len(detectorPos2DX)):
-            if u+1 in skipped_detectors:
-                continue
             ax.plot(detectorPos2DX[u] , detectorPos2DY[u], 'b.',markersize=flagMarkerSize)
      
     if threshold_ind != None:
