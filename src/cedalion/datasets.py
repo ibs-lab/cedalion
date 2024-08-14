@@ -22,7 +22,7 @@ DATASETS = pooch.create(
         "colin27_segmentation_downsampled_3x3x3.zip": "sha256:ab98b6bae3ef76be6110dc544917f4f2f7ef7233ac697d9cf8bb4a395e81b6cd",  # noqa: E501
         "fingertapping.zip": "sha256:f2253cca6eef8221d536da54b74d8556b28be93df9143ea53652fdc3bc011875",  # noqa: E501
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
-        "photogrammetry_example_scan.zip": "sha256:2828b74526cb501a726753881d59fdd362cf5a6c46cbacacbb9d9649d8ce3d64",  # noqa: E501
+        "photogrammetry_example_scan.zip": "f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
         "image_reconstruction_fluence.pickle.gz": "sha256:b647c07484a3cc2435b5def7abb342ba7a19aef66f749ed6b3cf3c26deec406f",  # noqa: E501
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
     },
@@ -101,8 +101,9 @@ def get_multisubject_fingertapping_path() -> Path:
 
 def get_photogrammetry_example_scan():
     fnames = DATASETS.fetch("photogrammetry_example_scan.zip", processor=pooch.Unzip())
-    fname = [i for i in fnames if i.endswith(".obj")][0]
-    return fname
+    fname_scan = [i for i in fnames if i.endswith(".obj")][0]
+    fname_snirf = [i for i in fnames if i.endswith(".snirf")][0]
+    return fname_scan, fname_snirf
 
 
 def get_imagereco_example_fluence() -> tuple[xr.DataArray, xr.DataArray]:
