@@ -190,6 +190,7 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
      
     tIncCh = detect_baselineshift(fNIRSdata, M)
     
+    fNIRSdata = fNIRSdata.pint.dequantify()
     fNIRSdata_lpf2 = fNIRSdata.cd.freq_filter(0, 2, butter_order=4)
     extend = int(np.round(12*fs)) # extension for padding
     
@@ -202,7 +203,7 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
     
     # remove padding
     dodSpline = dodSpline[:,:,extend:-extend]
-    dodSpline = dodSpline.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
+    # dodSpline = dodSpline.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
 
     # apply SG filter
     K = 3
@@ -212,9 +213,10 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
 
     dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline.T, framesize_sec, K).T
     
-    dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
-    dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
-
+    # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
+    # dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
+    dodSplineSG = dodSplineSG.pint.quantify()
+    
     return dodSplineSG
 
 #%% PCA
