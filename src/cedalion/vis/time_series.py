@@ -501,7 +501,7 @@ class Main(QtWidgets.QMainWindow):
         if self.plot_stims:
             for i_t, tt in enumerate(np.unique(self.snirfRec.stim.trial_type)):
                 label_on = True
-                for sx in self.snirfRec.stim.loc[self.snirfRec.stim['trial_type'] == i_t].onset:
+                for sx in self.snirfRec.stim.loc[self.snirfRec.stim['trial_type'] == tt].onset:
                     self._dataTimeSeries_ax.axvline(sx, ls="--", lw=1, zorder=1,c=stim_col[i_t%5],label=tt) if label_on else self._dataTimeSeries_ax.axvline(sx, ls="--", lw=1, zorder=1,c=stim_col[i_t%5])
                     label_on=False
             
