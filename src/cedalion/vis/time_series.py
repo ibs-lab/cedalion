@@ -457,7 +457,7 @@ class Main(QtWidgets.QMainWindow):
             for sel_wv in wvl_idx:
                 idx = self.snirfData.chromo.values
                 idx = [str(foo) for foo in idx]
-                idx = idx.index(sel_wv)
+                idx = idx.index(sel_wv[1:-1])
                 self.timeSeries = self._dataTimeSeries_ax.plot(
                                                                 self.t,
                                                                 self.snirfData.isel(channel=chan_sel_idx,chromo=idx).T,
