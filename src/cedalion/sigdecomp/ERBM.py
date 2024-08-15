@@ -7,6 +7,7 @@ import scipy as sp
 import numpy as np
 import matplotlib.pyplot as plt
 from cedalion.sigdecomp import ICA_EBM as ICA_EBM
+from importlib.resources import files
 
 def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
     """ICA-ERBM: ICA by Entropy Rate Bound Minimization (real-valued version).
@@ -32,7 +33,13 @@ def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
 
     # load measuring functions as global variables 
     global nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8   
-    table = np.load('measfunc_table.npy', allow_pickle= True)
+    # table = np.load('measfunc_table.npy', allow_pickle= True)
+    
+    pkg = "cedalion.data" # aug 15/24 Laura - changed this so that measfunc_table.npy could be accessed from anywhere
+    resource = "measfunc_table.npy"
+    file_path = files(pkg).joinpath(resource)
+    table = np.load(file_path, allow_pickle=True) 
+    
     K = 8 
     nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8 = table[0], table[1], table[2], table[3], table[4], table[5], table[6], table[7]
    
