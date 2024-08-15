@@ -6,6 +6,7 @@ Created on Tue Jul 23 11:52:04 2024
 """
 
 import cedalion
+import cedalion.dataclasses as cdc
 import sys
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvas
@@ -120,8 +121,8 @@ class Main(QtWidgets.QMainWindow):
         ## Create Wavelength / Concentration Controls
         self.wv = QtWidgets.QListWidget()
         self.wv.setFixedHeight(45)
-        self.wv.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.wv.currentTextChanged.connect(self.wv_changed)
+        self.wv.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.wv.itemSelectionChanged.connect(self.wv_changed)
         self.wv_label = QtWidgets.QLabel("Wavelength/Concentration:")
         wv_layout.addWidget(self.wv_label, 0,0)
         wv_layout.addWidget(self.wv, 0,1)
@@ -348,7 +349,7 @@ class Main(QtWidgets.QMainWindow):
         self.draw_timeseries()
         
     
-    def wv_changed(self, s):
+    def wv_changed(self):
         self.draw_timeseries()
         
 
@@ -428,7 +429,8 @@ class Main(QtWidgets.QMainWindow):
                 y_chan_sel[0].append(np.nan)
                 y_chan_sel[1].append(np.nan)
         
-        wvl_idx = self.wv.currentRow()
+        wvl_idx = self.wv.selectedItems()
+        wvl_idx = [foo.text() for foo in wvl_idx]
         wvl_ls = ['-', ':']
         
 
@@ -441,9 +443,27 @@ class Main(QtWidgets.QMainWindow):
         
         # Plot timeseries
         if "wavelength" in self.snirfData.dims:
-            self.timeSeries = self._dataTimeSeries_ax.plot(self.t, self.snirfData.isel(channel=chan_sel_idx,wavelength=wvl_idx).T,ls=wvl_ls[wvl_idx],zorder=5)
+            for sel_wv in wvl_idx:
+                idx = self.snirfData.wavelength.values
+                idx = [str(foo) for foo in idx]
+                idx = idx.index(sel_wv)
+                self.timeSeries = self._dataTimeSeries_ax.plot(
+                                                                self.t,
+                                                                self.snirfData.isel(channel=chan_sel_idx,wavelength=idx).T,
+                                                                ls=wvl_ls[idx],
+                                                                zorder=5,
+                                                              )
         elif "chromo" in self.snirfData.dims:
-            self.timeSeries = self._dataTimeSeries_ax.plot(self.t, self.snirfData.isel(channel=chan_sel_idx)[wvl_idx].T,ls=wvl_ls[wvl_idx],zorder=5)
+            for sel_wv in wvl_idx:
+                idx = self.snirfData.chromo.values
+                idx = [str(foo) for foo in idx]
+                idx = idx.index(sel_wv)
+                self.timeSeries = self._dataTimeSeries_ax.plot(
+                                                                self.t,
+                                                                self.snirfData.isel(channel=chan_sel_idx,chromo=idx).T,
+                                                                ls=wvl_ls[idx],
+                                                                zorder=5,
+                                                              )
         
         # Plot lines or rectangles of aux
         if len(self.aux_sel):
@@ -527,7 +547,7 @@ def run_vis(snirfRec = None):
     Opens a gui that loads the recording, if given.
 
     """
-    if type(snirfRec) is not cedalion.dataclasses.recording.Recording:
+    if type(snirfRec) is not cdc.recording.Recording:
         app = QtWidgets.QApplication(sys.argv)
         main_gui = Main()
         main_gui.show()
