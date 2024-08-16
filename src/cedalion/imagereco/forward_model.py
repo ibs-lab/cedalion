@@ -550,6 +550,19 @@ class ForwardModel:
         -------
         xr.DataArray
             Fluence in each voxel for each channel and wavelength.
+
+        References:
+            (:cite:t:`fang2009monte`) Qianqian Fang and David A. Boas, "Monte Carlo Simulation of Photon Migration in
+            3D Turbid Media Accelerated by Graphics Processing Units," Optics Express, 
+            vol. 17, issue 22, pp. 20178-20190 (2009).
+            (:cite:t:`yu2018scalable`) Leiming Yu, Fanny Nina-Paravecino, David Kaeli, Qianqian Fang, “Scalable and 
+            massively parallel Monte Carlo photon transport simulations for heterogeneous 
+            computing platforms,” J. Biomed. Opt. 23(1), 010504 (2018).
+            (:cite:t:`yan2020hybrid`) Shijie Yan and Qianqian Fang* (2020), "Hybrid mesh and voxel based Monte Carlo 
+            algorithm for accurate and efficient photon transport modeling in complex bio-tissues," 
+            Biomed. Opt. Express, 11(11) pp. 6262-6270. 
+            https://www.osapublishing.org/boe/abstract.cfm?uri=boe-11-11-6262
+
         """
 
         wavelengths = self.measurement_list.wavelength.unique()
@@ -628,6 +641,10 @@ class ForwardModel:
         -------
         xr.DataArray
             Fluence in each voxel for each channel and wavelength.
+
+        References:
+            (:cite:t:`dehghani2009near`) Dehghani, Hamid, et al. "Near infrared optical tomography using NIRFAST: Algorithm for numerical model 
+            and image reconstruction." Communications in numerical methods in engineering 25.6 (2009): 711-732.
         """
         if meshingparam == None:
             # meshing parameters; should be adjusted depending on the user's need
