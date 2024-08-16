@@ -8,6 +8,7 @@ Created on Thu Jul 18 17:34 2024
 import cedalion
 import sys
 import numpy as np
+import xarray as xr
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import \
     NavigationToolbar2QT as NavigationToolbar
@@ -82,9 +83,7 @@ class Main(QtWidgets.QMainWindow):
         x_scale_layout = QtWidgets.QHBoxLayout()
         self.x_scale = QtWidgets.QDoubleSpinBox()
         self.x_scale.setValue(1)
-        self.x_scale.setRange(0.2,4)
         self.x_scale.setSingleStep(0.2)
-        self.x_scale.lineEdit().setReadOnly(True)
         self.x_scale.valueChanged.connect(self._xscale_changed)
         x_scale_layout.addWidget(QtWidgets.QLabel("X scale"))
         x_scale_layout.addWidget(self.x_scale)
@@ -94,9 +93,7 @@ class Main(QtWidgets.QMainWindow):
         y_scale_layout = QtWidgets.QHBoxLayout()
         self.y_scale = QtWidgets.QDoubleSpinBox()
         self.y_scale.setValue(1)
-        self.y_scale.setRange(0.2,4)
         self.y_scale.setSingleStep(0.2)
-        self.y_scale.lineEdit().setReadOnly(True)
         self.y_scale.valueChanged.connect(self._yscale_changed)
         y_scale_layout.addWidget(QtWidgets.QLabel("Y scale"))
         y_scale_layout.addWidget(self.y_scale)
@@ -530,34 +527,44 @@ class Main(QtWidgets.QMainWindow):
         print(f"Everything plotted in {t1-t0:.2f} seconds!")
 
 
-    
-if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
-    main_gui = Main()
-    main_gui.show()
-    sys.exit(app.exec())
+# if __name__ == "__main__":
+#     app = QtWidgets.QApplication(sys.argv)
+#     main_gui = Main()
+#     main_gui.show()
+#     sys.exit(app.exec())
+
 
 def run_vis(snirfData = None, geo2d = None, geo3d = None):
+    """
+    Parameters
+    ----------
+    snirfData : xarray, optional
+        Pass the xarray with the HRF data. The default is None.
+    geo2d : xarray, optional
+        Pass the xarray with the 2d probe geometry data. The default is None.
+    geo3d : xarray, optional
+        Pass the xarray with the 3d probe geometry data. The default is None.
+
+    Opens a gui that loads the HRF, if given.
+
+    Raises
+    ------
+    Exception
+        If the argument passed is not valid, raises an exception.
+
+    """    
     
-    if snirfData is None:
-        print("Please provide snirfData!")
-    elif geo2d is None:
-        print("Please provide geo2d!")
-    elif geo3d is None:
-        print("Please provide geo3d!")
+    if snirfData is not None and type(snirfData) != xr.core.dataarray.DataArray:
+        raise Exception("Please provide valid snirfData!")
+    elif geo2d is not None and type(geo2d) != xr.core.dataarray.DataArray or np.shape(geo2d)[1] != 2:
+        raise Exception("Please provide valide geo2d!")
+    elif geo3d is not None and type(geo3d) != xr.core.dataarray.DataArray or np.shape(geo3d)[1] != 3:
+        raise Exception("Please provide valid geo3d!")
     else:
         app = QtWidgets.QApplication(sys.argv)
         main_gui = Main(snirfData = snirfData, geo2d = geo2d, geo3d = geo3d)
         main_gui.show()
         sys.exit(app.exec())
-        return
-
-    #app = QtWidgets.QApplication(sys.argv)
-    #main_gui = Main()
-    #main_gui.show()
-    #sys.exit(app.exec())
-
-
 
 
 
