@@ -28,7 +28,7 @@ ZIP_FILE="nirfaster-uFF-main.zip"
 
 
 # wget -qO- "$ZIP_URL"| tar xvz -C .
-wget -qO- "$ZIP_URL" > temp.zip && unzip temp.zip -d . && rm temp.zip
+curl -sL "$ZIP_URL" -o temp.zip && unzip temp.zip -d . && rm temp.zip
 
 FOLDER_NAME=$(basename "$ZIP_FILE" .zip)
 mv "${FOLDER_NAME}" "${FOLDER_NAME%-main}"
@@ -38,14 +38,15 @@ SOURCE_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v0.9.6/"
 
 if [ $1 = 'CPU' ]; then
     # wget -qO- "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip"| tar xvz -C "${FOLDER_NAME%-main}""/nirfasteruff/" 
-    wget -qO temp.zip "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip" && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
+    curl -sL "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
 
 elif [ $1 = 'GPU' ]; then
     # wget -qO- "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip"| tar xvz -C "${FOLDER_NAME%-main}""/nirfasteruff/";
-    wget -qO temp.zip "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip" && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
+    curl -sL "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
 
     # wget -qO- "$SOURCE_URL""gpu-"$OS_NAME"-python311.zip"| tar xvz -C "${FOLDER_NAME%-main}""/nirfasteruff/"
-    wget -qO temp.zip "$SOURCE_URL""gpu-"$OS_NAME"-python311.zip" && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
+    curl -sL "$SOURCE_URL""gpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
+
 
 fi
 
