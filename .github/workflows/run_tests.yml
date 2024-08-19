@@ -26,6 +26,10 @@ jobs:
         run: |
            python -m pip install -e . --no-deps --force-reinstall
 
+      - name: Install nirfaster
+        run: |
+           bash install_nirsfaster.sh CPU
+
       - name: Running Tests
         run: |
           python -m pytest --verbose

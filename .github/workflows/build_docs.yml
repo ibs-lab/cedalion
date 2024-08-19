@@ -39,6 +39,10 @@ jobs:
         run: |
            python -m pip install -e . --no-deps --force-reinstall
 
+      - name: Install nirfaster
+        run: |
+           bash install_nirsfaster.sh CPU
+
       - name: Building docs
         run: |
           ./scripts/build_docs.sh docs
