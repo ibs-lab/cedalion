@@ -28,8 +28,8 @@ jobs:
 
       - name: Install nirfaster
         run: |
-           ./install_nirfaster.sh CPU
+           bash install_nirfaster.sh CPU
 
       - name: Running Tests
         run: |
-          python -m pytest --verbose
+           python -m pytest --verbose
