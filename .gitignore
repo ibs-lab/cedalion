@@ -175,9 +175,6 @@ docs/api/*
 .vscode/
 
 scratch/
-src/FTanalysis_full.ipynb
-src/FTanalysis_full.ipynb
-src/FTanalysis_full.ipynb
 nirfaster-uFF/nirfaster-uFF-main/demo/circle_stnd.mat
 nirfaster-uFF/nirfaster-uFF-main/demo/demo_create_mesh_from_volume.ipynb
 nirfaster-uFF/nirfaster-uFF-main/demo/demo_full_head_model.ipynb
