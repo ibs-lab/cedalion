@@ -29,6 +29,7 @@ jobs:
       - name: Install nirfaster
         run: |
            bash install_nirfaster.sh CPU
+        shell: bash
 
       - name: Running Tests
         run: |
