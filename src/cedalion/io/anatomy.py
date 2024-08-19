@@ -94,6 +94,44 @@ def read_segmentation_masks(
 
     return masks, affine
 
+def read_parcellations(
+    basedir: str, mask_file: str, filter_noncortical=False, gray_matter_seg = None
+) -> xr.DataArray:
+    
+    parcellation_path = os.path.join(basedir, mask_file)
+    if not os.path.exists(parcellation_path):
+        raise FileNotFoundError(f"file '{parcellation_path}' does not exist.")
+    
+    if filter_noncortical and gray_matter_seg is None:
+        raise TypeError("please provide your gray matter mask as input")
+
+    f = nibabel.load(parcellation_path)
+
+    volume = f.get_fdata()
+    if filter_noncortical:
+        # remove noncortical parcels
+        gray_matter_seg = np.where(gray_matter_seg > 0, 1, 0)
+        volume = volume*gray_matter_seg
+
+    parcellation_labels = np.unique(volume)
+
+    masks = []
+    for i in parcellation_labels[1:]:
+        p_volume = np.where(volume == i, 1, 0)
+        p_volume = p_volume.round(6).astype(np.uint8)
+        if np.any(p_volume):
+            masks.append(
+                xr.DataArray(
+                    p_volume,
+                    dims=["i", "j", "k"],
+                    coords={"parcel_label": i},
+                )
+            )
+
+    affine = _get_affine_from_niftii(f)
+    masks = xr.concat(masks, dim="parcel_label")
+
+    return masks, affine
 
 def cell_coordinates(mask, affine, units="mm"):
     # coordinates in voxel space

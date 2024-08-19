@@ -8,6 +8,8 @@ import pandas as pd
 import scipy.sparse
 import trimesh
 import xarray as xr
+from scipy.spatial import KDTree
+from scipy import stats as st
 
 import cedalion
 import cedalion.dataclasses as cdc
@@ -773,3 +775,149 @@ class ForwardModel:
         A = xr.DataArray(A, dims=("flat_channel", "flat_vertex"))
 
         return A
+    
+@dataclass
+class GrayMatterParcellationMapping:
+    """Cortical Parcellation Map Class. Its main function is mapping brain vertices to
+    different parcel labels according to the Schaefer Atlas.
+
+    ...
+
+    Attributes
+    ----------
+    parcels : xr.DataArray
+        parcel voxels with including their Schaefer labels.
+    kdtree : KDTree
+        kd-tree for quick nearest-neighbor lookup in parcels' space
+
+    Methods
+    -------
+    from_parcellation(cls, segmentation_dir, gm_mask_file, parcels_mask_file)
+        Construct instance from parcellations file and filter out the cortical areas according to gray matter mask.
+    convert_to_RAS(parcellation_mask, parcel_type)
+        Convert voxel space to RAS space for a single parcel label.
+    map_vertices_to_parcels(vertices, k)
+        map a list of vertices to their k-nn parcel label.
+    """
+
+    parcels : xr.DataArray
+    kdtree : KDTree
+
+    @classmethod
+    def from_parcellation(
+        cls,
+        segmentation_dir: str,
+        gm_mask_file: str = "gm.nii",
+        parcels_mask_file : str = "parcels.nii"
+    ) -> "GrayMatterParcellationMapping":
+        """Constructor from multi-label parcellation mask as gained from
+        Freesurfer.
+
+        Parameters
+        ----------
+        segmentation_dir : str
+            Folder containing the segmentation masks in NIFTI format.
+        gm_mask_file : str
+            name of gray matter tissue mask file in the segmentation_dir
+        parcels_mask_file : str
+            name of parcellations mask file in the segmentation_dir
+        """
+
+        gray_matter_segmentation, _ = cedalion.io.read_segmentation_masks(
+            segmentation_dir, {"gm": gm_mask_file}
+        )
+        parcellation_mask, _ = cedalion.io.read_parcellations(
+            segmentation_dir, parcels_mask_file, filter_noncortical=True, 
+            gray_matter_seg = gray_matter_segmentation[0]
+        )
+
+        parcel_vertices = []
+        parcel_types = []
+        for parcel_type in parcellation_mask.parcel_label.values:
+            parcel_ijk = cls.convert_to_RAS(parcellation_mask, [parcel_type])
+
+            n_vertices = parcel_ijk.shape[0]
+            parcel_vertices.append(list(parcel_ijk))
+            parcel_types += [parcel_type]*n_vertices
+
+        parcels_ijk = xr.DataArray(
+            np.concatenate( parcel_vertices, axis=0 ),
+            dims=["label", "ijk"],
+            coords={
+                "parcel_type": ("label", parcel_types),
+            },
+        )
+
+        kdtree = KDTree(parcels_ijk.values)
+
+        return cls(
+            parcels=parcels_ijk,
+            kdtree= kdtree
+        )
+    
+    def convert_to_RAS(parcellation_mask, parcel_type):
+        """ Return X, Y, Z coordinates for i, j, k """
+        mask = parcellation_mask.sel(parcel_label=parcel_type)
+        coordinates = np.argwhere(np.squeeze(mask.values==1))
+        return np.array(coordinates)
+
+    def map_vertices_to_parcels(self, vertices, k=3):
+        """Map a list of vertices to their k-nn parcel label.
+
+        Parameters
+        ----------
+        vertices : list
+            brain vertices coordinates.
+        k : int
+            define number of nearest neighbors in parcel space to be considered
+
+        Returns
+        -------
+        vertices_label : list
+            parcel label for each vertex in a list.
+        """
+
+        mapping = self.kdtree.query(vertices, k)
+
+        parcel_types = self.parcels.coords['parcel_type'].values
+
+        vertices_label = [[parcel_types[x] for x in suba] for suba in mapping[1]]
+        vertices_label = [int(st.mode(i).mode) for i in vertices_label]
+
+        return vertices_label
+    
+    def read_schaefer_atlas_labels(
+        self,
+        segmentation_dir : str,
+        schaefer_atlas_label_file : str
+    ):
+        """Returns the color codes provided by the schaefer atlas and parcel names with their labels.
+
+        Parameters
+        ----------
+        segmentation_dir : str
+            Folder containing the segmentation masks in NIFTI format.
+        schaefer_atlas_label_file : str
+            labels file name
+
+        Returns
+        -------
+        labels : Pandas.DataFrame
+            a Dataframe with name and label columns
+        colors : Dict
+            a dictionary for mapping between labels and colors
+        """
+        labels = pd.read_fwf(os.path.join(segmentation_dir, schaefer_atlas_label_file))
+        labels.dropna(subset=['A'], inplace=True)
+        labels = labels[labels.A == '0']
+
+        colors = labels[["#No.", "R", "G", "B"]]
+        colors.set_index("#No.", inplace=True)
+        colors['color_code'] =  colors[['R', 'G', 'B']].astype(int).apply(tuple, axis=1)
+        colors = pd.Series(colors.color_code.values,index=colors.index.astype(int)).to_dict()
+
+        labels = labels[["#No.", "Label Name:"]]
+        labels.columns = ["label", "name"]
+        labels["label"] = labels["label"].astype(int)
+
+        return labels, colors
