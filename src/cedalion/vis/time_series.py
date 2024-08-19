@@ -6,6 +6,7 @@ Created on Tue Jul 23 11:52:04 2024
 """
 
 import cedalion
+import cedalion.dataclasses as cdc
 import sys
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvas
@@ -50,6 +51,7 @@ class Main(QtWidgets.QMainWindow):
         self.plots.setFocus()
         
         (self._dataTimeSeries_ax, self._optode_ax) = self.plots.figure.subplots(1, 2, width_ratios=[2,1])
+        self.plots.figure.tight_layout()
         self._optode_ax.axis('off')
         self._dataTimeSeries_ax.grid("True",axis="y")
         window_layout.addWidget(NavigationToolbar(self.plots,self),stretch=1)
@@ -119,17 +121,28 @@ class Main(QtWidgets.QMainWindow):
         ## Create Wavelength / Concentration Controls
         self.wv = QtWidgets.QListWidget()
         self.wv.setFixedHeight(45)
-        self.wv.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.wv.currentTextChanged.connect(self.wv_changed)
+        self.wv.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.wv.itemSelectionChanged.connect(self.wv_changed)
         self.wv_label = QtWidgets.QLabel("Wavelength/Concentration:")
         wv_layout.addWidget(self.wv_label, 0,0)
         wv_layout.addWidget(self.wv, 0,1)
         
         
-        # Create Opt2Circ Button
+        # Create Optional Controls Layout
+        opt_layout = QtWidgets.QVBoxLayout()
+        opt_layout.setAlignment(QtCore.Qt.AlignTop)
+        control_panel_layout.addLayout(opt_layout,)
+        
+        ## Create Opt2Circ Button
         self.opt2circ = QtWidgets.QCheckBox("View optodes as circles")
         self.opt2circ.stateChanged.connect(self._toggle_circles)
-        control_panel_layout.addWidget(self.opt2circ,alignment=QtCore.Qt.AlignTop)
+        opt_layout.addWidget(self.opt2circ)
+        
+        ## Create Stim Plot button
+        self.stim_togg = QtWidgets.QCheckBox("Plot stims")
+        self.stim_togg.stateChanged.connect(self._toggle_stims)
+        self.stim_togg.setCheckable(False)
+        opt_layout.addWidget(self.stim_togg)
         
         ## Spacer
         control_panel_layout.addStretch()
@@ -172,10 +185,13 @@ class Main(QtWidgets.QMainWindow):
         self.auxs.setCurrentIndex(0)
         self.ts.setCurrentRow(0)
         self.aux_window.setText('0')
+        self.stim_togg.setCheckState(QtCore.Qt.CheckState.Unchecked)
         self.init_calc()
         
     def init_calc(self):
         # Extract necessary data
+        self.optodes_drawn = False
+        
         self.snirfData = self.snirfRec.timeseries[list(self.snirfRec.timeseries.keys())[0]]
         
         self.sPos = self.snirfRec.geo2d.sel(label = ["S" in str(s.values) for s in self.snirfRec.geo2d.label])
@@ -210,8 +226,10 @@ class Main(QtWidgets.QMainWindow):
         self.src_label = [0]*len(self.sx)
         self.det_label = [0]*len(self.dx)
         self.selected = []
+        self.chan_highlight = []
         self.aux_sel = []
         self.aux_rect_width = 0
+        self.plot_stims = 0
         
         # Create timeseries picker
         for i_ts, timser in enumerate(self.snirfRec.timeseries.keys()):
@@ -220,12 +238,20 @@ class Main(QtWidgets.QMainWindow):
         # Create aux channels
         for i_a, aux_type in enumerate(self.snirfRec.aux_ts.keys()):
             self.auxs.insertItem(i_a+1, aux_type)
+            
+        if len(self.snirfRec.stim):
+            self.stim_togg.setCheckable(True)
+        else:
+            self.stim_togg.setCheckable(False)
         
         self.snirfData = None
         self.draw_optodes()
         
         
     def draw_optodes(self):
+        if self.optodes_drawn:
+            return
+        
         self._optode_ax.clear()
         
         self.picker = self._optode_ax.scatter(self.sdx, self.sdy,color=[[0,0,0,0]]*(len(self.sx)+len(self.dx)), zorder=3,picker=3)
@@ -253,9 +279,10 @@ class Main(QtWidgets.QMainWindow):
                              zorder=0,
                              )
             
+        self.optodes_drawn = True
+            
         self._optode_ax.set_aspect('equal')
         self._optode_ax.axis('off')
-        self._optode_ax.figure.tight_layout()
         self._optode_ax.figure.canvas.draw()
 
 
@@ -317,9 +344,12 @@ class Main(QtWidgets.QMainWindow):
                 
         self._optode_ax.figure.canvas.draw()
 
+    def _toggle_stims(self, s):
+        self.plot_stims = s
+        self.draw_timeseries()
         
     
-    def wv_changed(self, s):
+    def wv_changed(self):
         self.draw_timeseries()
         
 
@@ -399,23 +429,44 @@ class Main(QtWidgets.QMainWindow):
                 y_chan_sel[0].append(np.nan)
                 y_chan_sel[1].append(np.nan)
         
-        wvl_idx = self.wv.currentRow()
+        wvl_idx = self.wv.selectedItems()
+        wvl_idx = [foo.text() for foo in wvl_idx]
         wvl_ls = ['-', ':']
         
 
         # Highlight channels
-        self.draw_optodes()
+        for line in self.chan_highlight:
+            line.remove()
+            del line
         self.chan_highlight = self._optode_ax.plot(x_chan_sel,y_chan_sel)
         self._optode_ax.figure.canvas.draw()
         
         # Plot timeseries
         if "wavelength" in self.snirfData.dims:
-            self.timeSeries = self._dataTimeSeries_ax.plot(self.t, self.snirfData.isel(channel=chan_sel_idx,wavelength=wvl_idx).T,ls=wvl_ls[wvl_idx],zorder=5)
+            for sel_wv in wvl_idx:
+                idx = self.snirfData.wavelength.values
+                idx = [str(foo) for foo in idx]
+                idx = idx.index(sel_wv)
+                self.timeSeries = self._dataTimeSeries_ax.plot(
+                                                                self.t,
+                                                                self.snirfData.isel(channel=chan_sel_idx,wavelength=idx).T,
+                                                                ls=wvl_ls[idx],
+                                                                zorder=5,
+                                                              )
         elif "chromo" in self.snirfData.dims:
-            self.timeSeries = self._dataTimeSeries_ax.plot(self.t, self.snirfData.isel(channel=chan_sel_idx)[wvl_idx].T,ls=wvl_ls[wvl_idx],zorder=5)
+            for sel_wv in wvl_idx:
+                idx = self.snirfData.chromo.values
+                idx = [str(foo) for foo in idx]
+                idx = idx.index(sel_wv[1:-1])
+                self.timeSeries = self._dataTimeSeries_ax.plot(
+                                                                self.t,
+                                                                self.snirfData.isel(channel=chan_sel_idx,chromo=idx).T,
+                                                                ls=wvl_ls[idx],
+                                                                zorder=5,
+                                                              )
         
         # Plot lines or rectangles of aux
-        if len(self.aux_sel) != 0:
+        if len(self.aux_sel):
             aux_on = np.append(0,self.aux_sel[self.aux_sel == 1].time.values)
             aux_ondiff = np.array([aux_on[i+1] - aux_on[i] > 1 for i in range(len(aux_on) - 1)])
             aux_ondiff = np.append([False],aux_ondiff)
@@ -444,6 +495,17 @@ class Main(QtWidgets.QMainWindow):
                                                  color=[0.7,0.7,0.7,0.4],
                                                  zorder=0,
                                                  )
+        
+        # Plot stims
+        stim_col = ["#648FFF","#DC267F","#FFB000","#785EF0","#FE6100"]
+        if self.plot_stims:
+            for i_t, tt in enumerate(np.unique(self.snirfRec.stim.trial_type)):
+                label_on = True
+                for sx in self.snirfRec.stim.loc[self.snirfRec.stim['trial_type'] == tt].onset:
+                    self._dataTimeSeries_ax.axvline(sx, ls="--", lw=1, zorder=1,c=stim_col[i_t%5],label=tt) if label_on else self._dataTimeSeries_ax.axvline(sx, ls="--", lw=1, zorder=1,c=stim_col[i_t%5])
+                    label_on=False
+            
+            self._dataTimeSeries_ax.legend(loc="best")
         
         self._dataTimeSeries_ax.grid("True",axis="y")
         self._dataTimeSeries_ax.figure.canvas.draw()
@@ -477,7 +539,6 @@ class Main(QtWidgets.QMainWindow):
 
 def run_vis(snirfRec = None):
     """
-
     Parameters
     ----------
     snirfRec : Recording, optional
@@ -486,7 +547,7 @@ def run_vis(snirfRec = None):
     Opens a gui that loads the recording, if given.
 
     """
-    if type(snirfRec) is not cedalion.dataclasses.recording.Recording:
+    if type(snirfRec) is not cdc.recording.Recording:
         app = QtWidgets.QApplication(sys.argv)
         main_gui = Main()
         main_gui.show()

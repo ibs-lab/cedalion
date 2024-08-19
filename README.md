@@ -23,6 +23,7 @@ Afterwards activate the environment and add an editable install of `cedalion` to
 ```
 $ conda activate cedalion
 $ pip install -e .
+$ bash install_nirfaster.sh CPU # or GPU
 ```
 
 This will also install Jupyter Notebook to run the example notebooks.

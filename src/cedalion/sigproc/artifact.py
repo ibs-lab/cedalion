@@ -13,7 +13,9 @@ import time
 from numpy.typing import ArrayLike
 
 logger = logging.getLogger("cedalion")
-
+#%% CLEAN/TAINTED 
+CLEAN = False
+TAINTED = True
 #%% ID MOTION
 @cdc.validate_schemas
 def id_motion(
@@ -277,10 +279,6 @@ def detect_outliers(
     return mask_std | mask_grad
 
 
-
-
-
-
 #%% DETECT BASELINE SHIFTS 
 
 def _mask1D_to_segments(mask: ArrayLike):
@@ -306,8 +304,6 @@ def _mask1D_to_segments(mask: ArrayLike):
 
     return segments
 
-CLEAN = False
-TAINTED = True
 
 def _calculate_snr(ts, fs, segments):
     # Calculate signal to noise ratio by considering only longer segments.

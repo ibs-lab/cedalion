@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import logging
 from typing import Optional
 import os.path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -18,6 +19,12 @@ from cedalion.geometry.segmentation import surface_from_segmentation
 from cedalion.imagereco.utils import map_segmentation_mask_to_surface
 
 from .tissue_properties import get_tissue_properties
+
+src_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../nirfaster-uFF'))
+if src_path not in sys.path:
+    sys.path.append(src_path)
+
+import nirfasteruff as ff
 
 logger = logging.getLogger("cedalion")
 
@@ -531,8 +538,8 @@ class ForwardModel:
 
         return result
 
-    def compute_fluence(self, nphoton: int = 1e8):
-        """Compute fluence for each channel and wavelength from photon simulation.
+    def compute_fluence_mcx(self, nphoton: int = 1e8):
+        """Compute fluence for each channel and wavelength from photon simulation using MCX package.
 
         Parameters
         ----------
@@ -543,6 +550,19 @@ class ForwardModel:
         -------
         xr.DataArray
             Fluence in each voxel for each channel and wavelength.
+
+        References:
+            (:cite:t:`fang2009monte`) Qianqian Fang and David A. Boas, "Monte Carlo Simulation of Photon Migration in
+            3D Turbid Media Accelerated by Graphics Processing Units," Optics Express, 
+            vol. 17, issue 22, pp. 20178-20190 (2009).
+            (:cite:t:`yu2018scalable`) Leiming Yu, Fanny Nina-Paravecino, David Kaeli, Qianqian Fang, “Scalable and 
+            massively parallel Monte Carlo photon transport simulations for heterogeneous 
+            computing platforms,” J. Biomed. Opt. 23(1), 010504 (2018).
+            (:cite:t:`yan2020hybrid`) Shijie Yan and Qianqian Fang* (2020), "Hybrid mesh and voxel based Monte Carlo 
+            algorithm for accurate and efficient photon transport modeling in complex bio-tissues," 
+            Biomed. Opt. Express, 11(11) pp. 6262-6270. 
+            https://www.osapublishing.org/boe/abstract.cfm?uri=boe-11-11-6262
+
         """
 
         wavelengths = self.measurement_list.wavelength.unique()
@@ -598,6 +618,108 @@ class ForwardModel:
             },
         )
 
+        return fluence_all, fluence_at_optodes
+
+
+    def compute_fluence_nirfaster(
+            self, meshingparam : ff.utils.MeshingParams = None, 
+            solver : str = ff.utils.get_solver(), 
+            solver_opt : ff.utils.SolverOptions =ff.utils.SolverOptions()
+            ):
+        """Compute fluence for each channel and wavelength from photon simulation using NIRFASTer package.
+
+        Parameters
+        ----------
+        meshingparam : ff.utils.MeshingParam
+            Parameters to be used by the CGAL mesher. Note: they should all be double
+        solver : 
+            Choose between 'CPU' or 'GPU' solver (case insensitive). Automatically determined (GPU prioritized) if not specified
+        solver_opt :
+            Contains the parameters used by the FEM solvers, Equivalent to 'solver_options' in the Matlab version
+        
+        Returns
+        -------
+        xr.DataArray
+            Fluence in each voxel for each channel and wavelength.
+
+        References:
+            (:cite:t:`dehghani2009near`) Dehghani, Hamid, et al. "Near infrared optical tomography using NIRFAST: Algorithm for numerical model 
+            and image reconstruction." Communications in numerical methods in engineering 25.6 (2009): 711-732.
+        """
+        if meshingparam == None:
+            # meshing parameters; should be adjusted depending on the user's need
+            meshingparam = ff.utils.MeshingParams(facet_distance=1., facet_size=1., general_cell_size=2., lloyd_smooth=0)
+            
+        # create a nirfaster mesh
+        mesh = ff.base.stndmesh()
+        # make the optical property matrix; unit in mm-1
+        tissueprop = np.zeros((self.tissue_properties.shape[0]-1, 4))
+        for i in range(tissueprop.shape[0]):
+            tissueprop[i,0] = i+1
+            tissueprop[i,1] = self.tissue_properties[i+1, 0]
+            tissueprop[i,2] = self.tissue_properties[i+1, 1] * (1-self.tissue_properties[i+1, 2])
+            tissueprop[i,3] = self.tissue_properties[i+1, 3]
+            
+        # all optodes x all optodes
+        sources = ff.base.optode(coord=self.optode_pos.data)
+        detectors = ff.base.optode(coord=self.optode_pos.data)
+        n_optodes = self.optode_pos.data.shape[0]
+        link = np.zeros((n_optodes*n_optodes,3), dtype=np.int32)
+        ch = 0
+        for i in range(n_optodes):
+            for j in range(n_optodes):
+                link[ch, 0] = i+1
+                link[ch, 1] = j+1
+                link[ch, 2] = 1
+                ch += 1
+                
+        # construct the mesh
+        mesh.from_volume(self.volume, param=meshingparam, prop=tissueprop, src=sources, det=detectors, link = link)
+        # calculate the interpolation functions to and from voxel space
+        igrid = np.arange(self.volume.shape[0])
+        jgrid = np.arange(self.volume.shape[1])
+        kgrid = np.arange(self.volume.shape[2])
+        mesh.gen_intmat(igrid, jgrid, kgrid)
+        # calculate fluence
+        data,_ = mesh.femdata(0, solver=solver, opt=solver_opt)
+        amplitude_optode = np.reshape(data.amplitude, (n_optodes,-1))
+
+        wavelengths = self.measurement_list.wavelength.unique()
+        n_wavelength = len(wavelengths)
+        fluence_all = np.zeros((n_optodes, n_wavelength) + self.volume.shape)
+        fluence_at_optodes = np.zeros((n_optodes, n_optodes, n_wavelength))
+
+        for i_wl in range(n_wavelength):
+            # PLACEHOLDER: set new property and repeat
+            # This way we can void the expensive meshing
+            # newprop = []
+            # mesh.set_prop(newprop)
+            # newdata,_=femdata(0)
+            for i_opt in range(n_optodes):
+                fluence_all[i_opt,i_wl,:,:,:] = np.transpose(data.phi[:,:,:,i_opt], (1,0,2)) # xyz to ijk
+                fluence_at_optodes[i_opt, :, i_wl] = amplitude_optode[:,i_opt]
+
+        # convert to DataArray; copied from foward_model
+        fluence_all = xr.DataArray(
+            fluence_all,
+            dims=["label", "wavelength", "i", "j", "k"],
+            coords={
+                "label": ("label", self.optode_pos.label.values),
+                "type": ("label", self.optode_pos.type.values),
+                "wavelength": ("wavelength", wavelengths),
+            },
+        )
+
+        fluence_at_optodes = xr.DataArray(
+            fluence_at_optodes,
+            dims=["optode1", "optode2", "wavelength"],
+            coords={
+                "optode1": self.optode_pos.label.values,
+                "optode2": self.optode_pos.label.values,
+                "wavelength": wavelengths,
+            },
+        )
+        
         return fluence_all, fluence_at_optodes
 
 
