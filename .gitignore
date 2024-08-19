@@ -178,3 +178,6 @@ scratch/
 src/FTanalysis_full.ipynb
 src/FTanalysis_full.ipynb
 src/FTanalysis_full.ipynb
+
+# plugins
+plugins/
