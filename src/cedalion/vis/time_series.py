@@ -51,6 +51,7 @@ class Main(QtWidgets.QMainWindow):
         self.plots.setFocus()
         
         (self._dataTimeSeries_ax, self._optode_ax) = self.plots.figure.subplots(1, 2, width_ratios=[2,1])
+        self._auxTimeSeries_ax = self._dataTimeSeries_ax.twinx()
         self.plots.figure.tight_layout()
         self._optode_ax.axis('off')
         self._dataTimeSeries_ax.grid("True",axis="y")
@@ -100,17 +101,6 @@ class Main(QtWidgets.QMainWindow):
         self.auxs.currentTextChanged.connect(self.aux_changed)
         aux_layout.addWidget(QtWidgets.QLabel("Aux:"), 0,0)
         aux_layout.addWidget(self.auxs, 0,1)
-        
-        ## Aux Window Creator 
-        self.aux_window = QtWidgets.QLineEdit()
-        self.aux_window.setText('0')
-        validator = QtGui.QDoubleValidator()
-        validator.setRange(0,100)
-        validator.setDecimals(3)
-        self.aux_window.setValidator(validator)
-        self.aux_window.textChanged.connect(self.aux_rect)
-        aux_layout.addWidget(QtWidgets.QLabel("Aux window:"), 1,0)
-        aux_layout.addWidget(self.aux_window, 1,1)
         
         
         # Create Wavelength Controls Layout
@@ -228,6 +218,8 @@ class Main(QtWidgets.QMainWindow):
         self.selected = []
         self.chan_highlight = []
         self.aux_sel = []
+        self.auxplot = []
+        self.aux_type = None
         self.aux_rect_width = 0
         self.plot_stims = 0
         
@@ -361,6 +353,7 @@ class Main(QtWidgets.QMainWindow):
             return
 
         self.snirfData = self.snirfRec.timeseries[s]
+        self.ts_sel = s
         
         # Determine wavelength/concentration
         if "wavelength" in self.snirfData.dims:
@@ -378,7 +371,7 @@ class Main(QtWidgets.QMainWindow):
             for i_w, wvl in enumerate(self.snirfData.chromo.values):
                 self.wv.insertItem(i_w,f"[{str(wvl)}]")
             self.wv.setCurrentRow(0)
-
+        
         self.draw_timeseries()
 
 
@@ -433,12 +426,24 @@ class Main(QtWidgets.QMainWindow):
         wvl_idx = [foo.text() for foo in wvl_idx]
         wvl_ls = ['-', ':']
         
+        ## Grab timeseries y-label
+        ylabel = self.ts_sel
+        if "amp" in ylabel:
+            ylabel = "amp (A.U.)"
+        elif "od" in ylabel:
+            ylabel = r"$\Delta$ OD (A.U.)"
+        elif "conc" in ylabel or "chromo" in self.snirfData.dims:
+            ylabel = r"$\Delta$ Concentration ($\mu$M)"
 
         # Highlight channels
+        chan_col = ["#332288", "#117733", "#44AA99", "#88CCEE", "#DDCC77", "#CC6677", "#AA4499", "#882255"]
+        
         for line in self.chan_highlight:
             line.remove()
             del line
-        self.chan_highlight = self._optode_ax.plot(x_chan_sel,y_chan_sel)
+        
+        highlight_col = chan_col*(len(chan_sel_idx)//len(chan_col)) + chan_col[:(len(chan_sel_idx)%len(chan_col))]
+        self.chan_highlight = self._optode_ax.plot(x_chan_sel,y_chan_sel, color=highlight_col)
         self._optode_ax.figure.canvas.draw()
         
         # Plot timeseries
@@ -452,6 +457,7 @@ class Main(QtWidgets.QMainWindow):
                                                                 self.snirfData.isel(channel=chan_sel_idx,wavelength=idx).T,
                                                                 ls=wvl_ls[idx],
                                                                 zorder=5,
+                                                                color=[highlight_col],
                                                               )
         elif "chromo" in self.snirfData.dims:
             for sel_wv in wvl_idx:
@@ -463,38 +469,12 @@ class Main(QtWidgets.QMainWindow):
                                                                 self.snirfData.isel(channel=chan_sel_idx,chromo=idx).T,
                                                                 ls=wvl_ls[idx],
                                                                 zorder=5,
+                                                                color=[highlight_col],
                                                               )
         
         # Plot lines or rectangles of aux
         if len(self.aux_sel):
-            aux_on = np.append(0,self.aux_sel[self.aux_sel == 1].time.values)
-            aux_ondiff = np.array([aux_on[i+1] - aux_on[i] > 1 for i in range(len(aux_on) - 1)])
-            aux_ondiff = np.append([False],aux_ondiff)
-            aux_marks = aux_on[aux_ondiff] + 1
-            
-            if self.aux_rect_width == 0:
-                for rx in aux_marks:
-                    self._dataTimeSeries_ax.axvline(rx,c="k",lw=1,zorder=0)
-            else:
-                if "wavelength" in self.snirfData.dims:
-                    y_val = self.snirfData[chan_sel_idx,wvl_idx].values.ravel()
-                    y_val = y_val[~np.isnan(y_val)]
-                elif "chromo" in self.snirfData.dims:
-                    y_val = self.snirfData.isel(channel=chan_sel_idx)[wvl_idx].values.ravel()
-                    y_val = y_val[~np.isnan(y_val)]
-                
-                ry = max(y_val)
-                ry2 = min(y_val)
-                ry2 = min(ry2,0)
-                
-                for rx in aux_marks:
-                    rx2 = rx + self.aux_rect_width
-                    self._dataTimeSeries_ax.fill(
-                                                 [rx, rx, rx2, rx2],
-                                                 [ry2, ry, ry, ry2],
-                                                 color=[0.7,0.7,0.7,0.4],
-                                                 zorder=0,
-                                                 )
+            self.auxplot = self._auxTimeSeries_ax.plot(self.aux_sel.time, self.aux_sel, zorder=2)
         
         # Plot stims
         stim_col = ["#648FFF","#DC267F","#FFB000","#785EF0","#FE6100"]
@@ -507,34 +487,32 @@ class Main(QtWidgets.QMainWindow):
             
             self._dataTimeSeries_ax.legend(loc="best")
         
+        self._dataTimeSeries_ax.set_ylabel(ylabel)
+        self._auxTimeSeries_ax.set_ylabel(self.aux_type, rotation=270, ha="right")
+        self._auxTimeSeries_ax.yaxis.set_label_position("right")
         self._dataTimeSeries_ax.grid("True",axis="y")
+        self.plots.figure.tight_layout()
         self._dataTimeSeries_ax.figure.canvas.draw()
         
         self.statbar.showMessage("Timeseries Drawn!")
     
     def aux_changed(self,s): # TODO
-        if s == 'None':
-            return
+        self._auxTimeSeries_ax.clear()
+        print("s: ",s)
         
-        if s == 'dark signal':
-            return
-        elif s == 'digital':
-            self.aux_sel = self.snirfRec.aux_ts[s]
+        if s == 'None' or s == 'dark signal':
+            self.aux_sel = []
+            self.aux_type = None
+            for line in self.auxplot:
+                line.remove()
+                del line
+        # elif s == 'dark signal':
+        #     return
         else:
-            return
+            self.aux_sel = self.snirfRec.aux_ts[s]
+            self.aux_type = s
             
         self.draw_timeseries()
-        
-    def aux_rect(self,s):
-        self.aux_rect_width = float(s)
-        
-        self.draw_timeseries()
-    
-# if __name__ == "__main__":
-#     app = QtWidgets.QApplication(sys.argv)
-#     main_gui = Main()
-#     main_gui.show()
-#     sys.exit(app.exec())
 
 
 def run_vis(snirfRec = None):

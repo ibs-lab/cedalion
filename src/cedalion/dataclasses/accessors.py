@@ -286,7 +286,7 @@ class StimAccessor:
         for old_trial_type, new_trial_type in rename_dict.items():
             stim.loc[stim.trial_type == old_trial_type, "trial_type"] = new_trial_type
     
-	def conditions(self):
+    def conditions(self):
         return self._obj.trial_type.unique()
     
     def to_xarray(self, time : xr.DataArray):
