@@ -307,15 +307,16 @@ def plot_labeled_points(
 
     # points = points.pint.to("mm").pint.dequantify()  # FIXME unit handling
     points = points.pint.dequantify()  # FIXME unit handling
-    for type, x in points.groupby("type"):
-        for i_point in range(len(x)):
-            s = pv.Sphere(radius=default_point_sizes[type], center=x[i_point])
-            if color is None:
-                plotter.add_mesh(s, color=default_point_colors[type])
-            else:
-                plotter.add_mesh(s, color=color)
-            if labels is not None:
-                plotter.add_point_labels(x[i_point].values, [str(labels[i_point])])
+    # Iterate through each point and its corresponding label
+    for i_point, point in enumerate(points):
+        # Determine the point type
+        point_type = point.coords['type'].item()
+        # Create and add a sphere at the point's coordinates
+        s = pv.Sphere(radius=default_point_sizes[point_type], center=point.values)
+        plotter.add_mesh(s, color=color or default_point_colors[point_type])
+        # Add the label if required
+        if show_labels and labels is not None:
+            plotter.add_point_labels(point.values[np.newaxis], [str(labels[i_point])])
 
     if ppoints is not None:
         plotter.enable_surface_point_picking(callback=on_pick, show_point=False)
