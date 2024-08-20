@@ -23,11 +23,21 @@ if [ "$OS_NAME" = "mac" -a $1 = 'GPU' ]; then
     exit 1
 fi
 
+# Define the directory name
+DIR_NAME="plugins"
+
+# Check if the directory exists
+if [ ! -d "$DIR_NAME" ]; then
+  # If the directory does not exist, create it
+  mkdir -p "$DIR_NAME"
+fi
+
+cd "$DIR_NAME"
+
 ZIP_URL="https://github.com/milabuob/nirfaster-uFF/archive/refs/heads/main.zip" 
 ZIP_FILE="nirfaster-uFF-main.zip"
 
 
-# wget -qO- "$ZIP_URL"| tar xvz -C .
 curl -sL "$ZIP_URL" -o temp.zip && unzip temp.zip -d . && rm temp.zip
 
 FOLDER_NAME=$(basename "$ZIP_FILE" .zip)
@@ -37,14 +47,10 @@ mv "${FOLDER_NAME}" "${FOLDER_NAME%-main}"
 SOURCE_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v0.9.6/"
 
 if [ $1 = 'CPU' ]; then
-    # wget -qO- "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip"| tar xvz -C "${FOLDER_NAME%-main}""/nirfasteruff/" 
     curl -sL "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
 
 elif [ $1 = 'GPU' ]; then
-    # wget -qO- "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip"| tar xvz -C "${FOLDER_NAME%-main}""/nirfasteruff/";
     curl -sL "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
-
-    # wget -qO- "$SOURCE_URL""gpu-"$OS_NAME"-python311.zip"| tar xvz -C "${FOLDER_NAME%-main}""/nirfasteruff/"
     curl -sL "$SOURCE_URL""gpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
 
 

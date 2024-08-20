@@ -20,7 +20,7 @@ from cedalion.imagereco.utils import map_segmentation_mask_to_surface
 
 from .tissue_properties import get_tissue_properties
 
-src_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../nirfaster-uFF'))
+src_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../plugins/nirfaster-uFF'))
 if src_path not in sys.path:
     sys.path.append(src_path)
 
