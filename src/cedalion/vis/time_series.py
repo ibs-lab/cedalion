@@ -407,6 +407,7 @@ class Main(QtWidgets.QMainWindow):
         chan_sel_idx = [np.arange(0,self.no_channels)[self.clabel == chan][0] for chan in chan_sel]
         
         ## Grab coordinates
+        chan_sel = []
         x_chan_sel = [[],[]]
         y_chan_sel = [[],[]]
         
@@ -416,11 +417,7 @@ class Main(QtWidgets.QMainWindow):
                 x_chan_sel[1].append(self.dx[self.dlabel == self.snirfData.isel(channel=i_ch).detector.values][0])
                 y_chan_sel[0].append(self.sy[self.slabel == self.snirfData.isel(channel=i_ch).source.values][0])
                 y_chan_sel[1].append(self.dy[self.dlabel == self.snirfData.isel(channel=i_ch).detector.values][0])
-            else:
-                x_chan_sel[0].append(np.nan)
-                x_chan_sel[1].append(np.nan)
-                y_chan_sel[0].append(np.nan)
-                y_chan_sel[1].append(np.nan)
+                chan_sel.append(i_ch)
         
         wvl_idx = self.wv.selectedItems()
         wvl_idx = [foo.text() for foo in wvl_idx]
@@ -442,8 +439,12 @@ class Main(QtWidgets.QMainWindow):
             line.remove()
             del line
         
-        highlight_col = chan_col*(len(chan_sel_idx)//len(chan_col)) + chan_col[:(len(chan_sel_idx)%len(chan_col))]
-        self.chan_highlight = self._optode_ax.plot(x_chan_sel,y_chan_sel, color=highlight_col)
+        self.chan_highlight = [0]*len(chan_sel)
+        
+        for i_ch in range(len(chan_sel)):
+            self.chan_highlight[i_ch], = self._optode_ax.plot([x_chan_sel[0][i_ch],x_chan_sel[1][i_ch]],
+                                                             [y_chan_sel[0][i_ch],y_chan_sel[1][i_ch]], 
+                                                             color=chan_col[i_ch%len(chan_col)])
         self._optode_ax.figure.canvas.draw()
         
         # Plot timeseries
@@ -452,25 +453,27 @@ class Main(QtWidgets.QMainWindow):
                 idx = self.snirfData.wavelength.values
                 idx = [str(foo) for foo in idx]
                 idx = idx.index(sel_wv)
-                self.timeSeries = self._dataTimeSeries_ax.plot(
-                                                                self.t,
-                                                                self.snirfData.isel(channel=chan_sel_idx,wavelength=idx).T,
-                                                                ls=wvl_ls[idx],
-                                                                zorder=5,
-                                                                color=[highlight_col],
-                                                              )
+                for ic, i_ch in enumerate(chan_sel):
+                    self.timeSeries = self._dataTimeSeries_ax.plot(
+                                                                    self.t,
+                                                                    self.snirfData.isel(channel=i_ch,wavelength=idx).T,
+                                                                    ls=wvl_ls[idx],
+                                                                    zorder=5,
+                                                                    color=chan_col[ic%len(chan_col)],
+                                                                  )
         elif "chromo" in self.snirfData.dims:
             for sel_wv in wvl_idx:
                 idx = self.snirfData.chromo.values
                 idx = [str(foo) for foo in idx]
                 idx = idx.index(sel_wv[1:-1])
-                self.timeSeries = self._dataTimeSeries_ax.plot(
-                                                                self.t,
-                                                                self.snirfData.isel(channel=chan_sel_idx,chromo=idx).T,
-                                                                ls=wvl_ls[idx],
-                                                                zorder=5,
-                                                                color=[highlight_col],
-                                                              )
+                for ic, i_ch in enumerate(chan_sel):
+                    self.timeSeries = self._dataTimeSeries_ax.plot(
+                                                                    self.t,
+                                                                    self.snirfData.isel(channel=i_ch,chromo=idx).T,
+                                                                    ls=wvl_ls[idx],
+                                                                    zorder=5,
+                                                                    color=chan_col[ic%len(chan_col)],
+                                                                  )
         
         # Plot lines or rectangles of aux
         if len(self.aux_sel):
@@ -498,7 +501,6 @@ class Main(QtWidgets.QMainWindow):
     
     def aux_changed(self,s): # TODO
         self._auxTimeSeries_ax.clear()
-        print("s: ",s)
         
         if s == 'None' or s == 'dark signal':
             self.aux_sel = []
