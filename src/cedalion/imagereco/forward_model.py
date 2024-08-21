@@ -20,12 +20,6 @@ from cedalion.imagereco.utils import map_segmentation_mask_to_surface
 
 from .tissue_properties import get_tissue_properties
 
-src_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../plugins/nirfaster-uFF'))
-if src_path not in sys.path:
-    sys.path.append(src_path)
-
-import nirfasteruff as ff
-
 logger = logging.getLogger("cedalion")
 
 
@@ -622,9 +616,7 @@ class ForwardModel:
 
 
     def compute_fluence_nirfaster(
-            self, meshingparam : ff.utils.MeshingParams = None, 
-            solver : str = ff.utils.get_solver(), 
-            solver_opt : ff.utils.SolverOptions =ff.utils.SolverOptions()
+            self, meshingparam = None
             ):
         """Compute fluence for each channel and wavelength from photon simulation using NIRFASTer package.
 
@@ -632,11 +624,7 @@ class ForwardModel:
         ----------
         meshingparam : ff.utils.MeshingParam
             Parameters to be used by the CGAL mesher. Note: they should all be double
-        solver : 
-            Choose between 'CPU' or 'GPU' solver (case insensitive). Automatically determined (GPU prioritized) if not specified
-        solver_opt :
-            Contains the parameters used by the FEM solvers, Equivalent to 'solver_options' in the Matlab version
-        
+       
         Returns
         -------
         xr.DataArray
@@ -646,6 +634,18 @@ class ForwardModel:
             (:cite:t:`dehghani2009near`) Dehghani, Hamid, et al. "Near infrared optical tomography using NIRFAST: Algorithm for numerical model 
             and image reconstruction." Communications in numerical methods in engineering 25.6 (2009): 711-732.
         """
+
+        src_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../plugins/nirfaster-uFF'))
+        if src_path not in sys.path:
+            sys.path.append(src_path)
+
+        import nirfasteruff as ff
+
+        # Choose between 'CPU' or 'GPU' solver (case insensitive). Automatically determined (GPU prioritized) if not specified
+        solver = ff.utils.get_solver()
+        # Contains the parameters used by the FEM solvers, Equivalent to 'solver_options' in the Matlab version
+        solver_opt = ff.utils.SolverOptions()
+
         if meshingparam == None:
             # meshing parameters; should be adjusted depending on the user's need
             meshingparam = ff.utils.MeshingParams(facet_distance=1., facet_size=1., general_cell_size=2., lloyd_smooth=0)
