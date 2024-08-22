@@ -1,10 +1,16 @@
 """Cedalin datasets and utility functions."""
 
-import pooch
 import os.path
-import cedalion.io
-from gzip import GzipFile
 import pickle
+from gzip import GzipFile
+from pathlib import Path
+from cedalion.imagereco.forward_model import TwoSurfaceHeadModel
+
+import pooch
+import xarray as xr
+
+import cedalion.dataclasses as cdc
+import cedalion.io
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
@@ -16,8 +22,9 @@ DATASETS = pooch.create(
         "colin27_segmentation_downsampled_3x3x3.zip": "sha256:ab98b6bae3ef76be6110dc544917f4f2f7ef7233ac697d9cf8bb4a395e81b6cd",  # noqa: E501
         "fingertapping.zip": "sha256:f2253cca6eef8221d536da54b74d8556b28be93df9143ea53652fdc3bc011875",  # noqa: E501
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
-        "photogrammetry_example_scan.zip": "sha256:2828b74526cb501a726753881d59fdd362cf5a6c46cbacacbb9d9649d8ce3d64",  # noqa: E501
+        "photogrammetry_example_scan.zip": "f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
         "image_reconstruction_fluence.pickle.gz": "sha256:b647c07484a3cc2435b5def7abb342ba7a19aef66f749ed6b3cf3c26deec406f",  # noqa: E501
+        "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
     },
 )
 
@@ -48,26 +55,36 @@ def get_colin27_segmentation(downsampled=False):
     return basedir, mask_files, landmarks_ras_file
 
 
-def get_fingertapping():
+def get_colin27_headmodel():
+    fnames = DATASETS.fetch("colin2SHM.zip", processor=pooch.Unzip())
+    directory = Path(fnames[0]).parent
+    head_model = TwoSurfaceHeadModel.load(directory)
+    head_model.brain.units = cedalion.units.mm
+    head_model.scalp.units = cedalion.units.mm
+    return head_model
+
+
+def get_fingertapping() -> cdc.Recording:
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
 
-    elements = cedalion.io.read_snirf(fname)
-    geo3d = elements[0].geo3d.points.rename({"NASION": "Nz"})
+    rec = cedalion.io.read_snirf(fname)[0]
+
+    geo3d = rec.geo3d.points.rename({"NASION": "Nz"})
     geo3d = geo3d.rename({"pos": "digitized"})
-    elements[0].geo3d = geo3d
+    rec.geo3d = geo3d
 
-    amp = elements[0].data[0]
+    amp = rec.get_timeseries("amp")
     amp = amp.pint.dequantify().pint.quantify("V")
-    elements[0].data[0] = amp
+    rec.set_timeseries("amp", amp, overwrite=True)
 
-    return elements
+    return rec
 
 
-def get_fingertapping_snirf_path():
+def get_fingertapping_snirf_path() -> Path:
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
-    fname = [i for i in fnames if i.endswith(".snirf")][0]
+    fname = [Path(i) for i in fnames if i.endswith(".snirf")][0]
     return fname
 
 
@@ -77,13 +94,20 @@ def get_multisubject_fingertapping_snirf_paths():
     return fnames
 
 
+def get_multisubject_fingertapping_path() -> Path:
+    fnames = DATASETS.fetch("multisubject-fingertapping.zip", processor=pooch.Unzip())
+    return [Path(i).parent for i in fnames if i.endswith("README.md")][0]
+
+
 def get_photogrammetry_example_scan():
     fnames = DATASETS.fetch("photogrammetry_example_scan.zip", processor=pooch.Unzip())
-    fname = [i for i in fnames if i.endswith(".obj")][0]
-    return fname
+    fname_scan = [i for i in fnames if i.endswith(".obj")][0]
+    fname_snirf = [i for i in fnames if i.endswith(".snirf")][0]
+    fname_montage = [i for i in fnames if i.endswith(".png")][0]
+    return fname_scan, fname_snirf, fname_montage
 
 
-def get_imagereco_example_fluence():
+def get_imagereco_example_fluence() -> tuple[xr.DataArray, xr.DataArray]:
     fname = DATASETS.fetch("image_reconstruction_fluence.pickle.gz")
 
     with GzipFile(fname) as fin:

@@ -6,7 +6,7 @@ from cedalion import units
 
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
-from importlib import resources
+from importlib.resources import files
 
 
 def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
@@ -46,9 +46,9 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
             blood is x=150 g Hb/liter."
     """
     if spectrum == "prahl":
-        with resources.open_text(
-            "cedalion.data", "prahl_absorption_spectrum.tsv"
-        ) as fin:
+        pkg = "cedalion.data"
+        resource = "prahl_absorption_spectrum.tsv"
+        with files(pkg).joinpath(resource).open("r") as fin:
             coeffs = np.loadtxt(fin, comments="#")
 
         chromophores = ["HbO", "HbR"]
@@ -106,6 +106,11 @@ def int2od(amplitudes: xr.DataArray):
     Returns:
         od: (xr.DataArray, (time, channel,*): The optical density data.
     """
+    # check negative values in amplitudes and issue an error if yes
+    if np.any(amplitudes < 0):
+        raise AssertionError("Error: DataArray contains negative values. Please fix, for example by setting them to NaN with \"amplitudes = amplitudes.where(amplitudes >= 0, np.nan)\"")
+
+    # conversion to optical density
     od = -np.log(amplitudes / amplitudes.mean("time"))
     return od
 

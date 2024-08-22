@@ -5,7 +5,6 @@ import os.path
 
 import numpy as np
 import pandas as pd
-import pmcx
 import scipy.sparse
 import trimesh
 import xarray as xr
@@ -25,8 +24,9 @@ logger = logging.getLogger("cedalion")
 
 @dataclass
 class TwoSurfaceHeadModel:
-    """Head Model class to represent a segmented head. Its main functions are
-    reduced to work on voxel projections to scalp and cortex surfaces.
+    """Head Model class to represent a segmented head.
+
+    Its main functions arereduced to work on voxel projections to scalp and cortex surfaces.
 
     ...
 
@@ -93,6 +93,7 @@ class TwoSurfaceHeadModel:
         smoothing: float = 0.5,
         brain_face_count: Optional[int] = 60000,
         scalp_face_count: Optional[int] = 60000,
+        fill_holes: bool = False,
     ) -> "TwoSurfaceHeadModel":
         """Constructor from binary masks as gained from segmented MRI scans.
 
@@ -137,13 +138,13 @@ class TwoSurfaceHeadModel:
             landmarks_ijk = None
 
         # derive surfaces from segmentation masks
-        brain_ijk = surface_from_segmentation(segmentation_masks, brain_seg_types)
+        brain_ijk = surface_from_segmentation(segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes)
 
         # we need the single outer surface from the scalp. The inner border between
         # scalp and skull is not interesting here. Hence, all segmentation types are
         # grouped together, yielding a uniformly filled head volume.
         all_seg_types = segmentation_masks.segmentation_type.values
-        scalp_ijk = surface_from_segmentation(segmentation_masks, all_seg_types)
+        scalp_ijk = surface_from_segmentation(segmentation_masks, all_seg_types, fill_holes_in_mask=fill_holes)
 
         # smooth surfaces
         if smoothing > 0:
@@ -166,6 +167,9 @@ class TwoSurfaceHeadModel:
             reduction = 1.0 - scalp_face_count / scalp_ijk.nfaces
             vtk_scalp_ijk = vtk_scalp_ijk.decimate(reduction)
             scalp_ijk = cdc.TrimeshSurface.from_vtksurface(vtk_scalp_ijk)
+
+        brain_ijk = brain_ijk.fix_vertex_normals()
+        scalp_ijk = scalp_ijk.fix_vertex_normals()
 
         brain_mask = segmentation_masks.sel(segmentation_type=brain_seg_types).any(
             "segmentation_type"
@@ -288,11 +292,11 @@ class TwoSurfaceHeadModel:
                 raise ValueError("%s does not exist." % os.path.join(foldername, fn))
 
         # Load all attributes from folder
-        segmentation_masks = xr.open_dataset(os.path.join(foldername, 'segmentation_masks.nc'))
+        segmentation_masks = xr.load_dataset(os.path.join(foldername, 'segmentation_masks.nc'))
         brain =  trimesh.load(os.path.join(foldername, 'brain.ply'), process=False)
         scalp =  trimesh.load(os.path.join(foldername, 'scalp.ply'), process=False)
         if os.path.exists(os.path.join(foldername, 'landmarks.nc')):
-            landmarks_ijk = xr.open_dataset(os.path.join(foldername, 'landmarks.nc'))
+            landmarks_ijk = xr.load_dataset(os.path.join(foldername, 'landmarks.nc'))
             landmarks_ijk = xr.DataArray(
                     landmarks_ijk.to_array()[0],
 				    coords={
@@ -302,8 +306,8 @@ class TwoSurfaceHeadModel:
 			)
         else:
             landmarks_ijk = None
-        t_ijk2ras = xr.open_dataset(os.path.join(foldername, 't_ijk2ras.nc'))
-        t_ras2ijk = xr.open_dataset(os.path.join(foldername, 't_ras2ijk.nc'))
+        t_ijk2ras = xr.load_dataset(os.path.join(foldername, 't_ijk2ras.nc'))
+        t_ras2ijk = xr.load_dataset(os.path.join(foldername, 't_ras2ijk.nc'))
         voxel_to_vertex_brain = scipy.sparse.load_npz(os.path.join(foldername,
                                                      'voxel_to_vertex_brain.npz'))
         voxel_to_vertex_scalp = scipy.sparse.load_npz(os.path.join(foldername,
@@ -412,6 +416,9 @@ class ForwardModel:
             geo3d.type.isin([cdc.PointType.SOURCE, cdc.PointType.DETECTOR])
         ]
 
+        #FIXME make sure that optode is in scalp voxel
+        self.optode_pos = self.optode_pos.round()
+
         self.optode_dir = -head_model.scalp.get_vertex_normals(self.optode_pos)
 
         self.optode_pos = self.optode_pos.pint.dequantify()
@@ -472,6 +479,7 @@ class ForwardModel:
             "unitinmm": self.unitinmm,
         }
 
+        import pmcx
         result = pmcx.run(cfg)
 
         fluence = result["flux"][:, :, :, 0]  # there is only one time bin
@@ -509,6 +517,7 @@ class ForwardModel:
             for i_step in range(MAX_STEPS):
                 pos = self.optode_pos[i_opt] + i_step * self.optode_dir[i_opt]
                 i, j, k = np.floor(pos.values).astype(int)
+
                 if fluence[i, j, k] > 0:
                     result[i_opt] = fluence[i, j, k]
                     break
@@ -728,7 +737,8 @@ class ForwardModel:
 
     # FIXME: better name for Adot * ext. coeffs
     # FIXME: hardcoded for 2 chromophores (HbO and HbR) and wavelengths
-    def compute_stacked_sensitivity(self, sensitivity: xr.DataArray):
+    @staticmethod
+    def compute_stacked_sensitivity(sensitivity: xr.DataArray):
         """Compute stacked HbO and HbR sensitivity matrices from fluence.
 
         Parameters
@@ -742,7 +752,8 @@ class ForwardModel:
             Stacked sensitivity matrix for each channel and vertex.
         """
 
-        wavelengths = self.measurement_list.wavelength.unique()
+        assert "wavelength" in sensitivity.dims
+        wavelengths = sensitivity.wavelength.values
         assert len(wavelengths) == 2
 
         ec = cedalion.nirs.get_extinction_coefficients("prahl", wavelengths)

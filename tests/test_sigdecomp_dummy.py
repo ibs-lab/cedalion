@@ -3,8 +3,8 @@ import cedalion.sigdecomp.dummy
 
 
 def test_split_frequency_bands():
-    elements = cedalion.datasets.get_snirf_test_data()
-    amp = elements[0].data[0]
+    recordings = cedalion.datasets.get_snirf_test_data()
+    amp = recordings[0].timeseries["amp"]
 
     assert amp.dims == ("channel", "wavelength", "time")
 

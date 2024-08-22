@@ -110,8 +110,11 @@ def psp(amplitudes: NDTimeSeries, window_length: Quantity = 5*units.s, psp_thres
     
 
 @cdc.validate_schemas
-def sci(amplitudes: NDTimeSeries, window_length: Quantity = 5*units.s, sci_thresh: float = 0.7):
-    """Calculate the scalp-coupling index based on :cite:t:`Pollonini2014` / :cite:t:`Pollonini2016`.
+def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
+    """Calculate the scalp-coupling index.
+
+    The scalp-coupling index metric is based on :cite:t:`Pollonini2014` /
+    :cite:t:`Pollonini2016`.
 
     Args:
         amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
@@ -238,7 +241,8 @@ def sd_dist(
 
     # calculate channel distances
     sd_dist = xrutils.norm(
-        geo3D.loc[amplitudes.source] - geo3D.loc[amplitudes.detector], dim="digitized"
+        geo3D.loc[amplitudes.source] - geo3D.loc[amplitudes.detector],
+        dim=geo3D.points.crs,
     ).round(3)
     # create sd_mask and update according to sd_thresh thresholds
     sd_mask = xrutils.mask(sd_dist, True)

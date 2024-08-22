@@ -2,12 +2,14 @@ import functools
 import inspect
 import typing
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
+
 import numpy as np
-from numpy.typing import ArrayLike
-import xarray as xr
+import pandas as pd
 import pint
-from typing import Optional
+import xarray as xr
+from numpy.typing import ArrayLike
+
 import cedalion.dataclasses as cdc
 
 
@@ -119,14 +121,17 @@ def build_timeseries(
 
 
 def build_labeled_points(
-    coordinates: ArrayLike,
-    crs: str,
+    coordinates: ArrayLike | None = None,
+    crs: str = "pos",
     units: Optional[pint.Unit | str] = "1",
     labels: Optional[list[str]] = None,
     types: Optional[list[str]] = None,
 ):
-    coordinates = np.asarray(coordinates)
-    assert coordinates.ndim == 2
+    if coordinates is None:
+        coordinates = np.zeros((0, 3), dtype=float)
+    else:
+        coordinates = np.asarray(coordinates)
+        assert coordinates.ndim == 2
     npoints = len(coordinates)
 
     if labels is None:
@@ -144,3 +149,14 @@ def build_labeled_points(
     ).pint.quantify(units)
 
     return labeled_points
+
+
+def validate_stim_schema(df: pd.DataFrame):
+    for column_name in ["onset", "duration", "value", "trial_type"]:
+        if column_name not in df:
+            raise ValidationError(f"DataFrame misses required column '{column_name}'.")
+
+
+def build_stim_dataframe():
+    columns = ["onset", "duration", "value", "trial_type"]
+    return pd.DataFrame(columns=columns)

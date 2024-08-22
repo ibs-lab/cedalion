@@ -11,14 +11,15 @@ from numpy.testing import assert_array_almost_equal
 def test_read_einstar():
     # prepare test data
     fiducials = np.random.rand(5, 3)
-    optodes = np.random.rand(np.random.randint(100), 3)
-    tmp_fn = write_test_photo_fn(fiducials, optodes)
-    # call read_einstar to read test data
-    fid, opt = cedalion.io.read_einstar(tmp_fn)
-    # evaluate
-    assert list(fid.keys()) == ["Nz", "Iz", "Rpa", "Lpa", "Cz"]
-    assert_array_almost_equal(np.array(list(fid.values())), fiducials)
-    assert_array_almost_equal(np.array(list(opt.values())), optodes)
+    for n_optodes in [1, 10, 100]:
+        optodes = np.random.rand(n_optodes, 3)
+        tmp_fn = write_test_photo_fn(fiducials, optodes)
+        # call read_einstar to read test data
+        fid, opt = cedalion.io.read_einstar(tmp_fn)
+        # evaluate
+        assert list(fid.keys()) == ["Nz", "Iz", "Rpa", "Lpa", "Cz"]
+        assert_array_almost_equal(np.array(list(fid.values())), fiducials)
+        assert_array_almost_equal(np.array(list(opt.values())), optodes)
 
 
 def test_opt_fid_to_xr():
