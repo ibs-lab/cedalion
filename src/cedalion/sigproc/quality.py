@@ -54,12 +54,15 @@ def gvtd(amplitudes: NDTimeSeries):
 def psp(amplitudes: NDTimeSeries, window_length: Quantity = 5*units.s, psp_thresh: float = 0.1):
     
     # FIXME make these configurable
+ 
     cardiac_fmin = 0.5 * units.Hz
     cardiac_fmax = 2.5 * units.Hz
     
     amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
-    amp = (amp - amp.mean("time")) / amp.std("time")
+    amp = amp.pint.dequantify()
     
+    amp = (amp - amp.mean("time")) / amp.std("time")
+    wavelengths = amp.wavelength
     # convert window_length to samples
     nsamples = (window_length * sampling_rate(amp)).to_base_units()
     nsamples = int(np.ceil(nsamples))
@@ -70,39 +73,39 @@ def psp(amplitudes: NDTimeSeries, window_length: Quantity = 5*units.s, psp_thres
     # window length will result in non-overlapping windows.
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
     windows = windows.dropna('time')
-
+    # windows = windows.assign_coords({'window':np.arange()})
+    
     fs = amp.cd.sampling_rate
     
-    PSP = np.zeros([ len(windows['channel']), len(windows['time'])])
     
     # Vectorized signal extraction and correlation
-    sig = windows.transpose('channel', 'time', 'wavelength','window').values
-    PSP = np.zeros((sig.shape[0], sig.shape[1]))
+    # sig = windows.transpose('channel', 'time', 'wavelength','window')
     
-    for w in range(sig.shape[1]):
+    psp_xr = amp.isel(time=windows.samples.values, wavelength=0)
+      
+    for window in windows.time:
         
-        sig_temp = sig[:,w,:,:]
+        for chan in windows.channel:
+            
+            sig_temp = windows.sel(channel=chan, time=window)
+            
+            similarity = signal.correlate(sig_temp.sel(wavelength=wavelengths[0]).values, sig_temp.sel(wavelength=wavelengths[1]).values, 'full')
+            lags = np.arange(-nsamples + 1, nsamples)
+            similarity_unbiased = similarity / (nsamples - np.abs(lags))
+            
+            similarity_norm = (nsamples * similarity_unbiased) / np.sqrt(np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2) * np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2))
+            similarity_norm[np.isnan(similarity_norm)] = 0
         
-        corr = np.array([signal.correlate(sig_temp[ch, 0, :], sig_temp[ch, 1, :], 'full') for ch in range(sig.shape[0])])
-    
-        # norm_factor = [np.sqrt(np.sum(sig_temp[ch, 0, :]**2) * np.sum(sig_temp[ch, 1, :]**2)) for ch in range(sig.shape[0]) ]
         
-        # corr /= np.tile(norm_factor, (corr.shape[1],1)).T
+            f, pxx = signal.periodogram(similarity_norm.T, window=signal.hamming(len(similarity_norm)), nfft=len(similarity_norm), fs=fs,  scaling='density')
     
-        for ch in range(sig.shape[0]):
-            window = signal.hamming(len(corr[ch,:]))
-            f, pxx = signal.periodogram(corr[ch,:], window=window, nfft=len(corr[ch,:]), fs=fs, scaling='density')
-
-            PSP[ch,w] = np.max(pxx)            
-
-
+            psp_xr.sel(channel=chan, time=window).values = np.max(pxx)            
     
-    psp_xr = amp.isel(time=windows.samples.values, wavelength=0).copy(data=PSP)
+    
     
     # Apply threshold mask
     psp_mask = xrutils.mask(psp_xr, True)
     psp_mask = psp_mask.where(psp_xr < psp_thresh, False)
-    
     return psp_xr, psp_mask
     
 
