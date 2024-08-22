@@ -13,7 +13,6 @@ import os
 import SQE_metrics as sqm
 
 #%%
-import os
 subjID = 'sub-01'
 rootDir_data = "/projectnb/nphfnirs/ns/lcarlton/DATA/MAFC_raw/"
 
@@ -22,46 +21,94 @@ file_name = os.path.join(rootDir_data, subj_temp)
 
 elements = io.read_snirf(file_name)
 
-amp = elements[0].data[0]
+amplitudes = elements[0].data[0]
 
-#%%
-# import pdb 
+#%% SQE implementation
+from snirf import Snirf
+import pickle 
 # pdb.set_trace()
-metric_dict = dqr.get_data_metrics(amp)
-
-#%% 
-from SQE_metrics import GVTD as GVTD_old
-from snirf import Snirf
-snirf_obj = Snirf(file_name)
-gvtd_old = GVTD_old(snirf_obj, ax=None)
-
-#%% 
-import matplotlib.pyplot as plt 
-fig,ax = plt.subplots(1,1)
-title='SCI x PSP'
-dqr.plot_timeseries_all_channels(MD['SCIxPSP_mask'], elements[0].stim, ax, title)
-#%%
-fig,ax = plt.subplots(1,1)
-dqr.plot_timeseries(MD['GVTD'].squeeze(), elements[0].stim, ax)  
-
-#%%
-import pdb
-pdb.set_trace()
-
-MD = dqr.generate_report_single_run(elements[0])
-
-#%%
-from snirf import Snirf
-pdb.set_trace()
 snirf_obj = Snirf(file_name)
 sci_val, psp_val, mask = sqm.sci_psp(snirf_obj, mode='montage', ax=None)
-#%% 
-from cedalion.sigproc.quality import sci, psp
-from cedalion import Quantity, units
-pdb.set_trace()
+sqe_output = {'sci_val':sci_val, 
+              'psp_val':psp_val, 
+              'mask': mask}
+with open('sqe_metrics_output.pkl', 'wb') as f:
+    pickle.dump(sqe_output, f)
+    
 
-SCI, SCI_mask = sci(elements[0].data[0], 5*units.s, 0.8)
-PSP, PSP_mask = psp(elements[0].data[0], 5*units.s, 0.1)
+#%% cedalion sci implementation 
+import cedalion.sigproc.quality as quality 
+
+sci_ced, sci_mask_ced = quality.sci(amplitudes)
+
+with open('ced_sci_output.pkl', 'wb') as f:
+    pickle.dump(sci_ced, sci_mask_ced, f)
+
+#%% cedalion implementation 
+from cedalion import units
+from cedalion.sigproc.frequency import freq_filter, sampling_rate
+import numpy as np 
+import scipy.signal as signal 
+import cedalion.xrutils as xrutils 
+
+window_length = 5*units.s
+psp_thresh = 0.1
+cardiac_fmin = 0.5 * units.Hz
+cardiac_fmax = 2.5 * units.Hz
+
+amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
+amp = amp.pint.dequantify()
+
+amp = (amp - amp.mean("time")) / amp.std("time")
+wavelengths = amp.wavelength
+# convert window_length to samples
+nsamples = (window_length * sampling_rate(amp)).to_base_units()
+nsamples = int(np.ceil(nsamples))
+
+# This creates a new DataArray with a new dimension "window", that is
+# window_len_samples large. The time dimension will contain the time coordinate of
+# the first sample in the window. Setting the stride size to the same value as the
+# window length will result in non-overlapping windows.
+windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
+windows = windows.dropna('time')
+# windows = windows.assign_coords({'window':np.arange()})
+
+fs = amp.cd.sampling_rate
+
+
+# Vectorized signal extraction and correlation
+# sig = windows.transpose('channel', 'time', 'wavelength','window')
+
+psp_xr = amp.isel(time=windows.samples.values, wavelength=0)
+  
+for window in windows.time:
+    
+    for chan in windows.channel:
+        
+        sig_temp = windows.sel(channel=chan, time=window)
+        
+        similarity = signal.correlate(sig_temp.sel(wavelength=wavelengths[0]).values, sig_temp.sel(wavelength=wavelengths[1]).values, 'full')
+        lags = np.arange(-nsamples + 1, nsamples)
+        similarity_unbiased = similarity / (nsamples - np.abs(lags))
+        
+        similarity_norm = (nsamples * similarity_unbiased) / np.sqrt(np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2) * np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2))
+        similarity_norm[np.isnan(similarity_norm)] = 0
+    
+    
+        f, pxx = signal.periodogram(similarity_norm.T, window=signal.hamming(len(similarity_norm)), nfft=len(similarity_norm), fs=fs,  scaling='density')
+
+        psp_xr.sel(channel=chan, time=window).values = np.max(pxx)            
+
+
+
+# Apply threshold mask
+psp_mask = xrutils.mask(psp_xr, True)
+psp_mask = psp_mask.where(psp_xr < psp_thresh, False)
+
+
+#%%
+
+dqr.generate_report_single_run(elements)
 
 
 

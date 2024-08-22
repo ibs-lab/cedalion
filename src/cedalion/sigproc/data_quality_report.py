@@ -6,6 +6,7 @@ import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 from cedalion import Quantity, units
+import cedalion.plots as plots
 import xarray as xr
 from .quality import snr, sci, psp, gvtd
 from scipy import signal
@@ -81,19 +82,19 @@ def plot_timeseries(GVTD, stim, ax, savePath=None):
         
     pass
 
-def plot_stim_marks(stim):
-    
-    #TODO match cedalion dataframe structure 
+def plot_stim_marks(recording):
     ### add markers for events
     colours = ['b', 'r', 'g', 'y', 'c']
     
-    trial_types = stim.trial_type.unique()
+    trial_types = recording.stim['trial_type'].unique()
     
-    for i,trial in enumerate(trial_types):
-        tmp = stim[stim.trial_type.isin([trial])]
-        nStims = len(tmp)
-        for n in range(nStims):
-            plt.axvline(x=tmp['onset'][n], color=colours[i], lw=1)
+    colour_dict = {trial : colours[i] for i, trial in enumerate(trial_types)}
+    
+    for idx, onset in enumerate(recording.stim['onset']):
+        # Use the index to get the corresponding element in the 'duration' column
+        stim_type = recording.stim.at[idx, 'trial_type']
+        plt.axvline(x=onset, color=colour_dict[stim_type], linestyle='--' )
+
     pass
 
 def plot_timeseries_all_channels(scixpsp_mask, stim, ax, title, savePath = None):
@@ -144,24 +145,24 @@ def generate_report_single_run(snirfObj, title=None, savePath=None):
     cmap = clrs.LinearSegmentedColormap.from_list("mycmap", list(zip(nodes, colors)))        
 
     ax1 = fig.add_subplot(gs[0,0])
-    plot_metrics_on_probe(snirfObj, metric_dict['SNR'].sel(wavelength = wavelengths[0]), 
+    plots.scalp_plot(snirfObj, metric_dict['SNR'].sel(wavelength = wavelengths[0]), 
                           ax1, colormap=cmap, vmin=0, vmax=25, 
                           threshold_ind=5, threshold_col = threshold_col.sel(wavelength=wavelengths[0]),
-                          title='SNR: $\lambda$ = ' + str(wavelengths[0].values), remove_short=remove_short)
+                          title='SNR: $\lambda$ = ' + str(wavelengths[0].values), remove_short=True)
     
     ax2 = fig.add_subplot(gs[0,1])
-    plot_metrics_on_probe(snirfObj, metric_dict['SNR'].sel(wavelength = wavelengths[1]), 
+    plots.scalp_plot(snirfObj, metric_dict['SNR'].sel(wavelength = wavelengths[1]), 
                           ax2, colormap=cmap, vmin=0, vmax=25, 
                           threshold_ind=5, threshold_col = threshold_col.sel(wavelength=wavelengths[1]),
-                          title='SNR: $\lambda$ = ' + str(wavelengths[1].values), remove_short=remove_short)
+                          title='SNR: $\lambda$ = ' + str(wavelengths[1].values), remove_short=True)
 
     #TODO need to generate this metric 
     threshold_col = metric_dict['perc_channel_thresholded'] < 0.6
     ax3 = fig.add_subplot(gs[0,2])
-    plot_metrics_on_probe(snirfObj, metric_dict['perc_channel_thresholded'], 
+    plots.scalp_plot(snirfObj, metric_dict['perc_channel_thresholded'], 
                           ax3, colormap=cmap, vmin=0, vmax=1, 
                           threshold_ind=0.6, threshold_col = threshold_col, 
-                          title='% of time SCI x PSP above thresholds', remove_short=remove_short)
+                          title='% of time SCI x PSP above thresholds', remove_short=True)
 
     ax4 = fig.add_subplot(gs[1,:])
     plot_timeseries_all_channels(metric_dict['SCIxPSP_mask'], snirfObj.stim, 
