@@ -6,7 +6,7 @@ from cedalion import units
 
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
-from importlib.resources import files
+import cedalion.data
 
 
 def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
@@ -46,9 +46,8 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
             blood is x=150 g Hb/liter."
     """
     if spectrum == "prahl":
-        pkg = "cedalion.data"
-        resource = "prahl_absorption_spectrum.tsv"
-        with files(pkg).joinpath(resource).open("r") as fin:
+        path = cedalion.data.get("prahl_absorption_spectrum.tsv")
+        with path.open("r") as fin:
             coeffs = np.loadtxt(fin, comments="#")
 
         chromophores = ["HbO", "HbR"]

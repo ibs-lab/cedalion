@@ -16,8 +16,7 @@ import math
 import pandas as pd
 import matplotlib
 import cedalion.xrutils as xrutils
-from importlib.resources import files
-
+import cedalion.data
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
     geo3d = geo3d.pint.dequantify()
@@ -546,10 +545,10 @@ def scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, threshold_i
         x = x/norm_factor
         y = y/norm_factor
         return x, y
-    
-    pkg = "cedalion.data"
-    resource = "10-5-System_Mastoids_EGI129.tsv"
-    with files(pkg).joinpath(resource).open("r") as fin:
+
+
+    path = cedalion.data.get("10-5-System_Mastoids_EGI129.tsv")
+    with path.open("r") as fin:
         channels_df = pd.read_csv(fin, sep='\t') 
 
     probe_landmark_pos3D = []
