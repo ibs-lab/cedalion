@@ -1,221 +1,401 @@
 import numpy as np
 import pandas as pd
 import xarray as xr
+from numpy.typing import ArrayLike
+
 import cedalion
 import cedalion.nirs
-import cedalion.xrutils as xrutils
 import cedalion.typing as cdt
+import cedalion.xrutils as xrutils
 
-from cedalion import Quantity
+from .basis_functions import TemporalBasisFunction
+
+# def make_design_matrix(
+#    t: xr.DataArray,
+#    s,
+#    trange: list,
+#    idx_basis: str,
+#    params_basis,
+#    drift_order: int = 0,
+#    add_regressors: xr.DataArray = None,
+# ):
+#    """Generate the design matrix for the GLM.
+#
+#    Args:
+#        t: xarray.DataArray time axis (time)
+#        s: pandas.DataFrame or xarray.DataArray of stimulus data (time x conditions)
+#        add_regressors: xarray.DataArray containing additional regressors
+#            (time x regressor x chromo)
+#        trange: list of the time range of the HRF regressors [pre, post]
+#            (in seconds relative to stimulus onset, for example [-5, 15])
+#        idx_basis: string indicating the type of basis function to use
+#            "gaussians":    a consecutive sequence of gaussian functions
+#            "gamma":        a modified gamma function convolved with a square-
+#                            wave of duration T. Set T=0 for no convolution.
+#                            The modified gamma function is
+#                            (exp(1)*(t-tau).^2/sigma^2) .* exp(-(tHRF-tau).^2/sigma^2)
+#            "gamma_deriv":  a modified gamma function and its derivative convolved
+#                            with a square-wave of duration T. Set T=0 for no conv.
+#            "afni_gamma":   GAM function from 3dDeconvolve AFNI convolved with
+#                            a square-wave of duration T. Set T=0 for no convolution.
+#                                            (t/(p*q))^p * exp(p-t/q)
+#                            Defaults: p=8.6 q=0.547
+#                            The peak is at time p*q.  The FWHM is about 2.3*sqrt(p)*q.
+#            "individual":   individual selected basis function for each channel
+#                            (xr.DataArray of shape (time x chromo x channels)
+#        params_basis: parameters for the basis function (depending on idx_basis)
+#            "gaussians":    [gms, gstd] where gms is the temporal spacing between
+#                            consecutive gaussians and gstd is the width of the
+#                            gaussian (standard deviation)
+#            "gamma":        [tau sigma T] applied to both HbO and HbR
+#                            or [tau1 sigma1 T1 tau2 sigma2 T2]
+#                            where the 1 (2) indicates the parameters for HbO (HbR).
+#            "gamma_deriv":  [tau sigma T] applied to both HbO and HbR
+#                            or [tau1 sigma1 T1 tau2 sigma2 T2]
+#                            where the 1 (2) indicates the parameters for HbO (HbR).
+#            "afni_gamma":   [p q T] applied to both HbO and HbR
+#                            or [p1 q1 T1 p2 q2 T2]
+#                            where the 1 (2) indicates the parameters for HbO (HbR).
+#            "individual":   array containing the individual basis functions
+#                            (t_hrf x chromo x channels).
+#        drift_order: order of the polynomial drift regressors to add to the
+#            design matrix
+#    Returns:
+#        A: xarray.DataArray of the design matrix (time x regressor x chromo)
+#    """
+#
+#    t = t.pint.dequantify()
+#    # Convert stimulus data to xarray
+#    if type(s) == pd.DataFrame:
+#        s = s.cd.to_xarray(t)
+#
+#    # Initialize regressor list
+#    regressors = []
+#
+#    ###########################################################################
+#    # Construct the basis functions
+#
+#    hrf_regressors = make_hrf_regressors(t, s, trange, idx_basis, params_basis)
+#    regressors.append(hrf_regressors)
+#
+#    ###########################################################################
+#    # Add drift regressors
+#
+#    drift_regressors = make_drift_regressors(t, drift_order)
+#    regressors.append(drift_regressors)
+#
+#    ###########################################################################
+#    # Add additional regressors
+#
+#    if add_regressors is not None:
+#        add_regressors = add_regressors.pint.quantify("micromolar")
+#        regressors.append(add_regressors)
+#
+#    ###########################################################################
+#    # Stack regressors into design matrix
+#
+#    A = xr.concat(regressors, dim="regressor")
+#    A = A.pint.quantify("micromolar")
+#
+#    return A
 
 
 def make_design_matrix(
-    t: xr.DataArray,
-    s,
-    trange: list,
-    idx_basis: str,
-    params_basis,
-    drift_order: int = 0,
-    add_regressors: xr.DataArray = None,
+    ts_long: cdt.NDTimeSeries,
+    ts_short: cdt.NDTimeSeries | None,
+    stim: pd.DataFrame,
+    geo3d: cdt.LabeledPointCloud,
+    basis_function: TemporalBasisFunction,
+    drift_order: int | None,
+    short_channel_method: str | None,
 ):
     """Generate the design matrix for the GLM.
 
     Args:
-        t: xarray.DataArray time axis (time)
-        s: pandas.DataFrame or xarray.DataArray of stimulus data (time x conditions)
-        add_regressors: xarray.DataArray containing additional regressors
-            (time x regressor x chromo)
-        trange: list of the time range of the HRF regressors [pre, post]
-            (in seconds relative to stimulus onset, for example [-5, 15])
-        idx_basis: string indicating the type of basis function to use
-            "gaussians":    a consecutive sequence of gaussian functions
-            "gamma":        a modified gamma function convolved with a square-
-                            wave of duration T. Set T=0 for no convolution.
-                            The modified gamma function is
-                            (exp(1)*(t-tau).^2/sigma^2) .* exp(-(tHRF-tau).^2/sigma^2)
-            "gamma_deriv":  a modified gamma function and its derivative convolved
-                            with a square-wave of duration T. Set T=0 for no convolution
-            "afni_gamma":   GAM function from 3dDeconvolve AFNI convolved with
-                            a square-wave of duration T. Set T=0 for no convolution.
-                                            (t/(p*q))^p * exp(p-t/q)
-                            Defaults: p=8.6 q=0.547
-                            The peak is at time p*q.  The FWHM is about 2.3*sqrt(p)*q.
-            "individual":   individual selected basis function for each channel
-                            (xr.DataArray of shape (time x chromo x channels)
-        params_basis: parameters for the basis function (depending on idx_basis)
-            "gaussians":    [gms, gstd] where gms is the temporal spacing between
-                            consecutive gaussians and gstd is the width of the
-                            gaussian (standard deviation)
-            "gamma":        [tau sigma T] applied to both HbO and HbR
-                            or [tau1 sigma1 T1 tau2 sigma2 T2]
-                            where the 1 (2) indicates the parameters for HbO (HbR).
-            "gamma_deriv":  [tau sigma T] applied to both HbO and HbR
-                            or [tau1 sigma1 T1 tau2 sigma2 T2]
-                            where the 1 (2) indicates the parameters for HbO (HbR).
-            "afni_gamma":   [p q T] applied to both HbO and HbR
-                            or [p1 q1 T1 p2 q2 T2]
-                            where the 1 (2) indicates the parameters for HbO (HbR).
-            "individual":   array containing the individual basis functions
-                            (t_hrf x chromo x channels).
-        drift_order: order of the polynomial drift regressors to add to the
-            design matrix
+        ts_long: time series of long distance channels
+        ts_short: time series of short distance channels
+        stim: stimulus DataFrame
+        geo3d: probe geometry
+        basis_function: the temporal basis function(s) to model the HRF
+        drift_order: if not None specify the highest polynomial order of the drift terms
+        short_channel_method: can be 'closest' or 'max_corr' and specifies the
+            method to add short channel information ot the design matrix
+
     Returns:
-        A: xarray.DataArray of the design matrix (time x regressor x chromo)
+        A tuple containing the global design_matrix and a list of channel-wise
+        regressors.
     """
 
-    t = t.pint.dequantify()
-    # Convert stimulus data to xarray
-    if type(s) == pd.DataFrame:
-        s = s.cd.to_xarray(t)
+    dm = make_hrf_regressors(ts_long, stim, basis_function)
 
-    # Initialize regressor list
-    regressors = []
+    if drift_order is not None:
+        dm_drift = make_drift_regressors(ts_long, drift_order=drift_order)
+        dm = xr.concat([dm, dm_drift], dim="regressor")
 
-    ###########################################################################
-    # Construct the basis functions
+    if short_channel_method == "closest":
+        if ts_short is None:
+            raise ValueError("ts_short may not be None.")
+        channel_wise_regressors = [closest_short_channel(ts_long, ts_short, geo3d)]
+    elif short_channel_method == "max_corr":
+        if ts_short is None:
+            raise ValueError("ts_short may not be None.")
+        channel_wise_regressors = [max_corr_short_channel(ts_long, ts_short)]
+    else:
+        channel_wise_regressors = None
 
-    hrf_regressors = make_hrf_regressors(t, s, trange, idx_basis, params_basis)
-    regressors.append(hrf_regressors)
-
-    ###########################################################################
-    # Add drift regressors
-
-    drift_regressors = make_drift_regressors(t, drift_order)
-    regressors.append(drift_regressors)
-
-    ###########################################################################
-    # Add additional regressors
-
-    if add_regressors is not None:
-        add_regressors = add_regressors.pint.quantify("micromolar")
-        regressors.append(add_regressors)
-
-    ###########################################################################
-    # Stack regressors into design matrix
-
-    A = xr.concat(regressors, dim="regressor")
-    A = A.pint.quantify("micromolar")
-
-    return A
+    return dm, channel_wise_regressors
 
 
-def make_drift_regressors(t, drift_order):
-    nt = len(t)
+def make_drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> xr.DataArray:
+    dim3 = get_third_dimension(ts)
+    ndim3 = ts.sizes[dim3]
 
-    drift_regressors = np.ones((nt, drift_order + 1, 2))
+    nt = ts.sizes["time"]
 
-    for ii in range(1, drift_order + 1):
-        drift_regressors[:, ii, 0] = np.arange(1, nt + 1) ** (ii)
-        drift_regressors[:, ii, 0] = (
-            drift_regressors[:, ii, 0] / drift_regressors[-1, ii, 0]
-        )
+    drift_regressors = np.ones((nt, drift_order + 1, ndim3))
 
-    drift_regressors[:, :, 1] = drift_regressors[:, :, 0]
+    for i in range(1, drift_order + 1):
+        tmp = np.arange(1, nt + 1, dtype=float) ** (i)
+        tmp /= tmp[-1]
+        drift_regressors[:, i, 0] = tmp
 
-    regressor_names = []
-    for i in range(drift_order + 1):
-        regressor_names.append("Drift " + str(i))
+    for i in range(1, ndim3):
+        drift_regressors[:, :, i] = drift_regressors[:, :, 0]
+
+    regressor_names = [f"Drift {i}" for i in range(drift_order + 1)]
 
     drift_regressors = xr.DataArray(
         drift_regressors,
-        dims=["time", "regressor", "chromo"],
-        coords={"time": t, "regressor": regressor_names, "chromo": ["HbO", "HbR"]},
+        dims=["time", "regressor", dim3],
+        coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
     )
-    drift_regressors = drift_regressors.pint.quantify("micromolar")
 
     return drift_regressors
 
 
+# def make_hrf_regressors_orig(
+#    t: xr.DataArray, s: xr.DataArray, trange: list, idx_basis: str, params_basis
+# ):
+#    cond_names = s.condition.values
+#    dt = 1 / t.cd.sampling_rate
+#    n_pre = round(trange[0] / dt)
+#    n_post = round(trange[1] / dt)
+#    # np.arange results can be non-consistent when using non-integer steps
+#    # t_hrf = np.arange(n_pre * dt, (n_post + 1) * dt, dt)
+#    # using linspace instead
+#    t_hrf = np.linspace(trange[0], trange[1], abs(n_post) + abs(n_pre) + 1)
+#    nt = len(t)
+#
+#    # prune good stim
+#    # handle case of conditions with 0 trials
+#    lst_cond = np.where(np.sum(s > 0, axis=0) > 0)[0]
+#    n_cond = len(lst_cond)
+#    onset = np.zeros((nt, n_cond))
+#    n_trials = np.zeros(n_cond)
+#
+#    # handle case of single condition
+#    if n_cond == 1:
+#        cond_names = np.array([cond_names])
+#        s = np.expand_dims(s, axis=1)
+#
+#    for i_cond in range(n_cond):
+#        lst_t = np.where(s[:, lst_cond[i_cond]] == 1)[0]
+#        lstp = np.where((lst_t + n_pre >= 0) & (lst_t + n_post < nt))[0]
+#        lst = lst_t[lstp]
+#        n_trials[i_cond] = len(lst)
+#        onset[lst + n_pre, i_cond] = 1
+#
+#    tbasis, nb = construct_basis_functions(t_hrf, idx_basis, params_basis)
+#
+#    # remove the third dimension if it is 1
+#    if len(tbasis.shape) == 3 and tbasis.shape[2] == 1:
+#        tbasis = tbasis[:, :, 0]
+#
+#    regressor_names = []
+#
+#    for i_cond in range(n_cond):
+#        for b in range(nb):
+#            regressor_names.append("HRF " + cond_names[i_cond] + " " + str(b + 1))
+#
+#    if idx_basis != "individual":
+#        a_hrf = np.zeros((nt, nb * n_cond, 2))
+#        for i_conc in range(2):
+#            i_c = -1
+#            for i_cond in range(n_cond):
+#                for b in range(nb):
+#                    i_c += 1
+#                    if len(tbasis.shape) == 2:
+#                        clmn = np.convolve(onset[:, i_cond], tbasis[:, b])
+#                    else:
+#                        clmn = np.convolve(onset[:, i_cond], tbasis[:, b, i_conc])
+#                    clmn = clmn[:nt]
+#                    a_hrf[:, i_c, i_conc] = clmn
+#        hrf_regs = xr.DataArray(
+#            a_hrf,
+#            dims=["time", "regressor", "chromo"],
+#            coords={"time": t, "regressor": regressor_names, "chromo": ["HbO", "HbR"]},
+#        )
+#
+#    elif idx_basis == "individual":
+#        a_hrf = np.zeros((nt, nb * n_cond, 2, params_basis.shape[2]))
+#        for i_conc in range(2):
+#            for i_ch in range(params_basis.shape[2]):
+#                i_c = -1
+#                for i_cond in range(n_cond):
+#                    for b in range(nb):
+#                        i_c += 1
+#                        clmn = np.convolve(
+#                            onset[:, i_cond], np.squeeze(tbasis[i_ch, :, b, i_conc])
+#                        )
+#                        clmn = clmn[:nt]
+#                        a_hrf[:, i_c, i_conc, i_ch] = clmn
+#        hrf_regs = xr.DataArray(
+#            a_hrf,
+#            dims=["time", "regressor", "chromo", "channel"],
+#            coords={
+#                "time": t,
+#                "regressor": regressor_names,
+#                "chromo": ["HbO", "HbR"],
+#                "channel": params_basis.channel.values,
+#            },
+#        )
+#
+#    hrf_regs = hrf_regs.pint.quantify("micromolar")
+#
+#    return hrf_regs
+#
+
+
+def pad_time_axis(time: ArrayLike, onsets: ArrayLike):
+    min_onset = onsets.min()
+
+    if min_onset < time[0]:
+        dt = (time[1:] - time[:-1]).mean()
+        pad_before = int(np.ceil(np.abs(min_onset - time[0]) / dt))
+        padded_time = np.hstack((np.arange(-pad_before, 0) * dt, time))
+    else:
+        pad_before = 0
+        padded_time = time
+
+    return padded_time, pad_before
+
+
+def build_stim_array(
+    time: ArrayLike, onsets: ArrayLike, duration: None | ArrayLike
+) -> np.ndarray:
+    """Build an array indicating active stimulus periods.
+
+    The array values are 1 between onset and onset+duration and zero everywhere else.
+
+    Args:
+        time: the time axis
+        onsets: times of stimulus onsets
+        duration: either durations of each stimulus or None, in which case the stimulus
+            duration is set to one sample.
+
+    Returns:
+        The array denoting
+
+    """
+
+    smpl_start = time.searchsorted(onsets)
+    if duration is None:
+        smpl_stop = smpl_start + 1
+    else:
+        smpl_stop = time.searchsorted(onsets + duration)
+
+    stim = np.zeros_like(time)
+    for start, stop in zip(smpl_start, smpl_stop):
+        stim[start:stop] = 1
+
+    return stim
+
+
+def get_third_dimension(ts: cdt.NDTimeSeries):
+    other_dims = [d for d in ts.dims if d != "channel" and d != "time"]
+    assert len(other_dims) == 1
+    return other_dims[0]
+
+
 def make_hrf_regressors(
-    t: xr.DataArray, s: xr.DataArray, trange: list, idx_basis: str, params_basis
+    ts: cdt.NDTimeSeries, stim: pd.DataFrame, basis_function: TemporalBasisFunction
 ):
-    cond_names = s.condition.values
-    dt = 1 / t.cd.sampling_rate
-    n_pre = round(trange[0] / dt)
-    n_post = round(trange[1] / dt)
-    # np.arange results can be non-consistent when using non-integer steps
-    # t_hrf = np.arange(n_pre * dt, (n_post + 1) * dt, dt)
-    # using linspace instead
-    t_hrf = np.linspace(trange[0], trange[1], abs(n_post) + abs(n_pre) + 1)
-    nt = len(t)
+    """Create regressors modelling the hemodynamic response to stimuli."""
 
-    # prune good stim
-    # handle case of conditions with 0 trials
-    lst_cond = np.where(np.sum(s > 0, axis=0) > 0)[0]
-    n_cond = len(lst_cond)
-    onset = np.zeros((nt, n_cond))
-    n_trials = np.zeros(n_cond)
+    trial_types: np.ndarray = stim.trial_type.unique()
 
-    # handle case of single condition
-    if n_cond == 1:
-        cond_names = np.array([cond_names])
-        s = np.expand_dims(s, axis=1)
+    basis = basis_function(ts)
 
-    for i_cond in range(n_cond):
-        lst_t = np.where(s[:, lst_cond[i_cond]] == 1)[0]
-        lstp = np.where((lst_t + n_pre >= 0) & (lst_t + n_post < nt))[0]
-        lst = lst_t[lstp]
-        n_trials[i_cond] = len(lst)
-        onset[lst + n_pre, i_cond] = 1
+    components = basis.component.values
 
-    tbasis, nb = construct_basis_functions(t_hrf, idx_basis, params_basis)
+    other_dim = get_third_dimension(ts)  # could be "chromo" or "wavelength"
+    n_time = ts.sizes["time"]
+    n_other = ts.sizes[other_dim]
+    n_components = basis.sizes["component"]
+    n_trial_types = len(trial_types)
+    n_regressors = n_trial_types * n_components
 
-    # remove the third dimension if it is 1
-    if len(tbasis.shape) == 3 and tbasis.shape[2] == 1:
-        tbasis = tbasis[:, :, 0]
+    if other_dim in basis.dims:
+        if not set(basis[other_dim].values) == set(ts[other_dim].values):
+            raise ValueError(
+                f"basis and timeseries don't match in dimension '{other_dim}'"
+            )
+    else:
+        # if the basis function does not contain other_dim (e.g. the same HRF is applied
+        # to HbO and HbR), add other_dim by copying the array.
+        basis = xr.concat(n_other * [basis], dim=other_dim)
+        basis = basis.transpose("time", "component", other_dim)
+        basis = basis.assign_coords({other_dim: ts[other_dim]})
 
-    regressor_names = []
+    # basis.time may contain time-points before the stimulus onset. To account for this
+    # offset in the convolution shift the onset times.
+    shifted_stim = stim.copy()
+    shifted_stim["onset"] += basis.time.values.min()
 
-    for i_cond in range(n_cond):
-        for b in range(nb):
-            regressor_names.append("HRF " + cond_names[i_cond] + " " + str(b + 1))
+    padded_time, pad_before = pad_time_axis(ts.time.values, shifted_stim["onset"])
 
-    if idx_basis != "individual":
-        a_hrf = np.zeros((nt, nb * n_cond, 2))
-        for i_conc in range(2):
-            i_c = -1
-            for i_cond in range(n_cond):
-                for b in range(nb):
-                    i_c += 1
-                    if len(tbasis.shape) == 2:
-                        clmn = np.convolve(onset[:, i_cond], tbasis[:, b])
-                    else:
-                        clmn = np.convolve(onset[:, i_cond], tbasis[:, b, i_conc])
-                    clmn = clmn[:nt]
-                    a_hrf[:, i_c, i_conc] = clmn
-        hrf_regs = xr.DataArray(
-            a_hrf,
-            dims=["time", "regressor", "chromo"],
-            coords={"time": t, "regressor": regressor_names, "chromo": ["HbO", "HbR"]},
-        )
+    if n_components == 1:
+        regressor_names = [f"HRF {tt}" for tt in trial_types]
+    else:
+        regressor_names = [f"HRF {tt} {c}" for tt in trial_types for c in components]
 
-    elif idx_basis == "individual":
-        a_hrf = np.zeros((nt, nb * n_cond, 2, params_basis.shape[2]))
-        for i_conc in range(2):
-            for i_ch in range(params_basis.shape[2]):
-                i_c = -1
-                for i_cond in range(n_cond):
-                    for b in range(nb):
-                        i_c += 1
-                        clmn = np.convolve(
-                            onset[:, i_cond], np.squeeze(tbasis[i_ch, :, b, i_conc])
-                        )
-                        clmn = clmn[:nt]
-                        a_hrf[:, i_c, i_conc, i_ch] = clmn
-        hrf_regs = xr.DataArray(
-            a_hrf,
-            dims=["time", "regressor", "chromo", "channel"],
-            coords={
-                "time": t,
-                "regressor": regressor_names,
-                "chromo": ["HbO", "HbR"],
-                "channel": params_basis.channel.values,
-            },
-        )
+    regressors = np.zeros((n_time, n_regressors, n_other))
 
-    hrf_regs = hrf_regs.pint.quantify("micromolar")
+    for i_tt, trial_type in enumerate(trial_types):
+        tmp = shifted_stim[shifted_stim.trial_type == trial_type]
+        if basis_function.convolve_over_duration:
+            stim_array = build_stim_array(padded_time, tmp["onset"], tmp["duration"])
+        else:
+            stim_array = build_stim_array(padded_time, tmp["onset"], None)
 
-    return hrf_regs
+        for i_comp in range(n_components):
+            i_reg = i_tt * n_components + i_comp
+            for i_other, other in enumerate(ts[other_dim].values):
+                bb = basis.sel({other_dim: other})
+
+                # Convolve the basis function with the boxcar stimuls function
+                # usigin 'full' mode, i.e. the resulting regressor is longer than the
+                # original time series and needs to be trimmed. Together with the
+                # shifted onset times this moves the basis fct. to the correct position.
+                regressor = np.convolve(stim_array, bb[:, i_comp])
+                regressor = regressor[pad_before : pad_before + n_time]
+                regressor /= regressor.max()
+
+                regressors[:, i_reg, i_other] = regressor
+
+    regressors = xr.DataArray(
+        regressors,
+        dims=["time", "regressor", other_dim],
+        coords={
+            "time": ts.time.values,
+            "regressor": regressor_names,
+            other_dim: ts[other_dim].values,
+        },
+    )
+
+    # hrf_regs = hrf_regs.pint.quantify("micromolar")
+
+    return regressors
 
 
 def construct_basis_functions(t_hrf, idx_basis, params_basis):
@@ -479,31 +659,40 @@ def closest_short_channel(y, short_channels, middle_positions, as_xarray=False):
 """
 
 
-def split_long_short_channels(
-    ts: cdt.NDTimeSeries,
-    geo3d: cdt.LabeledPointCloud,
-    distance_threshold: Quantity = 1.5 * cedalion.units.cm,
-):
-    """Split a time series into two based on channel distances.
+def _regressors_from_selected_short_channels(
+    ts_long: cdt.NDTimeSeries,
+    ts_short: cdt.NDTimeSeries,
+    selected_short_ch_indices: np.ndarray,
+) -> xr.DataArray:
+    # pick for each long channel from ts_short the selected closest channel
+    # regressors has same dims as ts_long/ts_short and same channels as ts_long
+    regressors = ts_short.isel(channel=selected_short_ch_indices)
 
-    Args:
-        ts: FIXME
-        geo3d : FIXME
-        distance_threshold : FIXME
+    # coords 'channel' in regressors denotes the short channels selected from ts_short.
+    # rearrange: 'channel' should name the channel for which each regressor should
+    # be used. 'short_channel' names the assigned short channel.
+    # Furthermore define 'computational groups', blocks of channels for which the GLM
+    # can be solved together, because they have the same channel-wise regressor.
+    # assign this as a additional coordinate to the channel dim.
 
-    Returns:
-        ts_long : time series with channel distances >= distance_threshold
-        ts_short : time series with channel distances < distance_threshold
-    """
-    dists = xrutils.norm(
-        geo3d.loc[ts.source] - geo3d.loc[ts.detector], dim=geo3d.points.crs
+    coords_short_channels = regressors.channel
+
+    dim3 = get_third_dimension(ts_long)
+
+    keep_coords = ["time", "samples", dim3]
+    drop_coords = [i for i in regressors.coords.keys() if i not in keep_coords]
+    regressors = regressors.drop_vars(drop_coords)
+    regressors = regressors.assign_coords(
+        {
+            "channel": ("channel", ts_long.channel.values),
+            "short_channel": ("channel", coords_short_channels.channel.values),
+            "comp_group": ("channel", selected_short_ch_indices),
+        }
     )
+    regressors = regressors.expand_dims({"regressor": 1})
+    regressors = regressors.assign_coords({"regressor": ["short"]})
 
-    mask = dists < distance_threshold
-    ts_short = ts.sel(channel=mask)
-    ts_long = ts.sel(channel=~mask)
-
-    return ts_long, ts_short
+    return regressors
 
 
 def closest_short_channel(
@@ -512,9 +701,9 @@ def closest_short_channel(
     """Create channel-wise regressors use closest nearby short channel.
 
     Args:
-        ts_long: FIXME
-        ts_short: FIXME
-        geo3d: FIXME
+        ts_long: time series of long channels
+        ts_short: time series of short channels
+        geo3d: probe geometry
 
     Returns:
         channel-wise regressor
@@ -534,115 +723,135 @@ def closest_short_channel(
     dists = np.linalg.norm(dist_vectors, axis=-1)
     closest_short_ch_indices = np.argmin(dists, axis=1)  # size nlong
 
-    # ts_short = ts_short.rename({"channel" : "short_channel"})
-
-    # pick for each long channel from ts_short the selected closest channel
-    # regressors has same dims as ts_long/ts_short and same channels as ts_long
-    regressors = ts_short.isel(channel=closest_short_ch_indices)
-
-    # coords 'channel' in regressors denotes the short channels selected from ts_short.
-    # rearrange: 'channel' should name the channel for which each regressor should
-    # be used. 'short_channel' names the assigned short channel.
-
-    # furthermore define 'computational groups', blocks of channels for which the GLM
-    # can be solved together, because they have the same channel-wise regressor.
-    # assign this as a temporary additional coordinate to the channel dim.
-
-    coords_short_channels = regressors.channel
-
-    keep_coords = ["time", "samples", "chromo"]
-    drop_coords = [i for i in regressors.coords.keys() if i not in keep_coords]
-    regressors = regressors.drop_vars(drop_coords)
-    regressors = regressors.assign_coords(
-        {
-            "channel": ("channel", ts_long.channel.data),
-            "short_channel": ("channel", coords_short_channels.channel.data),
-            "comp_group": ("channel", closest_short_ch_indices),
-        }
+    regressors = _regressors_from_selected_short_channels(
+        ts_long, ts_short, closest_short_ch_indices
     )
 
     return regressors
 
 
-def max_corr_short_channel(y, short_channels, as_xarray=False):
-    # Get indices of short channels
-    lst_ss = [np.where(y.channel == ch)[0][0] for ch in short_channels]
+def max_corr_short_channel(ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries):
+    """Create channel-wise regressors using the most correlated short channels.
 
-    units = y.pint.units
-    y = y.pint.dequantify()
+    For each long channel the short channel is selected that has the highest
+    correleation coefficient in any wavelength or chromophore.
 
-    # HbO
-    dc = y[:, 0, :].squeeze().values
-    dc = (dc - np.mean(dc, axis=0)) / np.std(dc, axis=0)
-    cc1 = np.dot(dc.T, dc) / len(dc)
+    Args:
+        ts_long: time series of long channels
+        ts_short: time series of short channels
 
-    # HbR
-    dc = y[:, 1, :].squeeze().values
-    dc = (dc - np.mean(dc, axis=0)) / np.std(dc, axis=0)
-    cc2 = np.dot(dc.T, dc) / len(dc)
-
-    iNearestSS = np.zeros((cc1.shape[0], 2), dtype=int)
-    for iML in range(cc1.shape[0]):
-        iNearestSS[iML, 0] = lst_ss[np.argmax(cc1[iML, lst_ss])]
-        iNearestSS[iML, 1] = lst_ss[np.argmax(cc2[iML, lst_ss])]
-
-    channel_iSS = [y.channel[i].values.astype("U6") for i in iNearestSS]
-
-    if as_xarray:
-        # get data not names of short channels
-        ss_data = np.zeros((len(y.time), 2, len(y.channel)))
-        for i in range(len(y.channel)):
-            ss_data[:, 0, i] = y[:, 0, iNearestSS[i, 0]]
-            ss_data[:, 1, i] = y[:, 1, iNearestSS[i, 1]]
-        highest_corr_short = xr.DataArray(
-            ss_data,
-            dims=["time", "chromo", "channel"],
-            coords={"time": y.time, "channel": y.channel, "chromo": y.chromo},
-        ).pint.quantify(units)
-        # add regressor dimension
-        highest_corr_short = highest_corr_short.assign_coords(
-            regressor=(["channel", "chromo"], channel_iSS)
-        )
-
-    else:
-        # transform to regressor dictionary
-        highest_corr_short = xr.DataArray(
-            channel_iSS,
-            dims=["channel", "chromo"],
-            coords={"channel": y.channel, "chromo": y.chromo},
-        )
-        highest_corr_short = make_reg_dict(y.pint.quantify(units), highest_corr_short)
-
-    return highest_corr_short
-
-
-def make_reg_dict(y, add_regressors):
-    """Make a dictionary with regressors as keys and channels as values.
-
-    inputs:
-        y: xarray.DataArray of the data (time x chromo x channels)
-        add_regressors: xarray.DataArray containing the short channel regressor
-                        (name) for each channel (channels x chromo)
-
-    Return:
-        add_reg_dict: dictionary with regressors as keys and channels as values
+    Returns:
+        channel-wise regressors
     """
 
-    unique_short = np.unique(add_regressors.values)
+    dim3 = get_third_dimension(ts_long)
 
-    ss_data = y.sel(channel=unique_short)
-    ss_data = ss_data.drop_vars(["samples", "source", "detector", "sbj"])
-    ss_data = ss_data.rename({"channel": "regressor"})
+    z_long = (ts_long - ts_long.mean("time")) / ts_long.std("time")
+    z_short = (ts_short - ts_short.mean("time")) / ts_short.std("time")
 
-    reg_dict = {}
-    reg_dict["data"] = ss_data
+    # calculate correleation coefficients between all long and short channels
+    # dims: (chromo|wavelength, ch_long, ch_short)
+    corr_coeff = (
+        xr.dot(
+            z_long.rename({"channel": "ch_long"}),
+            z_short.rename({"channel": "ch_short"}),
+            dim="time",
+        )
+        / z_long.sizes["time"]
+    )
 
-    # fill dictionary: if channels have same regressor, merge them to one key
-    for chromo in add_regressors.chromo.values:
-        reg_dict[chromo] = {}
-        add_reg_chromo = add_regressors.sel(chromo=chromo)
-        for ch in np.unique(add_reg_chromo.values):
-            reg_dict[chromo][ch] = add_reg_chromo.where(
-                add_reg_chromo == ch, drop=True
-            ).channel.values.tolist()
-    return reg_dict
+    # for each long channel find the short channel with the highest correlation
+    # in *any* chromophore/wavelength. Makes sure that different chromophores
+    # don't get different short channels assigned.
+
+    max_corr_short_ch_indices = corr_coeff.max(dim3).argmax("ch_short").values
+
+    regressors = _regressors_from_selected_short_channels(
+        ts_long, ts_short, max_corr_short_ch_indices
+    )
+
+    return regressors
+
+
+# def max_corr_short_channel_orig(y, short_channels, as_xarray=False):
+#    # Get indices of short channels
+#    lst_ss = [np.where(y.channel == ch)[0][0] for ch in short_channels]
+#
+#    units = y.pint.units
+#    y = y.pint.dequantify()
+#
+#    # HbO
+#    dc = y[:, 0, :].squeeze().values
+#    dc = (dc - np.mean(dc, axis=0)) / np.std(dc, axis=0)
+#    cc1 = np.dot(dc.T, dc) / len(dc)
+#
+#    # HbR
+#    dc = y[:, 1, :].squeeze().values
+#    dc = (dc - np.mean(dc, axis=0)) / np.std(dc, axis=0)
+#    cc2 = np.dot(dc.T, dc) / len(dc)
+#
+#    iNearestSS = np.zeros((cc1.shape[0], 2), dtype=int)
+#    for iML in range(cc1.shape[0]):
+#        iNearestSS[iML, 0] = lst_ss[np.argmax(cc1[iML, lst_ss])]
+#        iNearestSS[iML, 1] = lst_ss[np.argmax(cc2[iML, lst_ss])]
+#
+#    channel_iSS = [y.channel[i].values.astype("U6") for i in iNearestSS]
+#
+#    if as_xarray:
+#        # get data not names of short channels
+#        ss_data = np.zeros((len(y.time), 2, len(y.channel)))
+#        for i in range(len(y.channel)):
+#            ss_data[:, 0, i] = y[:, 0, iNearestSS[i, 0]]
+#            ss_data[:, 1, i] = y[:, 1, iNearestSS[i, 1]]
+#        highest_corr_short = xr.DataArray(
+#            ss_data,
+#            dims=["time", "chromo", "channel"],
+#            coords={"time": y.time, "channel": y.channel, "chromo": y.chromo},
+#        ).pint.quantify(units)
+#        # add regressor dimension
+#        highest_corr_short = highest_corr_short.assign_coords(
+#            regressor=(["channel", "chromo"], channel_iSS)
+#        )
+#
+#    else:
+#        # transform to regressor dictionary
+#        highest_corr_short = xr.DataArray(
+#            channel_iSS,
+#            dims=["channel", "chromo"],
+#            coords={"channel": y.channel, "chromo": y.chromo},
+#        )
+#        highest_corr_short = make_reg_dict(y.pint.quantify(units), highest_corr_short)
+#
+#    return highest_corr_short
+#
+#
+# def make_reg_dict(y, add_regressors):
+#    """Make a dictionary with regressors as keys and channels as values.
+#
+#    inputs:
+#        y: xarray.DataArray of the data (time x chromo x channels)
+#        add_regressors: xarray.DataArray containing the short channel regressor
+#                        (name) for each channel (channels x chromo)
+#
+#    Return:
+#        add_reg_dict: dictionary with regressors as keys and channels as values
+#    """
+#
+#    unique_short = np.unique(add_regressors.values)
+#
+#    ss_data = y.sel(channel=unique_short)
+#    ss_data = ss_data.drop_vars(["samples", "source", "detector", "sbj"])
+#    ss_data = ss_data.rename({"channel": "regressor"})
+#
+#    reg_dict = {}
+#    reg_dict["data"] = ss_data
+#
+#    # fill dictionary: if channels have same regressor, merge them to one key
+#    for chromo in add_regressors.chromo.values:
+#        reg_dict[chromo] = {}
+#        add_reg_chromo = add_regressors.sel(chromo=chromo)
+#        for ch in np.unique(add_reg_chromo.values):
+#            reg_dict[chromo][ch] = add_reg_chromo.where(
+#                add_reg_chromo == ch, drop=True
+#            ).channel.values.tolist()
+#    return reg_dict

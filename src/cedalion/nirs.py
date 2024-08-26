@@ -1,11 +1,14 @@
+from importlib.resources import files
+
 import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 from scipy.interpolate import interp1d
 
+import cedalion
+import cedalion.typing as cdt
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
-from importlib.resources import files
 
 
 def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
@@ -143,6 +146,7 @@ def od2conc(
     # conc = Einv @ (optical_density / ( dists * dpf))
     conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
     conc = conc.pint.to("micromolar")
+    conc = conc.pint.quantify({"time": od.time.attrs["units"]})  # got lost in xr.dot
     conc = conc.rename("concentration")
 
     return conc
@@ -179,3 +183,30 @@ def beer_lambert(
     conc = od2conc(od, geo3d, dpf, spectrum)
 
     return conc
+
+
+def split_long_short_channels(
+    ts: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
+    distance_threshold: cedalion.Quantity = 1.5 * cedalion.units.cm,
+):
+    """Split a time series into two based on channel distances.
+
+    Args:
+        ts: FIXME
+        geo3d : FIXME
+        distance_threshold : FIXME
+
+    Returns:
+        ts_long : time series with channel distances >= distance_threshold
+        ts_short : time series with channel distances < distance_threshold
+    """
+    dists = xrutils.norm(
+        geo3d.loc[ts.source] - geo3d.loc[ts.detector], dim=geo3d.points.crs
+    )
+
+    mask = dists < distance_threshold
+    ts_short = ts.sel(channel=mask)
+    ts_long = ts.sel(channel=~mask)
+
+    return ts_long, ts_short

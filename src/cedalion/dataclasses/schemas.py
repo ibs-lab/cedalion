@@ -90,12 +90,13 @@ NDTimeSeriesSchema = DataArraySchema(
 
 # FIXME better location?
 def build_timeseries(
-    data: np.ndarray,
+    data: ArrayLike,
     dims: List[str],
-    time: np.ndarray,
+    time: ArrayLike,
     channel: List[str],
     value_units: str,
     time_units: str,
+    other_coords: dict[str, ArrayLike] = {},
 ):
     assert len(dims) == data.ndim
     assert "time" in dims
@@ -105,14 +106,17 @@ def build_timeseries(
 
     samples = np.arange(len(time))
 
+    coords = {
+        "time": ("time", time),
+        "samples": ("time", samples),
+        "channel": ("channel", channel),
+    }
+    coords.update(other_coords)
+
     da = xr.DataArray(
         data,
         dims=dims,
-        coords={
-            "time": ("time", time),
-            "samples": ("time", samples),
-            "channel": ("channel", channel),
-        },
+        coords=coords,
     )
     da = da.pint.quantify(value_units)
     da = da.pint.quantify({"time": time_units})
