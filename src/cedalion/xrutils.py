@@ -84,20 +84,21 @@ def apply_mask(data_array: xr.DataArray,
                mask: xr.DataArray, operator: str, dim_collapse: str) -> xr.DataArray:
     """Apply a boolean mask to a DataArray according to the defined "operator".
 
-    INPUTS:
-    data_array:     NDTimeSeries, input time series data xarray
-    mask:           input boolean mask array with a subset of dimensions matching data_array
-    operator:       operators to apply to the mask and data_array
-        "nan":          inserts NaNs in the data_array where mask is False
-        "drop":         drops value in the data_array where mask is False
-    dim_collapse:   mask dimension to collapse to, merging boolean masks along all other
-                    dimensions. can be skipped with "none".
-                    Example: collapsing to "channel" dimension will drop or nan a channel
-                    if it is "False" along any other dimensions
+    Args:
+        data_array: NDTimeSeries, input time series data xarray
+        mask: input boolean mask array with a subset of dimensions matching data_array
+        operator: operators to apply to the mask and data_array
+            "nan": inserts NaNs in the data_array where mask is False
+            "drop": drops value in the data_array where mask is False
+        dim_collapse: Mask dimension to collapse to, merging boolean masks along all
+            other dimensions. Can be skipped with "none".
+            Example: collapsing to "channel" dimension will drop or nan a channel if it
+            is "False" along any other dimensions
 
-    OUTPUTS:
-    masked_data_array:    input data_array with applied mask
-    masked_elements:      list of elements in data_array that were masked (e.g. dropped or set to NaN)
+    Returns:
+        masked_data_array: Input data_array with applied mask
+        masked_elements: List of elements in data_array that were masked (e.g. 
+            dropped or set to NaN)
     """
     flag_collapse = False
 

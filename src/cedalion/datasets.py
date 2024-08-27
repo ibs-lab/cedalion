@@ -65,6 +65,10 @@ def get_colin27_headmodel():
 
 
 def get_fingertapping() -> cdc.Recording:
+    """Retrieves a finger tapping recording in BIDS format.
+
+    Data is provided by Robe Luke and is also available at https://github.com/rob-luke/BIDS-NIRS-Tapping
+    """
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
