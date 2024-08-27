@@ -9,6 +9,12 @@ def pinv(array: xr.DataArray) -> xr.DataArray:
 
     FIXME: handles unitless and quantified DataArrays but not
            DataArrays with units in their attrs.
+
+    Args:
+        array (xr.DataArray): Input array
+
+    Returns:
+        array_inv (xr.DataArray): Pseudoinverse of the input array
     """
     if not array.ndim == 2:
         raise ValueError("array must have only 2 dimensions")
@@ -42,17 +48,24 @@ def pinv(array: xr.DataArray) -> xr.DataArray:
 
 
 def norm(array: xr.DataArray, dim: str) -> xr.DataArray:
-    """Calculate the vector norm along a given dimension."""
+    """Calculate the vector norm along a given dimension.
+
+    Extends the behavior of numpy.linalg.norm to xarray DataArrays.
+    Args:
+        array (xr.DataArray): Input array
+        dim (str): Dimension along which to calculate the norm
+
+    Returns:
+        normed (xr.DataArray): Array with the norm along the specified dimension
+    """
     if dim not in array.dims:
         raise ValueError(f"array does not have dimension '{dim}'")
-
-    dim_index = array.dims.index(dim)
 
     if (units := array.pint.units) is not None:
         array = array.pint.dequantify()
 
     normed = xr.apply_ufunc(
-        np.linalg.norm, array, input_core_dims=[[dim]], kwargs={"axis": dim_index}
+        np.linalg.norm, array, input_core_dims=[[dim]], kwargs={"axis": -1}
     )
 
     if units is not None:

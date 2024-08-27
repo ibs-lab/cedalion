@@ -178,6 +178,15 @@ def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
 
 
 def labels_and_positions(probe):
+    """Extract 3D coordinates of optodes and landmarks from a nirs probe variable.
+
+    Args:
+        probe: Nirs probe geometry variable, see snirf documentation.
+
+    Returns:
+        Tuple(np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray):
+            Tuple containing the source, detector and landmark labels/positions.
+    """
     def convert_none(probe, attrname, default):
         attr = getattr(probe, attrname)
         if attr is None:
@@ -220,6 +229,17 @@ def labels_and_positions(probe):
 
 
 def geometry_from_probe(nirs_element: NirsElement):
+    """Extract 3D coordinates of optodes and landmarks from the nirs element probe information.
+
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation.
+
+    Returns:
+        result (xr.DataArray, (label, pos)): A DataArray containing the 3D coordinates
+            of optodes and landmarks, with dimensions 'label' and
+            'pos' and coordinates 'label' and 'type'.
+    """
     probe = nirs_element.probe
 
     length_unit = nirs_element.metaDataTags.LengthUnit
@@ -262,6 +282,16 @@ def geometry_from_probe(nirs_element: NirsElement):
 def measurement_list_to_dataframe(
     measurement_list: MeasurementList, drop_none: bool = False
 ):
+    """Converts a snirf MeasurementList object to a pandas DataFrame.
+
+    Args:
+        measurement_list (MeasurementList): MeasurementList object as specified in the snirf
+            documentation.
+        drop_none (bool): If True, drop columns that are None for all rows.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the measurement list information.
+    """
     fields = [
         "sourceIndex",
         "detectorIndex",
@@ -288,6 +318,15 @@ def measurement_list_to_dataframe(
 
 
 def meta_data_tags_to_dict(nirs_element: NirsElement) -> OrderedDict[str, Any]:
+    """Converts the metaDataTags of a nirs element to a dictionary.
+
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation.
+
+    Returns:
+        OrderedDict[str, Any]: Dictionary containing the metaDataTags information.
+    """
     mdt = nirs_element.metaDataTags
 
     fields = mdt._snirf_names + mdt._unspecified_names
@@ -296,6 +335,14 @@ def meta_data_tags_to_dict(nirs_element: NirsElement) -> OrderedDict[str, Any]:
 
 
 def stim_to_dataframe(stim: Stim):
+    """Converts a snirf Stim object to a pandas DataFrame.
+
+    Args:
+        stim (Stim): Stim object as specified in the snirf documentation.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the stimulus information.
+    """
     dfs = []
 
     if len(stim) == 0:
@@ -326,6 +373,19 @@ def stim_to_dataframe(stim: Stim):
 def read_aux(
     nirs_element: NirsElement, opts: dict[str, Any]
 ) -> OrderedDict[str, xr.DataArray]:
+    """Reads the aux data from a nirs element into a dictionary of DataArrays.
+
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation.
+        opts (dict[str, Any]): Options for reading the aux data. The following
+            options are supported:
+            - squeeze_aux (bool): If True, squeeze the aux data to remove
+                dimensions of size 1.
+
+    Returns:
+        result (OrderedDict[str, xr.DataArray]): Dictionary containing the aux data
+    """
     result = OrderedDict()
 
     # units that need to be converted to pint units
@@ -389,7 +449,18 @@ def read_aux(
 
 
 def add_number_to_name(name, keys):
-    """Changes name to name_<number>."""
+    """Changes name to name_<number>.
+
+    Number appended to name is the smallest number that makes the new name unique with
+    respect to the list of keys.
+
+    Args:
+        name (str): Name to which a number should be added.
+        keys (list[str]): List of keys to which the new name should be compared.
+
+    Returns:
+        str: New name with number added.
+    """
 
     pat = re.compile(rf"{name}(_(\d+))?")
     max_number = 1
@@ -405,6 +476,18 @@ def add_number_to_name(name, keys):
 def read_data_elements(
     data_element: DataElement, nirs_element: NirsElement, stim: pd.DataFrame
 ) -> list[tuple[str, NDTimeSeries]]:
+    """Reads the data elements from a nirs element into a list of DataArrays.
+
+    Args:
+        data_element (DataElement): Data element as specified in the snirf documentation.
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation.
+        stim (pd.DataFrame): DataFrame containing the stimulus information.
+
+    Returns:
+        list[tuple[str, NDTimeSeries]]: List of tuples containing the canonical name
+            of the data element and the DataArray.
+    """
     time = data_element.time
 
     trial_types = stim["trial_type"].drop_duplicates().values
@@ -585,6 +668,19 @@ def _get_channel_coords(
 
 
 def read_nirs_element(nirs_element, opts):
+    """Reads a single nirs element from a .snirf file into a Recording object.
+
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation
+        opts (dict[str, Any]): Options for reading the data element. The following
+            options are supported:
+            - squeeze_aux (bool): If True, squeeze the aux data to remove
+                dimensions of size 1.
+
+    Returns:
+        rec (Recording): Recording object containing the data from the nirs element.
+    """
     geo3d = geometry_from_probe(nirs_element)
     stim = stim_to_dataframe(nirs_element.stim)
 
@@ -635,6 +731,17 @@ def read_nirs_element(nirs_element, opts):
 
 
 def read_snirf(fname: Path | str, squeeze_aux=False) -> list[cdc.Recording]:
+    """Reads a .snirf file into a list of Recording objects.
+
+    Args:
+        fname (Path | str): Path to .snirf file
+        squeeze_aux (Bool): If True, squeeze the aux data to remove
+            dimensions of size 1.
+
+    Returns:
+        list[Recording]: List of Recording objects containing the data from the nirs
+        elements in the .snirf file.
+    """
     opts = {"squeeze_aux": squeeze_aux}
 
     if isinstance(fname, Path):
@@ -645,6 +752,18 @@ def read_snirf(fname: Path | str, squeeze_aux=False) -> list[cdc.Recording]:
 
 
 def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement):
+    """Enriches measurement list DataFrame with additional information.
+
+    Args:
+        df_ml (pd.DataFrame): DataFrame containing the measurement list information.
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the measurement list information with
+            additional columns for channel, source, detector, wavelength and chromo.
+
+    """
     sourceLabels, detectorLabels, landmarkLabels, _, _, _ = labels_and_positions(
         nirs_element.probe
     )
