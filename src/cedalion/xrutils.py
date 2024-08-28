@@ -97,7 +97,7 @@ def apply_mask(data_array: xr.DataArray,
 
     Returns:
         masked_data_array: Input data_array with applied mask
-        masked_elements: List of elements in data_array that were masked (e.g. 
+        masked_elements: List of elements in data_array that were masked (e.g.
             dropped or set to NaN)
     """
     flag_collapse = False
@@ -122,7 +122,7 @@ def apply_mask(data_array: xr.DataArray,
         masked_data_array = data_array.where(mask, other=np.nan)
     elif operator.lower() == "drop":
         # drops value in the data_array where mask is False.
-        # Note: values are only dropped if mask has "False" across the entire  relevant dimension
+        # Note: values are only dropped if mask has "False" across the entire relevant dimension
         masked_data_array = data_array.where(mask, drop=True)
 
     # return the masked elements if dimensions were collapsed
