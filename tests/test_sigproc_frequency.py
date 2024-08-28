@@ -37,11 +37,7 @@ def test_sampling_rate(timeseries):
     assert q.units == units.Hz
 
 
-def test_freq_filter(timeseries):
-    filtered = freq_filter(timeseries, 0.8 * units.Hz, 1.2 * units.Hz)
-    filtered = filtered.pint.dequantify()
-    timeseries = timeseries.pint.dequantify()
-
+def assert_freq_filter_result(timeseries, filtered):
     def proj(a, b):
         return np.dot(a, b)
 
@@ -57,3 +53,37 @@ def test_freq_filter(timeseries):
     assert after_y2 == pytest.approx(before_y2, rel=0.005)  #  f2 remains intact
     assert after_y12_1 < (before_y1 / 100)
     assert after_y12_2 == pytest.approx(before_y2, rel=0.005)
+
+
+def test_freq_filter(timeseries):
+    filtered = freq_filter(timeseries, 0.8 * units.Hz, 1.2 * units.Hz)
+    filtered = filtered.pint.dequantify()
+    timeseries = timeseries.pint.dequantify()
+
+    assert_freq_filter_result(timeseries, filtered)
+
+
+def test_freq_filter_units(timeseries):
+    filtered = freq_filter(timeseries, 800 * units.mHz, 1200 * units.mHz)
+    filtered = filtered.pint.dequantify()
+    timeseries = timeseries.pint.dequantify()
+
+    assert_freq_filter_result(timeseries, filtered)
+
+
+def test_freq_filter_accessor(timeseries):
+    filtered = timeseries.cd.freq_filter(0.8, 1.2)
+
+    filtered = filtered.pint.dequantify()
+    timeseries = timeseries.pint.dequantify()
+
+    assert_freq_filter_result(timeseries, filtered)
+
+
+def test_freq_filter_accessor_units(timeseries):
+    filtered = timeseries.cd.freq_filter(0.8 * units.Hz, 1200 * units.mHz)
+
+    filtered = filtered.pint.dequantify()
+    timeseries = timeseries.pint.dequantify()
+
+    assert_freq_filter_result(timeseries, filtered)

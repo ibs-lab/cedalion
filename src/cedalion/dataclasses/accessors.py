@@ -1,13 +1,14 @@
-from typing import Dict
+from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
-import scipy.signal
 import xarray as xr
-import cedalion.typing as cdt
-import cedalion.dataclasses as cdc
-from typing import Union, List
 from numpy.typing import ArrayLike
+
+import cedalion.dataclasses as cdc
+import cedalion.typing as cdt
+from cedalion import Quantity, units
+from cedalion.sigproc.frequency import freq_filter
 
 
 @xr.register_dataarray_accessor("cd")
@@ -47,9 +48,13 @@ class CedalionAccessor:
         duration = np.max(durations)
         duration_idx = np.argmax(durations)
 
-        # FIXME limit reltime precision (to ns?) to avoid conflicts when concatenating epochs
+        # limit reltime precision (to ns?) to avoid conflicts when concatenating epochs
         # - different fix by DBoas & AvL on 01.08.24: Use times of longest epoch
-        reltime = np.round(self._obj.time[start[duration_idx] : end[duration_idx]] - tmp.onset.iloc[duration_idx], 9)
+        reltime = np.round(
+            self._obj.time[start[duration_idx] : end[duration_idx]]
+            - tmp.onset.iloc[duration_idx],
+            9,
+        )
 
         epochs = xr.concat(
             [
@@ -60,7 +65,7 @@ class CedalionAccessor:
             ],
             dim="epoch",
         )
-        
+
         epochs = epochs.rename({"time": "reltime"})
         epochs = epochs.assign_coords(
             {"reltime": reltime.values, "trial_type": ("epoch", tmp.trial_type.values)}
@@ -72,30 +77,14 @@ class CedalionAccessor:
         """Apply a Butterworth frequency filter."""
         array = self._obj
 
-        fny = array.cd.sampling_rate / 2
-        
-        if fmin == 0:
-            b, a = scipy.signal.butter(butter_order, fmax / fny, "low")
+        # FIXME accept unit-less parameters and interpret them as Hz
+        if not isinstance(fmin, Quantity):
+            fmin = fmin * units.Hz
 
-        elif fmax == 0:
-            b, a = scipy.signal.butter(butter_order, fmin / fny, "high")
+        if not isinstance(fmax, Quantity):
+            fmax = fmax * units.Hz
 
-        else:
-            b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
-
-        # b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
-
-
-
-        if (units := array.pint.units) is not None:
-            array = array.pint.dequantify()
-
-        result = xr.apply_ufunc(scipy.signal.filtfilt, b, a, array)
-
-        if units is not None:
-            result = result.pint.quantify(units)
-
-        return result
+        return freq_filter(array, fmin, fmax, butter_order)
 
 
 @xr.register_dataarray_accessor("points")
@@ -210,23 +199,31 @@ class PointsAccessor:
         current = self.crs
         return self._obj.rename({current: value})
 
-    def add(self,
-           label: Union[str, List[str]],
-           coordinates: ArrayLike,
-           type: Union[cdc.PointType, List[cdc.PointType]],
-           group: Union[str, List[str]] = None) -> cdt.LabeledPointCloud:
+    def add(
+        self,
+        label: Union[str, List[str]],
+        coordinates: ArrayLike,
+        type: Union[cdc.PointType, List[cdc.PointType]],
+        group: Union[str, List[str]] = None,
+    ) -> cdt.LabeledPointCloud:
         # Handle the single point case
         if isinstance(label, str):
-            assert isinstance(type, cdc.PointType), "Type must be a PointType for a single label"
+            assert isinstance(
+                type, cdc.PointType
+            ), "Type must be a PointType for a single label"
             coordinates = np.asarray(coordinates)
-            assert coordinates.ndim == 1, "Coordinates for a single point must be 1-dimensional"
+            assert (
+                coordinates.ndim == 1
+            ), "Coordinates for a single point must be 1-dimensional"
 
             if label in self._obj.label:
                 raise KeyError(f"there is already a point with label '{label}'")
 
             coords_dict = {"label": ("label", [label]), "type": ("label", [type])}
             if group is not None:
-                assert isinstance(group, str), "Group must be a string for a single label"
+                assert isinstance(
+                    group, str
+                ), "Group must be a string for a single label"
                 coords_dict["group"] = ("label", [group])
 
             tmp = xr.DataArray(
@@ -239,7 +236,9 @@ class PointsAccessor:
         else:
             assert len(label) == len(type), "Labels and types must have the same length"
             if group is not None:
-                assert len(label) == len(group), "Labels and groups must have the same length"
+                assert len(label) == len(
+                    group
+                ), "Labels and groups must have the same length"
 
             for lbl in label:
                 if lbl in self._obj.label:
@@ -262,6 +261,7 @@ class PointsAccessor:
         merged = xr.concat((self._obj, tmp), dim="label")
 
         return merged
+
     def remove(self, label):
         raise NotImplementedError()
 
