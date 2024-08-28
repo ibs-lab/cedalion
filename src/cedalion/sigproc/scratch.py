@@ -21,7 +21,7 @@ file_name = os.path.join(rootDir_data, subj_temp)
 
 elements = io.read_snirf(file_name)
 
-amplitudes = elements[0].data[0]
+amplitudes = elements[0]['amp']
 
 #%% SQE implementation
 from snirf import Snirf
@@ -108,7 +108,13 @@ psp_mask = psp_mask.where(psp_xr < psp_thresh, False)
 
 #%%
 
-dqr.generate_report_single_run(elements)
+metric_dict = dqr.get_data_metrics(elements[0]['amp'])
+
+
+
+#%%
+dqr.generate_report_single_run(elements[0])
+
 
 
 

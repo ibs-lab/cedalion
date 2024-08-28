@@ -75,24 +75,25 @@ def plot_timeseries(GVTD, stim, ax, savePath=None):
     ax.plot(GVTD.time,GVTD,'k')
     ax.set(xlabel='Time (s)',ylabel='GVTD',title='GVTD')
     ax.set_xlim([GVTD.time[0], GVTD.time[-1]])
-    plot_stim_marks(stim)
+    if not stim.empty:
+        plot_stim_marks(stim)
 
     if savePath != None:
         plt.savefig(savePath+'GVTD_timecourse.png', dpi=500)
         
     pass
 
-def plot_stim_marks(recording):
+def plot_stim_marks(stim):
     ### add markers for events
     colours = ['b', 'r', 'g', 'y', 'c']
     
-    trial_types = recording.stim['trial_type'].unique()
+    trial_types = stim['trial_type'].unique()
     
     colour_dict = {trial : colours[i] for i, trial in enumerate(trial_types)}
     
-    for idx, onset in enumerate(recording.stim['onset']):
+    for idx, onset in enumerate(stim['onset']):
         # Use the index to get the corresponding element in the 'duration' column
-        stim_type = recording.stim.at[idx, 'trial_type']
+        stim_type = stim.at[idx, 'trial_type']
         plt.axvline(x=onset, color=colour_dict[stim_type], linestyle='--' )
 
     pass
@@ -127,8 +128,8 @@ def generate_report_single_run(snirfObj, title=None, savePath=None):
     - return the metrics
     '''    
     
-    metric_dict = get_data_metrics(snirfObj.data[0])
-    wavelengths = snirfObj.data[0].wavelength
+    metric_dict = get_data_metrics(snirfObj['amp'])
+    wavelengths = snirfObj.wavelengths
     
     plt.rcParams.update({'font.size': 10})
     fig = plt.figure(figsize=(20,10))
@@ -148,13 +149,13 @@ def generate_report_single_run(snirfObj, title=None, savePath=None):
     plots.scalp_plot(snirfObj, metric_dict['SNR'].sel(wavelength = wavelengths[0]), 
                           ax1, colormap=cmap, vmin=0, vmax=25, 
                           threshold_ind=5, threshold_col = threshold_col.sel(wavelength=wavelengths[0]),
-                          title='SNR: $\lambda$ = ' + str(wavelengths[0].values), remove_short=True)
+                          title='SNR: $\lambda$ = ' + str(wavelengths[0]), remove_short=True)
     
     ax2 = fig.add_subplot(gs[0,1])
     plots.scalp_plot(snirfObj, metric_dict['SNR'].sel(wavelength = wavelengths[1]), 
                           ax2, colormap=cmap, vmin=0, vmax=25, 
                           threshold_ind=5, threshold_col = threshold_col.sel(wavelength=wavelengths[1]),
-                          title='SNR: $\lambda$ = ' + str(wavelengths[1].values), remove_short=True)
+                          title='SNR: $\lambda$ = ' + str(wavelengths[1]), remove_short=True)
 
     #TODO need to generate this metric 
     threshold_col = metric_dict['perc_channel_thresholded'] < 0.6

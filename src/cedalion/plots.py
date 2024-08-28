@@ -613,13 +613,13 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
             detectorIndex =  data.detector[u]
             
             dist = xrutils.norm(geo3d.loc[data.source[u]] - geo3d.loc[data.detector[u]], dim="pos")
-
+            
 
             # x = snirfObj.nirs[0].probe.sourcePos3D[sourceIndex-1]
             # y= snirfObj.nirs[0].probe.detectorPos3D[detectorIndex-1]
             # dist = math.dist(x,y)
                 
-            if dist < 10:
+            if dist.values < 10:
                     skipped_channels.append([sourceIndex, detectorIndex])
                     skipped_detectors.append(detectorIndex)
                     skipped_metrics.append(u)
