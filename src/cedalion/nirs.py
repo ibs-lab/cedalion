@@ -125,8 +125,8 @@ def od2conc(
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing
-            concentration changes with dimensions "channel" and "wavelength".
+        conc (xr.DataArray, (channel, *)): A data array containing
+            concentration changes by channel.
     """
     validators.has_channel(od)
     validators.has_wavelengths(od)
@@ -165,7 +165,7 @@ def beer_lambert(
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing
+        conc (xr.DataArray, (channel, *)): A data array containing
             concentration changes according to the mBLL.
     """
     validators.has_channel(amplitudes)

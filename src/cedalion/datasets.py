@@ -1,4 +1,4 @@
-"""Cedalin datasets and utility functions."""
+"""Cedalion datasets and utility functions."""
 
 import os.path
 import pickle
@@ -65,6 +65,10 @@ def get_colin27_headmodel():
 
 
 def get_fingertapping() -> cdc.Recording:
+    """Retrieves a finger tapping recording in BIDS format.
+
+    Data is from :cite:t:`Luke_fNIRS_Finger_Tapping_2021`
+    """
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]

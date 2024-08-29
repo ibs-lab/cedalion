@@ -9,6 +9,12 @@ def pinv(array: xr.DataArray) -> xr.DataArray:
 
     FIXME: handles unitless and quantified DataArrays but not
            DataArrays with units in their attrs.
+
+    Args:
+        array (xr.DataArray): Input array
+
+    Returns:
+        array_inv (xr.DataArray): Pseudoinverse of the input array
     """
     if not array.ndim == 2:
         raise ValueError("array must have only 2 dimensions")
@@ -42,17 +48,24 @@ def pinv(array: xr.DataArray) -> xr.DataArray:
 
 
 def norm(array: xr.DataArray, dim: str) -> xr.DataArray:
-    """Calculate the vector norm along a given dimension."""
+    """Calculate the vector norm along a given dimension.
+
+    Extends the behavior of numpy.linalg.norm to xarray DataArrays.
+    Args:
+        array (xr.DataArray): Input array
+        dim (str): Dimension along which to calculate the norm
+
+    Returns:
+        normed (xr.DataArray): Array with the norm along the specified dimension
+    """
     if dim not in array.dims:
         raise ValueError(f"array does not have dimension '{dim}'")
-
-    dim_index = array.dims.index(dim)
 
     if (units := array.pint.units) is not None:
         array = array.pint.dequantify()
 
     normed = xr.apply_ufunc(
-        np.linalg.norm, array, input_core_dims=[[dim]], kwargs={"axis": dim_index}
+        np.linalg.norm, array, input_core_dims=[[dim]], kwargs={"axis": -1}
     )
 
     if units is not None:
@@ -71,20 +84,21 @@ def apply_mask(data_array: xr.DataArray,
                mask: xr.DataArray, operator: str, dim_collapse: str) -> xr.DataArray:
     """Apply a boolean mask to a DataArray according to the defined "operator".
 
-    INPUTS:
-    data_array:     NDTimeSeries, input time series data xarray
-    mask:           input boolean mask array with a subset of dimensions matching data_array
-    operator:       operators to apply to the mask and data_array
-        "nan":          inserts NaNs in the data_array where mask is False
-        "drop":         drops value in the data_array where mask is False
-    dim_collapse:   mask dimension to collapse to, merging boolean masks along all other
-                    dimensions. can be skipped with "none".
-                    Example: collapsing to "channel" dimension will drop or nan a channel
-                    if it is "False" along any other dimensions
+    Args:
+        data_array: NDTimeSeries, input time series data xarray
+        mask: input boolean mask array with a subset of dimensions matching data_array
+        operator: operators to apply to the mask and data_array
+            "nan": inserts NaNs in the data_array where mask is False
+            "drop": drops value in the data_array where mask is False
+        dim_collapse: Mask dimension to collapse to, merging boolean masks along all
+            other dimensions. Can be skipped with "none".
+            Example: collapsing to "channel" dimension will drop or nan a channel if it
+            is "False" along any other dimensions
 
-    OUTPUTS:
-    masked_data_array:    input data_array with applied mask
-    masked_elements:      list of elements in data_array that were masked (e.g. dropped or set to NaN)
+    Returns:
+        masked_data_array: Input data_array with applied mask
+        masked_elements: List of elements in data_array that were masked (e.g.
+            dropped or set to NaN)
     """
     flag_collapse = False
 
@@ -108,7 +122,7 @@ def apply_mask(data_array: xr.DataArray,
         masked_data_array = data_array.where(mask, other=np.nan)
     elif operator.lower() == "drop":
         # drops value in the data_array where mask is False.
-        # Note: values are only dropped if mask has "False" across the entire  relevant dimension
+        # Note: values are only dropped if mask has "False" across the entire relevant dimension
         masked_data_array = data_array.where(mask, drop=True)
 
     # return the masked elements if dimensions were collapsed
