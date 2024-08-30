@@ -178,20 +178,4 @@ scratch/
 
 # plugins
 plugins/
-examples/BallSqueezing-Left_HbO_left_hemi.gif
-examples/BallSqueezing-Left_HbO_right_hemi.gif
-examples/BallSqueezing-Left_HbR_left_hemi.gif
-examples/BallSqueezing-Left_HbR_right_hemi.gif
-examples/BallSqueezing-Right_HbO_left_hemi.gif
-examples/BallSqueezing-Right_HbO_right_hemi.gif
-examples/BallSqueezing-Right_HbR_left_hemi.gif
-examples/BallSqueezing-Right_HbR_right_hemi.gif
-examples/finger_tapping_full_pipeline.ipynb
-examples/FTapping-Left_HbO_left_hemi.gif
-examples/FTapping-Left_HbO_right_hemi.gif
-examples/FTapping-Left_HbR_left_hemi.gif
-examples/FTapping-Left_HbR_right_hemi.gif
-examples/FTapping-Right_HbO_left_hemi.gif
-examples/FTapping-Right_HbO_right_hemi.gif
-examples/FTapping-Right_HbR_left_hemi.gif
-examples/FTapping-Right_HbR_right_hemi.gif
+

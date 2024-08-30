@@ -103,7 +103,8 @@ def get_photogrammetry_example_scan():
     fnames = DATASETS.fetch("photogrammetry_example_scan.zip", processor=pooch.Unzip())
     fname_scan = [i for i in fnames if i.endswith(".obj")][0]
     fname_snirf = [i for i in fnames if i.endswith(".snirf")][0]
-    return fname_scan, fname_snirf
+    fname_montage = [i for i in fnames if i.endswith(".png")][0]
+    return fname_scan, fname_snirf, fname_montage
 
 
 def get_imagereco_example_fluence() -> tuple[xr.DataArray, xr.DataArray]:

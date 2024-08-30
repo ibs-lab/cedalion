@@ -92,7 +92,7 @@ class TwoSurfaceHeadModel:
         brain_seg_types: list[str] = ["gm", "wm"],
         scalp_seg_types: list[str] = ["scalp"],
         smoothing: float = 0.5,
-        brain_face_count: Optional[int] = 60000,
+        brain_face_count: Optional[int] = 180000,
         scalp_face_count: Optional[int] = 60000,
         fill_holes: bool = False,
     ) -> "TwoSurfaceHeadModel":
