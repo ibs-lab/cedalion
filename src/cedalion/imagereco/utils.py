@@ -12,12 +12,98 @@ from cedalion import xrutils
 
 
 # FIXME right location?
+def reduce_and_map_brain_voxels(
+    segmentation_mask: xr.DataArray,
+    transform_vox2ras: cdt.AffineTransform,  # FIXME
+    surface: cdc.Surface,
+    volume: cdc.Voxels,
+    max_dist: float=10,
+) -> tuple[scipy.sparse.coo_matrix, cdc.Voxels]:
+    """Find for each brain voxel the closest brain voxel in the volume that is
+    closer than max_dist on the scalp surface.
+
+    Parameters
+    ----------
+    segmentation_mask : xr.DataArray
+        A 3D mask of the brain segmentation.
+    transform_vox2ras : cdt.AffineTransform
+        Transformation from voxel to RAS coordinates.
+    surface : cdc.Surface
+        The scalp surface mesh to which the brain voxel distance is measured.
+    volume : cdc.Voxels
+        The volume mesh of the brain.
+    max_dist : float
+        Maximum distance to the scalp surface to consider a brain voxel as part 
+        of the reduced brain volume.
+        
+    Returns
+    -------
+    map_voxel_to_vertex : scipy.sparse.coo_matrix
+        A sparse matrix of shape (ncells, nvertices) that maps all brain voxels 
+        to the reduced brain volume.
+    volume_reduced : cdc.Voxels 
+        The reduced volume mesh.
+    """
+
+    assert surface.crs == transform_vox2ras.dims[0]
+
+    cell_coords = segm.cell_coordinates(segmentation_mask, flat=True)
+    cell_coords = cell_coords.points.apply_transform(transform_vox2ras)
+
+    cell_coords = cell_coords.pint.to(surface.units).pint.dequantify()
+
+    ncells = cell_coords.sizes["label"]
+    nvertices = len(surface.vertices)
+
+    # find indices of cells that belong to the mask
+    cell_indices = np.flatnonzero(segmentation_mask.values)
+
+    # for each cell query the closests vertex on the surface
+    dists, vertex_indices = surface.kdtree.query(
+        cell_coords.values[cell_indices, :], workers=-1
+    )
+
+    volume_reduced = cdc.Voxels(volume.voxels[np.where(dists<max_dist)], volume.crs, volume.units)
+    nvertices = len(volume_reduced.voxels)
+   
+    # for each cell query the closests vertex in the reduced volume
+    dists, vertex_indices = volume_reduced.kdtree.query(
+        cell_coords.values[cell_indices, :], workers=-1
+    )
+
+    # construct a sparse matrix of shape (ncells, nvertices)
+    # that maps voxels to cells
+    map_voxel_to_vertex = coo_array(
+        (np.ones(len(cell_indices)), (cell_indices, vertex_indices)),
+        shape=(ncells, nvertices),
+    )
+
+    return map_voxel_to_vertex, volume_reduced
+
+
+# FIXME right location?
 def map_segmentation_mask_to_surface(
     segmentation_mask: xr.DataArray,
     transform_vox2ras: cdt.AffineTransform,  # FIXME
     surface: cdc.Surface,
-):
-    """Find for each voxel the closest vertex on the surface."""
+) -> scipy.sparse.coo_matrix:
+    """Find for each voxel the closest vertex on the surface.
+
+    Parameters
+    ----------
+    segmentation_mask : xr.DataArray
+        A 3D mask of the brain segmentation.
+    transform_vox2ras : cdt.AffineTransform
+        Transformation from voxel to RAS coordinates.
+    surface : cdc.Surface
+        The scalp surface mesh to which the voxels are mapped.
+    
+    Returns
+    -------
+    map_voxel_to_vertex : scipy.sparse.coo_matrix
+        A sparse matrix of shape (ncells, nvertices) that maps all voxels to 
+        the surface vertices.
+    """
 
     assert surface.crs == transform_vox2ras.dims[0]
 
