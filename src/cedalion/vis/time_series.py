@@ -191,7 +191,7 @@ class Main(QtWidgets.QMainWindow):
         
         self.slabel = self.sPos.label.values
         self.dlabel = self.dPos.label.values
-        self.clabel = self.snirfData.channel.values
+        # self.clabel = self.snirfData.channel.values
         self.opt_label = np.append(self.slabel, self.dlabel)
         
         # Extract lengths
@@ -246,7 +246,12 @@ class Main(QtWidgets.QMainWindow):
         
         self._optode_ax.clear()
         
-        self.picker = self._optode_ax.scatter(self.sdx, self.sdy,color=[[0,0,0,0]]*(len(self.sx)+len(self.dx)), zorder=3,picker=3)
+        self.picker = self._optode_ax.scatter(self.sdx, 
+                                              self.sdy, 
+                                              color=[[0,0,0,0]]*(len(self.sx)+len(self.dx)), 
+                                              zorder=3,
+                                              picker=3
+                                              )
         
         self.optodes = self._optode_ax.scatter(self.sdx,
                                            self.sdy,
@@ -256,9 +261,28 @@ class Main(QtWidgets.QMainWindow):
                                            )
         
         for idx, source in enumerate(self.sPos.label):
-            self.src_label[idx] = self._optode_ax.text(self.sx[idx],self.sy[idx],f"{source.values}", color="r", fontsize=8, ha='center', va='center', zorder=1, clip_on=True)
+            self.src_label[idx] = self._optode_ax.text(self.sx[idx],
+                                                       self.sy[idx],
+                                                       f"{source.values}", 
+                                                       color="r", 
+                                                       fontsize=8, 
+                                                       ha='center', 
+                                                       va='center', 
+                                                       zorder=1, 
+                                                       clip_on=True
+                                                       )
+            
         for idx, detector in enumerate(self.dPos.label):
-            self.det_label[idx] = self._optode_ax.text(self.dx[idx],self.dy[idx],f"{detector.values}", color="b", fontsize=8, ha='center', va='center', zorder=1, clip_on=True)
+            self.det_label[idx] = self._optode_ax.text(self.dx[idx],
+                                                       self.dy[idx],
+                                                       f"{detector.values}", 
+                                                       color="b", 
+                                                       fontsize=8, 
+                                                       ha='center', 
+                                                       va='center', 
+                                                       zorder=1, 
+                                                       clip_on=True
+                                                       )
         
         for i_ch in range(self.no_channels):
             si = self.src_idx[i_ch]
@@ -292,7 +316,7 @@ class Main(QtWidgets.QMainWindow):
             return
 
 
-    def optode_picked(self, event):      
+    def optode_picked(self, event):
         if self.ts.currentItem().text() == "None":
             return
         
@@ -404,20 +428,19 @@ class Main(QtWidgets.QMainWindow):
                 y_opt_sel.append(self.dy[self.dlabel == opt])
         
         chan_sel = np.unique(chan_sel)
-        chan_sel_idx = [np.arange(0,self.no_channels)[self.clabel == chan][0] for chan in chan_sel]
         
         ## Grab coordinates
-        chan_sel = []
+        nempty_chan_sel = []
         x_chan_sel = [[],[]]
         y_chan_sel = [[],[]]
         
-        for i_ch in chan_sel_idx:
-            if not np.isnan(self.snirfData.isel(channel=i_ch)[0][0]):
-                x_chan_sel[0].append(self.sx[self.slabel == self.snirfData.isel(channel=i_ch).source.values][0])
-                x_chan_sel[1].append(self.dx[self.dlabel == self.snirfData.isel(channel=i_ch).detector.values][0])
-                y_chan_sel[0].append(self.sy[self.slabel == self.snirfData.isel(channel=i_ch).source.values][0])
-                y_chan_sel[1].append(self.dy[self.dlabel == self.snirfData.isel(channel=i_ch).detector.values][0])
-                chan_sel.append(i_ch)
+        for chan in chan_sel:
+            if not np.isnan(self.snirfData.sel(channel=chan)[0][0]):
+                x_chan_sel[0].append(self.sx[self.slabel == self.snirfData.sel(channel=chan).source.values][0])
+                x_chan_sel[1].append(self.dx[self.dlabel == self.snirfData.sel(channel=chan).detector.values][0])
+                y_chan_sel[0].append(self.sy[self.slabel == self.snirfData.sel(channel=chan).source.values][0])
+                y_chan_sel[1].append(self.dy[self.dlabel == self.snirfData.sel(channel=chan).detector.values][0])
+                nempty_chan_sel.append(chan)
         
         wvl_idx = self.wv.selectedItems()
         wvl_idx = [foo.text() for foo in wvl_idx]
@@ -439,13 +462,21 @@ class Main(QtWidgets.QMainWindow):
             line.remove()
             del line
         
-        self.chan_highlight = [0]*len(chan_sel)
+        self.chan_highlight = [0]*len(nempty_chan_sel)
         
-        for i_ch in range(len(chan_sel)):
+        for i_ch in range(len(nempty_chan_sel)):
             self.chan_highlight[i_ch], = self._optode_ax.plot([x_chan_sel[0][i_ch],x_chan_sel[1][i_ch]],
                                                              [y_chan_sel[0][i_ch],y_chan_sel[1][i_ch]], 
                                                              color=chan_col[i_ch%len(chan_col)])
         self._optode_ax.figure.canvas.draw()
+        
+        # Plot lines or rectangles of aux
+        if len(self.aux_sel):
+            self.auxplot = self._auxTimeSeries_ax.plot(self.aux_sel.time, self.aux_sel, alpha=0.3, zorder=2)
+            
+        self._auxTimeSeries_ax.set_ylabel(self.aux_type, rotation=270, ha="right")
+        self._auxTimeSeries_ax.yaxis.set_label_position("right")
+        self._auxTimeSeries_ax.figure.canvas.draw()
         
         # Plot timeseries
         if "wavelength" in self.snirfData.dims:
@@ -453,31 +484,31 @@ class Main(QtWidgets.QMainWindow):
                 idx = self.snirfData.wavelength.values
                 idx = [str(foo) for foo in idx]
                 idx = idx.index(sel_wv)
-                for ic, i_ch in enumerate(chan_sel):
+                for i_ch, chan in enumerate(nempty_chan_sel):
                     self.timeSeries = self._dataTimeSeries_ax.plot(
                                                                     self.t,
-                                                                    self.snirfData.isel(channel=i_ch,wavelength=idx).T,
+                                                                    self.snirfData.sel(channel=chan,wavelength=sel_wv).T,
                                                                     ls=wvl_ls[idx],
                                                                     zorder=5,
-                                                                    color=chan_col[ic%len(chan_col)],
+                                                                    color=chan_col[i_ch%len(chan_col)],
                                                                   )
         elif "chromo" in self.snirfData.dims:
             for sel_wv in wvl_idx:
                 idx = self.snirfData.chromo.values
                 idx = [str(foo) for foo in idx]
                 idx = idx.index(sel_wv[1:-1])
-                for ic, i_ch in enumerate(chan_sel):
+                
+                if "[" in sel_wv:
+                    sel_wv = sel_wv[1:-1]
+                
+                for i_ch, chan in enumerate(nempty_chan_sel):
                     self.timeSeries = self._dataTimeSeries_ax.plot(
                                                                     self.t,
-                                                                    self.snirfData.isel(channel=i_ch,chromo=idx).T,
+                                                                    self.snirfData.sel(channel=chan,chromo=sel_wv).T,
                                                                     ls=wvl_ls[idx],
                                                                     zorder=5,
-                                                                    color=chan_col[ic%len(chan_col)],
+                                                                    color=chan_col[i_ch%len(chan_col)],
                                                                   )
-        
-        # Plot lines or rectangles of aux
-        if len(self.aux_sel):
-            self.auxplot = self._auxTimeSeries_ax.plot(self.aux_sel.time, self.aux_sel, zorder=2)
         
         # Plot stims
         stim_col = ["#648FFF","#DC267F","#FFB000","#785EF0","#FE6100"]
@@ -491,10 +522,7 @@ class Main(QtWidgets.QMainWindow):
             self._dataTimeSeries_ax.legend(loc="best")
         
         self._dataTimeSeries_ax.set_ylabel(ylabel)
-        self._auxTimeSeries_ax.set_ylabel(self.aux_type, rotation=270, ha="right")
-        self._auxTimeSeries_ax.yaxis.set_label_position("right")
         self._dataTimeSeries_ax.grid("True",axis="y")
-        self.plots.figure.tight_layout()
         self._dataTimeSeries_ax.figure.canvas.draw()
         
         self.statbar.showMessage("Timeseries Drawn!")
