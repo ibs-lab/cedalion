@@ -470,13 +470,16 @@ class Main(QtWidgets.QMainWindow):
                                                              color=chan_col[i_ch%len(chan_col)])
         self._optode_ax.figure.canvas.draw()
         
-        # Plot lines or rectangles of aux
+        # Plot lines of aux
         if len(self.aux_sel):
             self.auxplot = self._auxTimeSeries_ax.plot(self.aux_sel.time, self.aux_sel, alpha=0.3, zorder=2)
             
         self._auxTimeSeries_ax.set_ylabel(self.aux_type, rotation=270, ha="right")
         self._auxTimeSeries_ax.yaxis.set_label_position("right")
         self._auxTimeSeries_ax.figure.canvas.draw()
+        
+        ymin = 100
+        ymax = -100
         
         # Plot timeseries
         if "wavelength" in self.snirfData.dims:
@@ -492,6 +495,10 @@ class Main(QtWidgets.QMainWindow):
                                                                     zorder=5,
                                                                     color=chan_col[i_ch%len(chan_col)],
                                                                   )
+                    
+                    ymin = min(ymin, min(self.snirfData.sel(channel=chan,wavelength=sel_wv).values.ravel()))
+                    ymax = max(ymax, max(self.snirfData.sel(channel=chan,wavelength=sel_wv).values.ravel()))
+                
         elif "chromo" in self.snirfData.dims:
             for sel_wv in wvl_idx:
                 idx = self.snirfData.chromo.values
@@ -509,14 +516,53 @@ class Main(QtWidgets.QMainWindow):
                                                                     zorder=5,
                                                                     color=chan_col[i_ch%len(chan_col)],
                                                                   )
+                
+                    ymin = min(ymin, min(self.snirfData.sel(channel=chan,chromo=sel_wv).values.ravel()))
+                    ymax = max(ymax, max(self.snirfData.sel(channel=chan,chromo=sel_wv).values.ravel()))
         
         # Plot stims
         stim_col = ["#648FFF","#DC267F","#FFB000","#785EF0","#FE6100"]
         if self.plot_stims:
+            ymax = ymax + (.05*(ymax-ymin))
+            ymin = ymin - (.05*(ymax-ymin))
+            
             for i_t, tt in enumerate(np.unique(self.snirfRec.stim.trial_type)):
                 label_on = True
-                for sx in self.snirfRec.stim.loc[self.snirfRec.stim['trial_type'] == tt].onset:
-                    self._dataTimeSeries_ax.axvline(sx, ls="--", lw=1, zorder=1,c=stim_col[i_t%5],label=tt) if label_on else self._dataTimeSeries_ax.axvline(sx, ls="--", lw=1, zorder=1,c=stim_col[i_t%5])
+                for i_r, dat in self.snirfRec.stim.loc[self.snirfRec.stim['trial_type'] == tt].iterrows():
+                    if label_on:
+                        self._dataTimeSeries_ax.axvline(dat.onset,
+                                                        ls="--", 
+                                                        lw=1, 
+                                                        zorder=1,
+                                                        c=stim_col[i_t%5],
+                                                        label=tt
+                                                        )
+                        self._dataTimeSeries_ax.fill(
+                                                     [dat.onset, dat.onset, dat.onset+dat.duration, dat.onset+dat.duration],
+                                                     [ymin, ymax, ymax, ymin],
+                                                     color=stim_col[i_t%5]+"22",
+                                                     zorder=1,
+                                                     )
+                    else:
+                        self._dataTimeSeries_ax.axvline(dat.onset,
+                                                        ls="--", 
+                                                        lw=1, 
+                                                        zorder=1,
+                                                        c=stim_col[i_t%5]
+                                                        )
+                        # self._dataTimeSeries_ax.axvline(dat.onset+dat.duration, 
+                        #                                 ls="--", 
+                        #                                 lw=1, 
+                        #                                 zorder=1, 
+                        #                                 c="gray"
+                        #                                 )
+                        self._dataTimeSeries_ax.fill(
+                                                     [dat.onset, dat.onset, dat.onset+dat.duration, dat.onset+dat.duration],
+                                                     [ymin, ymax, ymax, ymin],
+                                                     color=stim_col[i_t%5]+"22",
+                                                     zorder=1,
+                                                     )
+                    
                     label_on=False
             
             self._dataTimeSeries_ax.legend(loc="best")
