@@ -190,6 +190,7 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
      
     tIncCh = detect_baselineshift(fNIRSdata, M)
     
+    fNIRSdata = fNIRSdata.pint.dequantify()
     fNIRSdata_lpf2 = fNIRSdata.cd.freq_filter(0, 2, butter_order=4)
     extend = int(np.round(12*fs)) # extension for padding
     
@@ -202,7 +203,7 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
     
     # remove padding
     dodSpline = dodSpline[:,:,extend:-extend]
-    dodSpline = dodSpline.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
+    # dodSpline = dodSpline.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
 
     # apply SG filter
     K = 3
@@ -212,9 +213,10 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
 
     dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline.T, framesize_sec, K).T
     
-    dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
-    dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
-
+    # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
+    # dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
+    dodSplineSG = dodSplineSG.pint.quantify()
+    
     return dodSplineSG
 
 #%% PCA
@@ -245,7 +247,7 @@ def motion_correct_PCA(fNIRSdata:cdt.NDTimeSeries, tInc:cdt.NDTimeSeries, nSV:Qu
     # stack y and od 
     y = y.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
   
-    fNIRSdata = fNIRSdata.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
+    fNIRSdata_stacked = fNIRSdata.stack(measurement = ['channel', 'wavelength']).sortby('wavelength').pint.dequantify()
    
     # PCA
     yo = y.copy()
@@ -276,9 +278,9 @@ def motion_correct_PCA(fNIRSdata:cdt.NDTimeSeries, tInc:cdt.NDTimeSeries, nSV:Qu
   
   
     if len(lstMs) == 0:
-        lstMs = [0]
+        lstMs = np.asarray([0])
     if len(lstMf) == 0:
-        lstMf = len(tInc)-1
+        lstMf = np.asarray([len(tInc)-1])
     if lstMs[0] > lstMf[0]:
         lstMs = np.insert(lstMs, 0, 0)
     if lstMs[-1] > lstMf[-1]:
@@ -293,8 +295,8 @@ def motion_correct_PCA(fNIRSdata:cdt.NDTimeSeries, tInc:cdt.NDTimeSeries, nSV:Qu
     lstMb = lstMb-1
   
     yc_ts = yc.values
-    fNIRSdata_cleaned_ts = fNIRSdata.copy().values
-    fNIRSdata_ts = fNIRSdata.copy().values
+    fNIRSdata_cleaned_ts = fNIRSdata_stacked.copy().values
+    fNIRSdata_ts = fNIRSdata_stacked.copy().values
    
     for jj in range(fNIRSdata_cleaned_ts.shape[1]):
             
@@ -319,12 +321,12 @@ def motion_correct_PCA(fNIRSdata:cdt.NDTimeSeries, tInc:cdt.NDTimeSeries, nSV:Qu
         
    
 
-    fNIRSdata_cleaned = fNIRSdata.copy()
+    fNIRSdata_cleaned = fNIRSdata_stacked.copy()
     fNIRSdata_cleaned.values = fNIRSdata_cleaned_ts
    
     fNIRSdata_cleaned = fNIRSdata_cleaned.unstack('measurement').pint.quantify()
     fNIRSdata_cleaned = fNIRSdata_cleaned.transpose("channel", "wavelength", "time")
-
+    fNIRSdata_cleaned = fNIRSdata_cleaned.assign_coords({'source': fNIRSdata.source})
   
     return fNIRSdata_cleaned, nSV, svs
   
