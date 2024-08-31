@@ -88,17 +88,23 @@ def psp(amplitudes: NDTimeSeries, window_length: Quantity = 5*units.s, psp_thres
         for chan in windows.channel:
             
             sig_temp = windows.sel(channel=chan, time=window)
+                    
+            similarity = np.correlate(sig_temp.sel(wavelength=wavelengths[0]).values, sig_temp.sel(wavelength=wavelengths[1]).values, 'full')
+            similarity = similarity / nsamples
             
-            similarity = signal.correlate(sig_temp.sel(wavelength=wavelengths[0]).values, sig_temp.sel(wavelength=wavelengths[1]).values, 'full')
-            lags = np.arange(-nsamples + 1, nsamples)
-            similarity_unbiased = similarity / (nsamples - np.abs(lags))
+            # similarity = signal.correlate(sig_temp.sel(wavelength=wavelengths[0]).values, sig_temp.sel(wavelength=wavelengths[1]).values, 'full')
+            # lags = np.arange(-nsamples + 1, nsamples)
+            # similarity_unbiased = similarity / (nsamples - np.abs(lags))
             
-            similarity_norm = (nsamples * similarity_unbiased) / np.sqrt(np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2) * np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2))
-            similarity_norm[np.isnan(similarity_norm)] = 0
+            # similarity_norm = (nsamples * similarity_unbiased) / np.sqrt(np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2) * np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2))
+            # similarity_norm[np.isnan(similarity_norm)] = 0
         
         
-            f, pxx = signal.periodogram(similarity_norm.T, window=signal.hamming(len(similarity_norm)), nfft=len(similarity_norm), fs=fs,  scaling='density')
-    
+            # f, pxx = signal.periodogram(similarity_norm.T, window=signal.hamming(len(similarity_norm)), nfft=len(similarity_norm), fs=fs,  scaling='density')
+            nfft = max(256, 2**int(np.ceil(np.log2(len(similarity))))) 
+            # f, pxx = signal.periodogram(similarity.T, window='hamming', nfft=nfft, fs=fs, scaling='density')
+            f, pxx = signal.welch(similarity.T,nfft=nfft, fs=fs, scaling='density')
+
             psp_xr.sel(channel=chan, time=window).values = np.max(pxx)            
     
     
