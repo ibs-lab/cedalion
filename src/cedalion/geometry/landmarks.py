@@ -17,6 +17,7 @@ from cedalion.dataclasses import (
 )
 from cedalion.typing import LabeledPointCloud
 
+
 def _sort_line_points(start_point: np.ndarray, points: np.ndarray):
     sorted_indices = []
     sorted_distances = []
@@ -293,56 +294,71 @@ class LandmarksBuilder1010:
 
         plt.show()
 
+
 def order_ref_points_6(landmarks: xr.DataArray, twoPoints: str) -> xr.DataArray:
-    """
-    Reorder a set of six landmark points based on spatial relationships and give labels.
+    """Reorder a set of six landmarks based on spatial relationships and give labels.
 
     Args:
-    - landmarks (xr.DataArray): coordinates for six landmark points
-    - twoPoints (str): two reference points ('Nz' or 'Iz') for orientation.
+        landmarks: coordinates for six landmark points
+        twoPoints: two reference points ('Nz' or 'Iz') for orientation.
 
+    Returns:
+        the landmarks ordered as "Nz", "Iz", "RPA", "LPA", "Cz"
     """
+
     # Validate input parameters
     if len(landmarks.label) != 6 or twoPoints not in ["Nz", "Iz"]:
         raise ValueError("Invalid input parameters")
-    
+
     outReference = landmarks.values  # Extract the numerical values for computation
-    
+
     # Compute pairwise distances efficiently
-    distances = np.linalg.norm(outReference[:, np.newaxis, :] - outReference[np.newaxis, :, :], axis=2)
-    np.fill_diagonal(distances, np.inf)  # Ignore self-distances by setting them to infinity
-    
+    distances = np.linalg.norm(
+        outReference[:, np.newaxis, :] - outReference[np.newaxis, :, :], axis=2
+    )
+    np.fill_diagonal(distances, np.inf)  # Ignore self-distances by setting them to inf
+
     # Find two closest points
     close1, close2 = np.unravel_index(np.argmin(distances), distances.shape)
-    
+
     # Reset distances for closest points to find the opposite
     distances[range(len(outReference)), range(len(outReference))] = 0
     opposite = np.argmax(distances[close1])
-    
-    # Determine Cz as the point closest to the plane defined by close1, close2, and opposite
-    v1, v2 = outReference[close1] - outReference[opposite], outReference[close2] - outReference[opposite]
+
+    # Determine Cz as the point closest to the plane defined by
+    # close1, close2, and opposite
+    v1, v2 = (
+        outReference[close1] - outReference[opposite],
+        outReference[close2] - outReference[opposite],
+    )
     cp = np.cross(v1, v2)
     d = np.dot(cp, outReference[close1])
     plane_distances = np.abs(np.dot(outReference, cp) - d) / np.linalg.norm(cp)
     plane_distances[[close1, close2, opposite]] = np.inf
     Cz = np.argmin(plane_distances)
-    
+
     # Determine Nz and Iz based on the given 'twoPoints' label
     Nz, Iz = (close1, opposite) if twoPoints == "Nz" else (opposite, close1)
-    
+
     # Determine Rpa and Lpa
     remaining = set(range(6)) - {close1, close2, opposite, Cz}
-    cr = np.cross(outReference[Nz] - outReference[Cz], outReference[Iz] - outReference[Cz])
+    cr = np.cross(
+        outReference[Nz] - outReference[Cz], outReference[Iz] - outReference[Cz]
+    )
     cr /= np.linalg.norm(cr)
-    sorted_remaining = sorted(remaining, key=lambda x: np.dot(cr, outReference[x] - outReference[Cz]))
-    Rpa, Lpa = sorted_remaining[0], sorted_remaining[1]  # Assuming the first is Lpa and the second is Rpa based on sorting
+    sorted_remaining = sorted(
+        remaining, key=lambda x: np.dot(cr, outReference[x] - outReference[Cz])
+    )
+
+    # Assuming the first is Lpa and the second is Rpa based on sorting
+    Rpa, Lpa = sorted_remaining[0], sorted_remaining[1]
 
     # Creating the ordered DataArray for output
     ordered_indices = [Nz, Iz, Rpa, Lpa, Cz]
     ordered_landmarks = landmarks.isel(label=ordered_indices)
-    
+
     # Updating labels to reflect the new order
     new_labels = ["Nz", "Iz", "RPA", "LPA", "Cz"]
     ordered_landmarks["label"] = new_labels
-    
+
     return ordered_landmarks
