@@ -64,9 +64,9 @@ def freq_filter(
         sos = scipy.signal.butter(butter_order, [fmin, fmax], "bandpass", output="sos")
 
     if (units := timeseries.pint.units) is not None:
-        array = timeseries.pint.dequantify()
+        timeseries = timeseries.pint.dequantify()
 
-    result = xr.apply_ufunc(scipy.signal.sosfiltfilt, sos, array)
+    result = xr.apply_ufunc(scipy.signal.sosfiltfilt, sos, timeseries)
 
     if units is not None:
         result = result.pint.quantify(units)
