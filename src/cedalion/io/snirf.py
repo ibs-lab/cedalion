@@ -278,13 +278,14 @@ def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
     labels = np.hstack([sourceLabels, detectorLabels, landmarkLabels])
     positions = np.vstack([sourcePos, detectorPos, landmarkPos])
 
-    coords = {"label": ("label", labels), "type": ("label", types)}
     dims = ["label", "pos"]
     attrs = {"units": length_unit}
 
     if len(positions) == 0:
+        coords = {"label": ("label", []), "type": ("label", [])}
         result = xr.DataArray(None, coords=coords, dims=dims, attrs=attrs)
     elif len(labels) == len(positions):
+        coords = {"label": ("label", labels), "type": ("label", types)}
         result = xr.DataArray(positions, coords=coords, dims=dims, attrs=attrs)
     else:
         raise ValueError("number of positions and labels does not match")
@@ -887,11 +888,13 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
     ne.probe.detectorLabels = rec.detector_labels
     ne.probe.wavelengths = rec.wavelengths
 
-    ne.probe.sourcePos3D = geo3d.loc[rec.source_labels]
-    ne.probe.detectorPos3D = geo3d.loc[rec.detector_labels]
+    if len(geo3d) > 0:
+        ne.probe.sourcePos3D = geo3d.loc[rec.source_labels]
+        ne.probe.detectorPos3D = geo3d.loc[rec.detector_labels]
 
-    ne.probe.sourcePos2D = geo2d.loc[rec.source_labels]
-    ne.probe.detectorPos2D = geo2d.loc[rec.detector_labels]
+    if len(geo2d) > 0:
+        ne.probe.sourcePos2D = geo2d.loc[rec.source_labels]
+        ne.probe.detectorPos2D = geo2d.loc[rec.detector_labels]
 
     trial_types = list(rec.stim["trial_type"].drop_duplicates())
 

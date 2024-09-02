@@ -4,10 +4,11 @@ EXAMPLE_NOTEBOOKS = xarray_datastructs_fnirs.ipynb \
 					scalp_coupling_index.ipynb \
 					1010_system.ipynb \
 					image_reconstruction.ipynb \
+					store_hrfs_in_snirf_file.ipynb \
 					recording.ipynb
 
 					#photogrammetric_optode_coregistration.ipynb \
-					# store_hrfs_in_snirf_file.ipynb\
+					
 
 .PHONY: notebooks
 
