@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import logging
 from typing import Optional
 import os.path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -26,43 +27,42 @@ logger = logging.getLogger("cedalion")
 class TwoSurfaceHeadModel:
     """Head Model class to represent a segmented head.
 
-    Its main functions arereduced to work on voxel projections to scalp and cortex surfaces.
+    Its main functions are reduced to work on voxel projections to scalp and cortex
+    surfaces.
 
-    ...
+    Attributes:
+        segmentation_masks : xr.DataArray
+            Segmentation masks of the head for each tissue type.
+        brain : cdc.Surface
+            Surface of the brain.
+        scalp : cdc.Surface
+            Surface of the scalp.
+        landmarks : cdt.LabeledPointCloud
+            Anatomical landmarks in RAS space.
+        t_ijk2ras : cdt.AffineTransform
+            Affine transformation from ijk to RAS space.
+        t_ras2ijk : cdt.AffineTransform
+            Affine transformation from RAS to ijk space.
+        voxel_to_vertex_brain : scipy.sparse.spmatrix
+            Mapping from voxel to brain vertices.
+        voxel_to_vertex_scalp : scipy.sparse.spmatrix
+            Mapping from voxel to scalp vertices.
+        crs : str
+            Coordinate reference system of the head model.
 
-    Attributes
-    ----------
-    segmentation_masks : xr.DataArray
-        Segmentation masks of the head for each tissue type.
-    brain : cdc.Surface
-        Surface of the brain.
-    scalp : cdc.Surface
-        Surface of the scalp.
-    landmarks : cdt.LabeledPointCloud
-        Anatomical landmarks in RAS space.
-    t_ijk2ras : cdt.AffineTransform
-        Affine transformation from ijk to RAS space.
-    t_ras2ijk : cdt.AffineTransform
-        Affine transformation from RAS to ijk space.
-    voxel_to_vertex_brain : scipy.sparse.spmatrix
-        Mapping from voxel to brain vertices.
-    voxel_to_vertex_scalp : scipy.sparse.spmatrix
-        Mapping from voxel to scalp vertices.
-    crs : str
-        Coordinate reference system of the head model.
-
-    Methods
-    -------
-    from_segmentation(cls, segmentation_dir, mask_files, landmarks_ras_file, brain_seg_types, scalp_seg_types, smoothing, brain_face_count, scalp_face_count)
-        Construct instance from segmentation masks in NIfTI format.
-    apply_transform(transform)
-        Apply a coordinate transformation to the head model.
-    save(foldername)
-        Save the head model to a folder.
-    load(foldername)
-        Load the head model from a folder.
-    align_and_snap_to_scalp(points)
-        Align and snap optodes or points to the scalp surface.
+    Methods:
+        from_segmentation(cls, segmentation_dir, mask_files, landmarks_ras_file,
+            brain_seg_types, scalp_seg_types, smoothing, brain_face_count,
+            scalp_face_count): Construct instance from segmentation masks in NIfTI
+            format.
+        apply_transform(transform)
+            Apply a coordinate transformation to the head model.
+        save(foldername)
+            Save the head model to a folder.
+        load(foldername)
+            Load the head model from a folder.
+        align_and_snap_to_scalp(points)
+            Align and snap optodes or points to the scalp surface.
     """
 
     segmentation_masks: xr.DataArray
@@ -138,13 +138,17 @@ class TwoSurfaceHeadModel:
             landmarks_ijk = None
 
         # derive surfaces from segmentation masks
-        brain_ijk = surface_from_segmentation(segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes)
+        brain_ijk = surface_from_segmentation(
+            segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes
+        )
 
         # we need the single outer surface from the scalp. The inner border between
         # scalp and skull is not interesting here. Hence, all segmentation types are
         # grouped together, yielding a uniformly filled head volume.
         all_seg_types = segmentation_masks.segmentation_type.values
-        scalp_ijk = surface_from_segmentation(segmentation_masks, all_seg_types, fill_holes_in_mask=fill_holes)
+        scalp_ijk = surface_from_segmentation(
+            segmentation_masks, all_seg_types, fill_holes_in_mask=fill_holes
+        )
 
         # smooth surfaces
         if smoothing > 0:
@@ -207,14 +211,10 @@ class TwoSurfaceHeadModel:
     def apply_transform(self, transform: cdt.AffineTransform) -> "TwoSurfaceHeadModel":
         """Apply a coordinate transformation to the head model.
 
-        Parameters
-        ----------
-        transform : cdt.AffineTransform
-            Affine transformation matrix (4x4) to be applied.
+        Args:
+            transform : Affine transformation matrix (4x4) to be applied.
 
-        Returns
-        -------
-        TwoSurfaceHeadModel
+        Returns:
             Transformed head model.
         """
 
@@ -237,14 +237,11 @@ class TwoSurfaceHeadModel:
     def save(self, foldername: str):
         """Save the head model to a folder.
 
-        Parameters
-        ----------
-        foldername : str
-            Folder to save the head model into.
+        Args:
+            foldername : Folder to save the head model into.
 
-        Returns
-        -------
-        None
+        Returns:
+            None
         """
 
         # Add foldername if not existing
@@ -260,7 +257,9 @@ class TwoSurfaceHeadModel:
         self.scalp.mesh.export(os.path.join(foldername, "scalp.ply"),
                                             file_type="ply")
         if self.landmarks is not None:
-            self.landmarks.drop_vars('type').to_netcdf(os.path.join(foldername, "landmarks.nc"))
+            self.landmarks.drop_vars("type").to_netcdf(
+                os.path.join(foldername, "landmarks.nc")
+            )
         self.t_ijk2ras.to_netcdf(os.path.join(foldername, "t_ijk2ras.nc"))
         self.t_ras2ijk.to_netcdf(os.path.join(foldername, "t_ras2ijk.nc"))
         scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_brain.npz"),
@@ -273,14 +272,10 @@ class TwoSurfaceHeadModel:
     def load(cls, foldername: str):
         """Load the head model from a folder.
 
-        Parameters
-        ----------
-        foldername : str
-            Folder to load the head model from.
+        Args:
+            foldername : Folder to load the head model from.
 
-        Returns
-        -------
-        TwoSurfaceHeadModel
+        Returns:
             Loaded head model.
         """
 
@@ -292,18 +287,23 @@ class TwoSurfaceHeadModel:
                 raise ValueError("%s does not exist." % os.path.join(foldername, fn))
 
         # Load all attributes from folder
-        segmentation_masks = xr.load_dataset(os.path.join(foldername, 'segmentation_masks.nc'))
+        segmentation_masks = xr.load_dataset(
+            os.path.join(foldername, "segmentation_masks.nc")
+        )
         brain =  trimesh.load(os.path.join(foldername, 'brain.ply'), process=False)
         scalp =  trimesh.load(os.path.join(foldername, 'scalp.ply'), process=False)
         if os.path.exists(os.path.join(foldername, 'landmarks.nc')):
             landmarks_ijk = xr.load_dataset(os.path.join(foldername, 'landmarks.nc'))
             landmarks_ijk = xr.DataArray(
-                    landmarks_ijk.to_array()[0],
-				    coords={
-					    "label": ("label", landmarks_ijk.label.values),
-					    "type": ("label", [cdc.PointType.LANDMARK] * len(landmarks_ijk.label)),
-				    },
-			)
+                landmarks_ijk.to_array()[0],
+                coords={
+                    "label": ("label", landmarks_ijk.label.values),
+                    "type": (
+                        "label",
+                        [cdc.PointType.LANDMARK] * len(landmarks_ijk.label),
+                    ),
+                },
+            )
         else:
             landmarks_ijk = None
         t_ijk2ras = xr.load_dataset(os.path.join(foldername, 't_ijk2ras.nc'))
@@ -316,8 +316,9 @@ class TwoSurfaceHeadModel:
         # Construct TwoSurfaceHeadModel
         brain_ijk = cdc.TrimeshSurface(brain, 'ijk', cedalion.units.Unit("1"))
         scalp_ijk = cdc.TrimeshSurface(scalp, 'ijk', cedalion.units.Unit("1"))
-        t_ijk2ras = cdc.affine_transform_from_numpy(np.array(t_ijk2ras.to_dataarray()[0]), "ijk",
-                                                    "unknown", "1", "mm")
+        t_ijk2ras = cdc.affine_transform_from_numpy(
+            np.array(t_ijk2ras.to_dataarray()[0]), "ijk", "unknown", "1", "mm"
+        )
         t_ras2ijk = xrutils.pinv(t_ijk2ras)
 
         return cls(
@@ -340,14 +341,10 @@ class TwoSurfaceHeadModel:
     ) -> cdt.LabeledPointCloud:
         """Align and snap optodes or points to the scalp surface.
 
-        Parameters
-        ----------
-        points : cdt.LabeledPointCloud
-            Points to be aligned and snapped to the scalp surface.
+        Args:
+            points: Points to be aligned and snapped to the scalp surface.
 
-        Returns
-        -------
-        cdt.LabeledPointCloud
+        Returns:
             Points aligned and snapped to the scalp surface.
         """
 
@@ -364,29 +361,28 @@ class ForwardModel:
 
     ...
 
-    Attributes
-    ----------
-    head_model : TwoSurfaceHeadModel
-        Head model containing voxel projections to brain and scalp surfaces.
-    optode_pos : cdt.LabeledPointCloud
-        Optode positions.
-    optode_dir : xr.DataArray
-        Optode orientations (directions of light beams).
-    tissue_properties : xr.DataArray
-        Tissue properties for each tissue type.
-    volume : xr.DataArray
-        Voxelated head volume from segmentation masks.
-    unitinmm : float
-        Unit of head model, optodes expressed in mm.
-    measurement_list : pd.DataFrame
-        List of measurements of experiment with source, detector, channel and wavelength.
+    Args:
+        head_model : TwoSurfaceHeadModel
+            Head model containing voxel projections to brain and scalp surfaces.
+        optode_pos : cdt.LabeledPointCloud
+            Optode positions.
+        optode_dir : xr.DataArray
+            Optode orientations (directions of light beams).
+        tissue_properties : xr.DataArray
+            Tissue properties for each tissue type.
+        volume : xr.DataArray
+            Voxelated head volume from segmentation masks.
+        unitinmm : float
+            Unit of head model, optodes expressed in mm.
+        measurement_list : pd.DataFrame
+            List of measurements of experiment with source, detector, channel and
+            wavelength.
 
-    Methods
-    -------
-    compute_fluence(nphoton)
-        Compute fluence for each channel and wavelength from photon simulation.
-    compute_sensitivity(fluence_all, fluence_at_optodes)
-        Compute sensitivity matrix from fluence.
+    Methods:
+        compute_fluence(nphoton)
+            Compute fluence for each channel and wavelength from photon simulation.
+        compute_sensitivity(fluence_all, fluence_at_optodes)
+            Compute sensitivity matrix from fluence.
     """
 
     def __init__(
@@ -404,7 +400,8 @@ class ForwardModel:
         geo3d : cdt.LabeledPointCloud
             Optode positions and directions.
         measurement_list : pd.DataFrame
-            List of measurements of experiment with source, detector, channel and wavelength.
+            List of measurements of experiment with source, detector, channel and
+            wavelength.
         """
 
         assert head_model.crs == "ijk"  # FIXME
@@ -449,17 +446,15 @@ class ForwardModel:
     def _get_fluence_from_mcx(self, i_optode: int, nphoton: int):
         """Run MCX simulation to get fluence for one optode.
 
-        Parameters
-        ----------
-        i_optode : int
-            Index of the optode.
-        nphoton : int
-            Number of photons to simulate.
+        Args:
+            i_optode : int
+                Index of the optode.
+            nphoton : int
+                Number of photons to simulate.
 
-        Returns
-        -------
-        np.ndarray
-            Fluence in each voxel.
+        Returns:
+            np.ndarray
+                Fluence in each voxel.
         """
 
         cfg = {
@@ -490,17 +485,15 @@ class ForwardModel:
     def _fluence_at_optodes(self, fluence, emitting_opt):
         """Fluence caused by one optode at the positions of all other optodes.
 
-        Parameters
-        ----------
-        fluence : np.ndarray
-            Fluence in each voxel.
-        emitting_opt : int
-            Index of the emitting optode.
+        Args:
+            fluence : np.ndarray
+                Fluence in each voxel.
+            emitting_opt : int
+                Index of the emitting optode.
 
-        Returns
-        -------
-        np.ndarray
-            Fluence at all optode positions.
+        Returns:
+            np.ndarray
+                Fluence at all optode positions.
         """
 
         n_optodes = len(self.optode_pos)
@@ -531,18 +524,33 @@ class ForwardModel:
 
         return result
 
-    def compute_fluence(self, nphoton: int = 1e8):
-        """Compute fluence for each channel and wavelength from photon simulation.
+    def compute_fluence_mcx(self, nphoton: int = 1e8):
+        """Compute fluence for each channel and wavelength using MCX package.
 
-        Parameters
-        ----------
-        nphoton : int
-            Number of photons to simulate.
+        Args:
+            nphoton : int
+                Number of photons to simulate.
 
-        Returns
-        -------
-        xr.DataArray
-            Fluence in each voxel for each channel and wavelength.
+        Returns:
+            xr.DataArray
+                Fluence in each voxel for each channel and wavelength.
+
+        References:
+            (:cite:t:`fang2009monte`) Qianqian Fang and David A. Boas, "Monte Carlo
+            Simulation of Photon Migration in 3D Turbid Media Accelerated by Graphics
+            Processing Units," Optics Express, vol.17, issue 22, pp. 20178-20190 (2009).
+
+            (:cite:t:`yu2018scalable`) Leiming Yu, Fanny Nina-Paravecino, David Kaeli,
+            Qianqian Fang, “Scalable and massively parallel Monte Carlo photon transport
+            simulations for heterogeneous computing platforms,”
+            J. Biomed. Opt. 23(1), 010504 (2018).
+
+            (:cite:t:`yan2020hybrid`) Shijie Yan and Qianqian Fang* (2020),
+            "Hybrid mesh and voxel based Monte Carlo algorithm for accurate and
+            efficient photon transport modeling in complex bio-tissues,"
+            Biomed. Opt. Express, 11(11) pp. 6262-6270.
+            https://www.osapublishing.org/boe/abstract.cfm?uri=boe-11-11-6262
+
         """
 
         wavelengths = self.measurement_list.wavelength.unique()
@@ -601,18 +609,146 @@ class ForwardModel:
         return fluence_all, fluence_at_optodes
 
 
+    def compute_fluence_nirfaster(
+            self, meshingparam = None
+            ):
+        """Compute fluence for each channel and wavelength using NIRFASTer package.
+
+        Args:
+            meshingparam : ff.utils.MeshingParam
+                Parameters to be used by the CGAL mesher. Note:they should all be double
+
+        Returns:
+        xr.DataArray
+            Fluence in each voxel for each channel and wavelength.
+
+        References:
+            (:cite:t:`dehghani2009near`) Dehghani, Hamid, et al. "Near infrared optical
+            tomography using NIRFAST: Algorithm for numerical model and image
+            reconstruction."
+            Communications in numerical methods in engineering 25.6 (2009): 711-732.
+        """
+
+        # FIXME
+        src_path = os.path.abspath(
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "../../../plugins/nirfaster-uFF",
+            )
+        )
+        if src_path not in sys.path:
+            sys.path.append(src_path)
+
+        import nirfasteruff as ff
+
+        # Choose between 'CPU' or 'GPU' solver (case insensitive). Automatically
+        # determined (GPU prioritized) if not specified
+        solver = ff.utils.get_solver()
+        # Contains the parameters used by the FEM solvers, Equivalent to
+        # 'solver_options' in the Matlab version
+        solver_opt = ff.utils.SolverOptions()
+
+        if meshingparam is None:
+            # meshing parameters; should be adjusted depending on the user's need
+            meshingparam = ff.utils.MeshingParams(
+                facet_distance=1.0,
+                facet_size=1.0,
+                general_cell_size=2.0,
+                lloyd_smooth=0,
+            )
+
+        # create a nirfaster mesh
+        mesh = ff.base.stndmesh()
+        # make the optical property matrix; unit in mm-1
+        tissueprop = np.zeros((self.tissue_properties.shape[0]-1, 4))
+        for i in range(tissueprop.shape[0]):
+            tissueprop[i,0] = i+1
+            tissueprop[i,1] = self.tissue_properties[i+1, 0]
+            tissueprop[i,2] = self.tissue_properties[i+1, 1] * (1-self.tissue_properties[i+1, 2]) # noqa: E501
+            tissueprop[i,3] = self.tissue_properties[i+1, 3]
+
+        # all optodes x all optodes
+        sources = ff.base.optode(coord=self.optode_pos.data)
+        detectors = ff.base.optode(coord=self.optode_pos.data)
+        n_optodes = self.optode_pos.data.shape[0]
+        link = np.zeros((n_optodes*n_optodes,3), dtype=np.int32)
+        ch = 0
+        for i in range(n_optodes):
+            for j in range(n_optodes):
+                link[ch, 0] = i+1
+                link[ch, 1] = j+1
+                link[ch, 2] = 1
+                ch += 1
+
+        # construct the mesh
+        mesh.from_volume(
+            self.volume,
+            param=meshingparam,
+            prop=tissueprop,
+            src=sources,
+            det=detectors,
+            link=link,
+        )
+        # calculate the interpolation functions to and from voxel space
+        igrid = np.arange(self.volume.shape[0])
+        jgrid = np.arange(self.volume.shape[1])
+        kgrid = np.arange(self.volume.shape[2])
+        mesh.gen_intmat(igrid, jgrid, kgrid)
+        # calculate fluence
+        data,_ = mesh.femdata(0, solver=solver, opt=solver_opt)
+        amplitude_optode = np.reshape(data.amplitude, (n_optodes,-1))
+
+        wavelengths = self.measurement_list.wavelength.unique()
+        n_wavelength = len(wavelengths)
+        fluence_all = np.zeros((n_optodes, n_wavelength) + self.volume.shape)
+        fluence_at_optodes = np.zeros((n_optodes, n_optodes, n_wavelength))
+
+        for i_wl in range(n_wavelength):
+            # PLACEHOLDER: set new property and repeat
+            # This way we can void the expensive meshing
+            # newprop = []
+            # mesh.set_prop(newprop)
+            # newdata,_=femdata(0)
+            for i_opt in range(n_optodes):
+                fluence_all[i_opt, i_wl, :, :, :] = np.transpose(
+                    data.phi[:, :, :, i_opt], (1, 0, 2)
+                )  # xyz to ijk
+                fluence_at_optodes[i_opt, :, i_wl] = amplitude_optode[:,i_opt]
+
+        # convert to DataArray; copied from foward_model
+        fluence_all = xr.DataArray(
+            fluence_all,
+            dims=["label", "wavelength", "i", "j", "k"],
+            coords={
+                "label": ("label", self.optode_pos.label.values),
+                "type": ("label", self.optode_pos.type.values),
+                "wavelength": ("wavelength", wavelengths),
+            },
+        )
+
+        fluence_at_optodes = xr.DataArray(
+            fluence_at_optodes,
+            dims=["optode1", "optode2", "wavelength"],
+            coords={
+                "optode1": self.optode_pos.label.values,
+                "optode2": self.optode_pos.label.values,
+                "wavelength": wavelengths,
+            },
+        )
+
+        return fluence_all, fluence_at_optodes
+
+
     def compute_sensitivity_all(self, fluence_all, fluence_at_optodes):
         """Compute sensitivity matrix from fluence.
 
-        Parameters
-        ----------
-        fluence_all : xr.DataArray
-            Fluence in each voxel for each wavelength.
-        fluence_at_optodes : xr.DataArray
-            Fluence at all optode positions for each wavelength.
+        Args:
+            fluence_all : xr.DataArray
+                Fluence in each voxel for each wavelength.
+            fluence_at_optodes : xr.DataArray
+                Fluence at all optode positions for each wavelength.
 
-        Returns
-        -------
+        Returns:
         xr.DataArray
             Sensitivity matrix for each channel, vertex and wavelength.
         """
@@ -626,7 +762,7 @@ class ForwardModel:
         n_scalp = self.head_model.scalp.nvertices
         Adot_brain = np.zeros((n_channel, n_brain, n_wavelength))
         Adot_scalp = np.zeros((n_channel, n_scalp, n_wavelength))
-        Adot = np.zeros((n_channel, n_voxels, n_wavelength))
+        # Adot = np.zeros((n_channel, n_voxels, n_wavelength)) # FIXME?
 
         for _, r in self.measurement_list.iterrows():
             # using the adjoint monte carlo method
@@ -672,17 +808,15 @@ class ForwardModel:
     def compute_sensitivity(self, fluence_all, fluence_at_optodes):
         """Compute sensitivity matrix from fluence.
 
-        Parameters
-        ----------
-        fluence_all : xr.DataArray
-            Fluence in each voxel for each wavelength.
-        fluence_at_optodes : xr.DataArray
-            Fluence at all optode positions for each wavelength.
+        Args:
+            fluence_all : xr.DataArray
+                Fluence in each voxel for each wavelength.
+            fluence_at_optodes : xr.DataArray
+                Fluence at all optode positions for each wavelength.
 
-        Returns
-        -------
-        xr.DataArray
-            Sensitivity matrix for each channel, vertex and wavelength.
+        Returns:
+            xr.DataArray
+                Sensitivity matrix for each channel, vertex and wavelength.
         """
 
         channels = self.measurement_list.channel.unique().tolist()
@@ -741,15 +875,13 @@ class ForwardModel:
     def compute_stacked_sensitivity(sensitivity: xr.DataArray):
         """Compute stacked HbO and HbR sensitivity matrices from fluence.
 
-        Parameters
-        ----------
-        sensitivity : xr.DataArray
-            Sensitivity matrix for each vertex and wavelength.
+        Args:
+            sensitivity : xr.DataArray
+                Sensitivity matrix for each vertex and wavelength.
 
-        Returns
-        -------
-        xr.DataArray
-            Stacked sensitivity matrix for each channel and vertex.
+        Returns:
+            xr.DataArray
+                Stacked sensitivity matrix for each channel and vertex.
         """
 
         assert "wavelength" in sensitivity.dims
