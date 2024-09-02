@@ -603,10 +603,10 @@ class PycortexSurface(Surface):
             # Exclude rows with zero weight (these break the sparse LU)
             goodrows = np.nonzero(~np.array(lfac.sum(0) == 0).ravel())[0]
             self._goodrows = goodrows
-            self._rlfac_solvers[m] = sparse.linalg.dsolve.factorized(
+            self._rlfac_solvers[m] = sparse.linalg.factorized(
                 lfac[goodrows][:, goodrows]
             )
-            self._nLC_solvers[m] = sparse.linalg.dsolve.factorized(
+            self._nLC_solvers[m] = sparse.linalg.factorized(
                 nLC[goodrows][:, goodrows]
             )
 
