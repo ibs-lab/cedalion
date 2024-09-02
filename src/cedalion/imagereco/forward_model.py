@@ -471,7 +471,7 @@ class ForwardModel:
         # Comppute the direction of the light beam from the surface normals
         self.optode_dir = -head_model.scalp.get_vertex_normals(self.optode_pos)
         # Slightly realign the optode positions to the closest scalp voxel
-        self.optode_pos = self.snap_to_scalp_voxels(self.optode_pos)
+        self.optode_pos = head_model.snap_to_scalp_voxels(self.optode_pos)
 
 
         self.optode_pos = self.optode_pos.pint.dequantify()
