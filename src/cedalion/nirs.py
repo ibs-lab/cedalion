@@ -107,7 +107,11 @@ def int2od(amplitudes: xr.DataArray):
     """
     # check negative values in amplitudes and issue an error if yes
     if np.any(amplitudes < 0):
-        raise AssertionError("Error: DataArray contains negative values. Please fix, for example by setting them to NaN with \"amplitudes = amplitudes.where(amplitudes >= 0, np.nan)\"")
+        raise AssertionError(
+            "Error: DataArray contains negative values. Please fix, for example by "
+            "setting them to NaN with "
+            "'amplitudes = amplitudes.where(amplitudes >= 0, np.nan)'"
+        )
 
     # conversion to optical density
     od = -np.log(amplitudes / amplitudes.mean("time"))
@@ -130,8 +134,8 @@ def od2conc(
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing
-            concentration changes with dimensions "channel" and "wavelength".
+        conc (xr.DataArray, (channel, *)): A data array containing
+            concentration changes by channel.
     """
     validators.has_channel(od)
     validators.has_wavelengths(od)
@@ -148,7 +152,7 @@ def od2conc(
     # conc = Einv @ (optical_density / ( dists * dpf))
     if dpf[0] != 1:
         conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
-    else:        
+    else:
         conc = xr.dot(Einv, od / (dpf * 1*units.mm), dims=["wavelength"])
 
     conc = conc.pint.to("micromolar")
@@ -174,7 +178,7 @@ def beer_lambert(
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing
+        conc (xr.DataArray, (channel, *)): A data array containing
             concentration changes according to the mBLL.
     """
     validators.has_channel(amplitudes)

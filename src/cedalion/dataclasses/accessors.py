@@ -13,23 +13,44 @@ from cedalion.sigproc.frequency import freq_filter
 
 @xr.register_dataarray_accessor("cd")
 class CedalionAccessor:
+    """Accessor for time series data stored in xarray DataArrays."""
     def __init__(self, xarray_obj):
-        """TBD."""
+        """Initialize the CedalionAccessor.
+
+        Args:
+            xarray_obj (xr.DataArray): The DataArray to which this accessor is attached.
+        """
         self._validate(xarray_obj)
         self._obj = xarray_obj
 
     @staticmethod
     def _validate(obj):
-        # verify there is a column latitude and a column longitude
+        """Make sure the DataArray has the required dimensions and coordinates."""
 
         if not (("time" in obj.dims) and ("time" in obj.coords)):
             raise AttributeError("Missing time dimension.")
 
     @property
     def sampling_rate(self):
+        """Return the sampling rate of the time series.
+
+        The sampling rate is calculated as the reciprocal of the mean time difference
+            between consecutive samples.
+        """
         return 1 / np.diff(self._obj.time).mean()
 
     def to_epochs(self, df_stim, trial_types, before, after):
+        """Extract epochs from the time series based on stimulus events.
+
+        Args:
+            df_stim (pandas.DataFrame): DataFrame containing stimulus events.
+            trial_types (list): List of trial types to include in the epochs.
+            before (float): Time in seconds before stimulus event to include in epoch.
+            after (float): Time in seconds after stimulus event to include in epoch.
+
+        Returns:
+            xarray.DataArray: Array containing the extracted epochs.
+        """
         # FIXME before units
         # FIXME error handling of boundaries
         tmp = df_stim[df_stim.trial_type.isin(trial_types)]
@@ -74,7 +95,16 @@ class CedalionAccessor:
         return epochs
 
     def freq_filter(self, fmin, fmax, butter_order=4):
-        """Apply a Butterworth frequency filter."""
+        """Applys a Butterworth filter.
+
+        Args:
+            fmin (float): The lower cutoff frequency.
+            fmax (float): The upper cutoff frequency.
+            butter_order (int): The order of the Butterworth filter.
+
+        Returns:
+            result (xarray.DataArray): The filtered time series.
+        """
         array = self._obj
 
         # FIXME accept unit-less parameters and interpret them as Hz
@@ -268,13 +298,20 @@ class PointsAccessor:
 
 @pd.api.extensions.register_dataframe_accessor("cd")
 class StimAccessor:
+    """Accessor for stimulus DataFrames."""
     def __init__(self, pandas_obj):
-        """TBD."""
+        """Initialize the StimAccessor.
+
+        Args:
+            pandas_obj (pd.DataFrame): The pandas DataFrame to which this accessor is
+                attached.
+        """
         self._validate(pandas_obj)
         self._obj = pandas_obj
 
     @staticmethod
     def _validate(obj):
+        """Make sure the DataFrame has the required columns for stimulus data."""
         for column_name in ["onset", "duration", "value", "trial_type"]:
             if column_name not in obj.columns:
                 raise AttributeError(
@@ -282,6 +319,12 @@ class StimAccessor:
                 )
 
     def rename_events(self, rename_dict):
+        """Renames trial types in the DataFrame based on the provided dictionary.
+
+        Args:
+            rename_dict (dict): A dictionary with the old trial type as key and the new
+                trial type as value.
+        """
         stim = self._obj
         for old_trial_type, new_trial_type in rename_dict.items():
             stim.loc[stim.trial_type == old_trial_type, "trial_type"] = new_trial_type
