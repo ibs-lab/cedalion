@@ -17,12 +17,7 @@ def voxels_from_segmentation(
     segmentation_types: List[str],
     isovalue=0.9,
     fill_holes_in_mask=False,
-) -> cdc.Surface:
-    combined_mask = (
-        segmentation_mask.sel(segmentation_type=segmentation_types)
-        .any("segmentation_type")
-        .values
-    )
+) -> cdc.Voxels:
     """ Generate voxels from a segmentation mask.
     
     Parameters
@@ -41,6 +36,12 @@ def voxels_from_segmentation(
     cdc.Voxels  
         Voxels in voxel space.
     """
+    combined_mask = (
+        segmentation_mask.sel(segmentation_type=segmentation_types)
+        .any("segmentation_type")
+        .values
+    )
+
     if fill_holes_in_mask:
         combined_mask = binary_fill_holes(combined_mask).astype(combined_mask.dtype)
 
@@ -55,11 +56,6 @@ def surface_from_segmentation(
     isovalue=0.9,
     fill_holes_in_mask=False,
 ) -> cdc.Surface:
-    combined_mask = (
-        segmentation_mask.sel(segmentation_type=segmentation_types)
-        .any("segmentation_type")
-        .values
-    )
     """ Generate a surface from a segmentation mask.
 
     Parameters
@@ -78,6 +74,12 @@ def surface_from_segmentation(
     cdc.Surface
         Surface in voxel space.
     """
+    combined_mask = (
+        segmentation_mask.sel(segmentation_type=segmentation_types)
+        .any("segmentation_type")
+        .values
+    )
+
     if fill_holes_in_mask:
         combined_mask = binary_fill_holes(combined_mask).astype(combined_mask.dtype)
 

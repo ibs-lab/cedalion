@@ -395,13 +395,31 @@ class OneSurfaceFewVoxelsHeadModel:
             vec[idx[0,0]] = 1
             voxel_idx = np.argwhere(self.voxel_to_vertex_scalp @ vec == 1)[:,0]
 
-            # Get voxel coordinates from voxel indices
-            shape = self.segmentation_masks.shape[-3:]
-            voxels = np.array(np.unravel_index(voxel_idx, shape)).T
+            if len(voxel_idx) > 0:
+                # Get voxel coordinates from voxel indices
+                try: 
+                    shape = self.segmentation_masks.shape[-3:]
+                except:
+                    shape = self.segmentation_masks.to_dataarray().shape[-3:]
+                voxels = np.array(np.unravel_index(voxel_idx, shape)).T
 
-            # Choose the closest voxel
-            dist = np.linalg.norm(voxels - np.array(a.pint.dequantify()), axis=1)
-            snapped[i] = voxels[np.argmin(dist)]
+                # Choose the closest voxel
+                dist = np.linalg.norm(voxels - np.array(a.pint.dequantify()), axis=1)
+                voxel_idx = np.argmin(dist)
+
+            else:
+                # If no voxel maps to that scalp surface vertex, 
+                # simply choose the closest of all scalp voxels
+                scalp_mask = self.segmentation_masks.sel(segmentation_type="scalp").to_dataarray()
+                voxels = np.argwhere(np.array(scalp_mask)[0] > 0.99)
+
+                from scipy.spatial import KDTree
+                kdtree = KDTree(voxels)
+                dist, voxel_idx = kdtree.query(self.scalp.mesh.vertices[idx[0,0]],
+                                               workers=-1)
+
+            # Snap to closest scalp voxel 
+            snapped[i] = voxels[voxel_idx]
 
         points.values = snapped
         return points
