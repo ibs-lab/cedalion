@@ -106,6 +106,7 @@ def psp(
     # Vectorized signal extraction and correlation
     sig = windows.transpose("channel", "time", "wavelength", "window").values
     psp = np.zeros((sig.shape[0], sig.shape[1]))
+    lags = np.arange(-nsamples + 1, nsamples)
 
     for w in range(sig.shape[1]): # loop over windows
         sig_temp = sig[:,w,:,:]
@@ -118,21 +119,22 @@ def psp(
         )
 
         # FIXME assumes 2 wavelengths
-        norm_factor = [
-            np.sqrt(np.sum(sig_temp[ch, 0, :] ** 2) * np.sum(sig_temp[ch, 1, :] ** 2))
-            for ch in range(sig.shape[0])
-        ]
+        corr = corr /(nsamples - np.abs(lags))
+        # norm_factor = [
+        #     np.sqrt(np.sum(sig_temp[ch, 0, :] ** 2) * np.sum(sig_temp[ch, 1, :] ** 2))
+        #     for ch in range(sig.shape[0])
+        # ]
 
-        corr /= np.tile(norm_factor, (corr.shape[1],1)).T
+        # corr /= np.tile(norm_factor, (corr.shape[1],1)).T
 
         for ch in range(sig.shape[0]):
             window = signal.windows.hamming(len(corr[ch,:]))
-            f, pxx = signal.periodogram(
+            f, pxx = signal.welch(
                 corr[ch, :],
                 window=window,
                 nfft=len(corr[ch, :]),
                 fs=fs,
-                scaling="spectrum",
+                scaling="density",
             )
 
             psp[ch, w] = np.max(pxx)
