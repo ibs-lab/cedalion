@@ -77,10 +77,6 @@ def psp(amplitudes: NDTimeSeries, window_length: Quantity = 5*units.s, psp_thres
     
     fs = amp.cd.sampling_rate
     
-    
-    # Vectorized signal extraction and correlation
-    # sig = windows.transpose('channel', 'time', 'wavelength','window')
-    
     psp_xr = xr.zeros_like(amp.isel(time=windows.samples.values, wavelength=0))
       
     for window in windows.time:
@@ -92,23 +88,13 @@ def psp(amplitudes: NDTimeSeries, window_length: Quantity = 5*units.s, psp_thres
             sig_temp = sig_temp/sig_temp.std('window')
                     
             similarity = np.correlate(sig_temp.sel(wavelength=wavelengths[0]).values, sig_temp.sel(wavelength=wavelengths[1]).values, 'full')
-            # similarity = similarity / nsamples
-            
-            # similarity = signal.correlate(sig_temp.sel(wavelength=wavelengths[0]).values, sig_temp.sel(wavelength=wavelengths[1]).values, 'full')
+
             lags = np.arange(-nsamples + 1, nsamples)
             similarity_unbiased = similarity / (nsamples - np.abs(lags))
             
-            # similarity_norm = (nsamples * similarity_unbiased) / np.sqrt(np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2) * np.sum(np.abs(sig_temp.sel(wavelength=wavelengths[0]).values)**2))
-            # similarity_norm[np.isnan(similarity_norm)] = 0
-        
-        
-            # f, pxx = signal.periodogram(similarity_norm.T, window=signal.hamming(len(similarity_norm)), nfft=len(similarity_norm), fs=fs,  scaling='density')
-            # f, pxx = signal.periodogram(similarity.T, window='hamming', nfft=nfft, fs=fs, scaling='density')
             f, pxx = signal.welch(similarity_unbiased.T, fs=fs, window=np.hamming(len(similarity)), nfft=len(similarity), scaling='density')
 
             psp_xr.loc[dict(channel=chan, time=window)] = np.max(pxx)            
-    
-    
     
     # Apply threshold mask
     psp_mask = xrutils.mask(psp_xr, True)
