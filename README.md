@@ -1,3 +1,7 @@
+<p align="center">
+    <img src="docs/IBS_clr_small.png" />
+</p>
+
 # cedalion - fNIRS analysis toolbox
 
 To avoid misinterpretations and to facilitate studies in naturalistic environments, fNIRS measurements will increasingly be combined with recordings from physiological sensors and other neuroimaging modalities.
