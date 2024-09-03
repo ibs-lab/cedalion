@@ -98,11 +98,11 @@ def psp(
     # the first sample in the window. Setting the stride size to the same value as the
     # window length will result in non-overlapping windows.
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
-
+    windows = windows.fillna(1e-6)
     fs = amp.cd.sampling_rate
 
     psp = np.zeros([len(windows["channel"]), len(windows["time"])])
-
+    
     # Vectorized signal extraction and correlation
     sig = windows.transpose("channel", "time", "wavelength", "window").values
     psp = np.zeros((sig.shape[0], sig.shape[1]))
@@ -120,26 +120,29 @@ def psp(
 
         # FIXME assumes 2 wavelengths
         corr = corr /(nsamples - np.abs(lags))
-        # norm_factor = [
-        #     np.sqrt(np.sum(sig_temp[ch, 0, :] ** 2) * np.sum(sig_temp[ch, 1, :] ** 2))
-        #     for ch in range(sig.shape[0])
-        # ]
 
-        # corr /= np.tile(norm_factor, (corr.shape[1],1)).T
+        nperseg = corr.shape[1]
+        window = np.hamming(nperseg)
+        window_seg = corr * window
+        
+        fft_out = np.fft.rfft(window_seg, axis=1)
+        psd = (np.abs(fft_out) ** 2) / (fs * np.sum(window ** 2))
+        freqs = np.fft.rfftfreq(nperseg, 1/fs)
 
-        for ch in range(sig.shape[0]):
-            window = signal.windows.hamming(len(corr[ch,:]))
-            f, pxx = signal.welch(
-                corr[ch, :],
-                window=window,
-                nfft=len(corr[ch, :]),
-                fs=fs,
-                scaling="density",
-            )
+        # for ch in range(sig.shape[0]):
+        #     window = signal.windows.hamming(len(corr[ch,:]))
+        #     f, pxx = signal.welch(
+        #         corr[ch, :],
+        #         window=window,
+        #         nfft=len(corr[ch, :]),
+        #         fs=fs,
+        #         scaling="density",
+        #     )
 
-            psp[ch, w] = np.max(pxx)
+        psp[:, w] = np.max(psd, 1)
 
     # keep dims channel and time
+    
     psp_xr = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
 
     # Apply threshold mask
