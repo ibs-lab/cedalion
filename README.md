@@ -1,3 +1,7 @@
+<p align="center">
+    <img src="docs/IBS_clr_small.png" />
+</p>
+
 # cedalion - fNIRS analysis toolbox
 
 To avoid misinterpretations and to facilitate studies in naturalistic environments, fNIRS measurements will increasingly be combined with recordings from physiological sensors and other neuroimaging modalities.
@@ -6,9 +10,9 @@ multimodal fNIRS signals.
 
 ## Documentation
 
-The [documentation](https://doc.ml.tu-berlin.de/cedalion/docs) contains
-[installation instructions](https://doc.ml.tu-berlin.de/cedalion/docs/getting_started/installation.html) as
-well as several [example notebooks](https://doc.ml.tu-berlin.de/cedalion/docs/examples/index.html)
+The [documentation](https://doc.ibs.tu-berlin.de/cedalion/doc/dev) contains
+[installation instructions](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/getting_started/installation.html) as
+well as several [example notebooks](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/examples/index.html)
 that illustrate the functionality of the toolbox.
 
 ## Development environment

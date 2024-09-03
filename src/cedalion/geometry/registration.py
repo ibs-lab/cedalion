@@ -1,10 +1,9 @@
 """Registrating optodes to scalp surfaces."""
+
 import numpy as np
-from scipy.optimize import minimize,linear_sum_assignment
-from scipy.spatial import KDTree
-
 from numpy.linalg import pinv
-
+from scipy.optimize import linear_sum_assignment, minimize
+from scipy.spatial import KDTree
 import xarray as xr
 
 import cedalion
@@ -80,9 +79,8 @@ def register_trans_rot(
         [delta_cog[0], delta_cog[1], delta_cog[2], 0.0, 0.0, 0.0],
         args=(coords_target, coords_trafo),
         bounds=bounds,
-        options={'disp': False},
+        options={"disp": False},
     )
-
 
     trafo_opt = trafo(result.x)
 
@@ -121,7 +119,6 @@ def register_trans_rot_isoscale(
     coords_trafo = coords_trafo.sel(label=common_labels).pint.dequantify()
     coords_target = coords_target.sel(label=common_labels).pint.dequantify()
 
-
     std_trafo = _std_distance_to_cog(coords_trafo)
     std_target = _std_distance_to_cog(coords_target)
 
@@ -149,8 +146,6 @@ def register_trans_rot_isoscale(
 
     trafo_opt = trafo(result.x)
 
-
-
     trafo_opt = cdc.affine_transform_from_numpy(
         trafo_opt,
         from_crs=from_crs,
@@ -162,15 +157,17 @@ def register_trans_rot_isoscale(
     return trafo_opt
 
 
-def gen_xform_from_pts(p1, p2):
+def gen_xform_from_pts(p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
     """Calculate the affine transformation matrix T that transforms p1 to p2.
 
-    Parameters:
-    p1 (numpy.ndarray): Source points (p x m) where p is the number of points and m is the number of dimensions.
-    p2 (numpy.ndarray): Target points (p x m) where p is the number of points and m is the number of dimensions.
+    Args:
+        p1: Source points (p x m) where p is the number of points and m is the number of
+            dimensions.
+        p2: Target points (p x m) where p is the number of points and m is the number of
+            dimensions.
 
     Returns:
-    numpy.ndarray: Affine transformation matrix T.
+        Affine transformation matrix T.
     """
 
     T = np.eye(p1.shape[1] + 1)
@@ -187,7 +184,8 @@ def gen_xform_from_pts(p1, p2):
 
     if p < n:
         print(
-            f"Cannot solve transformation with fewer anchor points ({p}) than dimensions ({n})."
+            f"Cannot solve transformation with fewer anchor "
+            f"points ({p}) than dimensions ({n})."
         )
         return None
 
@@ -291,28 +289,41 @@ def register_icp(
     # idx_best = np.argmin(losses)
     return losses, trafos
 
+#FIXME: returns only indices?
+def icp_with_full_transform(
+    opt_centers: cdt.LabeledPointCloud,
+    montage_points: cdt.LabeledPointCloud,
+    max_iterations: int = 50,
+    tolerance: float = 500.0,
+):
+    """Perform Iterative Closest Point algorithm with full transformation capabilities.
 
-
-def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tolerance=500):
-    """Perform Iterative Closest Point (ICP) algorithm with full transformation capabilities.
-
-    Parameters:
-        opt_centers (cdt.LabeledPointCloud): Source point cloud for alignment.
-        montage_points (cdt.LabeledPointCloud): Target reference point cloud.
-        max_iterations (int): Maximum number of iterations for convergence.
-        tolerance (float): Tolerance for convergence check.
+    Args::
+        opt_centers: Source point cloud for alignment.
+        montage_points: Target reference point cloud.
+        max_iterations: Maximum number of iterations for convergence.
+        tolerance: Tolerance for convergence check.
 
     Returns:
-        np.ndarray: Transformed source points as a numpy array with their coordinates updated to reflect the best alignment.
-        np.ndarray: Transformation parameters array consisting of [tx, ty, tz, rx, ry, rz, sx, sy, sz], where 't' stands for 
-                    translation components, 'r' for rotation components (in radians), and 's' for scaling components.
-        np.ndarray: Indices of the target points that correspond to each source point as per the nearest neighbor search.
+        np.ndarray: Transformed source points as a numpy array with their coordinates
+            updated to reflect the best alignment.
+        np.ndarray: Transformation parameters array consisting of
+            [tx, ty, tz, rx, ry, rz, sx, sy, sz], where 't' stands for
+            translation components, 'r' for rotation components (in radians), and 's'
+            for scaling components.
+        np.ndarray: Indices of the target points that correspond to each source point as
+            per the nearest neighbor search.
     """
 
-    # Convert to homogeneous coordinates, assuming .values and .pint.dequantify() yield np.ndarray
+    # Convert to homogeneous coordinates, assuming .values and .pint.dequantify() yield
+    # np.ndarray
     units = "mm"
-    opt_centers_mm = opt_centers.pint.to(units).points.to_homogeneous().pint.dequantify()
-    montage_points_mm = montage_points.pint.to(units).points.to_homogeneous().pint.dequantify()
+    opt_centers_mm = (
+        opt_centers.pint.to(units).points.to_homogeneous().pint.dequantify()
+    )
+    montage_points_mm = (
+        montage_points.pint.to(units).points.to_homogeneous().pint.dequantify()
+    )
 
     # Initialize transformation parameters: [translation, rotation (radians), scaling]
     current_params = np.zeros(9)  # tx, ty, tz, rx, ry, rz, sx, sy, sz
@@ -327,16 +338,26 @@ def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tole
         scaling_matrix = m_scale3(params[6:9])
         return translation_matrix @ rotation_matrix @ scaling_matrix
 
-    def apply_numpy_transform(obj_values, transform: np.ndarray, to_crs=None, obj_units=None):
-        transformed_values = np.hstack((obj_values, np.ones((obj_values.shape[0], 1)))) @ transform.T
+    def apply_numpy_transform(
+        obj_values, transform: np.ndarray, to_crs=None, obj_units=None
+    ):
+        transformed_values = (
+            np.hstack((obj_values, np.ones((obj_values.shape[0], 1)))) @ transform.T
+        )
         transformed_values = transformed_values[:, :-1]
         return transformed_values
 
     for iteration in range(max_iterations):
-        opt_centers_mm[:, :3] = apply_numpy_transform(opt_centers_mm[:, :3],transformation_matrix)
+        opt_centers_mm[:, :3] = apply_numpy_transform(
+            opt_centers_mm[:, :3], transformation_matrix
+        )
 
         # Use the Hungarian algorithm to find the optimal assignment
-        cost_matrix = np.linalg.norm(opt_centers_mm[:, :3].values[:, np.newaxis] - montage_points_mm[:, :3].values, axis=2)
+        cost_matrix = np.linalg.norm(
+            opt_centers_mm[:, :3].values[:, np.newaxis]
+            - montage_points_mm[:, :3].values,
+            axis=2,
+        )
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
         coords_true = montage_points_mm[col_ind, :3].values
@@ -344,7 +365,9 @@ def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tole
 
         def loss(params, coords_to, coords_from):
             transformation_matrix = complete_transformation(params)
-            transformed_montage = apply_numpy_transform(coords_from[:, :3], transformation_matrix)
+            transformed_montage = apply_numpy_transform(
+                coords_from[:, :3], transformation_matrix
+            )
             return np.sum((coords_to - transformed_montage) ** 2)
 
         no_bounds = (None, None)
@@ -380,17 +403,15 @@ def icp_with_full_transform(opt_centers, montage_points, max_iterations=50, tole
     return best_idx
 
 
-
-
-def find_spread_points(points_xr):
-    """Selects three points from a given set of points that are spread apart from each other in the dataset.
+def find_spread_points(points_xr : xr.DataArray) -> np.ndarray:
+    """Selects three points that are spread apart from each other in the dataset.
 
     Parameters:
-        points_xr (xarray.DataArray): An xarray DataArray containing the points from which to select. 
+        points_xr: An xarray DataArray containing the points from which to select.
 
     Returns:
-        np.ndarray: Indices of the initial, farthest, and median-distanced points from the initial point 
-                    as determined by their positions in the original dataset.
+        Indices of the initial, farthest, and median-distanced points from the initial
+        point as determined by their positions in the original dataset.
     """
 
     points = points_xr.values
@@ -411,6 +432,12 @@ def find_spread_points(points_xr):
     # Step 3: Find the "middle-distanced" point from the initial point
     sorted_distances_indices = np.argsort(distances)
     median_index = sorted_distances_indices[len(sorted_distances_indices) // 2]
-    middle_distanced_point_index = median_index if median_index != initial_point_index else sorted_distances_indices[len(sorted_distances_indices) // 2 + 1]
+    middle_distanced_point_index = (
+        median_index
+        if median_index != initial_point_index
+        else sorted_distances_indices[len(sorted_distances_indices) // 2 + 1]
+    )
 
-    return points_xr.label.isel(label=[initial_point_index, farthest_point_index, middle_distanced_point_index]).values
+    return points_xr.label.isel(
+        label=[initial_point_index, farthest_point_index, middle_distanced_point_index]
+    ).values

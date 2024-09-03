@@ -4,6 +4,8 @@ from numpy.typing import ArrayLike
 from scipy.interpolate import interp1d
 from cedalion import units
 
+import cedalion
+import cedalion.typing as cdt
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
 import cedalion.data
@@ -107,7 +109,11 @@ def int2od(amplitudes: xr.DataArray):
     """
     # check negative values in amplitudes and issue an error if yes
     if np.any(amplitudes < 0):
-        raise AssertionError("Error: DataArray contains negative values. Please fix, for example by setting them to NaN with \"amplitudes = amplitudes.where(amplitudes >= 0, np.nan)\"")
+        raise AssertionError(
+            "Error: DataArray contains negative values. Please fix, for example by "
+            "setting them to NaN with "
+            "'amplitudes = amplitudes.where(amplitudes >= 0, np.nan)'"
+        )
 
     # conversion to optical density
     od = -np.log(amplitudes / amplitudes.mean("time"))
@@ -130,8 +136,8 @@ def od2conc(
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing
-            concentration changes with dimensions "channel" and "wavelength".
+        conc (xr.DataArray, (channel, *)): A data array containing
+            concentration changes by channel.
     """
     validators.has_channel(od)
     validators.has_wavelengths(od)
@@ -148,10 +154,11 @@ def od2conc(
     # conc = Einv @ (optical_density / ( dists * dpf))
     if dpf[0] != 1:
         conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
-    else:        
+    else:
         conc = xr.dot(Einv, od / (dpf * 1*units.mm), dims=["wavelength"])
 
     conc = conc.pint.to("micromolar")
+    conc = conc.pint.quantify({"time": od.time.attrs["units"]})  # got lost in xr.dot
     conc = conc.rename("concentration")
 
     return conc
@@ -174,7 +181,7 @@ def beer_lambert(
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing
+        conc (xr.DataArray, (channel, *)): A data array containing
             concentration changes according to the mBLL.
     """
     validators.has_channel(amplitudes)
@@ -188,3 +195,30 @@ def beer_lambert(
     conc = od2conc(od, geo3d, dpf, spectrum)
 
     return conc
+
+
+def split_long_short_channels(
+    ts: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
+    distance_threshold: cedalion.Quantity = 1.5 * cedalion.units.cm,
+):
+    """Split a time series into two based on channel distances.
+
+    Args:
+        ts: FIXME
+        geo3d : FIXME
+        distance_threshold : FIXME
+
+    Returns:
+        ts_long : time series with channel distances >= distance_threshold
+        ts_short : time series with channel distances < distance_threshold
+    """
+    dists = xrutils.norm(
+        geo3d.loc[ts.source] - geo3d.loc[ts.detector], dim=geo3d.points.crs
+    )
+
+    mask = dists < distance_threshold
+    ts_short = ts.sel(channel=mask)
+    ts_long = ts.sel(channel=~mask)
+
+    return ts_long, ts_short

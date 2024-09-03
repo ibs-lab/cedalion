@@ -1,4 +1,4 @@
-"""Cedalin datasets and utility functions."""
+"""Cedalion datasets and utility functions."""
 
 import os.path
 import pickle
@@ -14,7 +14,7 @@ import cedalion.io
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
-    base_url="https://doc.ml.tu-berlin.de/cedalion/datasets",
+    base_url="https://doc.ibs.tu-berlin.de/cedalion/datasets",
     env="CEDALION_DATA_DIR",
     registry={
         "mne_nirsport2_raw.snirf": "sha256:12e5fabe64ecc7ef4b83f6bcd77abb41f5480d5f17a2b1aae0e2ad0406670944",  # noqa: E501
@@ -22,7 +22,7 @@ DATASETS = pooch.create(
         "colin27_segmentation_downsampled_3x3x3.zip": "sha256:ab98b6bae3ef76be6110dc544917f4f2f7ef7233ac697d9cf8bb4a395e81b6cd",  # noqa: E501
         "fingertapping.zip": "sha256:f2253cca6eef8221d536da54b74d8556b28be93df9143ea53652fdc3bc011875",  # noqa: E501
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
-        "photogrammetry_example_scan.zip": "f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
+        "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
         "image_reconstruction_fluence.pickle.gz": "sha256:b647c07484a3cc2435b5def7abb342ba7a19aef66f749ed6b3cf3c26deec406f",  # noqa: E501
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
     },
@@ -65,6 +65,10 @@ def get_colin27_headmodel():
 
 
 def get_fingertapping() -> cdc.Recording:
+    """Retrieves a finger tapping recording in BIDS format.
+
+    Data is from :cite:t:`luke2021`
+    """
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
