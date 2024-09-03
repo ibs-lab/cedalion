@@ -172,7 +172,9 @@ class PointsAccessor:
 
         assert transform_units is not None
         assert transform.shape == (4, 4)  # FIXME assume 3D
-        assert from_crs in obj.dims
+        assert from_crs in obj.dims, f"Coordinate systems of points " \
+                                     f"({from_crs}) and transform " \
+                                     f"({obj.dims}) do not match."
 
         transform = transform.pint.dequantify()
 

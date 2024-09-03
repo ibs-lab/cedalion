@@ -7,6 +7,7 @@ import sys
 import numpy as np
 import pandas as pd
 import scipy.sparse
+from scipy.spatial import KDTree
 import trimesh
 import xarray as xr
 
@@ -356,6 +357,83 @@ class TwoSurfaceHeadModel:
         return snapped
 
 
+    # FIXME then maybe this should also not be in this class
+    @cdc.validate_schemas
+    def snap_to_scalp_voxels(
+        self, points: cdt.LabeledPointCloud
+    ) -> cdt.LabeledPointCloud:
+        """Snap optodes or points to the closest scalp voxel.
+
+        Parameters
+        ----------
+        points : cdt.LabeledPointCloud
+            Points to be snapped to the closest scalp voxel.
+
+        Returns
+        -------
+        cdt.LabeledPointCloud
+            Points aligned and snapped to the closest scalp voxel.
+        """
+        # Align to scalp surface
+        aligned = self.scalp.snap(points)
+
+        # Snap to closest scalp voxel
+        snapped = np.zeros(points.shape)
+        for i, a in enumerate(aligned):
+
+            # Get index of scalp surface vertex "a"
+            idx = np.argwhere(self.scalp.mesh.vertices == \
+                              np.array(a.pint.dequantify()))
+
+            # Reduce to indices with repitition of 3 (so all coordinates match)
+            if len(idx) > 3:
+                r = [rep[n] for rep in [{}] for i,n in enumerate(idx[:,0]) \
+                           if rep.setdefault(n,[]).append(i) or len(rep[n])==3]
+                idx = idx[r[0]]
+
+            # Make sure only one vertex is found
+            assert len(idx) == 3
+            assert idx[0,0] == idx[1,0] == idx[2,0]
+
+            # Get voxel indices mapping to this scalp vertex
+            vec = np.zeros(self.scalp.nvertices)
+            vec[idx[0,0]] = 1
+            voxel_idx = np.argwhere(self.voxel_to_vertex_scalp @ vec == 1)[:,0]
+           
+            if len(voxel_idx) > 0:
+                # Get voxel coordinates from voxel indices
+                try: 
+                    shape = self.segmentation_masks.shape[-3:]
+                except:
+                    shape = self.segmentation_masks.to_dataarray().shape[-3:]
+                voxels = np.array(np.unravel_index(voxel_idx, shape)).T
+
+                # Choose the closest voxel
+                dist = np.linalg.norm(voxels - np.array(a.pint.dequantify()), axis=1)
+                voxel_idx = np.argmin(dist)
+
+            else:
+                # If no voxel maps to that scalp surface vertex, 
+                # simply choose the closest of all scalp voxels
+                voxels = voxels_from_segmentation(self.segmentation_masks, ["scalp"]).voxels
+                if len(voxels) == 0:
+                    try:
+                        scalp_mask = self.segmentation_masks.sel(segmentation_type="scalp").to_dataarray()
+                    except:
+                        scalp_mask = self.segmentation_masks.sel(segmentation_type="scalp")
+                    voxels = np.argwhere(np.array(scalp_mask)[0] > 0.99)
+
+                kdtree = KDTree(voxels)
+                dist, voxel_idx = kdtree.query(self.scalp.mesh.vertices[idx[0,0]],
+                                               workers=-1)
+
+            # Snap to closest scalp voxel 
+            snapped[i] = voxels[voxel_idx]
+
+        points.values = snapped
+        return points
+
+
 class ForwardModel:
     """Forward model for simulating light transport in the head.
 
@@ -413,10 +491,11 @@ class ForwardModel:
             geo3d.type.isin([cdc.PointType.SOURCE, cdc.PointType.DETECTOR])
         ]
 
-        #FIXME make sure that optode is in scalp voxel
-        self.optode_pos = self.optode_pos.round()
-
+        # Comppute the direction of the light beam from the surface normals
         self.optode_dir = -head_model.scalp.get_vertex_normals(self.optode_pos)
+        # Slightly realign the optode positions to the closest scalp voxel
+        self.optode_pos = head_model.snap_to_scalp_voxels(self.optode_pos)
+
 
         self.optode_pos = self.optode_pos.pint.dequantify()
         self.optode_dir = self.optode_dir.pint.dequantify()
