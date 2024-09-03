@@ -24,7 +24,8 @@ DATASETS = pooch.create(
         "fingertappingDOT.zip": "sha256:03e620479bd48aea8457050b7ce42e0c73ef5448296272448b54cee0e883853e",  # noqa: E501
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
-        "image_reconstruction_fluence_DOT.pickle.gz": "",  # noqa: E501
+        "image_reconstruction_fluence.pickle.gz": "sha256:b647c07484a3cc2435b5def7abb342ba7a19aef66f749ed6b3cf3c26deec406f",  # noqa: E501
+        "image_reconstruction_fluence_DOT.pickle.gz": "sha256:44e8e316460a6579ac42c597c953ff050961171303372c06aaad20562aa0fea4",  # noqa: E501
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
     },
 )

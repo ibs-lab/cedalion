@@ -1,6 +1,6 @@
 import hashlib
 
-file_path = "C:/Users/avonl/OneDrive/Desktop/image_reconstruction_fluence_DOT.zip"
+file_path = "C:/Users/avonl/OneDrive/Desktop/image_reconstruction_fluence_DOT.pickle.gz"
 
 
 def compute_sha256(file_path):
