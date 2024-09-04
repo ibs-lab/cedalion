@@ -66,3 +66,6 @@ myst_substitutions = {
     "docs_url": "https://doc.ibs.tu-berlin.de/cedalion/doc/dev",
     "commit_hash": commit_hash,
 }
+
+# -- sphinx_autodoc_typehints -------------------------------------------------
+always_use_bars_union = True
