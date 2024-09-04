@@ -254,9 +254,6 @@ class GammaDeriv(TemporalBasisFunction):
             r[t_hrf < tau[other]] = 0.0
             dr[t_hrf < tau[other]] = 0.0
 
-            print(type(r))
-            print(type(dr))
-
             if T[other] > 0:
                 width = int(T[other] * fs)
                 r = np.convolve(r, np.ones(width) / width)[:n_samples]
