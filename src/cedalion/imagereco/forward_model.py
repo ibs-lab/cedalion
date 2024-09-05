@@ -212,17 +212,17 @@ class TwoSurfaceHeadModel:
             "skull": "skull.nii",
             "wm": "wm.nii",
         },
-        surface_files: dict[str, str] = {
-            "brain": "brain.obj",
-            "head": "head.obj"
-        },
+        brain_surface_file: str = None,
+        scalp_surface_file: str = None,
         landmarks_ras_file: Optional[str] = None,
+        brain_seg_types: list[str] = ["gm", "wm"],
+        scalp_seg_types: list[str] = ["scalp"],
         smoothing: float = 0.5,
         brain_face_count: Optional[int] = 180000,
         scalp_face_count: Optional[int] = 60000,
         fill_holes: bool = False,
     ) -> "TwoSurfaceHeadModel":
-        """Constructor from binary masks as gained from segmented MRI scans.
+        """Constructor from binary masks, brain and head surfaces as gained from MRI scans.
 
         Parameters
         ----------
@@ -230,6 +230,10 @@ class TwoSurfaceHeadModel:
             Folder containing the segmentation masks in NIFTI format.
         mask_files : dict[str, str]
             Dictionary mapping segmentation types to NIFTI filenames.
+        brain_surface_file : str
+            Path to the brain surface.
+        scalp_surface_file : str
+            Path to the scalp surface.
         landmarks_ras_file : Optional[str]
             Filename of the landmarks in RAS space.
         brain_seg_types : list[str]
@@ -240,6 +244,8 @@ class TwoSurfaceHeadModel:
             Smoothing factor for the brain and scalp surfaces.
         brain_face_count : Optional[int]
             Number of faces for the brain surface.
+        scalp_face_count : Optional[int]
+            Number of faces for the scalp surface.
         """
 
         # load segmentation mask
@@ -265,17 +271,25 @@ class TwoSurfaceHeadModel:
             landmarks_ijk = None
 
         # derive surfaces from segmentation masks
-        brain_ijk = surface_from_segmentation(
-            segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes
-        )
-
+        if brain_surface_file is not None:
+            brain_ijk = trimesh.load(brain_surface_file)
+            brain_ijk = cdc.TrimeshSurface(brain_ijk, 'ijk', cedalion.units.Unit("1"))
+        else:
+            brain_ijk = surface_from_segmentation(
+                segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes
+            )
         # we need the single outer surface from the scalp. The inner border between
         # scalp and skull is not interesting here. Hence, all segmentation types are
         # grouped together, yielding a uniformly filled head volume.
-        all_seg_types = segmentation_masks.segmentation_type.values
-        scalp_ijk = surface_from_segmentation(
-            segmentation_masks, all_seg_types, fill_holes_in_mask=fill_holes
-        )
+
+        if scalp_surface_file is not None:
+            scalp_ijk = trimesh.load(scalp_surface_file)
+            scalp_ijk = cdc.TrimeshSurface(scalp_ijk, 'ijk', cedalion.units.Unit("1"))
+        else:
+            all_seg_types = segmentation_masks.segmentation_type.values
+            scalp_ijk = surface_from_segmentation(
+                segmentation_masks, all_seg_types, fill_holes_in_mask=fill_holes
+            )
 
         # smooth surfaces
         if smoothing > 0:
