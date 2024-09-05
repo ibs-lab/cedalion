@@ -57,9 +57,9 @@ def plot3d(
         brain_mesh (TrimeshSurface): The brain mesh as a TrimeshSurface object.
         scalp_mesh (TrimeshSurface): The scalp mesh as a TrimeshSurface object.
         geo3d (xarray.Dataset): Dataset containing 3-dimentional point centers.
-        timeseries
-        poly_lines
-        brain_scalars
+        timeseries: Time series data array.
+        poly_lines: List of lists of points to be plotted as polylines.
+        brain_scalars: Scalars to be used for coloring the brain mesh.
         plotter (pv.Plotter, optional): An existing PyVista plotter instance to use for plotting. If None, a new
             PyVista plotter instance is created. Default is None.
     """
@@ -329,6 +329,17 @@ def plot_vector_field(
     vectors: xr.DataArray,
     ppoints = None
 ):
+    """Plots a vector field on a PyVista plotter.
+
+    Args:
+        plotter (pv.Plotter): A PyVista plotter instance used for rendering the vector
+            field.
+        points (cdt.LabeledPointCloud): A labeled point cloud data structure containing
+            point coordinates.
+        vectors (xr.DataArray): A data array containing the vector field.
+        ppoints (list, optional): A list to store indices of picked points, enables
+            picking if not None. Default is None.
+    """
     assert len(points) == len(vectors)
     assert all(points.label.values == vectors.label.values)
     assert points.points.crs == vectors.dims[1]
