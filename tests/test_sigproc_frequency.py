@@ -37,17 +37,20 @@ def test_sampling_rate(timeseries):
     assert q.units == units.Hz
 
 
+def _proj(a, b):
+    return np.dot(a, b)
+
+
 def assert_freq_filter_result(timeseries, filtered):
-    def proj(a, b):
-        return np.dot(a, b)
 
-    before_y1 = proj(timeseries.loc["y1"], timeseries.loc["y1"])
-    before_y2 = proj(timeseries.loc["y2"], timeseries.loc["y2"])
 
-    after_y1 = proj(timeseries.loc["y1"], filtered.loc["y1"])
-    after_y2 = proj(timeseries.loc["y2"], filtered.loc["y2"])
-    after_y12_1 = proj(timeseries.loc["y1"], filtered.loc["y1+y2"])
-    after_y12_2 = proj(timeseries.loc["y2"], filtered.loc["y1+y2"])
+    before_y1 = _proj(timeseries.loc["y1"], timeseries.loc["y1"])
+    before_y2 = _proj(timeseries.loc["y2"], timeseries.loc["y2"])
+
+    after_y1 = _proj(timeseries.loc["y1"], filtered.loc["y1"])
+    after_y2 = _proj(timeseries.loc["y2"], filtered.loc["y2"])
+    after_y12_1 = _proj(timeseries.loc["y1"], filtered.loc["y1+y2"])
+    after_y12_2 = _proj(timeseries.loc["y2"], filtered.loc["y1+y2"])
 
     assert after_y1 < (before_y1 / 100)  # f1 got filtered.
     assert after_y2 == pytest.approx(before_y2, rel=0.005)  #  f2 remains intact
@@ -87,3 +90,32 @@ def test_freq_filter_accessor_units(timeseries):
     timeseries = timeseries.pint.dequantify()
 
     assert_freq_filter_result(timeseries, filtered)
+
+
+def test_freq_filter_highpass(timeseries):
+    filtered = freq_filter(timeseries, fmin=0.5 * units.Hz, fmax=0 * units.Hz)
+
+    filtered = filtered.pint.dequantify()
+    timeseries = timeseries.pint.dequantify()
+
+    assert_freq_filter_result(timeseries, filtered)
+
+
+def test_freq_filter_lowpass(timeseries):
+    filtered = freq_filter(timeseries, fmin=0. * units.Hz, fmax=0.5 * units.Hz)
+
+    filtered = filtered.pint.dequantify()
+    timeseries = timeseries.pint.dequantify()
+
+    before_y1 = _proj(timeseries.loc["y1"], timeseries.loc["y1"])
+    before_y2 = _proj(timeseries.loc["y2"], timeseries.loc["y2"])
+
+    after_y1 = _proj(timeseries.loc["y1"], filtered.loc["y1"])
+    after_y2 = _proj(timeseries.loc["y2"], filtered.loc["y2"])
+    after_y12_1 = _proj(timeseries.loc["y1"], filtered.loc["y1+y2"])
+    after_y12_2 = _proj(timeseries.loc["y2"], filtered.loc["y1+y2"])
+
+    assert after_y1 == pytest.approx(before_y1, rel=0.005)  #  f1 remains intact
+    assert after_y2 < (before_y2 / 100)  # f2 got filtered.
+    assert after_y12_1 == pytest.approx(before_y1, rel=0.005) 
+    assert after_y12_2 < (before_y2 / 100)
