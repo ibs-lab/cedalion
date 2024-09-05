@@ -37,6 +37,7 @@ class PointType(Enum):
 
 @dataclass
 class Surface(ABC):
+    """Abstract base class for surfaces."""
     mesh: Any
     crs: str
     units: pint.Unit
@@ -96,6 +97,13 @@ class Surface(ABC):
 
 @dataclass
 class TrimeshSurface(Surface):
+    """A surface represented by a trimesh object.
+
+    Attributes:
+        mesh (trimesh.Trimesh): The trimesh object representing the surface.
+        crs (str): The coordinate reference system of the surface.
+        units (pint.Unit): The units of the surface.
+    """
     mesh: trimesh.Trimesh
 
     @property
@@ -122,6 +130,14 @@ class TrimeshSurface(Surface):
         self._kdtree = KDTree(self.mesh.vertices)
 
     def apply_transform(self, transform: cdt.AffineTransform) -> "TrimeshSurface":
+        """Apply an affine transformation to this surface.
+
+        Args:
+            transform (cdt.AffineTransform): The affine transformation to apply.
+
+        Returns:
+            TrimeshSurface: The transformed surface.
+        """
         transformed = self.mesh.copy()
 
         new_units = self.units * transform.pint.units
