@@ -687,7 +687,7 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
                 channel_lowpass, segments, threshold_samples
             )
 
-            channel_mask = np.zeros(len(channel), dtype=bool)
+            channel_mask = np.ones(len(channel), dtype=bool)
             seg_length_min = 0.1 * fs
             seg_length_max = 0.49999 * fs
             for i_seg, (i0, i1, seg_type) in enumerate(segments):
