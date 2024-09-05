@@ -67,7 +67,7 @@ def get_colin27_headmodel():
 def get_fingertapping() -> cdc.Recording:
     """Retrieves a finger tapping recording in BIDS format.
 
-    Data is from :cite:t:`luke2021`
+    Data is from :cite:t:`Luke2021`
     """
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
 
