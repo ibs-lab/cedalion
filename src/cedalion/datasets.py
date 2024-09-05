@@ -95,9 +95,6 @@ def get_fingertappingDOT() -> cdc.Recording:
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
 
-    # FIXME temporarily define ADU unit in this dataset to avoid an error
-    cedalion.units.define("ADU = 1")
-
     rec = cedalion.io.read_snirf(fname)[0]
 
     geo3d = rec.geo3d.points.rename({"NASION": "Nz"})
