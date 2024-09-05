@@ -76,6 +76,7 @@ class Surface(ABC):
         return self._kdtree
 
     def snap(self, points: cdt.LabeledPointCloud):
+        """Snap points to the nearest vertices on the surface."""
         if self.crs != points.points.crs:
             raise ValueError("CRS mismatch")
 
@@ -762,6 +763,7 @@ class PycortexSurface(Surface):
 def affine_transform_from_numpy(
     transform: np.ndarray, from_crs: str, to_crs: str, from_units: str, to_units: str
 ) -> cdt.AffineTransform:
+    """Create a AffineTransform object from a numpy array."""
     units = cedalion.units.Unit(to_units) / cedalion.units.Unit(from_units)
 
     return xr.DataArray(transform, dims=[to_crs, from_crs]).pint.quantify(units)

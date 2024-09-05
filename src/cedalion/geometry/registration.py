@@ -105,6 +105,17 @@ def register_trans_rot_isoscale(
     coords_target: cdt.LabeledPointCloud,
     coords_trafo: cdt.LabeledPointCloud,
 ):
+    """Finds affine transformation between coords_target and coords_trafo.
+
+    Requires at least 3 common labels between the two point clouds.
+
+    Args:
+        coords_target: Target point cloud.
+        coords_trafo: Source point cloud.
+
+    Returns:
+        cdt.AffineTransform: Affine transformation between the two point clouds.
+    """
     common_labels = coords_target.points.common_labels(coords_trafo)
 
     if len(common_labels) < 3:

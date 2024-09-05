@@ -19,6 +19,12 @@ import cedalion.xrutils as xrutils
 import cedalion.data
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
+    """Plots a 3D visualization of a montage.
+
+    Args:
+        amp (xr.DataArray): Time series data array.
+        geo3d (xr.DataArray): Landmark coordinates.
+    """
     geo3d = geo3d.pint.dequantify()
 
     f = p.figure()
