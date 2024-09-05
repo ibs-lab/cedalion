@@ -44,7 +44,7 @@ def get_colin27_segmentation(downsampled=False):
     else:
         fnames = DATASETS.fetch("colin27_segmentation.zip", processor=pooch.Unzip())
 
-    basedir = os.path.dirname(fnames[-1])
+    basedir = os.path.dirname(fnames[0])
     mask_files = {
         "csf": "mask_csf.nii",
         "gm": "mask_gray.nii",
@@ -70,17 +70,14 @@ def get_icbm152_segmentation():
 
     fnames = DATASETS.fetch("ICBM152(2020).zip", processor=pooch.Unzip())
 
-    basedir = os.path.dirname(fnames[-1]) # TODO: Upload compressed file without __macosx
+    basedir = os.path.dirname(fnames[0]) # TODO: Upload compressed file without __macosx
 
-    # basedir = "/Users/shakiba/Documents/cedalion/ICBM152(2020)_HeadModel/"
     mask_files = {
         "csf": "mask_csf.nii",
         "gm": "mask_gray.nii",
         "scalp": "mask_skin.nii",
         "skull": "mask_bone.nii",
         "wm": "mask_white.nii",
-        "air": "mask_air.nii",
-        "parcels": "parcellation_mask_600.nii"
     }
     landmarks_ras_file = "landmarks.mrk.json"
 
