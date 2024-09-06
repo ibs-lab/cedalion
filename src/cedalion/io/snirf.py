@@ -872,6 +872,14 @@ def measurement_list_from_stacked(
 
 
 def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
+    """Write a recording to a .snirf file.
+
+    See snirf specification for details (:cite:t:`Tucker2022`)
+
+    Args:
+        snirf_file (Snirf): Snirf object to write to.
+        rec (Recording): Recording object to write to the file.
+    """
     # create and populate nirs element
     snirf_file.nirs.appendGroup()
     ne = snirf_file.nirs[-1]
@@ -1002,6 +1010,13 @@ def write_snirf(
     fname: Path | str,
     recordings: cdc.Recording | list[cdc.Recording],
 ):
+    """Write one or more recordings to a .snirf file.
+
+    Args:
+        fname (Path | str): Path to .snirf file.
+        recordings (Recording | list[Recording]): Recording object(s) to write to the
+            file.
+    """
     if isinstance(fname, Path):
         fname = str(fname)
 
