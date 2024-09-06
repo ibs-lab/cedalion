@@ -16,7 +16,7 @@ import cedalion.xrutils as xrutils
 import cedalion.sigproc.frequency as freq
 from cedalion import Quantity, units
 from cedalion.typing import NDTimeSeries
-
+import cedalion.nirs as nirs
 from .frequency import freq_filter, sampling_rate
 
 logger = logging.getLogger("cedalion")
@@ -146,6 +146,36 @@ def psp(
 
     return psp_xr, psp_mask
 
+@cdc.validate_schemas
+def gvtd(amplitudes: NDTimeSeries):
+    '''
+    convert to OD
+    filter
+    find temporal derivative
+    find RMS 
+    add zero for first time time point
+
+    '''
+    fcut_min = 0.01 
+    fcut_max = 0.5 
+    
+    od = nirs.int2od(amplitudes)
+    od = xr.where(np.isinf(od), 0, od)
+    od = xr.where(np.isnan(od), 0, od)
+    od.time.attrs['units'] = units.s
+    od_filtered = od.cd.freq_filter(fcut_min, fcut_max, 4)
+
+    # Step 1: Find the matrix of the temporal derivatives
+    dataDiff = od_filtered - od_filtered.shift(time=-1)
+    
+    # Step 2: Find the RMS across the channels for each time-point of dataDiff
+    GVTD = np.sqrt((dataDiff[:, :-1]**2).mean(dim="channel"))
+    
+    # # Step 3: Add a zero in the beginning for GVTD to have the same number of time-points as your original dataMatrix
+    GVTD = GVTD.squeeze()
+    GVTD.values = np.hstack([0, GVTD.values[:-1]])
+    
+    return GVTD
 
 @cdc.validate_schemas
 def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
@@ -490,7 +520,7 @@ def detect_outliers_std(
     fs = freq.sampling_rate(ts)
 
     # window size in samples TODO t_window units
-    window_size = int(np.round(fs * t_window))
+    window_size = int(np.round(fs.magnitude * t_window))
 
     ts_lowpass = ts.cd.freq_filter(0, 0.5, butter_order=4)
 

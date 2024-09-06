@@ -10,7 +10,7 @@ import pooch
 import xarray as xr
 
 import cedalion.dataclasses as cdc
-import cedalion.io
+import cedalion.io as io
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
@@ -73,7 +73,7 @@ def get_fingertapping() -> cdc.Recording:
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
 
-    rec = cedalion.io.read_snirf(fname)[0]
+    rec = io.read_snirf(fname)[0]
 
     geo3d = rec.geo3d.points.rename({"NASION": "Nz"})
     geo3d = geo3d.rename({"pos": "digitized"})
