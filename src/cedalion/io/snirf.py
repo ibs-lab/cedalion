@@ -180,7 +180,7 @@ def labels_and_positions(probe, dim: int = 3):
     """Extract 3D coordinates of optodes and landmarks from a nirs probe variable.
 
     Args:
-        probe: Nirs probe geometry variable, see snirf documentation.
+        probe: Nirs probe geometry variable, see snirf documentation (:cite:t:`Tucker2022`).
         dim: must be either 2 or 3.
 
     Returns:
@@ -248,7 +248,7 @@ def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
 
     Args:
         nirs_element: Nirs data element as specified in the snirf
-            documentation.
+            documentation (:cite:t:`Tucker2022`).
         dim: must be either 2 or 3.
 
     Returns:
@@ -338,7 +338,7 @@ def meta_data_tags_to_dict(nirs_element: NirsElement) -> OrderedDict[str, Any]:
 
     Args:
         nirs_element (NirsElement): Nirs data element as specified in the snirf
-            documentation.
+            documentation (:cite:t:`Tucker2022`).
 
     Returns:
         OrderedDict[str, Any]: Dictionary containing the metaDataTags information.
@@ -354,7 +354,8 @@ def stim_to_dataframe(stim: Stim):
     """Converts a snirf Stim object to a pandas DataFrame.
 
     Args:
-        stim (Stim): Stim object as specified in the snirf documentation.
+        stim (Stim): Stim object as specified in the snirf documentation
+            (:cite:t:`Tucker2022`).
 
     Returns:
         pd.DataFrame: DataFrame containing the stimulus information.
@@ -393,7 +394,7 @@ def read_aux(
 
     Args:
         nirs_element (NirsElement): Nirs data element as specified in the snirf
-            documentation.
+            documentation (:cite:t:`Tucker2022`).
         opts (dict[str, Any]): Options for reading the aux data. The following
             options are supported:
             - squeeze_aux (bool): If True, squeeze the aux data to remove
@@ -480,7 +481,7 @@ def read_data_elements(
     Args:
         data_element (DataElement): DataElement obj. from the snirf file.
         nirs_element (NirsElement): Nirs data element as specified in the snirf
-            documentation.
+            documentation (:cite:t:`Tucker2022`).
         stim (pd.DataFrame): DataFrame containing the stimulus information.
 
     Returns:
@@ -672,7 +673,7 @@ def read_nirs_element(nirs_element, opts):
 
     Args:
         nirs_element (NirsElement): Nirs data element as specified in the snirf
-            documentation
+            documentation (:cite:t:`Tucker2022`).
         opts (dict[str, Any]): Options for reading the data element. The following
             options are supported:
             - squeeze_aux (bool): If True, squeeze the aux data to remove
@@ -746,7 +747,7 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
     Args:
         df_ml (pd.DataFrame): DataFrame containing the measurement list information.
         nirs_element (NirsElement): Nirs data element as specified in the snirf
-            documentation.
+            documentation (:cite:t:`Tucker2022`).
 
     Returns:
         pd.DataFrame: DataFrame containing the measurement list information with

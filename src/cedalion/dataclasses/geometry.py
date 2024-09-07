@@ -37,6 +37,7 @@ class PointType(Enum):
 
 @dataclass
 class Surface(ABC):
+    """Abstract base class for surfaces."""
     mesh: Any
     crs: str
     units: pint.Unit
@@ -75,6 +76,7 @@ class Surface(ABC):
         return self._kdtree
 
     def snap(self, points: cdt.LabeledPointCloud):
+        """Snap points to the nearest vertices on the surface."""
         if self.crs != points.points.crs:
             raise ValueError("CRS mismatch")
 
@@ -96,6 +98,13 @@ class Surface(ABC):
 
 @dataclass
 class TrimeshSurface(Surface):
+    """A surface represented by a trimesh object.
+
+    Attributes:
+        mesh (trimesh.Trimesh): The trimesh object representing the surface.
+        crs (str): The coordinate reference system of the surface.
+        units (pint.Unit): The units of the surface.
+    """
     mesh: trimesh.Trimesh
 
     @property
@@ -122,6 +131,14 @@ class TrimeshSurface(Surface):
         self._kdtree = KDTree(self.mesh.vertices)
 
     def apply_transform(self, transform: cdt.AffineTransform) -> "TrimeshSurface":
+        """Apply an affine transformation to this surface.
+
+        Args:
+            transform (cdt.AffineTransform): The affine transformation to apply.
+
+        Returns:
+            TrimeshSurface: The transformed surface.
+        """
         transformed = self.mesh.copy()
 
         new_units = self.units * transform.pint.units
@@ -746,6 +763,7 @@ class PycortexSurface(Surface):
 def affine_transform_from_numpy(
     transform: np.ndarray, from_crs: str, to_crs: str, from_units: str, to_units: str
 ) -> cdt.AffineTransform:
+    """Create a AffineTransform object from a numpy array."""
     units = cedalion.units.Unit(to_units) / cedalion.units.Unit(from_units)
 
     return xr.DataArray(transform, dims=[to_crs, from_crs]).pint.quantify(units)

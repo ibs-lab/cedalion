@@ -98,22 +98,18 @@ class TwoSurfaceHeadModel:
     ) -> "TwoSurfaceHeadModel":
         """Constructor from binary masks as gained from segmented MRI scans.
 
-        Parameters
-        ----------
-        segmentation_dir : str
-            Folder containing the segmentation masks in NIFTI format.
-        mask_files : dict[str, str]
-            Dictionary mapping segmentation types to NIFTI filenames.
-        landmarks_ras_file : Optional[str]
-            Filename of the landmarks in RAS space.
-        brain_seg_types : list[str]
-            List of segmentation types to be included in the brain surface.
-        scalp_seg_types : list[str]
-            List of segmentation types to be included in the scalp surface.
-        smoothing : float
-            Smoothing factor for the brain and scalp surfaces.
-        brain_face_count : Optional[int]
-            Number of faces for the brain surface.
+        Args:
+            segmentation_dir (str): Folder containing the segmentation masks in NIFTI
+                format.
+            mask_files (Dict[str, str]): Dictionary mapping segmentation types to NIFTI
+                filenames.
+            landmarks_ras_file (Optional[str]): Filename of the landmarks in RAS space.
+            brain_seg_types (list[str]): List of segmentation types to be included in
+                the brain surface.
+            scalp_seg_types (list[str]): List of segmentation types to be included in
+                the scalp surface.
+            smoothing(float): Smoothing factor for the brain and scalp surfaces.
+            brain_face_count (Optional[int]): Number of faces for the brain surface.
         """
 
         # load segmentation mask
@@ -343,10 +339,11 @@ class TwoSurfaceHeadModel:
         """Align and snap optodes or points to the scalp surface.
 
         Args:
-            points: Points to be aligned and snapped to the scalp surface.
+            points (cdt.LabeledPointCloud): Points to be aligned and snapped to the
+                scalp surface.
 
         Returns:
-            Points aligned and snapped to the scalp surface.
+            cdt.LabeledPointCloud: Points aligned and snapped to the scalp surface.
         """
 
         assert self.landmarks is not None, "Please add landmarks in RAS to head \
@@ -364,15 +361,13 @@ class TwoSurfaceHeadModel:
     ) -> cdt.LabeledPointCloud:
         """Snap optodes or points to the closest scalp voxel.
 
-        Parameters
-        ----------
-        points : cdt.LabeledPointCloud
-            Points to be snapped to the closest scalp voxel.
+        Args:
+            points (cdt.LabeledPointCloud): Points to be snapped to the closest scalp
+                voxel.
 
-        Returns
-        -------
-        cdt.LabeledPointCloud
-            Points aligned and snapped to the closest scalp voxel.
+        Returns:
+            cdt.LabeledPointCloud: Points aligned and snapped to the closest scalp
+                voxel.
         """
         # Align to scalp surface
         aligned = self.scalp.snap(points)
@@ -471,15 +466,12 @@ class ForwardModel:
     ):
         """Constructor for the forward model.
 
-        Parameters
-        ----------
-        head_model : TwoSurfaceHeadModel
-            Head model containing voxel projections to brain and scalp surfaces.
-        geo3d : cdt.LabeledPointCloud
-            Optode positions and directions.
-        measurement_list : pd.DataFrame
-            List of measurements of experiment with source, detector, channel and
-            wavelength.
+        Args:
+            head_model (TwoSurfaceHeadModel): Head model containing voxel projections to
+                brain and scalp surfaces.
+            geo3d (cdt.LabeledPointCloud): Optode positions and directions.
+            measurement_list (pd.DataFrame): List of measurements of experiment with
+                source, detector, channel and wavelength.
         """
 
         assert head_model.crs == "ijk"  # FIXME
@@ -615,16 +607,16 @@ class ForwardModel:
                 Fluence in each voxel for each channel and wavelength.
 
         References:
-            (:cite:t:`fang2009monte`) Qianqian Fang and David A. Boas, "Monte Carlo
+            (:cite:t:`Fang2009`) Qianqian Fang and David A. Boas, "Monte Carlo
             Simulation of Photon Migration in 3D Turbid Media Accelerated by Graphics
             Processing Units," Optics Express, vol.17, issue 22, pp. 20178-20190 (2009).
 
-            (:cite:t:`yu2018scalable`) Leiming Yu, Fanny Nina-Paravecino, David Kaeli,
+            (:cite:t:`Yu2018`) Leiming Yu, Fanny Nina-Paravecino, David Kaeli,
             Qianqian Fang, “Scalable and massively parallel Monte Carlo photon transport
             simulations for heterogeneous computing platforms,”
             J. Biomed. Opt. 23(1), 010504 (2018).
 
-            (:cite:t:`yan2020hybrid`) Shijie Yan and Qianqian Fang* (2020),
+            (:cite:t:`Yan2020`) Shijie Yan and Qianqian Fang* (2020),
             "Hybrid mesh and voxel based Monte Carlo algorithm for accurate and
             efficient photon transport modeling in complex bio-tissues,"
             Biomed. Opt. Express, 11(11) pp. 6262-6270.
@@ -702,7 +694,7 @@ class ForwardModel:
             Fluence in each voxel for each channel and wavelength.
 
         References:
-            (:cite:t:`dehghani2009near`) Dehghani, Hamid, et al. "Near infrared optical
+            (:cite:t:`Dehghani2009`) Dehghani, Hamid, et al. "Near infrared optical
             tomography using NIRFAST: Algorithm for numerical model and image
             reconstruction."
             Communications in numerical methods in engineering 25.6 (2009): 711-732.
@@ -822,14 +814,12 @@ class ForwardModel:
         """Compute sensitivity matrix from fluence.
 
         Args:
-            fluence_all : xr.DataArray
-                Fluence in each voxel for each wavelength.
-            fluence_at_optodes : xr.DataArray
-                Fluence at all optode positions for each wavelength.
+            fluence_all (xr.DataArray): Fluence in each voxel for each wavelength.
+            fluence_at_optodes (xr.DataArray): Fluence at all optode positions for each
+                wavelength.
 
         Returns:
-        xr.DataArray
-            Sensitivity matrix for each channel, vertex and wavelength.
+            xr.DataArray: Sensitivity matrix for each channel, vertex and wavelength.
         """
 
         channels = self.measurement_list.channel.unique().tolist()
@@ -955,12 +945,11 @@ class ForwardModel:
         """Compute stacked HbO and HbR sensitivity matrices from fluence.
 
         Args:
-            sensitivity : xr.DataArray
-                Sensitivity matrix for each vertex and wavelength.
+            sensitivity (xr.DataArray): Sensitivity matrix for each vertex and
+                wavelength.
 
         Returns:
-            xr.DataArray
-                Stacked sensitivity matrix for each channel and vertex.
+            xr.DataArray: Stacked sensitivity matrix for each channel and vertex.
         """
 
         assert "wavelength" in sensitivity.dims

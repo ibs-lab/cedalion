@@ -284,6 +284,7 @@ class LandmarksBuilder1010:
         return self.landmarks_mm.pint.quantify()
 
     def plot(self):
+        """Plot scalp surface with landmarks."""
         plt = pv.Plotter()
         cedalion.plots.plot_surface(plt, self.scalp_surface)
         cedalion.plots.plot_labeled_points(plt, self.landmarks_mm.pint.quantify())

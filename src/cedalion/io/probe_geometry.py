@@ -9,6 +9,15 @@ import cedalion
 
 
 def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
+    """Read a JSON file containing landmark points.
+
+    Args:
+        fname (str): Filename
+        crs (str): Coordinate reference system
+
+    Returns:
+        xr.DataArray: Landmark points by label/type
+    """
     with open(fname) as fin:
         x = json.load(fin)
 

@@ -1,7 +1,7 @@
 import nibabel
 import xarray as xr
 import os
-from typing import Dict
+from typing import Dict, Tuple
 import numpy as np
 from cedalion.dataclasses import affine_transform_from_numpy
 
@@ -16,6 +16,14 @@ AFFINE_CODES = {
 
 
 def _get_affine_from_niftii(image: nibabel.nifti1.Nifti1Image):
+    """Get affine transformation matrix from NIFTI image.
+
+    Args:
+        image (nibabel.nifti1.Nifti1Image): NIFTI image object
+
+    Returns:
+        xr.DataArray: Affine transformation matrix
+    """
     transform, code = image.get_sform(coded=True)
     if code != 0:
         return affine_transform_from_numpy(
@@ -42,7 +50,18 @@ def read_segmentation_masks(
         "skull": "skull.nii",
         "wm": "wm.nii",
     },
-) -> xr.DataArray:
+) -> Tuple[xr.DataArray, np.ndarray]:
+    """Read segmentation masks from NIFTI files.
+
+    Args:
+        basedir (str): Directory containing the mask files
+        mask_files (Dict[str, str]): Dictionary mapping segmentation types to filenames
+
+    Returns:
+        Tuple[xr.DataArray, np.ndarray]:
+            - masks (xr.DataArray): Concatenated segmentation masks with a new dimension `segmentation_type`.
+            - affine (np.ndarray): Affine transformation matrix associated with the NIFTI files.
+    """
     mask_ids = {seg_type: i + 1 for i, seg_type in enumerate(mask_files.keys())}
     masks = []
     affines = []

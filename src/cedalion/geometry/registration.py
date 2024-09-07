@@ -32,6 +32,18 @@ def register_trans_rot(
     coords_target: cdt.LabeledPointCloud,
     coords_trafo: cdt.LabeledPointCloud,
 ):
+    """Finds affine transformation between coords_target and coords_trafo.
+
+    Uses translation and roatation rotation. Requires at least 3 common labels
+    between the two point clouds.
+
+    Args:
+        coords_target: Target point cloud.
+        coords_trafo: Source point cloud.
+
+    Returns:
+        cdt.AffineTransform: Affine transformation between the two point clouds.
+    """
     common_labels = coords_target.points.common_labels(coords_trafo)
 
     if len(common_labels) < 3:
@@ -106,6 +118,18 @@ def register_trans_rot_isoscale(
     coords_target: cdt.LabeledPointCloud,
     coords_trafo: cdt.LabeledPointCloud,
 ):
+    """Finds affine transformation between coords_target and coords_trafo.
+
+    Uses translation, rotation and isotropic scaling. Requires at least 3 common labels
+    between the two point clouds.
+
+    Args:
+        coords_target: Target point cloud.
+        coords_trafo: Source point cloud.
+
+    Returns:
+        cdt.AffineTransform: Affine transformation between the two point clouds.
+    """
     common_labels = coords_target.points.common_labels(coords_trafo)
 
     if len(common_labels) < 3:
@@ -299,7 +323,7 @@ def icp_with_full_transform(
 ):
     """Perform Iterative Closest Point algorithm with full transformation capabilities.
 
-    Args::
+    Args:
         opt_centers: Source point cloud for alignment.
         montage_points: Target reference point cloud.
         max_iterations: Maximum number of iterations for convergence.
@@ -407,7 +431,7 @@ def icp_with_full_transform(
 def find_spread_points(points_xr : xr.DataArray) -> np.ndarray:
     """Selects three points that are spread apart from each other in the dataset.
 
-    Parameters:
+    Args:
         points_xr: An xarray DataArray containing the points from which to select.
 
     Returns:
