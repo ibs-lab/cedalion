@@ -8,6 +8,7 @@ import xarray as xr
 
 import cedalion
 import cedalion.dataclasses as cdc
+import cedalion.geometry.utils
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 
@@ -441,3 +442,48 @@ def find_spread_points(points_xr : xr.DataArray) -> np.ndarray:
     return points_xr.label.isel(
         label=[initial_point_index, farthest_point_index, middle_distanced_point_index]
     ).values
+
+
+
+def simple_scalp_projection(geo3d : cdt.LabeledPointCloud) -> cdt.LabeledPointCloud:
+    for label in ["LPA", "RPA", "Nz"]:
+        if label not in geo3d.label:
+            raise ValueError("this projection needs the landmarks Nz, LPA and RPA.")
+
+    crs = geo3d.points.crs
+    # find the midpoint between LPA and RPA
+    center = 0.5 * (geo3d.sel(label="LPA") + geo3d.sel(label="RPA"))
+
+    # calculate unit vectors of RAS coordindates
+    ex = geo3d.sel(label="RPA") - center
+    ey = geo3d.sel(label="Nz") - center
+
+    # use same norm for ex and ey so that RPA is at (1,0,0) and Nz at (0,1,0)
+    normx = xrutils.norm(ex, crs).item()
+    ex = (ex / normx).pint.dequantify()
+    ey = (ey / normx).pint.dequantify()
+
+    ez = xr.zeros_like(ey)
+    ez[:] = np.cross(ex, ey)
+    ez /= xrutils.norm(ez, crs)
+
+    # calculate RAS coordinates
+    centered = geo3d - center
+    r = xr.dot(centered, ex)
+    a = xr.dot(centered, ey)
+    s = xr.dot(centered, ez)
+
+    # transform into spherical coordinates
+    az, el, r = cedalion.geometry.utils.cart2sph(r, a, s)
+
+
+    # project into 2D by using the spherical azimuth and cos(elevation) as radius
+    r2 = np.cos(el)
+    x2 = r2 * np.cos(az)
+    y2 = r2 * np.sin(az)
+
+    geo2d = xr.concat((x2, y2), dim="proj2d").transpose("label", ...)
+    geo2d["type"] = geo3d.type
+    geo2d = geo2d.pint.dequantify()  # no units needed in this space
+
+    return geo2d

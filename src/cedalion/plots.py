@@ -1,22 +1,25 @@
-import matplotlib.pyplot as p
-import xarray as xr
+import math
 
-from cedalion.dataclasses import PointType
+import matplotlib
+import matplotlib.pyplot as p
+import matplotlib.transforms as transforms
+import numpy as np
+import pandas as pd
+import pyvista as pv
+import vtk
+import xarray as xr
+from matplotlib.patches import Rectangle, Circle, Ellipse
+from vtk.util.numpy_support import numpy_to_vtk
+import itertools
+
+import cedalion.nirs
+import cedalion.data
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
-import pyvista as pv
-from vtk.util.numpy_support import numpy_to_vtk
-import vtk
-
-import numpy as np
-import pint_xarray
-
-# Laura's scalp_plot additional imports
-import math
-import pandas as pd
-import matplotlib
 import cedalion.xrutils as xrutils
-import cedalion.data
+from cedalion.dataclasses import PointType
+import cedalion.geometry.registration as registration
+from cedalion import Quantity
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
     geo3d = geo3d.pint.dequantify()
@@ -702,7 +705,202 @@ def scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, threshold_i
     
 
 
+COLORBREWER_Q8 = [
+    "#e41a1c",
+    "#4daf4a",
+    "#377eb8",
+    "#984ea3",
+    "#ff7f00",
+    "#ffff33",
+    "#a65628",
+    "#f781bf",
+]
 
 
+def plot_stim_markers(
+    ax, stim: pd.DataFrame, fmt: dict[str, dict] | None = None, y: float = 0.03
+):
+    """Add stimulus indicators to an Axes.
+
+    For each trial a Rectangle is plotted in x from onset to onset+duration.
+    The height of the rectangle is specified in axes coordinates. In the default
+    setting a small bar at bottom of the axes is drawn. By setting y to 1. the
+    stimulus marker covers the full height of the axes.
+
+    Args:
+        ax: the matplotlib axes to operate on
+        stim: a stimulas data frame
+        fmt: for each trial_type a dictioniary of keyword arguments can be provided.
+            These kwargs are passed to matplotlib.patches.Rectangle to format
+            the stimulus indicator.
+        y : the height of the Rectangle in axes coordinates.
+    """
+    trans = transforms.blended_transform_factory(
+    ax.transData, ax.transAxes)
+
+    base_fmt = {"fc" : 'None'}
+
+    if fmt is None:
+        fmt = {}
+        trial_types = stim["trial_type"].drop_duplicates().values
+        for trial_type, color in zip(trial_types, itertools.cycle(COLORBREWER_Q8)):
+            fmt[trial_type] = {"ec": color, "fc": color, "alpha": 0.3}
+
+    labeled_patches = []
+
+    for _, row in stim.iterrows():
+        trial_type = row["trial_type"]
+        if trial_type in fmt:
+            trial_fmt = base_fmt | fmt[trial_type]
+        else:
+            trial_fmt = base_fmt | {"c": "k"}
+
+        rect = Rectangle(
+            (row["onset"], 0),
+            row["duration"],
+            y,
+            transform=trans,
+            **trial_fmt,
+        )
+
+        # for each trial_type label one patch to put it in the legend
+        if trial_type not in labeled_patches:
+            rect.set_label(trial_type)
+            labeled_patches.append(trial_type)
+
+        ax.add_patch(rect)
 
 
+def _simple_scalp_plot(
+    ts: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
+    metric: xr.DataArray,
+    ax,
+    title : str | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str = "bwr",
+    min_dist : Quantity | None = None,
+    min_metric : float | None = None,
+    channel_lw : float = 4.,
+    optode_size : float = 36.,
+    optode_labels : bool = False,
+):
+    geo2d = registration.simple_scalp_projection(geo3d)
+    channel_dists = cedalion.nirs.channel_distances(ts, geo3d)
+
+
+    if not isinstance(metric, xr.DataArray):
+        if len(metric) != ts.sizes["channel"]:
+            raise ValueError("metric is not a DataArray and does not match in size.")
+
+        metric = xr.DataArray(metric, dims=["channel"], coords={"channel": ts.channel})
+
+    metric_channels = set(metric.channel.values)
+
+    channel = ts.channel.values
+    source = ts.source.values
+    detector = ts.detector.values
+
+    if vmin is None:
+        vmin = np.nanmin(metric)
+    if vmax is None:
+        vmax = np.nanmax(metric)
+
+    norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+    cmap = p.cm.get_cmap(cmap)
+    
+    
+    ax.set_aspect("equal", adjustable="datalim")
+
+    # head and ears
+    ax.add_patch(Circle((0,0), 1., ec="k", fc="None"))
+    ax.add_patch(Ellipse((1.05, 0), .1, .3, ec="k", fc="None"))
+    ax.add_patch(Ellipse((-1.05, 0), .1, .3, ec="k", fc="None"))
+
+    # nose marker
+    angles = [np.pi/2 + .05, np.pi/2, np.pi/2 + -.05]
+    r = [1., 1.1, 1.0]
+    ax.plot( r * np.cos(angles), r * np.sin(angles), "k-")
+
+    
+    # draw lines for channels
+    used_sources = set()
+    used_detectors = set()
+
+    for ch,src,det,dist in zip(channel, source, detector, channel_dists):
+        s = geo2d.loc[src]
+        d = geo2d.loc[det]
+
+        if (min_dist is not None) and (dist.item() < min_dist):
+            continue
+
+        used_sources.add(str(src))
+        used_detectors.add(str(det))
+
+        if ch in metric_channels:
+            v = metric.sel(channel=ch).item()
+        else:
+            v = np.nan
+
+        c = cmap(norm(v))
+        line_fmt = {'c' : c, 'ls' : '-', 'lw' : channel_lw, 'alpha' : 1.0}
+
+        if (min_metric is not None) and (v < min_metric):
+            line_fmt['alpha'] = 0.4
+
+        ax.plot([s[0], d[0]], [s[1], d[1]], **line_fmt)
+
+    # draw markers or labels for sources and detectors
+    # /!\ isin with np strings and sets is tricky. probably because of the hash
+    s = geo2d.sel(label=geo2d.label.isin(list(used_sources)))
+    d = geo2d.sel(label=geo2d.label.isin(list(used_detectors)))
+    
+    if optode_labels:
+        for sd in [s, d]:
+            for i in range(len(sd)):
+                ax.text(
+                    sd[i, 0],
+                    sd[i, 1],
+                    sd.label.values[i],
+                    ha="center",
+                    va="center",
+                    fontsize="small",
+                    zorder=200)
+    else:
+        ax.scatter(
+            s[:, 0],
+            s[:, 1],
+            s=optode_size,
+            marker="s",
+            ec="k",
+            fc="#e41a1c",
+            zorder=100,
+        )
+        ax.scatter(
+            d[:, 0],
+            d[:, 1],
+            s=optode_size,
+            marker="s",
+            ec="k",
+            fc="#377eb8",
+            zorder=100,
+        )
+
+    # remove axes and ticks
+    ax.set_axis_off()
+    ax.set_xlim(-1.1, 1.1)
+    # ax.set_ylim(-1.1, 1.1)
+
+    # colorbar
+    cb = p.colorbar(
+        matplotlib.cm.ScalarMappable(cmap=cmap,norm=norm),
+        ax=ax,
+        shrink=0.6
+    )
+
+    if title:
+        ax.set_title(title)
+
+
+    #cb.set_ticks([vmin, (vmin+vmax)//2, vmax])
