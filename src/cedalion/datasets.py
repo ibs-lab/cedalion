@@ -88,9 +88,8 @@ def get_fingertapping() -> cdc.Recording:
     return rec
 
 def get_fingertappingDOT() -> cdc.Recording:
-    """Retrieves a finger tapping DOT example dataset from the IBS Lab.
+    """Retrieves a finger tapping DOT example dataset from the IBS Lab."""
 
-    """
     fnames = DATASETS.fetch("fingertappingDOT.zip", processor=pooch.Unzip())
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
