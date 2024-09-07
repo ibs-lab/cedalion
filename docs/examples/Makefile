@@ -5,7 +5,10 @@ EXAMPLE_NOTEBOOKS = xarray_datastructs_fnirs.ipynb \
 					1010_system.ipynb \
 					image_reconstruction.ipynb \
 					store_hrfs_in_snirf_file.ipynb \
-					recording.ipynb
+					recording.ipynb \
+					glm_basis_functions.ipynb \
+					glm_illustrative_example.ipynb \
+					glm_fingertapping_example.ipynb 
 
 					#photogrammetric_optode_coregistration.ipynb \
 					
