@@ -200,6 +200,8 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
 def snr(amplitudes: cdt.NDTimeSeries, snr_thresh: float = 2.0):
     """Calculates signal-to-noise ratio for each channel and other dimension.
 
+    SNR is here the ratio of the average signal over time divided by its standard deviation.
+
     Args:
         amplitudes (:class:`NDTimeSeries`, (time, *)): the input time series
         snr_thresh:  threshold (unitless) below which a channel should be excluded.
