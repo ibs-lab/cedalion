@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="docs/IBS_clr_small.png" />
+    <img src="docs/img/IBS_clr_small.png" />
 </p>
 
 # cedalion - fNIRS analysis toolbox
