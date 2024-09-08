@@ -14,6 +14,7 @@ The [documentation](https://doc.ibs.tu-berlin.de/cedalion/doc/dev) contains
 [installation instructions](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/getting_started/installation.html) as
 well as several [example notebooks](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/examples/index.html)
 that illustrate the functionality of the toolbox.
+For discussions and help you can visit the [cedalion forum on openfnirs.org](https://openfnirs.org/community/cedalion/)
 
 ## Development environment
 

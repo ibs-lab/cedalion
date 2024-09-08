@@ -13,8 +13,10 @@ rationale.md
 getting_started/index.md
 data_structures/index.md
 examples/index.md
+community/index.md
 API <api/modules.rst>
 references.rst
+LICENSE.md
 ```
 
 ## Special Thanks
