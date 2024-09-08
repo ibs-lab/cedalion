@@ -20,6 +20,9 @@ def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
         W (np.ndarray, (Channels, Channels)): the [N x N] demixing matrix with weights for N channels/sources. To obtain the independent components,
         the demixed signals can be calculated as S = W @ X.
 
+    Initial Contributors:
+        - Jacqueline Behrendt | jacqueline.behrendt@campus.tu-berlin.de | 2024
+
     References:
         This code is based on the matlab version of bss by Xi-Lin Li (:cite:t:`Li2010B`)
         Xi-Lin Li, Tulay Adali, "Blind spatiotemporal separation of second and/or

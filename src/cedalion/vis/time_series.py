@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jul 23 11:52:04 2024
+"""Interactive GUI to plot fNIRS probe and channel time courses.
 
-@author: ahns97
+Args:
+    snirfRec(cdc.recording.Recording): snirf recording container
+
+Initial Contributors:
+    - Sung Ahn | ahnsm@bu.edu | 2024
 """
 
 import cedalion

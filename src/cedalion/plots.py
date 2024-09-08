@@ -65,6 +65,9 @@ def plot3d(
         brain_scalars: Scalars to be used for coloring the brain mesh.
         plotter (pv.Plotter, optional): An existing PyVista plotter instance to use for plotting. If None, a new
             PyVista plotter instance is created. Default is None.
+
+    Initial Contributors:
+        - Eike Middell | middell@tu-berlin.de | 2024
     """
 
     if plotter is None:
@@ -159,6 +162,10 @@ def plot_surface(
     Returns:
         function: If `pick_landmarks` is True, returns a function that when called, provides the current picked points
         and their labels. This function prints warnings if some labels are missing or are repeated.
+
+    Initial Contributors:
+        - Eike Middell | middell@tu-berlin.de | 2024
+        - Masha Iudina | mashayudi@gmail.com | 2024
     """
 
     if isinstance(surface, cdc.VTKSurface):
@@ -272,6 +279,9 @@ def plot_labeled_points(
         ppoints (list, optional): A list to store indices of picked points, enables picking if not None. Default is None.
         labels (list of str, optional): List of labels to show if `show_labels` is True. If None and `show_labels` is True,
             the labels from `points` are used.
+
+    Initial Contributors:
+        - Eike Middell | middell@tu-berlin.de | 2024
     """
 
     # FIXME make these configurable
@@ -391,6 +401,9 @@ class OptodeSelector:
         on_pick(picked_point): Callback function for picking points in the visualization.
         update_visualization(): Clears the existing plot and re-renders the point cloud.
         enable_picking(): Enables interactive picking of points on the plot.
+
+    Initial Contributors:
+        - Masha Iudina | mashayudi@gmail.com | 2024
     """
     def __init__(self, surface, points, normals=None, plotter=None, labels = None):
         self.points = points
@@ -552,6 +565,8 @@ def scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, threshold_i
     flagFontSize (boolean): change the size of the source/detector labels (default is 0 so no labels)
     flagMarkerSize (boolean): change the size of the source/detector markers (default is 8)
 
+    Initial Contributors:
+        - Laura Carlton | lcarlton@bu.edu | 2024
     """
 
     def cart2sph(x, y, z):
@@ -763,6 +778,9 @@ def plot_stim_markers(
             These kwargs are passed to matplotlib.patches.Rectangle to format
             the stimulus indicator.
         y : the height of the Rectangle in axes coordinates.
+
+    Initial Contributors:
+        - Eike Middell | middell@tu-berlin.de | 2024
     """
     trans = transforms.blended_transform_factory(
     ax.transData, ax.transAxes)

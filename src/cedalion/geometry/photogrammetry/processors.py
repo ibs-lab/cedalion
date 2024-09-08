@@ -18,7 +18,13 @@ logger = logging.getLogger("cedalion")
 
 
 class ScanProcessor(ABC):
-    """Base class for all processors of photogrammetric scans."""
+    """Base class for all processors of photogrammetric scans.
+
+    Initial Contributors:
+        - Filip Jenko | filip.jenko06@gmail.com | 2023
+        - Eike Middell | middell@tu-berlin.de | 2024
+        - Masha Iudina | mashayudi@gmail.com | 2024
+    """
 
     @abstractmethod
     def process(self, surface: cdc.TrimeshSurface) -> xr.DataArray:
@@ -415,6 +421,9 @@ def geo3d_from_scan(
 
     Returns:
         geo3D with optode and landmark positions
+
+    Initial Contributors:
+        - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2024
     """
 
     # FIXME: what to do with 10-10 landmarks in input geo3d?
