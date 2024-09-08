@@ -66,7 +66,6 @@ def plot3d(
         plotter (pv.Plotter, optional): An existing PyVista plotter instance to use for plotting. If None, a new
             PyVista plotter instance is created. Default is None.
     """
-    #pv.set_jupyter_backend("server")
 
     if plotter is None:
         plt = pv.Plotter()
@@ -161,7 +160,7 @@ def plot_surface(
         function: If `pick_landmarks` is True, returns a function that when called, provides the current picked points
         and their labels. This function prints warnings if some labels are missing or are repeated.
     """
-    pv.set_jupyter_backend("server") 
+
     if isinstance(surface, cdc.VTKSurface):
         mesh = surface.mesh
     elif isinstance(surface, cdc.TrimeshSurface):
@@ -274,7 +273,7 @@ def plot_labeled_points(
         labels (list of str, optional): List of labels to show if `show_labels` is True. If None and `show_labels` is True,
             the labels from `points` are used.
     """
-    pv.set_jupyter_backend("server")
+
     # FIXME make these configurable
     default_point_colors = {
         PointType.UNKNOWN: "gray",
