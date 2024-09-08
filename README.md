@@ -16,6 +16,7 @@ well as several [example notebooks](https://doc.ibs.tu-berlin.de/cedalion/doc/de
 that illustrate the functionality of the toolbox.
 For discussions and help you can visit the [cedalion forum on openfnirs.org](https://openfnirs.org/community/cedalion/)
 
+
 ## Development environment
 
 To create a conda environment with the necessary dependencies run:
@@ -51,3 +52,7 @@ and then build the environment with the --solver=libmamba
 ```
 $ conda env create -n cedalion -f environment_dev.yml --solver=libmamba
 ```
+
+## How to cite Cedalion
+A paper for the toolbox is currently in the making. If you use this toolbox for a publication in the meantime, please cite us using the "Cite this repository" feauture from GitHub under the "About" section. If you want to contact us or learn more about the IBS-Lab please go to https://www.ibs-lab.com/
+
