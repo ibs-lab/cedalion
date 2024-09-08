@@ -11,6 +11,7 @@ import xarray as xr
 
 import cedalion.dataclasses as cdc
 import cedalion.io
+from cedalion.io.forward_model import load_fluence
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
@@ -28,6 +29,10 @@ DATASETS = pooch.create(
         "image_reconstruction_fluence_DOT.pickle.gz": "sha256:44e8e316460a6579ac42c597c953ff050961171303372c06aaad20562aa0fea4",  # noqa: E501
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
         "ICBM152(2020).zip": "sha256:a7bca3fbb3a05545ccbf19660a99e377165576590d93eac4fbb3ea28acc9f378", # noqa: E501
+        "fluence_fingertapping_colin27.h5" : "sha256:5db30eaaf0dbd614ecefff3734822864b8357841e6c93be78344574889e1d06d", #noqa:E501
+        "fluence_fingertapping_icbm152.h5" : "sha256:5b807253e2d0ca0dcc15ac18029cd73404cc9ee589937f2394ae0a2e57dcd98f", #noqa:E501
+        "fluence_fingertappingDOT_colin27.h5" : "sha256:f321190e9ab537e0f020cbcca40d9ef909f67ce9c33791be14033daf162acaf7", #noqa:E501
+        "fluence_fingertappingDOT_icbm152.h5" : "sha256:4e75e80d906f6c62802d9b39382f34e7546ca1cc7a737e30755666d767e1c697", #noqa:E501
     },
 )
 
@@ -173,3 +178,27 @@ def get_parcel_example_fluence() -> tuple[xr.DataArray, xr.DataArray]:
         fluence_all, fluence_at_optodes = pickle.load(fin)
 
     return fluence_all, fluence_at_optodes
+
+
+def get_precomputed_fluence(
+    dataset: str, head_model: str
+) -> tuple[xr.DataArray, xr.DataArray]:
+    """Precomputed forward model results for examples and documentation.
+
+    Args:
+        dataset: "fingertapping" or "fingertappingDOT"
+        head_model: "colin27" or "icbm152"
+
+    Returns:
+        fluence_all, fluence_at_optodes
+    """
+
+    if dataset not in ["fingertapping", "fingertappingDOT"]:
+        raise ValueError(f"unknown dataset {dataset}")
+    if head_model not in ["colin27", "icbm152"]:
+        raise ValueError(f"unknown head_model {head_model}")
+
+    fname = DATASETS.fetch(f"fluence_{dataset}_{head_model}.h5")
+
+    return load_fluence(fname)
+
