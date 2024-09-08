@@ -9,7 +9,7 @@ EXAMPLE_NOTEBOOKS = xarray_datastructs_fnirs.ipynb \
 					glm_fingertapping_example.ipynb \
 					plots_example.ipynb \
 					photogrammetric_optode_coregistration.ipynb \
-					#image_reconstruction.ipynb \
+					image_reconstruction.ipynb \
 					#pruning_and_motion_artifacts.ipynb
 
 .PHONY: notebooks
