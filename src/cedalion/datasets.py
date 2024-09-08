@@ -50,7 +50,7 @@ def get_colin27_segmentation(downsampled=False):
     else:
         fnames = DATASETS.fetch("colin27_segmentation.zip", processor=pooch.Unzip())
 
-    basedir = os.path.dirname(fnames[0])
+    basedir = os.path.join(os.path.commonpath(fnames), "colin27_segmentation")
     mask_files = {
         "csf": "mask_csf.nii",
         "gm": "mask_gray.nii",
