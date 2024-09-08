@@ -5,5 +5,5 @@ Here you will find information on how to interface your own developments with ce
 In the meantime, you can find a small introduction to how to contribute code to cedalion below:
  
 ```{toctree}
-../getting_started/contributing_code.md
+/getting_started/contributing_code.md
 ```
