@@ -86,60 +86,84 @@ def psp(
     cardiac_fmax = 2.5 * units.Hz
 
     amplitudes = amplitudes.pint.dequantify()
-    amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
+    amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=1)
     amp = (amp - amp.mean("time")) / amp.std("time")
 
     # convert window_length to samples
     nsamples = (window_length * sampling_rate(amp)).to_base_units()
-    nsamples = int(np.ceil(nsamples))
+    nsamples = int(np.floor(nsamples))
 
     # This creates a new DataArray with a new dimension "window", that is
     # window_len_samples large. The time dimension will contain the time coordinate of
     # the first sample in the window. Setting the stride size to the same value as the
     # window length will result in non-overlapping windows.
-    windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
-    windows = windows.fillna(1e-6)
+    num_windows = amp.sizes['time'] // nsamples
+
+    # Manually create windows
+    windowed_data = []
+    for i in range(num_windows):
+        start = i * nsamples
+        end = start + nsamples
+        windowed_data.append(amp.isel(time=slice(start, end)))
+    
+    # Stack the windows into a new dimension
+    # windowed_array = xr.concat(windowed_data, dim='window')
+
+    # trim_length = (amp.sizes['time'] // nsamples) * nsamples
+    # trimmed_amp = amp.isel(time=slice(0, trim_length))
+
+    windows = amp.rolling(time=nsamples, center=True).construct("window", stride=nsamples, drop=True)
+    # windows = windows[:,:,:,1:] # drop the first window since it is just NaNs
     fs = amp.cd.sampling_rate
 
-    psp = np.zeros([len(windows["channel"]), len(windows["time"])])
+    psp = np.zeros([len(amp["channel"]), len(windowed_data)])
     
     # Vectorized signal extraction and correlation
-    sig = windows.transpose("channel", "time", "wavelength", "window").values
-    psp = np.zeros((sig.shape[0], sig.shape[1]))
+    # sig = windows.transpose("channel", "time", "wavelength", "window").values
     lags = np.arange(-nsamples + 1, nsamples)
 
-    for w in range(sig.shape[1]): # loop over windows
-        sig_temp = sig[:,w,:,:]
+    for w,sig_temp in enumerate(windowed_data): # loop over windows
+        # sig_temp = sig[:,w,:,:]
         # FIXME assumes 2 wavelengths
         corr = np.array(
             [
                 signal.correlate(sig_temp[ch, 0, :], sig_temp[ch, 1, :], "full")
-                for ch in range(sig.shape[0])
+                for ch in range(len(amp['channel']))
             ]
         )
 
         # FIXME assumes 2 wavelengths
         corr = corr /(nsamples - np.abs(lags))
-
-        nperseg = corr.shape[1]
-        window = np.hamming(nperseg)
-        window_seg = corr * window
+        corr_len = corr.shape[1]
         
-        fft_out = np.fft.rfft(window_seg, axis=1)
-        psd = (np.abs(fft_out) ** 2) / (fs * np.sum(window ** 2))
-        freqs = np.fft.rfftfreq(nperseg, 1/fs)
+        # Update similarity
+        corr_norm = np.array(
+            [
+                (corr_len * corr[ch,:]) / np.sqrt(np.sum(np.abs(sig_temp[ch, 0, :]) ** 2) * np.sum(np.abs(sig_temp[ch, 1, :]) ** 2)).values
+                for ch in range(len(amp['channel']))
+                ]
+            )
+        
+        
+        # nperseg = corr.shape[1]
+        # window = np.hamming(nperseg)
+        # window_seg = corr * window
+        
+        # fft_out = np.fft.rfft(window_seg, axis=1)
+        # psd = (np.abs(fft_out) **2)/ (np.sum(window ** 2))
+        # freqs = np.fft.rfftfreq(nperseg, 1/fs)
 
-        # for ch in range(sig.shape[0]):
-        #     window = signal.windows.hamming(len(corr[ch,:]))
-        #     f, pxx = signal.welch(
-        #         corr[ch, :],
-        #         window=window,
-        #         nfft=len(corr[ch, :]),
-        #         fs=fs,
-        #         scaling="density",
-        #     )
+        for ch in range(len(amp['channel'])):
+            window = signal.windows.hamming(len(corr[ch,:]))
+            f, pxx = signal.welch(
+                corr_norm[ch, :],
+                window=window,
+                nfft=len(corr_norm[ch, :]),
+                fs=fs,
+                scaling="spectrum",
+            )
 
-        psp[:, w] = np.max(psd, 1)
+            psp[ch, w] = np.max(pxx[f<cardiac_fmax.magnitude])
 
     # keep dims channel and time
     
@@ -495,7 +519,7 @@ def detect_outliers_std(
     fs = freq.sampling_rate(ts)
 
     # window size in samples TODO t_window units
-    window_size = int(np.round(fs * t_window))
+    window_size = int(np.round(fs.magnitude * t_window))
 
     ts_lowpass = ts.cd.freq_filter(0, 0.5, butter_order=4)
 
