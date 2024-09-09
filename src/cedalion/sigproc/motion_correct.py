@@ -222,7 +222,7 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
     # apply SG filter
     K = 3
     framesize_sec = int(np.round(framesize_sec * fs))
-    if framesize_sec // 2 == 0:
+    if framesize_sec // 2 == 0: # % FIXME modulo?
         framesize_sec = framesize_sec + 1
 
     dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_sec, K).T
