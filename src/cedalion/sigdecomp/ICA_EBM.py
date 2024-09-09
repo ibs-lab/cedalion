@@ -23,6 +23,9 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
         W (np.ndarray, (Channels, Channels)): the [N x N] demixing matrix with weights for  N channels/sources. 
             To obtain the independent components, the demixed signals can be calculated as S = W @ X.
 
+    Initial Contributors:
+        - Jacqueline Behrendt | jacqueline.behrendt@campus.tu-berlin.de | 2024
+
     References:
         This code is based on the matlab version by Xi-Lin Li (:cite:t:`Li2010A`)
         Xi-Lin Li and Tulay Adali, "Independent component analysis by entropy bound minimization," 

@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jul 23 11:52:04 2024
+"""Interactive GUI to plot fNIRS probe and channel time courses.
 
-@author: ahns97
+Args:
+    snirfRec(cdc.recording.Recording): snirf recording container
+
+Initial Contributors:
+    - Sung Ahn | ahnsm@bu.edu | 2024
 """
 
 import cedalion
@@ -51,6 +54,7 @@ class Main(QtWidgets.QMainWindow):
         self.plots.setFocus()
         
         (self._dataTimeSeries_ax, self._optode_ax) = self.plots.figure.subplots(1, 2, width_ratios=[2,1])
+        self._auxTimeSeries_ax = self._dataTimeSeries_ax.twinx()
         self.plots.figure.tight_layout()
         self._optode_ax.axis('off')
         self._dataTimeSeries_ax.grid("True",axis="y")
@@ -100,17 +104,6 @@ class Main(QtWidgets.QMainWindow):
         self.auxs.currentTextChanged.connect(self.aux_changed)
         aux_layout.addWidget(QtWidgets.QLabel("Aux:"), 0,0)
         aux_layout.addWidget(self.auxs, 0,1)
-        
-        ## Aux Window Creator 
-        self.aux_window = QtWidgets.QLineEdit()
-        self.aux_window.setText('0')
-        validator = QtGui.QDoubleValidator()
-        validator.setRange(0,100)
-        validator.setDecimals(3)
-        self.aux_window.setValidator(validator)
-        self.aux_window.textChanged.connect(self.aux_rect)
-        aux_layout.addWidget(QtWidgets.QLabel("Aux window:"), 1,0)
-        aux_layout.addWidget(self.aux_window, 1,1)
         
         
         # Create Wavelength Controls Layout
@@ -201,7 +194,7 @@ class Main(QtWidgets.QMainWindow):
         
         self.slabel = self.sPos.label.values
         self.dlabel = self.dPos.label.values
-        self.clabel = self.snirfData.channel.values
+        # self.clabel = self.snirfData.channel.values
         self.opt_label = np.append(self.slabel, self.dlabel)
         
         # Extract lengths
@@ -228,6 +221,8 @@ class Main(QtWidgets.QMainWindow):
         self.selected = []
         self.chan_highlight = []
         self.aux_sel = []
+        self.auxplot = []
+        self.aux_type = None
         self.aux_rect_width = 0
         self.plot_stims = 0
         
@@ -254,7 +249,12 @@ class Main(QtWidgets.QMainWindow):
         
         self._optode_ax.clear()
         
-        self.picker = self._optode_ax.scatter(self.sdx, self.sdy,color=[[0,0,0,0]]*(len(self.sx)+len(self.dx)), zorder=3,picker=3)
+        self.picker = self._optode_ax.scatter(self.sdx, 
+                                              self.sdy, 
+                                              color=[[0,0,0,0]]*(len(self.sx)+len(self.dx)), 
+                                              zorder=3,
+                                              picker=3
+                                              )
         
         self.optodes = self._optode_ax.scatter(self.sdx,
                                            self.sdy,
@@ -264,9 +264,28 @@ class Main(QtWidgets.QMainWindow):
                                            )
         
         for idx, source in enumerate(self.sPos.label):
-            self.src_label[idx] = self._optode_ax.text(self.sx[idx],self.sy[idx],f"{source.values}", color="r", fontsize=8, ha='center', va='center', zorder=1, clip_on=True)
+            self.src_label[idx] = self._optode_ax.text(self.sx[idx],
+                                                       self.sy[idx],
+                                                       f"{source.values}", 
+                                                       color="r", 
+                                                       fontsize=8, 
+                                                       ha='center', 
+                                                       va='center', 
+                                                       zorder=1, 
+                                                       clip_on=True
+                                                       )
+            
         for idx, detector in enumerate(self.dPos.label):
-            self.det_label[idx] = self._optode_ax.text(self.dx[idx],self.dy[idx],f"{detector.values}", color="b", fontsize=8, ha='center', va='center', zorder=1, clip_on=True)
+            self.det_label[idx] = self._optode_ax.text(self.dx[idx],
+                                                       self.dy[idx],
+                                                       f"{detector.values}", 
+                                                       color="b", 
+                                                       fontsize=8, 
+                                                       ha='center', 
+                                                       va='center', 
+                                                       zorder=1, 
+                                                       clip_on=True
+                                                       )
         
         for i_ch in range(self.no_channels):
             si = self.src_idx[i_ch]
@@ -300,7 +319,7 @@ class Main(QtWidgets.QMainWindow):
             return
 
 
-    def optode_picked(self, event):      
+    def optode_picked(self, event):
         if self.ts.currentItem().text() == "None":
             return
         
@@ -361,6 +380,7 @@ class Main(QtWidgets.QMainWindow):
             return
 
         self.snirfData = self.snirfRec.timeseries[s]
+        self.ts_sel = s
         
         # Determine wavelength/concentration
         if "wavelength" in self.snirfData.dims:
@@ -378,7 +398,7 @@ class Main(QtWidgets.QMainWindow):
             for i_w, wvl in enumerate(self.snirfData.chromo.values):
                 self.wv.insertItem(i_w,f"[{str(wvl)}]")
             self.wv.setCurrentRow(0)
-
+        
         self.draw_timeseries()
 
 
@@ -411,35 +431,58 @@ class Main(QtWidgets.QMainWindow):
                 y_opt_sel.append(self.dy[self.dlabel == opt])
         
         chan_sel = np.unique(chan_sel)
-        chan_sel_idx = [np.arange(0,self.no_channels)[self.clabel == chan][0] for chan in chan_sel]
         
         ## Grab coordinates
+        nempty_chan_sel = []
         x_chan_sel = [[],[]]
         y_chan_sel = [[],[]]
         
-        for i_ch in chan_sel_idx:
-            if not np.isnan(self.snirfData.isel(channel=i_ch)[0][0]):
-                x_chan_sel[0].append(self.sx[self.slabel == self.snirfData.isel(channel=i_ch).source.values][0])
-                x_chan_sel[1].append(self.dx[self.dlabel == self.snirfData.isel(channel=i_ch).detector.values][0])
-                y_chan_sel[0].append(self.sy[self.slabel == self.snirfData.isel(channel=i_ch).source.values][0])
-                y_chan_sel[1].append(self.dy[self.dlabel == self.snirfData.isel(channel=i_ch).detector.values][0])
-            else:
-                x_chan_sel[0].append(np.nan)
-                x_chan_sel[1].append(np.nan)
-                y_chan_sel[0].append(np.nan)
-                y_chan_sel[1].append(np.nan)
+        for chan in chan_sel:
+            if not np.isnan(self.snirfData.sel(channel=chan)[0][0]):
+                x_chan_sel[0].append(self.sx[self.slabel == self.snirfData.sel(channel=chan).source.values][0])
+                x_chan_sel[1].append(self.dx[self.dlabel == self.snirfData.sel(channel=chan).detector.values][0])
+                y_chan_sel[0].append(self.sy[self.slabel == self.snirfData.sel(channel=chan).source.values][0])
+                y_chan_sel[1].append(self.dy[self.dlabel == self.snirfData.sel(channel=chan).detector.values][0])
+                nempty_chan_sel.append(chan)
         
         wvl_idx = self.wv.selectedItems()
         wvl_idx = [foo.text() for foo in wvl_idx]
         wvl_ls = ['-', ':']
         
+        ## Grab timeseries y-label
+        ylabel = self.ts_sel
+        if "amp" in ylabel:
+            ylabel = "amp (A.U.)"
+        elif "od" in ylabel:
+            ylabel = r"$\Delta$ OD (A.U.)"
+        elif "conc" in ylabel or "chromo" in self.snirfData.dims:
+            ylabel = r"$\Delta$ Concentration ($\mu$M)"
 
         # Highlight channels
+        chan_col = ["#332288", "#117733", "#44AA99", "#88CCEE", "#DDCC77", "#CC6677", "#AA4499", "#882255"]
+        
         for line in self.chan_highlight:
             line.remove()
             del line
-        self.chan_highlight = self._optode_ax.plot(x_chan_sel,y_chan_sel)
+        
+        self.chan_highlight = [0]*len(nempty_chan_sel)
+        
+        for i_ch in range(len(nempty_chan_sel)):
+            self.chan_highlight[i_ch], = self._optode_ax.plot([x_chan_sel[0][i_ch],x_chan_sel[1][i_ch]],
+                                                             [y_chan_sel[0][i_ch],y_chan_sel[1][i_ch]], 
+                                                             color=chan_col[i_ch%len(chan_col)])
         self._optode_ax.figure.canvas.draw()
+        
+        # Plot lines of aux
+        if len(self.aux_sel):
+            self.auxplot = self._auxTimeSeries_ax.plot(self.aux_sel.time, self.aux_sel, alpha=0.3, zorder=2)
+            
+        self._auxTimeSeries_ax.set_ylabel(self.aux_type, rotation=270, ha="right")
+        self._auxTimeSeries_ax.yaxis.set_label_position("right")
+        self._auxTimeSeries_ax.figure.canvas.draw()
+        
+        ymin = 100
+        ymax = -100
         
         # Plot timeseries
         if "wavelength" in self.snirfData.dims:
@@ -447,94 +490,108 @@ class Main(QtWidgets.QMainWindow):
                 idx = self.snirfData.wavelength.values
                 idx = [str(foo) for foo in idx]
                 idx = idx.index(sel_wv)
-                self.timeSeries = self._dataTimeSeries_ax.plot(
-                                                                self.t,
-                                                                self.snirfData.isel(channel=chan_sel_idx,wavelength=idx).T,
-                                                                ls=wvl_ls[idx],
-                                                                zorder=5,
-                                                              )
+                for i_ch, chan in enumerate(nempty_chan_sel):
+                    self.timeSeries = self._dataTimeSeries_ax.plot(
+                                                                    self.t,
+                                                                    self.snirfData.sel(channel=chan,wavelength=sel_wv).T,
+                                                                    ls=wvl_ls[idx],
+                                                                    zorder=5,
+                                                                    color=chan_col[i_ch%len(chan_col)],
+                                                                  )
+                    
+                    ymin = min(ymin, min(self.snirfData.sel(channel=chan,wavelength=sel_wv).values.ravel()))
+                    ymax = max(ymax, max(self.snirfData.sel(channel=chan,wavelength=sel_wv).values.ravel()))
+                
         elif "chromo" in self.snirfData.dims:
             for sel_wv in wvl_idx:
                 idx = self.snirfData.chromo.values
                 idx = [str(foo) for foo in idx]
                 idx = idx.index(sel_wv[1:-1])
-                self.timeSeries = self._dataTimeSeries_ax.plot(
-                                                                self.t,
-                                                                self.snirfData.isel(channel=chan_sel_idx,chromo=idx).T,
-                                                                ls=wvl_ls[idx],
-                                                                zorder=5,
-                                                              )
-        
-        # Plot lines or rectangles of aux
-        if len(self.aux_sel):
-            aux_on = np.append(0,self.aux_sel[self.aux_sel == 1].time.values)
-            aux_ondiff = np.array([aux_on[i+1] - aux_on[i] > 1 for i in range(len(aux_on) - 1)])
-            aux_ondiff = np.append([False],aux_ondiff)
-            aux_marks = aux_on[aux_ondiff] + 1
-            
-            if self.aux_rect_width == 0:
-                for rx in aux_marks:
-                    self._dataTimeSeries_ax.axvline(rx,c="k",lw=1,zorder=0)
-            else:
-                if "wavelength" in self.snirfData.dims:
-                    y_val = self.snirfData[chan_sel_idx,wvl_idx].values.ravel()
-                    y_val = y_val[~np.isnan(y_val)]
-                elif "chromo" in self.snirfData.dims:
-                    y_val = self.snirfData.isel(channel=chan_sel_idx)[wvl_idx].values.ravel()
-                    y_val = y_val[~np.isnan(y_val)]
                 
-                ry = max(y_val)
-                ry2 = min(y_val)
-                ry2 = min(ry2,0)
+                if "[" in sel_wv:
+                    sel_wv = sel_wv[1:-1]
                 
-                for rx in aux_marks:
-                    rx2 = rx + self.aux_rect_width
-                    self._dataTimeSeries_ax.fill(
-                                                 [rx, rx, rx2, rx2],
-                                                 [ry2, ry, ry, ry2],
-                                                 color=[0.7,0.7,0.7,0.4],
-                                                 zorder=0,
-                                                 )
+                for i_ch, chan in enumerate(nempty_chan_sel):
+                    self.timeSeries = self._dataTimeSeries_ax.plot(
+                                                                    self.t,
+                                                                    self.snirfData.sel(channel=chan,chromo=sel_wv).T,
+                                                                    ls=wvl_ls[idx],
+                                                                    zorder=5,
+                                                                    color=chan_col[i_ch%len(chan_col)],
+                                                                  )
+                
+                    ymin = min(ymin, min(self.snirfData.sel(channel=chan,chromo=sel_wv).values.ravel()))
+                    ymax = max(ymax, max(self.snirfData.sel(channel=chan,chromo=sel_wv).values.ravel()))
         
         # Plot stims
         stim_col = ["#648FFF","#DC267F","#FFB000","#785EF0","#FE6100"]
         if self.plot_stims:
+            ymax = ymax + (.05*(ymax-ymin))
+            ymin = ymin - (.05*(ymax-ymin))
+            
             for i_t, tt in enumerate(np.unique(self.snirfRec.stim.trial_type)):
                 label_on = True
-                for sx in self.snirfRec.stim.loc[self.snirfRec.stim['trial_type'] == tt].onset:
-                    self._dataTimeSeries_ax.axvline(sx, ls="--", lw=1, zorder=1,c=stim_col[i_t%5],label=tt) if label_on else self._dataTimeSeries_ax.axvline(sx, ls="--", lw=1, zorder=1,c=stim_col[i_t%5])
+                for i_r, dat in self.snirfRec.stim.loc[self.snirfRec.stim['trial_type'] == tt].iterrows():
+                    if label_on:
+                        self._dataTimeSeries_ax.axvline(dat.onset,
+                                                        ls="--", 
+                                                        lw=1, 
+                                                        zorder=1,
+                                                        c=stim_col[i_t%5],
+                                                        label=tt
+                                                        )
+                        self._dataTimeSeries_ax.fill(
+                                                     [dat.onset, dat.onset, dat.onset+dat.duration, dat.onset+dat.duration],
+                                                     [ymin, ymax, ymax, ymin],
+                                                     color=stim_col[i_t%5]+"22",
+                                                     zorder=1,
+                                                     )
+                    else:
+                        self._dataTimeSeries_ax.axvline(dat.onset,
+                                                        ls="--", 
+                                                        lw=1, 
+                                                        zorder=1,
+                                                        c=stim_col[i_t%5]
+                                                        )
+                        # self._dataTimeSeries_ax.axvline(dat.onset+dat.duration, 
+                        #                                 ls="--", 
+                        #                                 lw=1, 
+                        #                                 zorder=1, 
+                        #                                 c="gray"
+                        #                                 )
+                        self._dataTimeSeries_ax.fill(
+                                                     [dat.onset, dat.onset, dat.onset+dat.duration, dat.onset+dat.duration],
+                                                     [ymin, ymax, ymax, ymin],
+                                                     color=stim_col[i_t%5]+"22",
+                                                     zorder=1,
+                                                     )
+                    
                     label_on=False
             
             self._dataTimeSeries_ax.legend(loc="best")
         
+        self._dataTimeSeries_ax.set_ylabel(ylabel)
         self._dataTimeSeries_ax.grid("True",axis="y")
         self._dataTimeSeries_ax.figure.canvas.draw()
         
         self.statbar.showMessage("Timeseries Drawn!")
     
     def aux_changed(self,s): # TODO
-        if s == 'None':
-            return
+        self._auxTimeSeries_ax.clear()
         
-        if s == 'dark signal':
-            return
-        elif s == 'digital':
-            self.aux_sel = self.snirfRec.aux_ts[s]
+        if s == 'None' or s == 'dark signal':
+            self.aux_sel = []
+            self.aux_type = None
+            for line in self.auxplot:
+                line.remove()
+                del line
+        # elif s == 'dark signal':
+        #     return
         else:
-            return
+            self.aux_sel = self.snirfRec.aux_ts[s]
+            self.aux_type = s
             
         self.draw_timeseries()
-        
-    def aux_rect(self,s):
-        self.aux_rect_width = float(s)
-        
-        self.draw_timeseries()
-    
-# if __name__ == "__main__":
-#     app = QtWidgets.QApplication(sys.argv)
-#     main_gui = Main()
-#     main_gui.show()
-#     sys.exit(app.exec())
 
 
 def run_vis(snirfRec = None):

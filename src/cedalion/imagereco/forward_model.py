@@ -197,6 +197,146 @@ class TwoSurfaceHeadModel:
             voxel_to_vertex_scalp=voxel_to_vertex_scalp,
         )
 
+    @classmethod
+    def from_surfaces(
+        cls,
+        segmentation_dir: str,
+        mask_files: dict[str, str] = {
+            "csf": "csf.nii",
+            "gm": "gm.nii",
+            "scalp": "scalp.nii",
+            "skull": "skull.nii",
+            "wm": "wm.nii",
+        },
+        brain_surface_file: str = None,
+        scalp_surface_file: str = None,
+        landmarks_ras_file: Optional[str] = None,
+        brain_seg_types: list[str] = ["gm", "wm"],
+        scalp_seg_types: list[str] = ["scalp"],
+        smoothing: float = 0.5,
+        brain_face_count: Optional[int] = 180000,
+        scalp_face_count: Optional[int] = 60000,
+        fill_holes: bool = False,
+    ) -> "TwoSurfaceHeadModel":
+        """Constructor from binary masks, brain and head surfaces as gained from MRI scans.
+
+        Parameters
+        ----------
+        segmentation_dir : str
+            Folder containing the segmentation masks in NIFTI format.
+        mask_files : dict[str, str]
+            Dictionary mapping segmentation types to NIFTI filenames.
+        brain_surface_file : str
+            Path to the brain surface.
+        scalp_surface_file : str
+            Path to the scalp surface.
+        landmarks_ras_file : Optional[str]
+            Filename of the landmarks in RAS space.
+        brain_seg_types : list[str]
+            List of segmentation types to be included in the brain surface.
+        scalp_seg_types : list[str]
+            List of segmentation types to be included in the scalp surface.
+        smoothing : float
+            Smoothing factor for the brain and scalp surfaces.
+        brain_face_count : Optional[int]
+            Number of faces for the brain surface.
+        scalp_face_count : Optional[int]
+            Number of faces for the scalp surface.
+        """
+
+        # load segmentation mask
+        segmentation_masks, t_ijk2ras = cedalion.io.read_segmentation_masks(
+            segmentation_dir, mask_files
+        )
+
+        # inspect and invert ijk-to-ras transformation
+        t_ras2ijk = xrutils.pinv(t_ijk2ras)
+
+        # crs_ijk = t_ijk2ras.dims[1]
+        crs_ras = t_ijk2ras.dims[0]
+
+        # load landmarks. Other than the segmentation masks which are in voxel (ijk)
+        # space, these are already in RAS space.
+        if landmarks_ras_file is not None:
+            if not os.path.isabs(landmarks_ras_file):
+                landmarks_ras_file = os.path.join(segmentation_dir, landmarks_ras_file)
+
+            landmarks_ras = cedalion.io.read_mrk_json(landmarks_ras_file, crs=crs_ras)
+            landmarks_ijk = landmarks_ras.points.apply_transform(t_ras2ijk)
+        else:
+            landmarks_ijk = None
+
+        # derive surfaces from segmentation masks
+        if brain_surface_file is not None:
+            brain_ijk = trimesh.load(brain_surface_file)
+            brain_ijk = cdc.TrimeshSurface(brain_ijk, 'ijk', cedalion.units.Unit("1"))
+        else:
+            brain_ijk = surface_from_segmentation(
+                segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes
+            )
+        # we need the single outer surface from the scalp. The inner border between
+        # scalp and skull is not interesting here. Hence, all segmentation types are
+        # grouped together, yielding a uniformly filled head volume.
+
+        if scalp_surface_file is not None:
+            scalp_ijk = trimesh.load(scalp_surface_file)
+            scalp_ijk = cdc.TrimeshSurface(scalp_ijk, 'ijk', cedalion.units.Unit("1"))
+        else:
+            all_seg_types = segmentation_masks.segmentation_type.values
+            scalp_ijk = surface_from_segmentation(
+                segmentation_masks, all_seg_types, fill_holes_in_mask=fill_holes
+            )
+
+        # smooth surfaces
+        if smoothing > 0:
+            brain_ijk = brain_ijk.smooth(smoothing)
+            scalp_ijk = scalp_ijk.smooth(smoothing)
+
+        # reduce surface face counts
+        # use VTK's decimate_pro algorith as MNE's (VTK's) quadric decimation produced
+        # meshes on which Pycortex geodesic distance function failed.
+        if brain_face_count is not None:
+            # brain_ijk = brain_ijk.decimate(brain_face_count)
+            vtk_brain_ijk = cdc.VTKSurface.from_trimeshsurface(brain_ijk)
+            reduction = 1.0 - brain_face_count / brain_ijk.nfaces
+            vtk_brain_ijk = vtk_brain_ijk.decimate(reduction)
+            brain_ijk = cdc.TrimeshSurface.from_vtksurface(vtk_brain_ijk)
+
+        if scalp_face_count is not None:
+            # scalp_ijk = scalp_ijk.decimate(scalp_face_count)
+            vtk_scalp_ijk = cdc.VTKSurface.from_trimeshsurface(scalp_ijk)
+            reduction = 1.0 - scalp_face_count / scalp_ijk.nfaces
+            vtk_scalp_ijk = vtk_scalp_ijk.decimate(reduction)
+            scalp_ijk = cdc.TrimeshSurface.from_vtksurface(vtk_scalp_ijk)
+
+        brain_ijk = brain_ijk.fix_vertex_normals()
+        scalp_ijk = scalp_ijk.fix_vertex_normals()
+
+        brain_mask = segmentation_masks.sel(segmentation_type=brain_seg_types).any(
+            "segmentation_type"
+        )
+        scalp_mask = segmentation_masks.sel(segmentation_type=scalp_seg_types).any(
+            "segmentation_type"
+        )
+
+        voxel_to_vertex_brain = map_segmentation_mask_to_surface(
+            brain_mask, t_ijk2ras, brain_ijk.apply_transform(t_ijk2ras)
+        )
+        voxel_to_vertex_scalp = map_segmentation_mask_to_surface(
+            scalp_mask, t_ijk2ras, scalp_ijk.apply_transform(t_ijk2ras)
+        )
+
+        return cls(
+            segmentation_masks=segmentation_masks,
+            brain=brain_ijk,
+            scalp=scalp_ijk,
+            landmarks=landmarks_ijk,
+            t_ijk2ras=t_ijk2ras,
+            t_ras2ijk=t_ras2ijk,
+            voxel_to_vertex_brain=voxel_to_vertex_brain,
+            voxel_to_vertex_scalp=voxel_to_vertex_scalp,
+        )
+
     @property
     def crs(self):
         """Coordinate reference system of the head model."""

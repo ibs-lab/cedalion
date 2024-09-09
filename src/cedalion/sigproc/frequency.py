@@ -57,16 +57,20 @@ def freq_filter(
     fmax = float(fmax / fny)
 
     if fmin == 0:
-        sos = scipy.signal.butter(butter_order, fmax, "high", output="sos")
+        sos = scipy.signal.butter(butter_order, fmax, "low", output="sos")
     elif fmax == 0:
-        sos = scipy.signal.butter(butter_order, fmin, "low", output="sos")
+        sos = scipy.signal.butter(butter_order, fmin, "high", output="sos")
     else:
         sos = scipy.signal.butter(butter_order, [fmin, fmax], "bandpass", output="sos")
 
     if (units := timeseries.pint.units) is not None:
         timeseries = timeseries.pint.dequantify()
 
+
+    dims = timeseries.dims
+    timeseries = timeseries.transpose(..., "time")
     result = xr.apply_ufunc(scipy.signal.sosfiltfilt, sos, timeseries)
+    result = result.transpose(*dims)
 
     if units is not None:
         result = result.pint.quantify(units)

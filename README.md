@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="docs/IBS_clr_small.png" />
+    <img src="docs/img/IBS_clr_small.png" />
 </p>
 
 # cedalion - fNIRS analysis toolbox
@@ -14,6 +14,8 @@ The [documentation](https://doc.ibs.tu-berlin.de/cedalion/doc/dev) contains
 [installation instructions](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/getting_started/installation.html) as
 well as several [example notebooks](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/examples/index.html)
 that illustrate the functionality of the toolbox.
+For discussions and help you can visit the [cedalion forum on openfnirs.org](https://openfnirs.org/community/cedalion/)
+
 
 ## Development environment
 
@@ -50,3 +52,7 @@ and then build the environment with the --solver=libmamba
 ```
 $ conda env create -n cedalion -f environment_dev.yml --solver=libmamba
 ```
+
+## How to cite Cedalion
+A paper for the toolbox is currently in the making. If you use this toolbox for a publication in the meantime, please cite us using GitHub's  "Cite this repository" feature in the "About" section. If you want to contact us or learn more about the IBS-Lab please go to https://www.ibs-lab.com/
+

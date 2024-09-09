@@ -16,7 +16,7 @@ import cedalion.xrutils as xrutils
 import cedalion.sigproc.frequency as freq
 from cedalion import Quantity, units
 from cedalion.typing import NDTimeSeries
-
+import cedalion.nirs as nirs
 from .frequency import freq_filter, sampling_rate
 
 logger = logging.getLogger("cedalion")
@@ -98,7 +98,7 @@ def psp(
     # the first sample in the window. Setting the stride size to the same value as the
     # window length will result in non-overlapping windows.
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
-
+    windows = windows.fillna(1e-6)
     fs = amp.cd.sampling_rate
 
     psp = np.zeros([len(windows["channel"]), len(windows["time"])])
@@ -106,6 +106,7 @@ def psp(
     # Vectorized signal extraction and correlation
     sig = windows.transpose("channel", "time", "wavelength", "window").values
     psp = np.zeros((sig.shape[0], sig.shape[1]))
+    lags = np.arange(-nsamples + 1, nsamples)
 
     for w in range(sig.shape[1]): # loop over windows
         sig_temp = sig[:,w,:,:]
@@ -118,26 +119,30 @@ def psp(
         )
 
         # FIXME assumes 2 wavelengths
-        norm_factor = [
-            np.sqrt(np.sum(sig_temp[ch, 0, :] ** 2) * np.sum(sig_temp[ch, 1, :] ** 2))
-            for ch in range(sig.shape[0])
-        ]
+        corr = corr /(nsamples - np.abs(lags))
 
-        corr /= np.tile(norm_factor, (corr.shape[1],1)).T
+        nperseg = corr.shape[1]
+        window = np.hamming(nperseg)
+        window_seg = corr * window
 
-        for ch in range(sig.shape[0]):
-            window = signal.windows.hamming(len(corr[ch,:]))
-            f, pxx = signal.periodogram(
-                corr[ch, :],
-                window=window,
-                nfft=len(corr[ch, :]),
-                fs=fs,
-                scaling="spectrum",
-            )
+        fft_out = np.fft.rfft(window_seg, axis=1)
+        psd = (np.abs(fft_out) ** 2) / (fs * np.sum(window ** 2))
+        #freqs = np.fft.rfftfreq(nperseg, 1/fs)
 
-            psp[ch, w] = np.max(pxx)
+        # for ch in range(sig.shape[0]):
+        #     window = signal.windows.hamming(len(corr[ch,:]))
+        #     f, pxx = signal.welch(
+        #         corr[ch, :],
+        #         window=window,
+        #         nfft=len(corr[ch, :]),
+        #         fs=fs,
+        #         scaling="density",
+        #     )
+
+        psp[:, w] = np.max(psd, 1)
 
     # keep dims channel and time
+
     psp_xr = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
 
     # Apply threshold mask
@@ -145,6 +150,32 @@ def psp(
     psp_mask = psp_mask.where(psp_xr > psp_thresh, other=TAINTED)
 
     return psp_xr, psp_mask
+
+@cdc.validate_schemas
+def gvtd(amplitudes: NDTimeSeries):
+    """Calculate GVTD metric."""
+
+    fcut_min = 0.01
+    fcut_max = 0.5
+
+    od = nirs.int2od(amplitudes)
+    od = xr.where(np.isinf(od), 0, od)
+    od = xr.where(np.isnan(od), 0, od)
+    od.time.attrs["units"] = units.s
+    od_filtered = od.cd.freq_filter(fcut_min, fcut_max, 4)
+
+    # Step 1: Find the matrix of the temporal derivatives
+    dataDiff = od_filtered - od_filtered.shift(time=-1)
+
+    # Step 2: Find the RMS across the channels for each time-point of dataDiff
+    GVTD = np.sqrt((dataDiff[:, :-1] ** 2).mean(dim="channel"))
+
+    # Step 3: Add a zero in the beginning for GVTD to have the same number of
+    # time-points as your original dataMatrix
+    GVTD = GVTD.squeeze()
+    GVTD.values = np.hstack([0, GVTD.values[:-1]])
+
+    return GVTD
 
 
 @cdc.validate_schemas
@@ -199,6 +230,8 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
 @cdc.validate_schemas
 def snr(amplitudes: cdt.NDTimeSeries, snr_thresh: float = 2.0):
     """Calculates signal-to-noise ratio for each channel and other dimension.
+
+    SNR is the ratio of the average signal over time divided by its standard deviation.
 
     Args:
         amplitudes (:class:`NDTimeSeries`, (time, *)): the input time series
@@ -687,7 +720,7 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
                 channel_lowpass, segments, threshold_samples
             )
 
-            channel_mask = np.zeros(len(channel), dtype=bool)
+            channel_mask = np.ones(len(channel), dtype=bool)
             seg_length_min = 0.1 * fs
             seg_length_max = 0.49999 * fs
             for i_seg, (i0, i1, seg_type) in enumerate(segments):

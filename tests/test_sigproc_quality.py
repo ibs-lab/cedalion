@@ -23,6 +23,9 @@ def test_psp(rec):
 def test_snr(rec):
     _, _ = quality.snr(rec["amp"], snr_thresh=2.0)
 
+def test_gvtd(rec):
+    _ = quality.gvtd(rec["amp"])
+
 
 def test_mean_amp(rec):
     amp_min = 0.5 * units.V
