@@ -35,6 +35,7 @@ def get_snirf_test_data():
 
 
 def get_colin27_segmentation(downsampled=False):
+    """Retrieves the Colin27 segmentation dataset, based on :cite:t:`Holmes1998`."""
     if downsampled:
         fnames = DATASETS.fetch(
             "colin27_segmentation_downsampled_3x3x3.zip", processor=pooch.Unzip()
@@ -56,6 +57,7 @@ def get_colin27_segmentation(downsampled=False):
 
 
 def get_colin27_headmodel():
+    """Retrieves the Colin27 headmodel, based on :cite:t:`Holmes1998`."""
     fnames = DATASETS.fetch("colin2SHM.zip", processor=pooch.Unzip())
     directory = Path(fnames[0]).parent
     head_model = TwoSurfaceHeadModel.load(directory)
