@@ -444,7 +444,7 @@ class OptodeSelector:
                     sphere_actor = plotter.add_mesh(s, color=color)
                 self.actors.append(sphere_actor)
                 if self.labels is not None:
-                    plotter.add_point_labels(x[i_point].values, [str(labels[i_point])])
+                    plotter.add_point_labels(x[i_point].values, [str(self.labels[i_point])])
 
 
     def on_pick(self, picked_point):
