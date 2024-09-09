@@ -21,14 +21,19 @@ def make_design_matrix(
     """Generate the design matrix for the GLM.
 
     Args:
-        ts_long: time series of long distance channels
-        ts_short: time series of short distance channels
-        stim: stimulus DataFrame
-        geo3d: probe geometry
-        basis_function: the temporal basis function(s) to model the HRF
-        drift_order: if not None specify the highest polynomial order of the drift terms
-        short_channel_method: can be 'closest' or 'max_corr' and specifies the
-            method to add short channel information ot the design matrix
+        ts_long (cdt.NDTimeSeries): Time series of long distance channels.
+        ts_short (cdt.NDTimeSeries): Time series of short distance channels.
+        stim (DataFrame): Stimulus DataFrame
+        geo3d (cdt.LabeledPointCloud): Probe geometry
+        basis_function (TemporalBasisFunction): the temporal basis function(s) to model
+            the HRF.
+        drift_order (int): If not None specify the highest polynomial order of the drift
+            terms.
+        short_channel_method (str): Specifies the method to add short channel
+            information to the design matrix
+            Options:
+                - 'closest': Use the closest short channel
+                - 'max_corr': Use the short channel with the highest correlation
 
     Returns:
         A tuple containing the global design_matrix and a list of channel-wise
