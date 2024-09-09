@@ -74,19 +74,18 @@ def prune_ch(
     return amplitudes, prune_list
 
 
-# PSP > threshold is CLEAN
 @cdc.validate_schemas
 def psp(
     amplitudes: NDTimeSeries,
     window_length: Annotated[Quantity, "[time]"],
     psp_thresh: float,
+    cardiac_fmin: Annotated[Quantity, "[frequency]"] = 0.5 * units.Hz,
+    cardiac_fmax: Annotated[Quantity, "[frequency]"] = 2.5 * units.Hz,
 ):
-    # FIXME make these configurable
-    cardiac_fmin = 0.5 * units.Hz
-    cardiac_fmax = 2.5 * units.Hz
+    amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
 
-    amplitudes = amplitudes.pint.dequantify()
-    amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
+    amp = amp.pint.dequantify()
+
     amp = (amp - amp.mean("time")) / amp.std("time")
 
     # convert window_length to samples
@@ -99,50 +98,41 @@ def psp(
     # window length will result in non-overlapping windows.
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
     windows = windows.fillna(1e-6)
-    fs = amp.cd.sampling_rate
-
-    psp = np.zeros([len(windows["channel"]), len(windows["time"])])
 
     # Vectorized signal extraction and correlation
     sig = windows.transpose("channel", "time", "wavelength", "window").values
-    psp = np.zeros((sig.shape[0], sig.shape[1]))
+    nchannel = windows.sizes["channel"]
+    ntime = windows.sizes["time"] # after rolling this is the number of windows
+
     lags = np.arange(-nsamples + 1, nsamples)
+    nlags = len(lags)
+    norm_unbiased = (nsamples - np.abs(lags)) # shape (nlags,)
 
-    for w in range(sig.shape[1]): # loop over windows
-        sig_temp = sig[:,w,:,:]
-        # FIXME assumes 2 wavelengths
-        corr = np.array(
-            [
-                signal.correlate(sig_temp[ch, 0, :], sig_temp[ch, 1, :], "full")
-                for ch in range(sig.shape[0])
-            ]
-        )
+    hamming_window = np.hamming(nlags)
+    hamming_window_norm = np.sum(hamming_window) ** 2
 
-        # FIXME assumes 2 wavelengths
-        corr = corr /(nsamples - np.abs(lags))
+    # nsample / (sigma(wl1)*sigma(wl2)) , shape(nchannel, ntime)
+    corr_coeff_denom = nsamples / np.sqrt(np.sum(np.power(sig, 2), axis=-1)).prod(-1) 
 
-        nperseg = corr.shape[1]
-        window = np.hamming(nperseg)
-        window_seg = corr * window
+    corr = np.zeros((ntime, nchannel, nlags))
+    for w in range(ntime): # loop over windows
+        for ch in range(nchannel):
+            corr[w, ch, :] = signal.correlate(
+                sig[ch, w, 0, :], sig[ch, w, 1, :], "full"
+            )
 
-        fft_out = np.fft.rfft(window_seg, axis=1)
-        psd = (np.abs(fft_out) ** 2) / (fs * np.sum(window ** 2))
-        #freqs = np.fft.rfftfreq(nperseg, 1/fs)
+    corr *= corr_coeff_denom.T[:, :, None]
+    norm_unbiased = nsamples - np.abs(lags)  # shape (nlags,)
+    corr /= norm_unbiased[None, None, :]
+    corr *= hamming_window[None, None, :]
 
-        # for ch in range(sig.shape[0]):
-        #     window = signal.windows.hamming(len(corr[ch,:]))
-        #     f, pxx = signal.welch(
-        #         corr[ch, :],
-        #         window=window,
-        #         nfft=len(corr[ch, :]),
-        #         fs=fs,
-        #         scaling="density",
-        #     )
+    fft_out = np.fft.rfft(corr, axis=-1) # shape (ntime, nchannel, nfreqs)
+    #psd = (np.abs(fft_out) ** 2) / (fs * np.sum(window ** 2))
+    power = (np.abs(fft_out) ** 2) / hamming_window_norm
 
-        psp[:, w] = np.max(psd, 1)
+    psp = np.max(power, axis=2).T # shape(nchannel, ntime)
 
     # keep dims channel and time
-
     psp_xr = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
 
     # Apply threshold mask
@@ -150,6 +140,7 @@ def psp(
     psp_mask = psp_mask.where(psp_xr > psp_thresh, other=TAINTED)
 
     return psp_xr, psp_mask
+
 
 @cdc.validate_schemas
 def gvtd(amplitudes: NDTimeSeries):
@@ -178,8 +169,33 @@ def gvtd(amplitudes: NDTimeSeries):
     return GVTD
 
 
+def _extract_cardiac(
+    amplitudes: NDTimeSeries,
+    cardiac_fmin: Annotated[Quantity, "[frequency]"],
+    cardiac_fmax: Annotated[Quantity, "[frequency]"],
+):
+    """ Apply a bandpass or highpass filter to extract the cardiac component."""
+
+    fs = sampling_rate(amplitudes)
+    fny =  fs / 2
+    if fny < cardiac_fmin:
+        raise ValueError("sampling rate is not sufficient to extract cardiac component")
+    elif fny > cardiac_fmax:
+        return freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
+    else:  # fny in [cardiac_fmin, cardiac_fmax] -> highpass
+        return freq_filter(
+            amplitudes, fmin=cardiac_fmin, fmax=0 * units.Hz, butter_order=4
+        )
+
+
 @cdc.validate_schemas
-def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
+def sci(
+    amplitudes: NDTimeSeries,
+    window_length: Quantity,
+    sci_thresh: float,
+    cardiac_fmin: Annotated[Quantity, "[frequency]"] = 0.5 * units.Hz,
+    cardiac_fmax: Annotated[Quantity, "[frequency]"] = 2.5 * units.Hz,
+):
     """Calculate the scalp-coupling index.
 
     The scalp-coupling index metric is based on :cite:t:`Pollonini2014` /
@@ -201,14 +217,23 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
     assert "wavelength" in amplitudes.dims  # FIXME move to validate schema
 
     # FIXME make these configurable
-    cardiac_fmin = 0.5 * units.Hz
-    cardiac_fmax = 2.5 * units.Hz
+    fs = sampling_rate(amplitudes)
+    fny =  fs / 2
+    if fny < cardiac_fmin:
+        raise ValueError("sampling rate is not sufficient to extract cardiac component")
+    elif fny > cardiac_fmax:
+        amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
+    else:  # fny in [cardiac_fmin, cardiac_fmax] -> highpass
+        amp = freq_filter(
+            amplitudes, fmin=cardiac_fmin, fmax=0 * units.Hz, butter_order=4
+        )
 
-    amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
+    amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
+
     amp = (amp - amp.mean("time")) / amp.std("time")
 
     # convert window_length to samples
-    nsamples = (window_length * sampling_rate(amp)).to_base_units()
+    nsamples = (window_length * fs).to_base_units()
     nsamples = int(np.ceil(nsamples))
 
     # This creates a new DataArray with a new dimension "window", that is
