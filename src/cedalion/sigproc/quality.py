@@ -81,6 +81,23 @@ def psp(
     window_length: Annotated[Quantity, "[time]"],
     psp_thresh: float,
 ):
+    """Calculate the peak spectral power.
+
+    The peak spectral power metric is based on :cite:t:`Pollonini2014` /
+    :cite:t:`Pollonini2016`.
+
+    Args:
+        amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
+            series
+        window_length (:class:`Quantity`, [time]): size of the computation window
+        psp_thresh: if the calculated PSP metric falls below this threshold then the
+            corresponding time window should be excluded.
+
+    Returns:
+        A tuple (psp, psp_mask), where psp is a DataArray with coords from the input
+        NDTimeseries containing the peak spectral power. psp_mask is a boolean mask
+        DataArray with coords from psp, true where psp_thresh is met.
+    """
     # FIXME make these configurable
     cardiac_fmin = 0.5 * units.Hz
     cardiac_fmax = 2.5 * units.Hz
@@ -513,7 +530,20 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
 def detect_outliers_std(
     ts: cdt.NDTimeSeries, t_window: Annotated[Quantity, "[time]"], iqr_threshold=2
 ):
-    """Detect outliers in fNIRSdata based on standard deviation of signal."""
+    """Detect outliers in fNIRSdata based on standard deviation of signal.
+    Args:
+        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
+        t_window :class:`Quantity`: time window over which to calculate standard deviations
+        iqr_threshold: interquartile range threshold (detect outlier as any standard deviation outside 
+                                                      iqr_threshold * [25th percentile, 75th percentile])
+
+    Returns:
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
+        an outlier is detected based on the standard deviation
+    
+    References:
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+    """
 
     ts = ts.pint.dequantify()
     fs = freq.sampling_rate(ts)
@@ -547,7 +577,19 @@ def detect_outliers_std(
 
 @cdc.validate_schemas
 def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
-    """Detect outliers in fNIRSdata based on gradient of signal."""
+    """Detect outliers in fNIRSdata based on gradient of signal.
+    Args:
+        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
+        iqr_threshold: interquartile range threshold (detect outlier as any gradient outside 
+                                                      iqr_threshold * [25th percentile, 75th percentile])
+
+    Returns:
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
+        an outlier is detected
+        
+    References:
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+    """
 
     ts = ts.pint.dequantify()
 
@@ -590,6 +632,22 @@ def detect_outliers(
     iqr_threshold_std : float =2,
     iqr_threshold_grad : float =1.5,
 ):
+    """Detect outliers in fNIRSdata based on standard deviation and gradient of signal.
+    Args:
+        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
+        t_window_std :class:`Quantity`: time window over which to calculate standard deviations
+        iqr_threshold_grad: interquartile range threshold (detect outlier as any gradient outside 
+                                                      iqr_threshold * [25th percentile, 75th percentile])
+        iqr_threshold_std: interquartile range threshold (detect outlier as any standard deviation outside 
+                                                      iqr_threshold * [25th percentile, 75th percentile])
+
+    Returns:
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
+        an outlier is detected
+    
+    References:
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+    """
     mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
     mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
 
@@ -659,6 +717,18 @@ def _calculate_delta_threshold(ts, segments, threshold_samples):
 
 
 def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
+    """Detect baselineshifts in fNIRSdata.
+    Args:
+        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
+        outlier_mask :class:`NDTimeSeries`: mask containing FALSE anytime an outlier is detected in signal
+
+    Returns:
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
+        a baselineshift or outlier is detected 
+    
+    References:
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+    """
     ts = ts.pint.dequantify()
 
     #ts = ts.stack(measurement=["channel", "wavelength"]).sortby("wavelength")
@@ -672,7 +742,7 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
 
     fs = ts.cd.sampling_rate # FIXME
 
-    pad_samples = int(np.round(12 * fs))  # extension for padding. 12s
+    pad_samples = int(np.round(12 * fs.magnitude))  # extension for padding. 12s
     threshold_samples = int(
         np.round(0.5 * fs)
     )  # threshold for baseline shift detection
