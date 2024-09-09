@@ -32,8 +32,8 @@ def make_design_matrix(
         short_channel_method (str): Specifies the method to add short channel
             information to the design matrix
             Options:
-                - 'closest': Use the closest short channel
-                - 'max_corr': Use the short channel with the highest correlation
+                'closest': Use the closest short channel
+                'max_corr': Use the short channel with the highest correlation
 
     Returns:
         A tuple containing the global design_matrix and a list of channel-wise
@@ -61,6 +61,15 @@ def make_design_matrix(
 
 
 def make_drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> xr.DataArray:
+    """Create drift regressors.
+
+    Args:
+        ts (cdt.NDTimeSeries): Time series data.
+        drift_order (int): The highest polynomial order of the drift terms.
+
+    Returns:
+        xr.DataArray: A DataArray containing the drift regressors.
+    """
     dim3 = xrutils.other_dim(ts, "channel", "time")
     ndim3 = ts.sizes[dim3]
 
@@ -138,7 +147,17 @@ def build_stim_array(
 def make_hrf_regressors(
     ts: cdt.NDTimeSeries, stim: pd.DataFrame, basis_function: TemporalBasisFunction
 ):
-    """Create regressors modelling the hemodynamic response to stimuli."""
+    """Create regressors modelling the hemodynamic response to stimuli.
+
+    Args:
+        ts (NDTimeSeries): Time series data.
+        stim (pd.DataFrame): Stimulus DataFrame.
+        basis_function (TemporalBasisFunction): TemporalBasisFunction object defining
+            the HRF.
+
+    Returns:
+        regressors (xr.DataArray): A DataArray containing the regressors.
+    """
 
     # FIXME allow basis_function to be an xarray as returned by basis_function()
     # so that users can pass their own individual hrf function
@@ -265,12 +284,12 @@ def closest_short_channel(
     """Create channel-wise regressors use closest nearby short channel.
 
     Args:
-        ts_long: time series of long channels
-        ts_short: time series of short channels
-        geo3d: probe geometry
+        ts_long (NDTimeSeries): Time series of long channels
+        ts_short (NDTimeSeries): Time series of short channels
+        geo3d (LabeledPointCloud): Probe geometry
 
     Returns:
-        channel-wise regressor
+        regressors (xr.DataArray): Channel-wise regressor
     """
     # calculate midpoints between channel optode pairs. dims: (channel, crs)
     long_channel_pos = (geo3d.loc[ts_long.source] + geo3d.loc[ts_long.detector]) / 2
