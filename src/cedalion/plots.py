@@ -547,23 +547,23 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
     First version created by Laura Carlton, BU, 2024
 
     Args:
-    REQUIRED:
-    recording (): recording object that contains the information of all the measurements
-    metric (numpy array or list): metric to plot with dimensions (num_channels) #FIXME this should probably changed to an xarray that contains a channel coordinate for each entry
-    ax (matplotlib.pyplot axes object): the axes object on which to create the plot
+        REQUIRED:
+        recording (): recording object that contains the information of all the measurements
+        metric (numpy array or list): metric to plot with dimensions (num_channels) #FIXME this should probably changed to an xarray that contains a channel coordinate for each entry
+        ax (matplotlib.pyplot axes object): the axes object on which to create the plot
 
-    OPTIONAL:
-    colormap (matplotlib colormap): colormap (default is bwr)
-    title (string): if you want to automatically add a title to the plot (default is None)
-    threshold_ind (int): threshold index to include in the colorbar (default is None)
-    threshold_col (list): mask for for channels that are above or below a certain threshold (if 1 then alpha is set to 0.4 so channel is faded) (default is None)
-    saturation (list): mask for channels that are saturated (if 1 then color is grey) (default is None)
-    vmin (int or float): minimum value in colorbar (default is 0)
-    vmax (int or float): maximum value in colorbar (default is 1)
-    savePath (string): path to save the figure (default is None)
-    remove_short (boolean): flag to not plot short separation channels (default is 0 so they do get plotted)
-    flagFontSize (boolean): change the size of the source/detector labels (default is 0 so no labels)
-    flagMarkerSize (boolean): change the size of the source/detector markers (default is 8)
+        OPTIONAL:
+        colormap (matplotlib colormap): colormap (default is bwr)
+        title (string): if you want to automatically add a title to the plot (default is None)
+        threshold_ind (int): threshold index to include in the colorbar (default is None)
+        threshold_col (list): mask for for channels that are above or below a certain threshold (if 1 then alpha is set to 0.4 so channel is faded) (default is None)
+        saturation (list): mask for channels that are saturated (if 1 then color is grey) (default is None)
+        vmin (int or float): minimum value in colorbar (default is 0)
+        vmax (int or float): maximum value in colorbar (default is 1)
+        savePath (string): path to save the figure (default is None)
+        remove_short (boolean): flag to not plot short separation channels (default is 0 so they do get plotted)
+        flagFontSize (boolean): change the size of the source/detector labels (default is 0 so no labels)
+        flagMarkerSize (boolean): change the size of the source/detector markers (default is 8)
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024

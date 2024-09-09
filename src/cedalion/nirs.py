@@ -205,9 +205,9 @@ def split_long_short_channels(
     """Split a time series into two based on channel distances.
 
     Args:
-        ts: FIXME
-        geo3d : FIXME
-        distance_threshold : FIXME
+        ts (cdt.NDTimeSeries) : Time series to split.
+        geo3d (cdt.LabeledPointCloud) : 3D coordinates of the channels.
+        distance_threshold (Quantity) : Distance threshold for splitting the channels.
 
     Returns:
         ts_long : time series with channel distances >= distance_threshold

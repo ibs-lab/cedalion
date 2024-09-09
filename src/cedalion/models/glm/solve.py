@@ -97,6 +97,18 @@ def predict(
     design_matrix: xr.DataArray,
     channel_wise_regressors: list[xr.DataArray] | None = None,
 ) -> cdt.NDTimeSeries:
+    """Predict time series from design matrix and thetas.
+
+    Args:
+        ts (cdt.NDTimeSeries): The time series to be modeled.
+        thetas (xr.DataArray): The estimated parameters.
+        design_matrix (xr.DataArray): DataArray with dims time, regressor, chromo
+        channel_wise_regressors (list[xr.DataArray]): Optional list of design matrices,
+        with additional channel dimension.
+
+    Returns:
+        prediction (xr.DataArray): The predicted time series.
+    """
     dim3_name = xrutils.other_dim(design_matrix, "time", "regressor")
 
     prediction = defaultdict(list)
@@ -136,6 +148,21 @@ def iter_design_matrix(
     channel_wise_regressors: list[xr.DataArray] | None = None,
     channel_groups: list[int] | None = None,
 ):
+    """Iterate over the design matrix and yield the design matrix for each group.
+
+    Args:
+        ts (cdt.NDTimeSeries): The time series to be modeled.
+        design_matrix (xr.DataArray): DataArray with dims time, regressor, chromo.
+        channel_wise_regressors (list[xr.DataArray] | None, optional): Optional list of
+            design matrices, with additional channel dimension.
+        channel_groups (list[int] | None, optional): Optional list of channel groups.
+
+    Yields:
+        tuple: A tuple containing:
+            - dim3 (str): The third dimension name.
+            - group_y (cdt.NDTimeSeries): The grouped time series.
+            - group_design_matrix (xr.DataArray): The grouped design matrix.
+    """
     dim3_name = xrutils.other_dim(design_matrix, "time", "regressor")
 
     if channel_wise_regressors is None:

@@ -220,28 +220,25 @@ class TwoSurfaceHeadModel:
     ) -> "TwoSurfaceHeadModel":
         """Constructor from binary masks, brain and head surfaces as gained from MRI scans.
 
-        Parameters
-        ----------
-        segmentation_dir : str
-            Folder containing the segmentation masks in NIFTI format.
-        mask_files : dict[str, str]
-            Dictionary mapping segmentation types to NIFTI filenames.
-        brain_surface_file : str
-            Path to the brain surface.
-        scalp_surface_file : str
-            Path to the scalp surface.
-        landmarks_ras_file : Optional[str]
-            Filename of the landmarks in RAS space.
-        brain_seg_types : list[str]
-            List of segmentation types to be included in the brain surface.
-        scalp_seg_types : list[str]
-            List of segmentation types to be included in the scalp surface.
-        smoothing : float
-            Smoothing factor for the brain and scalp surfaces.
-        brain_face_count : Optional[int]
-            Number of faces for the brain surface.
-        scalp_face_count : Optional[int]
-            Number of faces for the scalp surface.
+        Args:
+            segmentation_dir (str): Folder containing the segmentation masks in NIFTI
+                format.
+            mask_files (dict[str, str]): Dictionary mapping segmentation types to NIFTI
+                filenames.
+            brain_surface_file (str): Path to the brain surface.
+            scalp_surface_file (str): Path to the scalp surface.
+            landmarks_ras_file (Optional[str]): Filename of the landmarks in RAS space.
+            brain_seg_types (list[str]): List of segmentation types to be included in
+                the brain surface.
+            scalp_seg_types (list[str]): List of segmentation types to be included in
+                the scalp surface.
+            smoothing (float): Smoothing factor for the brain and scalp surfaces.
+            brain_face_count (Optional[int]): Number of faces for the brain surface.
+            scalp_face_count (Optional[int]): Number of faces for the scalp surface.
+            fill_holes (bool): Whether to fill holes in the segmentation masks.
+
+        Returns:
+            TwoSurfaceHeadModel: An instance of the TwoSurfaceHeadModel class.
         """
 
         # load segmentation mask
