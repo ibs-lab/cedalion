@@ -90,13 +90,28 @@ NDTimeSeriesSchema = DataArraySchema(
 
 # FIXME better location?
 def build_timeseries(
-    data: np.ndarray,
+    data: ArrayLike,
     dims: List[str],
-    time: np.ndarray,
+    time: ArrayLike,
     channel: List[str],
     value_units: str,
     time_units: str,
+    other_coords: dict[str, ArrayLike] = {},
 ):
+    """Build a labeled time series data array.
+
+    Args:
+        data (ArrayLike): The data values.
+        dims (List[str]): The dimension names.
+        time (ArrayLike): The time values.
+        channel (List[str]): The channel names.
+        value_units (str): The units of the data values.
+        time_units (str): The units of the time values.
+        other_coords (dict[str, ArrayLike]): Additional coordinates.
+
+    Returns:
+        da (xr.DataArray): The labeled time series data array.
+    """
     assert len(dims) == data.ndim
     assert "time" in dims
     assert "channel" in dims
@@ -105,14 +120,17 @@ def build_timeseries(
 
     samples = np.arange(len(time))
 
+    coords = {
+        "time": ("time", time),
+        "samples": ("time", samples),
+        "channel": ("channel", channel),
+    }
+    coords.update(other_coords)
+
     da = xr.DataArray(
         data,
         dims=dims,
-        coords={
-            "time": ("time", time),
-            "samples": ("time", samples),
-            "channel": ("channel", channel),
-        },
+        coords=coords,
     )
     da = da.pint.quantify(value_units)
     da = da.pint.quantify({"time": time_units})
@@ -127,6 +145,21 @@ def build_labeled_points(
     labels: Optional[list[str]] = None,
     types: Optional[list[str]] = None,
 ):
+    """Build a labeled point cloud data array.
+
+    Args:
+        coordinates (ArrayLike, optional): The coordinates of the points. Defaults to None.
+        crs (str, optional): The coordinate system. Defaults to "pos".
+        units (Optional[pint.Unit | str], optional): The units of the coordinates.
+            Defaults to "1".
+        labels (Optional[list[str]], optional): The labels of the points. Defaults to
+            None.
+        types (Optional[list[str]], optional): The types of the points. Defaults to
+            None.
+
+    Returns:
+        xr.DataArray: The labeled point cloud data array.
+    """
     if coordinates is None:
         coordinates = np.zeros((0, 3), dtype=float)
     else:

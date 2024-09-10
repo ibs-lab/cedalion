@@ -18,6 +18,20 @@ def surface_from_segmentation(
     isovalue=0.9,
     fill_holes_in_mask=False,
 ) -> cdc.Surface:
+    """Create a surface from a segmentation mask.
+
+    Args:
+        segmentation_mask (xr.DataArray): Segmentation mask with dimensions segmentation
+            type, i, j, k.
+        segmentation_types (List[str]): A list of segmentation types to include in the
+            surface.
+        isovalue (Float): The isovalue to use for the marching cubes algorithm.
+        fill_holes_in_mask (Bool): Whether to fill holes in the mask before creating the
+            surface.
+
+    Returns:
+        A cedalion.Surface object.
+    """
     combined_mask = (
         segmentation_mask.sel(segmentation_type=segmentation_types)
         .any("segmentation_type")
@@ -36,6 +50,15 @@ def surface_from_segmentation(
 
 
 def cell_coordinates(volume, flat: bool = False):
+    """Create a DataArray with the coordinates of the cells in a volume.
+
+    Args:
+        volume (xr.DataArray): The volume to get the cell coordinates from.
+        flat (bool): Whether to flatten the coordinates.
+
+    Returns:
+        xr.DataArray: A DataArray with the coordinates of the cells in the volume.
+    """
     # coordinates in voxel space
     i = np.arange(volume.shape[0])
     j = np.arange(volume.shape[1])

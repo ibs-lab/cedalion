@@ -12,11 +12,10 @@ from numpy.typing import ArrayLike
 from snirf import Snirf
 from snirf.pysnirf2 import DataElement, MeasurementList, NirsElement, Stim
 from strenum import StrEnum
-import pint
 
 import cedalion.dataclasses as cdc
+from cedalion import units
 from cedalion.typing import NDTimeSeries
-
 
 log = logging.getLogger("cedalion")
 
@@ -151,7 +150,13 @@ def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
 
     snirf supports multidimensional source labels but we don't.
     This function tries to reduce n-dimensional source labels
-    to a unique common prefix to obtain only one label per source
+    to a unique common prefix to obtain only one label per source.
+
+    Args:
+        sourceLabels (np.ndarray): The source labels to reduce.
+
+    Returns:
+        list: The reduced source labels.
     """
     labels = []
     for i_src in range(sourceLabels.shape[0]):
@@ -177,13 +182,27 @@ def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
     return labels
 
 
-def labels_and_positions(probe):
+def labels_and_positions(probe, dim: int = 3):
+    """Extract 3D coordinates of optodes and landmarks from a nirs probe variable.
+
+    Args:
+        probe: Nirs probe geometry variable, see snirf documentation (:cite:t:`Tucker2022`).
+        dim (int): Must be either 2 or 3.
+
+    Returns:
+        tuple: A tuple containing the source, detector, and landmark labels/positions.
+    """
     def convert_none(probe, attrname, default):
         attr = getattr(probe, attrname)
         if attr is None:
             return default
         else:
             return attr
+
+    if dim not in [2, 3]:
+        raise AttributeError(f"dim must be '2' or '3' but got {dim}")
+    else:
+        dim = int(dim)
 
     sourceLabels = convert_none(probe, "sourceLabels", np.asarray([], dtype=str))
     detectorLabels = convert_none(probe, "detectorLabels", np.asarray([], dtype=str))
@@ -192,34 +211,55 @@ def labels_and_positions(probe):
     if sourceLabels.ndim > 1:
         sourceLabels = reduce_ndim_sourceLabels(sourceLabels)
 
-    sourcePos3D = convert_none(probe, "sourcePos3D", np.zeros((0, 3)))
-    detectorPos3D = convert_none(probe, "detectorPos3D", np.zeros((0, 3)))
-    landmarkPos3D = convert_none(probe, "landmarkPos3D", np.zeros((0, 3)))[
-        :, :3
+    sourcePos = convert_none(probe, f"sourcePos{dim}D", np.zeros((0, dim)))
+    detectorPos = convert_none(probe, f"detectorPos{dim}D", np.zeros((0, dim)))
+    landmarkPos = convert_none(probe, f"landmarkPos{dim}D", np.zeros((0, dim + 1)))[
+        :, :dim
     ]  # FIXME we keep only the positional columns
 
-    if len(sourcePos3D) > 0 and len(sourceLabels) == 0:
+    sourcePos = sourcePos[:,0:dim]
+    detectorPos = detectorPos[:,0:dim]
+    landmarkPos = landmarkPos[:,0:dim]
+
+    if len(sourcePos) > 0 and len(sourceLabels) == 0:
         log.warning("generating generic source labels")
-        sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos3D))])
+        sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos))])
 
-    if len(detectorPos3D) > 0 and len(detectorLabels) == 0:
+    if len(detectorPos) > 0 and len(detectorLabels) == 0:
         log.warning("generating generic detector labels")
-        detectorLabels = np.asarray([f"D{i+1}" for i in range(len(detectorPos3D))])
+        detectorLabels = np.asarray([f"D{i+1}" for i in range(len(detectorPos))])
 
-    if len(landmarkLabels) != len(landmarkPos3D):
-        raise ValueError("landmark positions were provided but no labels")
+    if len(landmarkPos) != len(landmarkLabels):
+        if len(landmarkPos) > 0:
+            raise ValueError("landmark positions were provided but no labels")
+        else:
+            log.warning(
+                "landmark labels were provided but not their positions. "
+                "Removing labels"
+            )
+            landmarkLabels = np.asarray([], dtype=str)
 
     return (
         sourceLabels,
         detectorLabels,
         landmarkLabels,
-        sourcePos3D,
-        detectorPos3D,
-        landmarkPos3D,
+        sourcePos,
+        detectorPos,
+        landmarkPos,
     )
 
+def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
+    """Extract 3D coordinates of optodes and landmarks from probe information.
 
-def geometry_from_probe(nirs_element: NirsElement):
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+        dim (int): Must be either 2 or 3.
+
+    Returns:
+        xr.DataArray: A DataArray containing the 3D coordinates of optodes and landmarks,
+            with dimensions 'label' and 'pos' and coordinates 'label' and 'type'.
+    """
     probe = nirs_element.probe
 
     length_unit = nirs_element.metaDataTags.LengthUnit
@@ -228,10 +268,10 @@ def geometry_from_probe(nirs_element: NirsElement):
         sourceLabels,
         detectorLabels,
         landmarkLabels,
-        sourcePos3D,
-        detectorPos3D,
-        landmarkPos3D,
-    ) = labels_and_positions(probe)
+        sourcePos,
+        detectorPos,
+        landmarkPos,
+    ) = labels_and_positions(probe, dim)
 
     types = (
         [cdc.PointType.SOURCE] * len(sourceLabels)
@@ -240,15 +280,16 @@ def geometry_from_probe(nirs_element: NirsElement):
     )
 
     labels = np.hstack([sourceLabels, detectorLabels, landmarkLabels])
-    positions = np.vstack([sourcePos3D, detectorPos3D, landmarkPos3D])
+    positions = np.vstack([sourcePos, detectorPos, landmarkPos])
 
-    coords = {"label": ("label", labels), "type": ("label", types)}
     dims = ["label", "pos"]
     attrs = {"units": length_unit}
 
     if len(positions) == 0:
+        coords = {"label": ("label", []), "type": ("label", [])}
         result = xr.DataArray(None, coords=coords, dims=dims, attrs=attrs)
     elif len(labels) == len(positions):
+        coords = {"label": ("label", labels), "type": ("label", types)}
         result = xr.DataArray(positions, coords=coords, dims=dims, attrs=attrs)
     else:
         raise ValueError("number of positions and labels does not match")
@@ -261,7 +302,16 @@ def geometry_from_probe(nirs_element: NirsElement):
 
 def measurement_list_to_dataframe(
     measurement_list: MeasurementList, drop_none: bool = False
-):
+) -> pd.DataFrame:
+    """Converts a snirf MeasurementList object to a pandas DataFrame.
+
+    Args:
+        measurement_list: MeasurementList object from the snirf file.
+        drop_none (bool): If True, drop columns that are None for all rows.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the measurement list information.
+    """
     fields = [
         "sourceIndex",
         "detectorIndex",
@@ -288,6 +338,15 @@ def measurement_list_to_dataframe(
 
 
 def meta_data_tags_to_dict(nirs_element: NirsElement) -> OrderedDict[str, Any]:
+    """Converts the metaDataTags of a nirs element to a dictionary.
+
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+
+    Returns:
+        OrderedDict[str, Any]: Dictionary containing the metaDataTags information.
+    """
     mdt = nirs_element.metaDataTags
 
     fields = mdt._snirf_names + mdt._unspecified_names
@@ -296,6 +355,15 @@ def meta_data_tags_to_dict(nirs_element: NirsElement) -> OrderedDict[str, Any]:
 
 
 def stim_to_dataframe(stim: Stim):
+    """Converts a snirf Stim object to a pandas DataFrame.
+
+    Args:
+        stim (Stim): Stim object as specified in the snirf documentation
+            (:cite:t:`Tucker2022`).
+
+    Returns:
+        pd.DataFrame: DataFrame containing the stimulus information.
+    """
     dfs = []
 
     if len(stim) == 0:
@@ -326,38 +394,34 @@ def stim_to_dataframe(stim: Stim):
 def read_aux(
     nirs_element: NirsElement, opts: dict[str, Any]
 ) -> OrderedDict[str, xr.DataArray]:
-    result = OrderedDict()
+    """Reads the aux data from a nirs element into a dictionary of DataArrays.
 
-    # units that need to be converted to pint units
-    ureg = pint.UnitRegistry()
-    unit_conversions = {
-        'o/s': 'deg/s',
-        'º/s': 'deg/s',
-        'oC': 'degC',
-        'Ohm': 'ohm',
-        }
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+        opts (dict[str, Any]): Options for reading the aux data. The following
+            options are supported:
+            - squeeze_aux (bool): If True, squeeze the aux data to remove
+                dimensions of size 1.
+
+    Returns:
+        result (OrderedDict[str, xr.DataArray]): Dictionary containing the aux data
+    """
+    result = OrderedDict()
 
     for aux in nirs_element.aux:
         name = aux.name
-        units = aux.dataUnit
+        aux_units = aux.dataUnit
         time_offset = aux.timeOffset
 
-        # FIXME treat unspecified units as dimensionless quantities - Last update by AvL 31.07.24
-        # Default to dimensionless if units are None
-        if units is None:
-            units = "1"
-        else:
-            # Strip whitespace
-            units = units.strip()
-            try:
-                ureg(units)
-            except pint.errors.UndefinedUnitError:
-                # Convert units if not recognized
-                if units in unit_conversions:
-                    units = unit_conversions[units]
-                else:
-                    print(f"Warning: Unrecognized unit '{units}', treating as dimensionless.")
-                    units = "1"
+        # FIXME treat unspecified units as dimensionless quantities.
+        if aux_units is None:
+            aux_units = "1"
+
+        if aux_units not in units:
+            raise ValueError(f"aux channel '{name}' has units '{aux_units}', which "
+                             "are not defined in the unit registry. Consider adding "
+                              "an alias to cedalion.units." )
 
         ntimes = len(aux.time)
 
@@ -380,7 +444,7 @@ def read_aux(
             coords={"time": aux.time},
             dims=dims,
             name=name,
-            attrs={"units": units, "time_offset": time_offset},
+            attrs={"units": aux_units, "time_offset": time_offset},
         )
 
         result[name] = x.pint.quantify()
@@ -389,7 +453,18 @@ def read_aux(
 
 
 def add_number_to_name(name, keys):
-    """Changes name to name_<number>."""
+    """Changes name to name_<number>.
+
+    Number appended to name is the smallest number that makes the new name unique with
+    respect to the list of keys.
+
+    Args:
+        name (str): Name to which a number should be added.
+        keys (list[str]): List of keys to which the new name should be compared.
+
+    Returns:
+        str: New name with number added.
+    """
 
     pat = re.compile(rf"{name}(_(\d+))?")
     max_number = 1
@@ -405,6 +480,18 @@ def add_number_to_name(name, keys):
 def read_data_elements(
     data_element: DataElement, nirs_element: NirsElement, stim: pd.DataFrame
 ) -> list[tuple[str, NDTimeSeries]]:
+    """Reads the data elements from a nirs element into a list of DataArrays.
+
+    Args:
+        data_element (DataElement): DataElement obj. from the snirf file.
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+        stim (pd.DataFrame): DataFrame containing the stimulus information.
+
+    Returns:
+        list[tuple[str, NDTimeSeries]]: List of tuples containing the canonical name
+            of the data element and the DataArray.
+    """
     time = data_element.time
 
     trial_types = stim["trial_type"].drop_duplicates().values
@@ -531,6 +618,7 @@ def read_data_elements(
                     "data_type_group": data_type_group,
                 },
             )
+
         da = da.pint.quantify()
 
         time_units = nirs_element.metaDataTags.TimeUnit
@@ -549,6 +637,18 @@ def _get_time_coords(
     data_element: DataElement,
     df_measurement_list: pd.DataFrame,
 ) -> dict[str, ArrayLike]:
+    """Get time coordinates for the NIRS data element.
+
+    Args:
+        nirs_element (NirsElement): NIRS data element containing metadata.
+        data_element (DataElement): Data element containing time and dataTimeSeries.
+        df_measurement_list (pd.DataFrame): DataFrame containing the measurement list.
+
+    Returns:
+        tuple: A tuple containing:
+            - indices (None): Placeholder for indices.
+            - coordinates (dict[str, ArrayLike]): Dictionary with time coordinates.
+    """
     time = data_element.time
     time_unit = nirs_element.metaDataTags.TimeUnit
 
@@ -567,6 +667,17 @@ def _get_channel_coords(
     nirs_element: NirsElement,
     df_measurement_list: pd.DataFrame,
 ) -> tuple[ArrayLike, dict[str, ArrayLike]]:
+    """Get channel coordinates for the NIRS data element.
+
+    Args:
+        nirs_element (NirsElement): NIRS data element containing probe information.
+        df_measurement_list (pd.DataFrame): DataFrame containing the measurement list.
+
+    Returns:
+        tuple: A tuple containing:
+            - indices (None): Placeholder for indices.
+            - coordinates (dict[str, ArrayLike]): Dictionary with channel coordinates.
+    """
     sourceLabels, detectorLabels, landmarkLabels, _, _, _ = labels_and_positions(
         nirs_element.probe
     )
@@ -585,7 +696,22 @@ def _get_channel_coords(
 
 
 def read_nirs_element(nirs_element, opts):
-    geo3d = geometry_from_probe(nirs_element)
+    """Reads a single nirs element from a .snirf file into a Recording object.
+
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+        opts (dict[str, Any]): Options for reading the data element. The following
+            options are supported:
+            - squeeze_aux (bool): If True, squeeze the aux data to remove
+                dimensions of size 1.
+
+    Returns:
+        rec (Recording): Recording object containing the data from the nirs element.
+    """
+
+    geo2d = geometry_from_probe(nirs_element, dim=2)
+    geo3d = geometry_from_probe(nirs_element, dim=3)
     stim = stim_to_dataframe(nirs_element.stim)
 
     timeseries = OrderedDict()
@@ -608,23 +734,10 @@ def read_nirs_element(nirs_element, opts):
 
     meta_data = meta_data_tags_to_dict(nirs_element)
 
-    # measurement_lists = []
-    # for data_element in nirs_element.data:
-    #    df_ml = measurement_list_to_dataframe(
-    #        data_element.measurementList, drop_none=False
-    #    )
-    #    df_ml = denormalize_measurement_list(df_ml, nirs_element)
-    #    df_ml.dropna(axis=1)
-    #    measurement_lists.append(df_ml)
-
-    # ne = Element(
-    #    timeseries, stim, geo3d, None, aux, meta_data, measurement_lists
-    # )  # FIXME geo2d
-
-    # FIXME measurement lists
     rec = cdc.Recording(
         timeseries=timeseries,
         geo3d=geo3d,
+        geo2d=geo2d,
         stim=stim,
         aux_ts=aux,
         meta_data=meta_data,
@@ -635,6 +748,17 @@ def read_nirs_element(nirs_element, opts):
 
 
 def read_snirf(fname: Path | str, squeeze_aux=False) -> list[cdc.Recording]:
+    """Reads a .snirf file into a list of Recording objects.
+
+    Args:
+        fname (Path | str): Path to .snirf file
+        squeeze_aux (Bool): If True, squeeze the aux data to remove
+            dimensions of size 1.
+
+    Returns:
+        list[Recording]: List of Recording objects containing the data from the nirs
+        elements in the .snirf file.
+    """
     opts = {"squeeze_aux": squeeze_aux}
 
     if isinstance(fname, Path):
@@ -645,6 +769,18 @@ def read_snirf(fname: Path | str, squeeze_aux=False) -> list[cdc.Recording]:
 
 
 def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement):
+    """Enriches measurement list DataFrame with additional information.
+
+    Args:
+        df_ml (pd.DataFrame): DataFrame containing the measurement list information.
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+
+    Returns:
+        pd.DataFrame: DataFrame containing the measurement list information with
+            additional columns for channel, source, detector, wavelength and chromo.
+
+    """
     sourceLabels, detectorLabels, landmarkLabels, _, _, _ = labels_and_positions(
         nirs_element.probe
     )
@@ -704,6 +840,21 @@ def measurement_list_from_stacked(
     detector_labels=None,
     wavelengths=None,
 ):
+    """Create a measurement list from a stacked array.
+
+    Args:
+        stacked_array (xr.DataArray): Stacked array containing the data.
+        data_type (str): Data type of the data.
+        trial_types (list[str]): List of trial types.
+        stacked_channel (str): Name of the channel dimension in the stacked array.
+        source_labels (list[str]): List of source labels.
+        detector_labels (list[str]): List of detector labels.
+        wavelengths (list[float]): List of wavelengths.
+
+    Returns:
+        tuple: A tuple containing the source labels, detector labels, wavelengths, and
+            the measurement list.
+    """
     if source_labels is None:
         source_labels = list(np.unique(stacked_array.source.values))
     if detector_labels is None:
@@ -763,6 +914,14 @@ def measurement_list_from_stacked(
 
 
 def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
+    """Write a recording to a .snirf file.
+
+    See snirf specification for details (:cite:t:`Tucker2022`)
+
+    Args:
+        snirf_file (Snirf): Snirf object to write to.
+        rec (Recording): Recording object to write to the file.
+    """
     # create and populate nirs element
     snirf_file.nirs.appendGroup()
     ne = snirf_file.nirs[-1]
@@ -772,6 +931,7 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
         setattr(ne.metaDataTags, k, v)
 
     geo3d = rec.geo3d.pint.dequantify()
+    geo2d = rec.geo2d.pint.dequantify()
     ne.metaDataTags.LengthUnit = geo3d.attrs["units"]
 
     # probe information
@@ -779,8 +939,13 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
     ne.probe.detectorLabels = rec.detector_labels
     ne.probe.wavelengths = rec.wavelengths
 
-    ne.probe.sourcePos3D = geo3d.loc[rec.source_labels]
-    ne.probe.detectorPos3D = geo3d.loc[rec.detector_labels]
+    if len(geo3d) > 0:
+        ne.probe.sourcePos3D = geo3d.loc[rec.source_labels]
+        ne.probe.detectorPos3D = geo3d.loc[rec.detector_labels]
+
+    if len(geo2d) > 0:
+        ne.probe.sourcePos2D = geo2d.loc[rec.source_labels]
+        ne.probe.detectorPos2D = geo2d.loc[rec.detector_labels]
 
     trial_types = list(rec.stim["trial_type"].drop_duplicates())
 
@@ -887,6 +1052,13 @@ def write_snirf(
     fname: Path | str,
     recordings: cdc.Recording | list[cdc.Recording],
 ):
+    """Write one or more recordings to a .snirf file.
+
+    Args:
+        fname (Path | str): Path to .snirf file.
+        recordings (Recording | list[Recording]): Recording object(s) to write to the
+            file.
+    """
     if isinstance(fname, Path):
         fname = str(fname)
 

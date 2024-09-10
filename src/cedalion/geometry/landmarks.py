@@ -111,14 +111,21 @@ def _intersect_mesh_with_triangle(
 class LandmarksBuilder1010:
     """Construct the 10-10-system on scalp surface based on :cite:t:`Oostenveld2001`.
 
-    Args:
-        scalp_surface: a triangle-mesh representing the scalp
-        landmarks: positions of "Nz", "Iz", "LPA", "RPA"
-
+    Attributes:
+        scalp_surface (Surface): a triangle-mesh representing the scalp
+        landmarks_mm (LabeledPointCloud): positions of all 10-10 landmarks in mm
+        vtk_mesh (vtk.vtkPolyData): the scalp surface as a VTK mesh
+        lines (List[np.ndarray]): points along the lines connecting the landmarks
     """
 
     @validate_schemas
     def __init__(self, scalp_surface: Surface, landmarks: LabeledPointCloud):
+        """Initialize the LandmarksBuilder1010.
+
+        Args:
+            scalp_surface (Surface): a triangle-mesh representing the scalp
+            landmarks (LabeledPointCloud): positions of "Nz", "Iz", "LPA", "RPA"
+        """
         if isinstance(scalp_surface, TrimeshSurface):
             scalp_surface = VTKSurface.from_trimeshsurface(scalp_surface)
 
@@ -144,6 +151,7 @@ class LandmarksBuilder1010:
         return highest_vertices.mean(axis=0)
 
     def _estimate_cranial_vertex_from_lines(self):
+        """Estimate the cranial vertex by intersecting lines through the head."""
         if "Cz" in self.landmarks_mm.label:
             cz1 = self.landmarks_mm.loc["Cz"].values
             # FIXME remove Cz from landmarks
@@ -184,6 +192,14 @@ class LandmarksBuilder1010:
     def _add_landmarks_along_line(
         self, triangle_labels: List[str], labels: List[str], dists: List[float]
     ):
+        """Add landmarks along a line defined by three landmarks.
+
+        Args:
+            triangle_labels (List[str]): Labels of the three landmarks defining the line
+            labels (List[str]): Labels for the new landmarks
+            dists (List[float]): Distances along the line where the new landmarks should
+                be placed.
+        """
         assert len(triangle_labels) == 3
         assert len(labels) == len(dists)
         assert all([label in self.landmarks_mm.label for label in triangle_labels])
@@ -213,6 +229,7 @@ class LandmarksBuilder1010:
         self.lines.append(points)
 
     def build(self):
+        """Construct the 10-10-system on the scalp surface."""
         warnings.warn("WIP: distance calculation around ears")
 
         cz = self._estimate_cranial_vertex_from_lines()
@@ -284,6 +301,7 @@ class LandmarksBuilder1010:
         return self.landmarks_mm.pint.quantify()
 
     def plot(self):
+        """Plot scalp surface with landmarks."""
         plt = pv.Plotter()
         cedalion.plots.plot_surface(plt, self.scalp_surface)
         cedalion.plots.plot_labeled_points(plt, self.landmarks_mm.pint.quantify())
@@ -293,3 +311,72 @@ class LandmarksBuilder1010:
             plt.add_mesh(lines, color="m")
 
         plt.show()
+
+
+def order_ref_points_6(landmarks: xr.DataArray, twoPoints: str) -> xr.DataArray:
+    """Reorder a set of six landmarks based on spatial relationships and give labels.
+
+    Args:
+        landmarks (xr.DataArray): coordinates for six landmark points
+        twoPoints (str): two reference points ('Nz' or 'Iz') for orientation.
+
+    Returns:
+        xr.DataArray: the landmarks ordered as "Nz", "Iz", "RPA", "LPA", "Cz"
+    """
+
+    # Validate input parameters
+    if len(landmarks.label) != 6 or twoPoints not in ["Nz", "Iz"]:
+        raise ValueError("Invalid input parameters")
+
+    outReference = landmarks.values  # Extract the numerical values for computation
+
+    # Compute pairwise distances efficiently
+    distances = np.linalg.norm(
+        outReference[:, np.newaxis, :] - outReference[np.newaxis, :, :], axis=2
+    )
+    np.fill_diagonal(distances, np.inf)  # Ignore self-distances by setting them to inf
+
+    # Find two closest points
+    close1, close2 = np.unravel_index(np.argmin(distances), distances.shape)
+
+    # Reset distances for closest points to find the opposite
+    distances[range(len(outReference)), range(len(outReference))] = 0
+    opposite = np.argmax(distances[close1])
+
+    # Determine Cz as the point closest to the plane defined by
+    # close1, close2, and opposite
+    v1, v2 = (
+        outReference[close1] - outReference[opposite],
+        outReference[close2] - outReference[opposite],
+    )
+    cp = np.cross(v1, v2)
+    d = np.dot(cp, outReference[close1])
+    plane_distances = np.abs(np.dot(outReference, cp) - d) / np.linalg.norm(cp)
+    plane_distances[[close1, close2, opposite]] = np.inf
+    Cz = np.argmin(plane_distances)
+
+    # Determine Nz and Iz based on the given 'twoPoints' label
+    Nz, Iz = (close1, opposite) if twoPoints == "Nz" else (opposite, close1)
+
+    # Determine Rpa and Lpa
+    remaining = set(range(6)) - {close1, close2, opposite, Cz}
+    cr = np.cross(
+        outReference[Nz] - outReference[Cz], outReference[Iz] - outReference[Cz]
+    )
+    cr /= np.linalg.norm(cr)
+    sorted_remaining = sorted(
+        remaining, key=lambda x: np.dot(cr, outReference[x] - outReference[Cz])
+    )
+
+    # Assuming the first is Lpa and the second is Rpa based on sorting
+    Rpa, Lpa = sorted_remaining[0], sorted_remaining[1]
+
+    # Creating the ordered DataArray for output
+    ordered_indices = [Nz, Iz, Rpa, Lpa, Cz]
+    ordered_landmarks = landmarks.isel(label=ordered_indices)
+
+    # Updating labels to reflect the new order
+    new_labels = ["Nz", "Iz", "RPA", "LPA", "Cz"]
+    ordered_landmarks["label"] = new_labels
+
+    return ordered_landmarks

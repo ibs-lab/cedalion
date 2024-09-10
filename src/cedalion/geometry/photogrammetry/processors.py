@@ -18,7 +18,13 @@ logger = logging.getLogger("cedalion")
 
 
 class ScanProcessor(ABC):
-    """Base class for all processors of photogrammetric scans."""
+    """Base class for all processors of photogrammetric scans.
+
+    Initial Contributors:
+        - Filip Jenko | filip.jenko06@gmail.com | 2023
+        - Eike Middell | middell@tu-berlin.de | 2024
+        - Masha Iudina | mashayudi@gmail.com | 2024
+    """
 
     @abstractmethod
     def process(self, surface: cdc.TrimeshSurface) -> xr.DataArray:
@@ -46,8 +52,7 @@ class ColoredStickerProcessorDetails:
     vertex_value: np.ndarray
 
     cfg_colors: dict[str, float]
-    # cfg_hue_threshold: float
-    # cfg_value_threshold: float
+    vertex_sat: np.ndarray
 
     def plot_cluster_circles(self):
         """Plot for each cluster the vertex coordinates in the sticker plan."""
@@ -82,9 +87,12 @@ class ColoredStickerProcessorDetails:
                 ax[i_ax].add_patch(circle)
                 ax[i_ax].set_xlim(-12, 12)
                 ax[i_ax].set_ylim(-12, 12)
-                ax[i_ax].set_title(rf"$\sigma_x$ {std_x:.2f} $\sigma_y$ {std_y:.2f}")
+                ax[i_ax].set_title(
+                    rf"$\sigma_x$ {std_x:.2f} $\sigma_y$ {std_y:.2f} $rad$ {r:.2f}"
+                )
 
-    def plot_vertex_colors(self):
+    # FIXME obsolete?
+    def plot_vertex_colors1(self):
         f, ax = p.subplots(1, 1, figsize=(20, 10))
         ax.scatter(
             self.vertex_hue,
@@ -98,6 +106,42 @@ class ColoredStickerProcessorDetails:
                 (h_min, v_min), h_max - h_min, v_max - v_min, color="k", fill=False
             )
             ax.add_patch(rect)
+
+    def plot_vertex_colors(self):
+        f = p.figure(figsize=(20, 20))
+        ax1 = f.add_subplot(211)  # First subplot with 3D projection
+        ax2 = f.add_subplot(212, projection="3d")  # Second subplot with 3D projection
+
+        # Plot for the first subplot
+        ax1.scatter(
+            self.vertex_hue,
+            self.vertex_value,
+            s=4,
+            c=self.vertex_colors.astype(float) / 255,
+        )
+
+        ax1.set_xlabel("Vertex Hue")
+        ax1.set_ylabel("Vertex Value")
+
+        for group_label, (h_min, h_max, v_min, v_max) in self.cfg_colors.items():
+            rect = p.Rectangle(
+                (h_min, v_min), h_max - h_min, v_max - v_min, color="k", fill=False
+            )
+            ax1.add_patch(rect)
+
+        # Plot for the second subplot (3D scatter plot)
+        ax2.scatter(
+            self.vertex_hue,
+            self.vertex_value,
+            self.vertex_sat,
+            s=4,
+            c=self.vertex_colors.astype(float) / 255,
+        )
+        ax2.set_xlabel("Vertex Hue")
+        ax2.set_ylabel("Vertex Value")
+        ax2.set_zlabel("Vertex Saturation")
+
+        p.show()
 
 
 class ColoredStickerProcessor(ScanProcessor):
@@ -165,6 +209,7 @@ class ColoredStickerProcessor(ScanProcessor):
         sticker_normals = []
         groups = []
         labels = []
+        types = []
 
         detail_coords = []
         detail_circles = []
@@ -174,8 +219,13 @@ class ColoredStickerProcessor(ScanProcessor):
             group_counter = 1
             group_mask = (v_min <= v) & (v <= v_max)
             group_mask &= (h_min <= h) & (h <= h_max)
+            group_mask &= 0.6 <= s
 
             class_vertices = surface.mesh.vertices[group_mask]  # shape=(nvertices, 3)
+
+            print(surface.mesh.vertices)
+            print(class_vertices)
+            print(group_name, (h_min, h_max, v_min, v_max))
 
             cluster_labels = DBSCAN(eps=0.2 * radius_mm).fit_predict(class_vertices)
 
@@ -244,7 +294,7 @@ class ColoredStickerProcessor(ScanProcessor):
                 std_threshold = 0.25 * radius_mm
                 if (std_x < std_threshold) or (std_y < std_threshold):
                     logger.debug(f"skipping non-circuluar cluster {label}")
-                    continue
+                    # continue
 
                 # find the minimum enclosing circle to find the sticker center.
                 # cv2 expects integer coordinates with shape
@@ -293,14 +343,39 @@ class ColoredStickerProcessor(ScanProcessor):
                 sticker_normals.append(normal)
                 groups.append(group_name)
                 labels.append(f"{group_name}-{group_counter:02d}")
+                types.append(
+                    cdc.PointType.LANDMARK
+                    if group_name == "L"
+                    else cdc.PointType.UNKNOWN
+                )
                 group_counter += 1
+
+        radii = np.array([circle[2] for circle in detail_circles])
+        mean_radius = np.mean(radii)
+
+        # Calculate the absolute differences from the mean radius
+        differences_from_mean = np.abs(radii - mean_radius)
+        print(differences_from_mean)
+        print(mean_radius)
+        sorted_indices = np.argsort(differences_from_mean)
+
+        # sorted_indices = sorted_indices[:46]
+        # FIXME the following errors lead tp ValueErros
+        """ detail_circles = np.array(detail_circles)[sorted_indices]
+        detail_coords = np.array(detail_coords)[sorted_indices]
+        detail_colors = np.array(detail_colors)[sorted_indices] """
+        sticker_centers = np.array(sticker_centers)[sorted_indices]
+        sticker_normals = np.array(sticker_normals)[sorted_indices]
+        labels = np.array(labels)[sorted_indices]
+        groups = np.array(groups)[sorted_indices]
+        types = np.array(types)[sorted_indices]
 
         sticker_centers = xr.DataArray(
             np.vstack(sticker_centers),
             dims=["label", surface.crs],
             coords={
                 "label": ("label", labels),
-                "type": ("label", [cdc.PointType.UNKNOWN] * len(labels)),
+                "type": ("label", types),
                 "group": ("label", groups),
             },
         ).pint.quantify("mm")
@@ -314,6 +389,8 @@ class ColoredStickerProcessor(ScanProcessor):
             },
         ).pint.quantify("1")
 
+        print("surface.crs", surface.crs)
+
         if details:
             csdetails = ColoredStickerProcessorDetails(
                 detail_coords,
@@ -323,7 +400,51 @@ class ColoredStickerProcessor(ScanProcessor):
                 h,
                 v,
                 self.colors,
+                s,
             )
             return sticker_centers, sticker_normals, csdetails
         else:
             return sticker_centers, sticker_normals
+
+
+@cdc.validate_schemas
+def geo3d_from_scan(
+    scalp_coords: cdt.LabeledPointCloud, landmarks: cdt.LabeledPointCloud
+):
+    """Creates a geo3D with optode and landmark positions from photogrammetric scans.
+
+    Args:
+        scalp_coords: 3D coordinates of optodes on the scalp from photogrammetric
+            coregistration.
+        landmarks: 3D coordinates of landmarks on the scalp from photogrammetric
+            coregistration.
+
+    Returns:
+        geo3D with optode and landmark positions
+
+    Initial Contributors:
+        - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2024
+    """
+
+    # FIXME: what to do with 10-10 landmarks in input geo3d?
+
+    # merge landmarks and scalp_coords
+    geo3d = xr.concat([scalp_coords, landmarks], dim="label")
+
+    # iterate through all points and in type set PointType if PointType.UNKNOWN
+    for label in geo3d.label:
+        point = geo3d.sel(label=label)
+        if point.coords["type"] == cdc.PointType.UNKNOWN:
+            # Check if point is a source, detector or landmark by looking up its label.
+            # Set the PointType accordingly.
+            if (np.char.find(point.coords["label"].values, "S") != -1).any():
+                geo3d["type"].loc[{"label": label}] = cdc.PointType.SOURCE
+            elif (np.char.find(point.coords["label"].values, "D") != -1).any():
+                geo3d["type"].loc[{"label": label}] = cdc.PointType.DETECTOR
+            elif (np.char.find(point.coords["label"].values, "L") != -1).any():
+                geo3d["type"].loc[{"label": label}] = cdc.PointType.LANDMARK
+
+    # add mm units
+    geo3d.attrs.update({"units": "mm"})
+
+    return geo3d
