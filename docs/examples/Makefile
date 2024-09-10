@@ -1,5 +1,4 @@
-EXAMPLE_NOTEBOOKS = 
-					00_test_installation.ipynb \
+EXAMPLE_NOTEBOOKS = 00_test_installation.ipynb \
 					10_xarray_datastructs_fnirs.ipynb \
 					11_recording.ipynb \
 					12_plots_example.ipynb \
