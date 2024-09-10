@@ -1,6 +1,6 @@
 EXAMPLE_NOTEBOOKS = 00_test_installation.ipynb \
 					10_xarray_datastructs_fnirs.ipynb \
-					11_recording.ipynb \
+					11_recording_container.ipynb \
 					12_plots_example.ipynb \
 					20 scalp_coupling_index.ipynb \
 					31_glm_basis_functions.ipynb \
