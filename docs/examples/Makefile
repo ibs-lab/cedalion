@@ -4,8 +4,8 @@ EXAMPLE_NOTEBOOKS = 00_test_installation.ipynb \
 					12_plots_example.ipynb \
 					20_scalp_coupling_index.ipynb \
 					31_glm_basis_functions.ipynb \
-					32_glm_illustrative_example.ipynb \
-					33_glm_fingertapping_example.ipynb \
+					32_glm_fingertapping_example.ipynb \
+					33_glm_illustrative_example.ipynb \
 					34_store_hrfs_in_snirf_file.ipynb \
 					40_image_reconstruction.ipynb \
 					41_photogrammetric_optode_coregistration.ipynb \
