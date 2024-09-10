@@ -81,6 +81,20 @@ def psp(
     window_length: Annotated[Quantity, "[time]"],
     psp_thresh: float,
 ):
+    """Calculate the phase slope index (PSP) metric.
+
+    Args:
+        amplitudes (NDTimeSeries): input time
+            series
+        window_length (Quantity): size of the computation window
+        psp_thresh (float): if the calculated PSP metric falls below this threshold then the
+            corresponding time window should be excluded.
+
+    Returns:
+        A tuple (psp, psp_mask), where psp is a DataArray with coords from the input
+        NDTimeseries containing the PSP metric. psp_mask is a boolean mask DataArray
+        with coords from psp, true where psp_thresh is met.
+    """
     # FIXME make these configurable
     cardiac_fmin = 0.5 * units.Hz
     cardiac_fmax = 2.5 * units.Hz
@@ -153,7 +167,14 @@ def psp(
 
 @cdc.validate_schemas
 def gvtd(amplitudes: NDTimeSeries):
-    """Calculate GVTD metric."""
+    """Calculate GVTD metric.
+
+    Args:
+        amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
+            series
+    Returns:
+        A DataArray with coords from the input NDTimeseries containing the GVTD metric.
+    """
 
     fcut_min = 0.01
     fcut_max = 0.5
@@ -517,7 +538,16 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
 def detect_outliers_std(
     ts: cdt.NDTimeSeries, t_window: Annotated[Quantity, "[time]"], iqr_threshold=2
 ):
-    """Detect outliers in fNIRSdata based on standard deviation of signal."""
+    """Detect outliers in fNIRSdata based on standard deviation of signal.
+
+    Args:
+        ts (NDTimeSeries): input time series
+        t_window (Quantity): window size for standard deviation
+        iqr_threshold: threshold for IQR based outlier detection. Default is 2.
+
+    Returns:
+        A DataArray with coords from the input NDTimeseries containing the outlier mask.
+    """
 
     ts = ts.pint.dequantify()
     fs = freq.sampling_rate(ts)
@@ -551,7 +581,15 @@ def detect_outliers_std(
 
 @cdc.validate_schemas
 def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
-    """Detect outliers in fNIRSdata based on gradient of signal."""
+    """Detect outliers in fNIRSdata based on gradient of signal.
+
+    Args:
+        ts (NDTimeSeries): input time series
+        iqr_threshold: threshold for IQR based outlier detection. Default is 1.5.
+
+    Returns:
+        A DataArray with coords from the input NDTimeseries containing the outlier mask.
+    """
 
     ts = ts.pint.dequantify()
 
@@ -594,6 +632,17 @@ def detect_outliers(
     iqr_threshold_std : float =2,
     iqr_threshold_grad : float =1.5,
 ):
+    """Detect outliers based on standard deviation and gradient of signal.
+
+    Args:
+        ts (NDTimeSeries): input time series
+        t_window_std (Quantity): window size for standard deviation
+        iqr_threshold_std: threshold for IQR based outlier detection in standard deviation
+        iqr_threshold_grad: threshold for IQR based outlier detection in gradient
+
+    Returns:
+        A DataArray with coords from the input NDTimeseries containing the outlier mask.
+    """
     mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
     mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
 
@@ -603,11 +652,15 @@ def detect_outliers(
 def _mask1D_to_segments(mask: ArrayLike):
     """Find consecutive segments for a boolean mask.
 
-    Given a boolean mask, this function returns an integer array `segements` of
-    shape (nsegments,3) in which
-    - segments[:,0] is the first index of the segment
-    - segments[:,1]-1 is the last index of the segment and
-    - segments[:,2] is the integer-converted mask value in that segment
+    Args:
+        mask (ArrayLike): boolean mask
+
+    Returns:
+        Given a boolean mask, this function returns an integer array `segments` of
+        shape (nsegments,3) in which
+        - segments[:,0] is the first index of the segment
+        - segments[:,1]-1 is the last index of the segment and
+        - segments[:,2] is the integer-converted mask value in that segment
     """
 
     # FIXME decide how to index:
@@ -625,6 +678,16 @@ def _mask1D_to_segments(mask: ArrayLike):
 
 
 def _calculate_snr(ts, fs, segments):
+    """Calculate signal to noise ratio for a time series.
+
+    Args:
+        ts (ArrayLike): Time series
+        fs (float): Sampling rate
+        segments (ArrayLike): Segments of the time series
+
+    Returns:
+        float: Signal to noise ratio
+    """
     # Calculate signal to noise ratio by considering only longer segments.
     # Only segments longer than 3s are used. Segments may be clean or tainted.
     long_seg_snr = [
@@ -643,6 +706,16 @@ def _calculate_snr(ts, fs, segments):
     return snr
 
 def _calculate_delta_threshold(ts, segments, threshold_samples):
+    """Calculate delta threshold for a time series.
+
+    Args:
+        ts (ArrayLike): Time series
+        segments (ArrayLike): Segments of the time series
+        threshold_samples (int): Threshold samples
+
+    Returns:
+        float: Delta threshold
+    """
     # for long segments (>threshold_samples (0.5s)) that are not marked as artifacts
     # calculate the absolute differences of samples that are threshold_samples away
     # from each other
@@ -663,6 +736,16 @@ def _calculate_delta_threshold(ts, segments, threshold_samples):
 
 
 def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
+    """Detect baseline shifts in fNIRS data.
+
+    Args:
+        ts (NDTimeSeries): input time series
+        outlier_mask (NDTimeSeries): boolean mask indicating outliers
+
+    Returns:
+        A DataArray with coords from the input NDTimeseries containing the baseline
+            shift mask.
+    """
     ts = ts.pint.dequantify()
 
     #ts = ts.stack(measurement=["channel", "wavelength"]).sortby("wavelength")

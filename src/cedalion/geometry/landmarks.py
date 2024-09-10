@@ -111,14 +111,21 @@ def _intersect_mesh_with_triangle(
 class LandmarksBuilder1010:
     """Construct the 10-10-system on scalp surface based on :cite:t:`Oostenveld2001`.
 
-    Args:
-        scalp_surface: a triangle-mesh representing the scalp
-        landmarks: positions of "Nz", "Iz", "LPA", "RPA"
-
+    Attributes:
+        scalp_surface (Surface): a triangle-mesh representing the scalp
+        landmarks_mm (LabeledPointCloud): positions of all 10-10 landmarks in mm
+        vtk_mesh (vtk.vtkPolyData): the scalp surface as a VTK mesh
+        lines (List[np.ndarray]): points along the lines connecting the landmarks
     """
 
     @validate_schemas
     def __init__(self, scalp_surface: Surface, landmarks: LabeledPointCloud):
+        """Initialize the LandmarksBuilder1010.
+
+        Args:
+            scalp_surface (Surface): a triangle-mesh representing the scalp
+            landmarks (LabeledPointCloud): positions of "Nz", "Iz", "LPA", "RPA"
+        """
         if isinstance(scalp_surface, TrimeshSurface):
             scalp_surface = VTKSurface.from_trimeshsurface(scalp_surface)
 
@@ -144,6 +151,7 @@ class LandmarksBuilder1010:
         return highest_vertices.mean(axis=0)
 
     def _estimate_cranial_vertex_from_lines(self):
+        """Estimate the cranial vertex by intersecting lines through the head."""
         if "Cz" in self.landmarks_mm.label:
             cz1 = self.landmarks_mm.loc["Cz"].values
             # FIXME remove Cz from landmarks
@@ -184,6 +192,14 @@ class LandmarksBuilder1010:
     def _add_landmarks_along_line(
         self, triangle_labels: List[str], labels: List[str], dists: List[float]
     ):
+        """Add landmarks along a line defined by three landmarks.
+
+        Args:
+            triangle_labels (List[str]): Labels of the three landmarks defining the line
+            labels (List[str]): Labels for the new landmarks
+            dists (List[float]): Distances along the line where the new landmarks should
+                be placed.
+        """
         assert len(triangle_labels) == 3
         assert len(labels) == len(dists)
         assert all([label in self.landmarks_mm.label for label in triangle_labels])
@@ -213,6 +229,7 @@ class LandmarksBuilder1010:
         self.lines.append(points)
 
     def build(self):
+        """Construct the 10-10-system on the scalp surface."""
         warnings.warn("WIP: distance calculation around ears")
 
         cz = self._estimate_cranial_vertex_from_lines()
@@ -300,11 +317,11 @@ def order_ref_points_6(landmarks: xr.DataArray, twoPoints: str) -> xr.DataArray:
     """Reorder a set of six landmarks based on spatial relationships and give labels.
 
     Args:
-        landmarks: coordinates for six landmark points
-        twoPoints: two reference points ('Nz' or 'Iz') for orientation.
+        landmarks (xr.DataArray): coordinates for six landmark points
+        twoPoints (str): two reference points ('Nz' or 'Iz') for orientation.
 
     Returns:
-        the landmarks ordered as "Nz", "Iz", "RPA", "LPA", "Cz"
+        xr.DataArray: the landmarks ordered as "Nz", "Iz", "RPA", "LPA", "Cz"
     """
 
     # Validate input parameters

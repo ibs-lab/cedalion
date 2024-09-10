@@ -320,11 +320,11 @@ def max_corr_short_channel(ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries
     correleation coefficient in any wavelength or chromophore.
 
     Args:
-        ts_long: time series of long channels
-        ts_short: time series of short channels
+        ts_long (NDTimeSeries): time series of long channels
+        ts_short (NDTimeSeries): time series of short channels
 
     Returns:
-        channel-wise regressors
+        xr.DataArray: channel-wise regressors
     """
 
     dim3 = xrutils.other_dim(ts_long, "channel", "time")

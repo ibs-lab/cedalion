@@ -6,6 +6,14 @@ import numpy as np
 
 
 def trimesh_to_vtk_polydata(mesh: trimesh.Trimesh):
+    """Convert a Trimesh object to a VTK PolyData object.
+
+    Args:
+        mesh (trimesh.Trimesh): The input trimesh object.
+
+    Returns:
+        vtk.vtkPolyData: The converted VTK PolyData object.
+    """
     ntris, ndim_cells = mesh.faces.shape
     nvertices, ndim_vertices = mesh.vertices.shape
 
@@ -45,6 +53,14 @@ def trimesh_to_vtk_polydata(mesh: trimesh.Trimesh):
 
 
 def pyvista_polydata_to_trimesh(polydata: pv.PolyData) -> trimesh.Trimesh:
+    """Convert a PyVista PolyData object to a Trimesh object.
+
+    Args:
+        polydata (pv.PolyData): The input PyVista PolyData object.
+
+    Returns:
+        trimesh.Trimesh: The converted Trimesh object.
+    """
     vertices = polydata.points
     faces = polydata.regular_faces
 

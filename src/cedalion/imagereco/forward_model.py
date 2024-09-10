@@ -110,6 +110,8 @@ class TwoSurfaceHeadModel:
                 the scalp surface.
             smoothing(float): Smoothing factor for the brain and scalp surfaces.
             brain_face_count (Optional[int]): Number of faces for the brain surface.
+            scalp_face_count (Optional[int]): Number of faces for the scalp surface.
+            fill_holes (bool): Whether to fill holes in the segmentation masks.
         """
 
         # load segmentation mask
@@ -372,7 +374,7 @@ class TwoSurfaceHeadModel:
         """Save the head model to a folder.
 
         Args:
-            foldername : Folder to save the head model into.
+            foldername (str): Folder to save the head model into.
 
         Returns:
             None
@@ -407,10 +409,10 @@ class TwoSurfaceHeadModel:
         """Load the head model from a folder.
 
         Args:
-            foldername : Folder to load the head model from.
+            foldername (str): Folder to load the head model from.
 
         Returns:
-            Loaded head model.
+            TwoSurfaceHeadModel: Loaded head model.
         """
 
         # Check if all files exist
@@ -531,7 +533,7 @@ class TwoSurfaceHeadModel:
             vec = np.zeros(self.scalp.nvertices)
             vec[idx[0,0]] = 1
             voxel_idx = np.argwhere(self.voxel_to_vertex_scalp @ vec == 1)[:,0]
-           
+
             if len(voxel_idx) > 0:
                 # Get voxel coordinates from voxel indices
                 try: 
@@ -572,26 +574,20 @@ class ForwardModel:
     ...
 
     Args:
-        head_model : TwoSurfaceHeadModel
-            Head model containing voxel projections to brain and scalp surfaces.
-        optode_pos : cdt.LabeledPointCloud
-            Optode positions.
-        optode_dir : xr.DataArray
-            Optode orientations (directions of light beams).
-        tissue_properties : xr.DataArray
-            Tissue properties for each tissue type.
-        volume : xr.DataArray
-            Voxelated head volume from segmentation masks.
-        unitinmm : float
-            Unit of head model, optodes expressed in mm.
-        measurement_list : pd.DataFrame
-            List of measurements of experiment with source, detector, channel and
-            wavelength.
+    head_model (TwoSurfaceHeadModel): Head model containing voxel projections to brain
+        and scalp surfaces.
+    optode_pos (cdt.LabeledPointCloud): Optode positions.
+    optode_dir (xr.DataArray): Optode orientations (directions of light beams).
+    tissue_properties (xr.DataArray): Tissue properties for each tissue type.
+    volume (xr.DataArray): Voxelated head volume from segmentation masks.
+    unitinmm (float): Unit of head model, optodes expressed in mm.
+    measurement_list (pd.DataFrame): List of measurements of experiment with source,
+        detector, channel, and wavelength.
 
     Methods:
-        compute_fluence(nphoton)
+        compute_fluence(nphoton):
             Compute fluence for each channel and wavelength from photon simulation.
-        compute_sensitivity(fluence_all, fluence_at_optodes)
+        compute_sensitivity(fluence_all, fluence_at_optodes):
             Compute sensitivity matrix from fluence.
     """
 
@@ -655,14 +651,11 @@ class ForwardModel:
         """Run MCX simulation to get fluence for one optode.
 
         Args:
-            i_optode : int
-                Index of the optode.
-            nphoton : int
-                Number of photons to simulate.
+            i_optode (int): Index of the optode.
+            nphoton  (int): Number of photons to simulate.
 
         Returns:
-            np.ndarray
-                Fluence in each voxel.
+            np.ndarray: Fluence in each voxel.
         """
 
         cfg = {
@@ -694,14 +687,11 @@ class ForwardModel:
         """Fluence caused by one optode at the positions of all other optodes.
 
         Args:
-            fluence : np.ndarray
-                Fluence in each voxel.
-            emitting_opt : int
-                Index of the emitting optode.
+            fluence (np.ndarray): Fluence in each voxel.
+            emitting_opt (int): Index of the emitting optode.
 
         Returns:
-            np.ndarray
-                Fluence at all optode positions.
+            np.ndarray: Fluence at all optode positions.
         """
 
         n_optodes = len(self.optode_pos)
@@ -736,12 +726,10 @@ class ForwardModel:
         """Compute fluence for each channel and wavelength using MCX package.
 
         Args:
-            nphoton : int
-                Number of photons to simulate.
+            nphoton (int): Number of photons to simulate.
 
         Returns:
-            xr.DataArray
-                Fluence in each voxel for each channel and wavelength.
+            xr.DataArray: Fluence in each voxel for each channel and wavelength.
 
         References:
             (:cite:t:`Fang2009`) Qianqian Fang and David A. Boas, "Monte Carlo
@@ -823,12 +811,11 @@ class ForwardModel:
         """Compute fluence for each channel and wavelength using NIRFASTer package.
 
         Args:
-            meshingparam : ff.utils.MeshingParam
-                Parameters to be used by the CGAL mesher. Note:they should all be double
+            meshingparam (ff.utils.MeshingParam) Parameters to be used by the CGAL
+                mesher. Note: they should all be double
 
         Returns:
-        xr.DataArray
-            Fluence in each voxel for each channel and wavelength.
+        xr.DataArray: Fluence in each voxel for each channel and wavelength.
 
         References:
             (:cite:t:`Dehghani2009`) Dehghani, Hamid, et al. "Near infrared optical
@@ -1015,14 +1002,12 @@ class ForwardModel:
         """Compute sensitivity matrix from fluence.
 
         Args:
-            fluence_all : xr.DataArray
-                Fluence in each voxel for each wavelength.
-            fluence_at_optodes : xr.DataArray
-                Fluence at all optode positions for each wavelength.
+            fluence_all (xr.DataArray): Fluence in each voxel for each wavelength.
+            fluence_at_optodes (xr.DataArray): Fluence at all optode positions for each
+                wavelength.
 
         Returns:
-            xr.DataArray
-                Sensitivity matrix for each channel, vertex and wavelength.
+            xr.DataArray: Sensitivity matrix for each channel, vertex and wavelength.
         """
 
         channels = self.measurement_list.channel.unique().tolist()
