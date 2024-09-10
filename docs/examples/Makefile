@@ -4,8 +4,6 @@ EXAMPLE_NOTEBOOKS =
 					11_recording.ipynb \
 					12_plots_example.ipynb \
 					20 scalp_coupling_index.ipynb \
-					#21_data_quality_and_pruning.ipynb
-					#22_motion_artefacts_and_correction.ipynb
 					31_glm_basis_functions.ipynb \
 					32_glm_illustrative_example.ipynb \
 					33_glm_fingertapping_example.ipynb \
@@ -13,8 +11,10 @@ EXAMPLE_NOTEBOOKS =
 					40_image_reconstruction.ipynb \
 					41_photogrammetric_optode_coregistration.ipynb \
 					42_1010_system.ipynb \
-					50_finger_tapping_lda_classification.ipynb \
+					50_finger_tapping_lda_classification.ipynb
 					
+					#21_data_quality_and_pruning.ipynb \
+					#22_motion_artefacts_and_correction.ipynb \
 
 
 .PHONY: notebooks
