@@ -8,13 +8,15 @@ import pandas as pd
 import scipy.sparse
 import trimesh
 import xarray as xr
+from scipy.spatial import KDTree
+from scipy.sparse import coo_array
 
 import cedalion
 import cedalion.dataclasses as cdc
 from cedalion.geometry.registration import register_trans_rot_isoscale
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-from cedalion.geometry.segmentation import surface_from_segmentation, voxels_from_segmentation
+from cedalion.geometry.segmentation import surface_from_segmentation, voxels_from_segmentation, cell_coordinates
 from cedalion.imagereco.utils import map_segmentation_mask_to_surface, reduce_and_map_brain_voxels
 
 from .tissue_properties import get_tissue_properties
@@ -191,6 +193,54 @@ class OneSurfaceFewVoxelsHeadModel:
             voxel_to_few_voxel_brain=voxel_to_few_voxel_brain,
             voxel_to_vertex_scalp=voxel_to_vertex_scalp,
         )
+
+    def reduce_voxels(self, Adot: xr.DataArray, sensitivity_threshold: float = 1e-9):
+        """Reduce the number of brain voxels head model to voxels with sensitivity 
+        larger than 0 as given in sensitivity matrix Adot.
+
+        Parameters
+        ----------
+        Adot : xr.DataArray
+            Sensitivity matrix.
+        sensitivity_threshold : float
+            Threshold for sensitivity values to be considered.
+
+        Returns
+        -------
+        OneSurfaceFewVoxelsHeadModel
+            Reduced head model.
+        """
+        Adot_brain = np.array(Adot[:,Adot.is_brain,:])
+        Adot_summed = np.sum(Adot_brain, axis=2)
+        Adot_summed = np.sum(Adot_summed, axis=0)
+        assert Adot_summed.shape[0] == self.brain.voxels.shape[0]
+        mask = (Adot_summed > sensitivity_threshold)
+        voxels = self.brain.voxels[mask]
+        # new mapping needed
+        kdtree = KDTree(voxels)
+        brain_seg_types = ["gm", "wm"]
+        brain_mask = self.segmentation_masks.sel(segmentation_type=brain_seg_types).any("segmentation_type")
+        cell_coords = cell_coordinates(brain_mask, flat=True)
+        cell_coords = cell_coords.points.apply_transform(self.t_ijk2ras) 
+        cell_coords = cell_coords.pint.to(self.brain.units).pint.dequantify()  
+        ncells = cell_coords.sizes["label"]
+        nvoxels = voxels.shape[0]
+
+        # Find the closest vertex for each cell
+        cell_indices = np.flatnonzero(brain_mask.values) 
+        dists, vertex_indices = kdtree.query(
+            cell_coords.values[cell_indices, :], workers=-1
+        )
+       
+        map_voxel_to_vertex = coo_array(
+            (np.ones(len(cell_indices)), (cell_indices, vertex_indices)), shape=(ncells, nvoxels))
+        
+        self.voxel_to_few_voxel_brain =  self.voxel_to_few_voxel_brain @ mask
+        print('Reduced %d brain voxels to %d.' % (self.brain.voxels.shape[0], voxels.shape[0]))
+        self.brain.voxels = voxels
+
+        return self
+
 
     @property
     def crs(self):
