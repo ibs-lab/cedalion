@@ -50,6 +50,15 @@ def surface_from_segmentation(
 
 
 def cell_coordinates(volume, flat: bool = False):
+    """Create a DataArray with the coordinates of the cells in a volume.
+
+    Args:
+        volume (xr.DataArray): The volume to get the cell coordinates from.
+        flat (bool): Whether to flatten the coordinates.
+
+    Returns:
+        xr.DataArray: A DataArray with the coordinates of the cells in the volume.
+    """
     # coordinates in voxel space
     i = np.arange(volume.shape[0])
     j = np.arange(volume.shape[1])

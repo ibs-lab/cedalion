@@ -38,8 +38,8 @@ def register_trans_rot(
     between the two point clouds.
 
     Args:
-        coords_target: Target point cloud.
-        coords_trafo: Source point cloud.
+        coords_target (LabeledPointCloud): Target point cloud.
+        coords_trafo (LabeledPointCloud): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -109,6 +109,15 @@ def register_trans_rot(
 
 
 def _std_distance_to_cog(points: cdt.LabeledPointCloud):
+    """Calculate the standard deviation of the distances to the center of gravity.
+
+    Args:
+        points: Point cloud for which to calculate the standard deviation of the 
+            distances to the center of gravity.
+
+    Returns:
+        float: Standard deviation of the distances to the center of gravity.
+    """
     dists = xrutils.norm(points - points.mean("label"), points.points.crs)
     return dists.std("label").item()
 
@@ -124,8 +133,8 @@ def register_trans_rot_isoscale(
     between the two point clouds.
 
     Args:
-        coords_target: Target point cloud.
-        coords_trafo: Source point cloud.
+        coords_target (LabeledPointCloud): Target point cloud.
+        coords_trafo (LabeledPointCloud): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -186,10 +195,10 @@ def gen_xform_from_pts(p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
     """Calculate the affine transformation matrix T that transforms p1 to p2.
 
     Args:
-        p1: Source points (p x m) where p is the number of points and m is the number of
-            dimensions.
-        p2: Target points (p x m) where p is the number of points and m is the number of
-            dimensions.
+        p1 (np.ndarray): Source points (p x m) where p is the number of points and m is
+            the number of dimensions.
+        p2 (np.ndarray): Target points (p x m) where p is the number of points and m is
+            the number of dimensions.
 
     Returns:
         Affine transformation matrix T.
@@ -231,6 +240,19 @@ def register_icp(
     niterations=1000,
     random_sample_fraction=0.5,
 ):
+    """Iterative Closest Point algorithm for registration.
+
+    Args:
+        surface (Surface): Surface mesh to which to register the points.
+        landmarks (LabeledPointCloud): Landmarks to use for registration.
+        geo3d (LabeledPointCloud): Points to register to the surface.
+        niterations (int): Number of iterations for the ICP algorithm (default 1000).
+        random_sample_fraction (float): Fraction of points to use in each iteration
+            (default 0.5).
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Tuple containing the losses and transformations
+    """
     units = "mm"
     landmarks_mm = landmarks.pint.to(units).points.to_homogeneous().pint.dequantify()
     geo3d_mm = geo3d.pint.to(units).points.to_homogeneous().pint.dequantify()
@@ -470,6 +492,15 @@ def find_spread_points(points_xr : xr.DataArray) -> np.ndarray:
 
 
 def simple_scalp_projection(geo3d : cdt.LabeledPointCloud) -> cdt.LabeledPointCloud:
+    """Projects 3D coordinates onto a 2D plane using a simple scalp projection.
+
+    Args:
+        geo3d (LabeledPointCloud): 3D coordinates of points to project. Requires the
+            landmarks Nz, LPA, and RPA.
+
+    Returns:
+        A LabeledPointCloud containing the 2D coordinates of the projected points.
+    """
     for label in ["LPA", "RPA", "Nz"]:
         if label not in geo3d.label:
             raise ValueError("this projection needs the landmarks Nz, LPA and RPA.")
