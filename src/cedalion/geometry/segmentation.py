@@ -24,6 +24,20 @@ def surface_from_segmentation(
     isovalue=0.9,
     fill_holes_in_mask=False,
 ) -> cdc.Surface:
+    """Create a surface from a segmentation mask.
+
+    Args:
+        segmentation_mask (xr.DataArray): Segmentation mask with dimensions segmentation
+            type, i, j, k.
+        segmentation_types (List[str]): A list of segmentation types to include in the
+            surface.
+        isovalue (Float): The isovalue to use for the marching cubes algorithm.
+        fill_holes_in_mask (Bool): Whether to fill holes in the mask before creating the
+            surface.
+
+    Returns:
+        A cedalion.Surface object.
+    """
     combined_mask = (
         segmentation_mask.sel(segmentation_type=segmentation_types)
         .any("segmentation_type")

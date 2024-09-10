@@ -2,10 +2,13 @@ import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 from scipy.interpolate import interp1d
+from cedalion import units
 
+import cedalion
+import cedalion.typing as cdt
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
-from importlib.resources import files
+import cedalion.data
 
 
 def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
@@ -45,9 +48,8 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
             blood is x=150 g Hb/liter."
     """
     if spectrum == "prahl":
-        pkg = "cedalion.data"
-        resource = "prahl_absorption_spectrum.tsv"
-        with files(pkg).joinpath(resource).open("r") as fin:
+        path = cedalion.data.get("prahl_absorption_spectrum.tsv")
+        with path.open("r") as fin:
             coeffs = np.loadtxt(fin, comments="#")
 
         chromophores = ["HbO", "HbR"]
@@ -105,6 +107,15 @@ def int2od(amplitudes: xr.DataArray):
     Returns:
         od: (xr.DataArray, (time, channel,*): The optical density data.
     """
+    # check negative values in amplitudes and issue an error if yes
+    if np.any(amplitudes < 0):
+        raise AssertionError(
+            "Error: DataArray contains negative values. Please fix, for example by "
+            "setting them to NaN with "
+            "'amplitudes = amplitudes.where(amplitudes >= 0, np.nan)'"
+        )
+
+    # conversion to optical density
     od = -np.log(amplitudes / amplitudes.mean("time"))
     return od
 
@@ -141,8 +152,13 @@ def od2conc(
     dists = dists.pint.to("mm")
 
     # conc = Einv @ (optical_density / ( dists * dpf))
-    conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
+    if dpf[0] != 1:
+        conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
+    else:
+        conc = xr.dot(Einv, od / (dpf * 1*units.mm), dims=["wavelength"])
+
     conc = conc.pint.to("micromolar")
+    conc = conc.pint.quantify({"time": od.time.attrs["units"]})  # got lost in xr.dot
     conc = conc.rename("concentration")
 
     return conc
@@ -179,3 +195,30 @@ def beer_lambert(
     conc = od2conc(od, geo3d, dpf, spectrum)
 
     return conc
+
+
+def split_long_short_channels(
+    ts: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
+    distance_threshold: cedalion.Quantity = 1.5 * cedalion.units.cm,
+):
+    """Split a time series into two based on channel distances.
+
+    Args:
+        ts (cdt.NDTimeSeries) : Time series to split.
+        geo3d (cdt.LabeledPointCloud) : 3D coordinates of the channels.
+        distance_threshold (Quantity) : Distance threshold for splitting the channels.
+
+    Returns:
+        ts_long : time series with channel distances >= distance_threshold
+        ts_short : time series with channel distances < distance_threshold
+    """
+    dists = xrutils.norm(
+        geo3d.loc[ts.source] - geo3d.loc[ts.detector], dim=geo3d.points.crs
+    )
+
+    mask = dists < distance_threshold
+    ts_short = ts.sel(channel=mask)
+    ts_long = ts.sel(channel=~mask)
+
+    return ts_long, ts_short
