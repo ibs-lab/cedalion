@@ -12,25 +12,66 @@ import cedalion
 import cedalion.dataclasses as cdc
 
 
+def voxels_from_segmentation(
+    segmentation_mask: xr.DataArray,
+    segmentation_types: List[str],
+    isovalue=0.9,
+    fill_holes_in_mask=False,
+) -> cdc.Voxels:
+    """ Generate voxels from a segmentation mask.
+    
+    Parameters
+    ----------
+    segmentation_mask : xr.DataArray
+        Segmentation mask.
+    segmentation_types : List[str]
+        List of segmentation types.
+    isovalue : float, optional
+        Isovalue for marching cubes, by default 0.9.
+    fill_holes_in_mask : bool, optional
+        Fill holes in the mask, by default False.
+        
+    Returns
+    -------
+    cdc.Voxels  
+        Voxels in voxel space.
+    """
+    combined_mask = (
+        segmentation_mask.sel(segmentation_type=segmentation_types)
+        .any("segmentation_type")
+        .values
+    )
+
+    if fill_holes_in_mask:
+        combined_mask = binary_fill_holes(combined_mask).astype(combined_mask.dtype)
+
+    voxels = np.argwhere(combined_mask)
+
+    return cdc.Voxels(voxels, "ijk", cedalion.units.Unit("1"))
+
+
 def surface_from_segmentation(
     segmentation_mask: xr.DataArray,
     segmentation_types: List[str],
     isovalue=0.9,
     fill_holes_in_mask=False,
 ) -> cdc.Surface:
-    """Create a surface from a segmentation mask.
-
-    Args:
-        segmentation_mask (xr.DataArray): Segmentation mask with dimensions segmentation
-            type, i, j, k.
-        segmentation_types (List[str]): A list of segmentation types to include in the
-            surface.
-        isovalue (Float): The isovalue to use for the marching cubes algorithm.
-        fill_holes_in_mask (Bool): Whether to fill holes in the mask before creating the
-            surface.
-
-    Returns:
-        A cedalion.Surface object.
+	""" Generate a surface from a segmentation mask.
+    Parameters
+    ----------
+    segmentation_mask : xr.DataArray
+        Segmentation mask.
+    segmentation_types : List[str]
+        List of segmentation types.
+    isovalue : float, optional
+        Isovalue for marching cubes, by default 0.9.
+    fill_holes_in_mask : bool, optional
+        Fill holes in the mask, by default False.
+    
+    Returns
+    -------
+    cdc.Surface
+        Surface in voxel space.
     """
     combined_mask = (
         segmentation_mask.sel(segmentation_type=segmentation_types)
@@ -50,15 +91,19 @@ def surface_from_segmentation(
 
 
 def cell_coordinates(volume, flat: bool = False):
-    """Create a DataArray with the coordinates of the cells in a volume.
-
-    Args:
-        volume (xr.DataArray): The volume to get the cell coordinates from.
-        flat (bool): Whether to flatten the coordinates.
-
-    Returns:
-        xr.DataArray: A DataArray with the coordinates of the cells in the volume.
+	"""Generate cell coordinates from a volume.
+    Parameters
+    ----------
+    volume : np.ndarray
+        Volume.
+    flat : bool, optional
+        Flatten the coordinates, by default False.
+    Returns
+    -------
+    xr.DataArray
+        Cell coordinates.
     """
+
     # coordinates in voxel space
     i = np.arange(volume.shape[0])
     j = np.arange(volume.shape[1])
