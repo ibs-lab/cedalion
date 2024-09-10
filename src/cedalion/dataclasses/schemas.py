@@ -145,6 +145,21 @@ def build_labeled_points(
     labels: Optional[list[str]] = None,
     types: Optional[list[str]] = None,
 ):
+    """Build a labeled point cloud data array.
+
+    Args:
+        coordinates (ArrayLike, optional): The coordinates of the points. Defaults to None.
+        crs (str, optional): The coordinate system. Defaults to "pos".
+        units (Optional[pint.Unit | str], optional): The units of the coordinates.
+            Defaults to "1".
+        labels (Optional[list[str]], optional): The labels of the points. Defaults to
+            None.
+        types (Optional[list[str]], optional): The types of the points. Defaults to
+            None.
+
+    Returns:
+        xr.DataArray: The labeled point cloud data array.
+    """
     if coordinates is None:
         coordinates = np.zeros((0, 3), dtype=float)
     else:
