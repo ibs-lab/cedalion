@@ -11,7 +11,7 @@ import xarray as xr
 from matplotlib.patches import Rectangle, Circle, Ellipse
 from vtk.util.numpy_support import numpy_to_vtk
 import itertools
-
+from numpy.typing import ArrayLike
 import cedalion.nirs
 import cedalion.data
 import cedalion.dataclasses as cdc
@@ -444,7 +444,7 @@ class OptodeSelector:
                     sphere_actor = plotter.add_mesh(s, color=color)
                 self.actors.append(sphere_actor)
                 if self.labels is not None:
-                    plotter.add_point_labels(x[i_point].values, [str(labels[i_point])])
+                    plotter.add_point_labels(x[i_point].values, [str(self.labels[i_point])])
 
 
     def on_pick(self, picked_point):
@@ -538,8 +538,8 @@ class OptodeSelector:
 
 
 
-
-def scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, threshold_ind = None,
+# original implementation using a different and in principle superior projection method
+def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, threshold_ind = None,
                threshold_col = None, saturation=None, vmin=0, vmax=1, savePath = None, 
                remove_short=0, flagFontSize=0, flagMarkerSize=8):
     """Creates a 2D montage of optodes with channels coloured according to a given metric.
@@ -818,10 +818,10 @@ def plot_stim_markers(
         ax.add_patch(rect)
 
 
-def _simple_scalp_plot(
+def scalp_plot(
     ts: cdt.NDTimeSeries,
     geo3d: cdt.LabeledPointCloud,
-    metric: xr.DataArray,
+    metric: xr.DataArray | ArrayLike,
     ax,
     title : str | None = None,
     vmin: float | None = None,
@@ -829,10 +829,37 @@ def _simple_scalp_plot(
     cmap: str = "bwr",
     min_dist : Quantity | None = None,
     min_metric : float | None = None,
-    channel_lw : float = 4.,
+    channel_lw : float = 2.,
     optode_size : float = 36.,
     optode_labels : bool = False,
+    cb_label : str | None = None
 ):
+    """Creates a 2D plot of the head with channels coloured according to a given metric.
+
+    Args:
+        ts: a NDTimeSeries to provide channel definitions
+        geo3d: a LabeledPointCloud to provide the probe geometry
+        metric ((:class:`DataArray`, (channel,) | ArrayLike)): the scalar metric to be
+            plotted for each channel. If provided as a DataArray it needs a channel
+            dimension. If provided as a plain array or list it must have the same
+            length as ts.channel and the matching is done by position.
+        ax: the matplotlib.Axes object into which to draw
+        title: the axes title
+        vmin: the minimum value of the metric
+        vmax: the maximum value of the metric
+        cmap: the name of the colormap
+        min_dist: if provided channels below this distance threshold are not drawn
+        min_metric: if provided channels below this metric threshold are toned down
+        channel_lw: channel line width
+        optode_size: optode marker size
+        optode_labels: if True draw optode labels instead of markers
+
+    Initial Contributors:
+        - Laura Carlton | lcarlton@bu.edu | 2024
+        - Eike Middell | middell@tu-berlin.de | 2024
+    """
+
+
     geo2d = registration.simple_scalp_projection(geo3d)
     channel_dists = cedalion.nirs.channel_distances(ts, geo3d)
 
@@ -844,6 +871,9 @@ def _simple_scalp_plot(
         metric = xr.DataArray(metric, dims=["channel"], coords={"channel": ts.channel})
 
     metric_channels = set(metric.channel.values)
+
+    # FIXME use metric unit in colorbar label?
+    metric = metric.pint.dequantify()
 
     channel = ts.channel.values
     source = ts.source.values
@@ -903,8 +933,11 @@ def _simple_scalp_plot(
     s = geo2d.sel(label=geo2d.label.isin(list(used_sources)))
     d = geo2d.sel(label=geo2d.label.isin(list(used_detectors)))
     
+    COLOR_SOURCE = "#e41a1c" # colorbrewer red
+    COLOR_DETECTOR = "#377eb8" # colorbrewer blue
+
     if optode_labels:
-        for sd in [s, d]:
+        for sd, color in [(s, COLOR_SOURCE), (d, COLOR_DETECTOR)]:
             for i in range(len(sd)):
                 ax.text(
                     sd[i, 0],
@@ -913,6 +946,8 @@ def _simple_scalp_plot(
                     ha="center",
                     va="center",
                     fontsize="small",
+                    weight="semibold",
+                    color=color,
                     zorder=200)
     else:
         ax.scatter(
@@ -921,7 +956,7 @@ def _simple_scalp_plot(
             s=optode_size,
             marker="s",
             ec="k",
-            fc="#e41a1c",
+            fc=COLOR_SOURCE,
             zorder=100,
         )
         ax.scatter(
@@ -930,7 +965,7 @@ def _simple_scalp_plot(
             s=optode_size,
             marker="s",
             ec="k",
-            fc="#377eb8",
+            fc=COLOR_DETECTOR,
             zorder=100,
         )
 
@@ -945,6 +980,7 @@ def _simple_scalp_plot(
         ax=ax,
         shrink=0.6
     )
+    cb.set_label(cb_label)
 
     if title:
         ax.set_title(title)
