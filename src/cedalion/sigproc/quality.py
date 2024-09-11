@@ -688,7 +688,6 @@ def detect_outliers_std(
     ts = ts.pint.dequantify()
     fs = freq.sampling_rate(ts)
 
-    # window size in samples TODO t_window units
     window_size = int(np.round(fs * t_window))
 
     ts_lowpass = ts.cd.freq_filter(0, 0.5, butter_order=4)

@@ -7,7 +7,8 @@ from scipy.signal import savgol_filter
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-from cedalion import Quantity
+from cedalion.sigproc.frequency import sampling_rate
+from cedalion import units, Quantity
 
 from .quality import (detect_baselineshift, detect_outliers, id_motion,
                       id_motion_refine)
@@ -180,12 +181,15 @@ def compute_window(
 # FIXME frame_size -> unit
 #%% SPLINESG
 @cdc.validate_schemas
-def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity = 10 ):
+def motion_correct_splineSG(
+    fNIRSdata: cdt.NDTimeSeries,
+    frame_size: Quantity = 10 * units.s,
+):
     """Apply motion correction using spline interpolation and Savitzky-Golay filter.
 
     Args:
         fNIRSdata (cdt.NDTimeSeries): The fNIRS data to be motion corrected.
-        framesize_sec (Quantity): The size of the sliding window in seconds for the
+        frame_size (Quantity): The size of the sliding window in seconds for the
             Savitzky-Golay filter. Default is 10 seconds.
 
     Returns:
@@ -193,15 +197,17 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
         spline interpolation and Savitzky-Golay filter.
     """
 
-    fs = fNIRSdata.cd.sampling_rate
+    fs = sampling_rate(fNIRSdata)
 
-    M = detect_outliers(fNIRSdata, 1)
+    M = detect_outliers(fNIRSdata, 1 * units.s)
 
     tIncCh = detect_baselineshift(fNIRSdata, M)
 
     fNIRSdata = fNIRSdata.pint.dequantify()
     fNIRSdata_lpf2 = fNIRSdata.cd.freq_filter(0, 2, butter_order=4)
-    extend = int(np.round(12 * fs))  # extension for padding
+    
+    PADDING_TIME = 12 * units.s # FIXME configurable?
+    extend = int(np.round(PADDING_TIME  * fs))  # extension for padding
 
     # pad fNIRSdata and tIncCh for motion correction
     fNIRSdata_lpf2_pad = fNIRSdata_lpf2.pad(time=extend, mode="edge")
@@ -221,11 +227,11 @@ def motion_correct_splineSG(fNIRSdata:cdt.NDTimeSeries, framesize_sec:Quantity =
 
     # apply SG filter
     K = 3
-    framesize_sec = int(np.round(framesize_sec * fs))
-    if framesize_sec // 2 == 0: # % FIXME modulo?
-        framesize_sec = framesize_sec + 1
+    framesize_samples = int(np.round(frame_size * fs))
+    if framesize_samples % 2 == 0:
+        framesize_samples = framesize_samples + 1
 
-    dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_sec, K).T
+    dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_samples, K).T
 
     # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
     dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
