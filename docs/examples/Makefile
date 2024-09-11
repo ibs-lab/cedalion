@@ -2,6 +2,7 @@ EXAMPLE_NOTEBOOKS = 00_test_installation.ipynb \
 					10_xarray_datastructs_fnirs.ipynb \
 					11_recording_container.ipynb \
 					12_plots_example.ipynb \
+					13_data_structures_intro.ipynb \
 					20_scalp_coupling_index.ipynb \
 					31_glm_basis_functions.ipynb \
 					32_glm_fingertapping_example.ipynb \
@@ -10,6 +11,7 @@ EXAMPLE_NOTEBOOKS = 00_test_installation.ipynb \
 					40_image_reconstruction.ipynb \
 					41_photogrammetric_optode_coregistration.ipynb \
 					42_1010_system.ipynb \
+					43_crs_and_headmodel.ipynb \
 					50_finger_tapping_lda_classification.ipynb
 					
 					#21_data_quality_and_pruning.ipynb \
