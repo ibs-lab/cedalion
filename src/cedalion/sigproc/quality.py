@@ -115,7 +115,7 @@ def _psp_alternative(
     # window_len_samples large. The time dimension will contain the time coordinate of
     # the first sample in the window. Setting the stride size to the same value as the
     # window length will result in non-overlapping windows.
-    num_windows = int(np.ceil(amp.sizes['time'] / nsamples))
+    num_windows = int(np.floor(amp.sizes['time'] / nsamples))
 
     # Manually create windows
     windowed_data = []
@@ -124,16 +124,7 @@ def _psp_alternative(
         end = start + nsamples
         windowed_data.append(amp.isel(time=slice(start, end)))
 
-    # Stack the windows into a new dimension
-    # windowed_array = xr.concat(windowed_data, dim='window')
 
-    # trim_length = (amp.sizes['time'] // nsamples) * nsamples
-    # trimmed_amp = amp.isel(time=slice(0, trim_length))
-
-    windows = amp.rolling(time=nsamples, center=True).construct(
-        "window", stride=nsamples, drop=True
-    )
-    # windows = windows[:,:,:,1:] # drop the first window since it is just NaNs
     fs = amp.cd.sampling_rate
 
     psp = np.zeros([len(amp["channel"]), len(windowed_data)])
@@ -186,9 +177,10 @@ def _psp_alternative(
             psp[ch, w] = np.max(pxx[f<cardiac_fmax.magnitude])
 
     # keep dims channel and time
+    window_length = nsamples/fs
+    window_times = np.arange(0, num_windows*window_length, window_length)
+    psp_xr = xr.DataArray(psp, dims=["channel", "time"], coords={"channel" : amp.channel.values, "time" : window_times})
     
-    psp_xr = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
-
     # Apply threshold mask
     psp_mask = xrutils.mask(psp_xr, CLEAN)
     psp_mask = psp_mask.where(psp_xr > psp_thresh, other=TAINTED)
