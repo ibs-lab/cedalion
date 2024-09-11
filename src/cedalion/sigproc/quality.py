@@ -602,10 +602,6 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
         `pandas.DataFrame` that contains 1) channels with motion artifacts, 2) # of
         artifacts detected per channel and 3) fraction of artifacts/total time.
     """
-
-    # implementation expects artifacts to be marked as True
-    ma_mask = ma_mask == TAINTED
-
     # combine artifact masks (if multiple masks are provided).
     # Will result in a single mask containing all motion indicators
     mask = reduce(lambda x, y: x | y, ma_mask)
@@ -615,9 +611,9 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
         # find whether "wavelength" or "concentration" exists as a dimension in ma_mask
         # and collapse, otherwise assert an error
         if "wavelength" in ma_mask.dims:
-            ma_mask_new = ma_mask.any(dim="wavelength")
+            ma_mask_new = ma_mask.all(dim="wavelength")
         elif "concentration" in ma_mask.dims:
-            ma_mask_new = ma_mask.any(dim="concentration")
+            ma_mask_new = ma_mask.all(dim="concentration")
         else:
             raise ValueError(
                 "ma_mask must have either 'wavelength' "
@@ -626,13 +622,13 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
 
         ## --- extract motion artifact info --- ##
         # extract channels that had motion artifacts
-        ch_wma = ma_mask_new.any(dim="time")
-        ch_labels = ch_wma.where(ch_wma, drop=True).channel.values
+        ch_wma = ma_mask_new.all(dim="time")
+        ch_labels = ch_wma.where(ch_wma, drop=False).channel.values
         # for every channel in ch_label calculate the fraction of time points that are
         # true over the total number of time points
         ch_frac = (
-            ma_mask_new.sel(channel=ch_labels).sum(dim="time")
-            / ma_mask_new.sizes["time"]
+            1 - (ma_mask_new.sel(channel=ch_labels).sum(dim="time")
+            / ma_mask_new.sizes["time"])
         ).to_series()
         # Count number of motion artifacts (transitions in the mask) for each channel
         transitions = ma_mask_new.astype(int).diff(dim="time") == 1
@@ -645,7 +641,7 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
     # collapse mask along all dimensions
     elif operator.lower() == "all":
         dims2collapse = [dim for dim in ma_mask.dims if dim != "time"]
-        ma_mask_new = ma_mask.any(dim=dims2collapse)
+        ma_mask_new = ma_mask.all(dim=dims2collapse)
 
         ## --- extract motion artifact info --- ##
         global_frac = (mask.sum(dim="time") / mask.sizes["time"]).values
@@ -665,7 +661,7 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
         raise ValueError(f"unsupported operator '{operator}'")
 
     # set time points marked as artifacts (True) again to TAINTED.
-    ma_mask_new = xr.where(ma_mask_new, TAINTED, CLEAN)
+    #ma_mask_new = xr.where(ma_mask_new, TAINTED, CLEAN)
 
     return ma_mask_new, ma_info
 
