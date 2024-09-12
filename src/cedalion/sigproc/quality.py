@@ -631,7 +631,7 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
             / ma_mask_new.sizes["time"])
         ).to_series()
         # Count number of motion artifacts (transitions in the mask) for each channel
-        transitions = ma_mask_new.astype(int).diff(dim="time") == 1
+        transitions = ma_mask_new.astype(int).diff(dim="time") == -1
         transitions_ct = transitions.sum(dim="time").to_series()
         # Store motion artifact info in a pandas dataframe
         ma_info = pd.DataFrame(
