@@ -1,18 +1,19 @@
-import numpy as np
-import xarray as xr
-import pandas as pd
 import random
-from scipy import signal
-import pint
+
+import numpy as np
+import pandas as pd
 import pyvista as pv
-import cedalion.plots
-from cedalion import Quantity, units
-import cedalion.dataclasses as cdc
-import cedalion.typing as cdt
-import cedalion.imagereco.forward_model as cfm
-import cedalion.xrutils as xrutils
 import scipy.stats as stats
+import xarray as xr
+from scipy import signal
+
+import cedalion.dataclasses as cdc
 import cedalion.dataclasses.geometry as cdg
+import cedalion.imagereco.forward_model as cfm
+import cedalion.plots
+import cedalion.typing as cdt
+import cedalion.xrutils as xrutils
+from cedalion import Quantity, units
 
 
 def generate_hrf(
@@ -21,25 +22,24 @@ def generate_hrf(
     params_basis: list = [0.1000, 3.0000, 1.8000, 3.0000],
     scale: list = [10 * units.micromolar, -4 * units.micromolar],
 ):
-    """Generates Hemodynamic Response Function (HRF) basis functions for different chromophores.
+    """Generates HRF basis functions for different chromophores.
 
-    This function calculates the HRF basis functions using gamma distributions. It supports
-    adjusting the response scale for HbO and HbR using parameters provided in `params_basis`
-    and `scale`.
+    This function calculates the HRF basis functions using gamma distributions. It
+    supports adjusting the response scale for HbO and HbR using parameters provided in
+    `params_basis` and `scale`.
 
-    Parameters
-    ----------
-        time_axis (xr.DataArray): The time axis for the resulting HRF.
-        stim_dur (float): Duration of the stimulus.
-        params_basis (list of float): Parameters for tau and sigma for the modified gamma function
-                                     for each chromophore. Expected to be a flat list where pairs
-                                     represent [tau, sigma] for each chromophore.
-        scale (list of float): Scaling factors for each chromophore, typically [HbO scale, HbR scale].
+    Args:
+        time_axis: The time axis for the resulting HRF.
+        stim_dur: Duration of the stimulus.
+        params_basis (list of float): Parameters for tau and sigma for the modified
+            gamma function for each chromophore. Expected to be a flat list where pairs
+            represent [tau, sigma] for each chromophore.
+        scale (list of float): Scaling factors for each chromophore, typically
+            [HbO scale, HbR scale].
 
-    Returns
-    -------
-        xarray.DataArray: A DataArray object with dimensions "time" and "chromo", containing
-                          the HRF basis functions for each chromophore.
+    Returns:
+        xarray.DataArray: A DataArray object with dimensions "time" and "chromo",
+            containing the HRF basis functions for each chromophore.
     """
 
     time_axis = time_axis - time_axis[0]
@@ -52,11 +52,13 @@ def generate_hrf(
         scale = np.ones(n_conc).tolist()
     if n_conc != len(scale):
         raise ValueError(
-            f"Length of `params_basis` ({len(params_basis)}) must be twice the length of `scale` ({len(scale)})"
+            f"Length of `params_basis` ({len(params_basis)}) must be twice the length"
+            f" of `scale` ({len(scale)})"
         )
     if stim_dur > time_axis[-1]:
         raise Warning(
-            "Stimulus duration is longer than the time axis. The stimulus will be cut off."
+            "Stimulus duration is longer than the time axis. The stimulus will be "
+            "cut off."
         )
 
     tHRF_gamma = time_axis[time_axis <= stim_dur]
@@ -109,17 +111,15 @@ def build_blob(
     This function generates a blob of activity on the brain surface.
     The blob is centered at the vertex closest to the seed landmark.
 
-    Parameters
-    ----------
-        headmodel (cfm.TwoSurfaceHeadModel): Head model with brain and scalp surfaces.
+    Args:
+        head_model (cfm.TwoSurfaceHeadModel): Head model with brain and scalp surfaces.
         landmark (str): Name of the seed landmark.
         scale (Quantity): Scale of the blob.
-        m (float): Geodesic distance parameter. Larger values of m will smooth & regularize
-            the distance computation. Smaller values of m will roughen and will usually
-            increase error in the distance computation.
+        m (float): Geodesic distance parameter. Larger values of m will smooth &
+            regularize the distance computation. Smaller values of m will roughen and
+            will usually increase error in the distance computation.
 
-    Returns
-    -------
+    Returns:
         xr.DataArray: Blob image with activation values for each vertex.
     """
 
@@ -149,14 +149,12 @@ def hrfs_from_image_reco(
 ):
     """Maps an activation blob on the brain to HRFs in channel space.
 
-    Parameters
-    ----------
+    Args:
         blob (xr.DataArray): Activation values for each vertex.
         hrf_model (xr.DataArray): HRF model for HbO and HbR.
         Adot (xr.DataArray): Sensitivity matrix for the forward model.
 
-    Returns
-    -------
+    Returns:
         cdt.NDTimeseries: HRFs in channel space.
     """
 
@@ -191,17 +189,19 @@ def add_hrf_to_vertices(
     """Adds hemodynamic response functions (HRF) for HbO and HbR to specified vertices.
 
     This function applies temporal HRF profiles to vertices, optionally scaling the
-    response by a provided amplitude scale. It generates separate images for HbO and HbR and then combines them.
+    response by a provided amplitude scale. It generates separate images for HbO and HbR
+    and then combines them.
 
-    Parameters
-    ----------
-        hrf_basis (xarray.DataArray): Dataset containing HRF time series for HbO and HbR.
+    Args:
+        hrf_basis (xarray.DataArray): Dataset containing HRF time series for
+            HbO and HbR.
         num_vertices (int): Total number of vertices in the image space.
-        scale (np.array, optional): Array of scale factors of shape (num_vertices) to scale the amplitude of HRFs.
+        scale (np.array, optional): Array of scale factors of shape (num_vertices) to
+            scale the amplitude of HRFs.
 
-    Returns
-    -------
-        xr.DataArray: Combined image of HbO and HbR responses across all vertices for all time points.
+    Returns:
+        xr.DataArray: Combined image of HbO and HbR responses across all vertices for
+            all time points.
     """
 
     unit = hrf_basis.pint.units
@@ -248,11 +248,10 @@ def build_stim_df(
 ):
     """Generates a DataFrame for stimulus metadata based on provided parameters.
 
-    Stimuli can be added in an 'alternating' or 'random' order, and the inter-stimulus interval
-    (ISI) is chosen randomly between the minimum and maximum allowed intervals.
+    Stimuli can be added in an 'alternating' or 'random' order, and the inter-stimulus
+    interval (ISI) is chosen randomly between the minimum and maximum allowed intervals.
 
-    Parameters
-    ----------
+    Args:
         num_stims (int): Number of stimuli to be added for each trial type.
         stim_dur (int): Duration of the stimulus in seconds.
         trial_types (list): List of trial types for the stimuli.
@@ -260,8 +259,7 @@ def build_stim_df(
         max_interval (int): Maximum inter-stimulus interval in seconds.
         order (str): Order of adding Stims; 'alternating' or 'random'.
 
-    Returns
-    -------
+    Returns:
         pd.DataFrame: DataFrame containing stimulus metadata.
     """
 
@@ -316,16 +314,18 @@ def build_stim_df(
 
 @cdc.validate_schemas
 def add_hrf_to_od(od: cdt.NDTimeSeries, hrfs: cdt.NDTimeSeries, stim_df: pd.DataFrame):
-    """Adds Hemodynamic Response Functions (HRFs) to optical density (OD) data based on provided stimulus dataframe (stim_df).
+    """Adds Hemodynamic Response Functions (HRFs) to optical density (OD) data.
 
-    Parameters
-    ----------
-        od (cdt.NDTimeSeries): OD timeseries data with dimensions ["channel", "wavelength", "time"].
-        hrfs (cdt.NDTimeSeries): HRFs in channel space with dimensions ["channel", "wavelength", "time"] + maybe ["trial_type"].
+    The timing of the HRFs is based on the provided stimulus dataframe (stim_df).
+
+    Args:
+        od (cdt.NDTimeSeries): OD timeseries data with dimensions
+            ["channel", "wavelength", "time"].
+        hrfs (cdt.NDTimeSeries): HRFs in channel space with dimensions
+            ["channel", "wavelength", "time"] + maybe ["trial_type"].
         stim_df (pd.DataFrame): DataFrame containing stimulus metadata.
 
-    Returns
-    -------
+    Returns:
         cdt.NDTimeSeries: OD data with HRFs added based on the stimulus dataframe.
     """
 
@@ -348,12 +348,13 @@ def add_hrf_to_od(od: cdt.NDTimeSeries, hrfs: cdt.NDTimeSeries, stim_df: pd.Data
         current_time = stim_info["onset"]
         trial_type = stim_info["trial_type"]
 
-        onset_idx = (np.abs(time_axis - current_time)).argmin()
+        onset_idx = (np.abs(time_axis - current_time)).argmin("time")
 
         # Stop if the stimulus goes past the data length
         if onset_idx + n_tpts_hrf > n_tpts_data:
             print(
-                f"Stimulus goes past data length. Onset time: {current_time}. Stopping loop..."
+                f"Stimulus goes past data length. Onset time: {current_time}. "
+                "Stopping loop..."
             )
             break
 
@@ -372,20 +373,21 @@ def hrf_to_long_channels(
     geo3d: xr.DataArray,
     ss_tresh: Quantity = 1.5 * units.cm,
 ):
-    """Adds Hemodynamic Response Function (HRF) to optical density (OD) data in channel space.
+    """Add HRFs to optical density (OD) data in channel space.
 
-    Broadcasts the HRF model to long channels based on the source-detector distances. Short channel hrfs are filled with zeros.
+    Broadcasts the HRF model to long channels based on the source-detector distances.
+    Short channel hrfs are filled with zeros.
 
-    Parameters
-    ----------
+    Args:
         hrf_model (xr.DataArray): HRF model with dimensions ["time", "wavelength"].
-        od (cdt.NDTimeSeries): Raw amp / OD / Chromo timeseries data with dimensions ["channel", "time"].
+        y (cdt.NDTimeSeries): Raw amp / OD / Chromo timeseries data with dimensions
+            ["channel", "time"].
         geo3d (xr.DataArray): 3D coordinates of sources and detectors.
         ss_tresh (Quantity): Threshold for short/long channels.
 
-    Returns
-    -------
-        xr.DataArray: HRFs in channel space with dimensions ["channel", "time", "wavelength"].
+    Returns:
+        xr.DataArray: HRFs in channel space with dimensions
+            ["channel", "time", "wavelength"].
     """
 
     # Calculate source-detector distances for each channel
@@ -417,17 +419,16 @@ def get_colors(
 ):
     """Maps activations to colors for visualization.
 
-    Parameters
-    ----------
+    Args:
         activations (xr.DataArray): Activation values for each vertex.
         vertex_colors (np.array): Vertex color array of the brain mesh.
         log_scale (bool): Whether to map activations on a logarithmic scale.
         max_scale (float): Maximum value to scale the activations.
 
-    Returns
-    -------
+    Returns:
         np.array: New vertex color array with same shape as `vertex_colors`.
     """
+
     if not isinstance(activations, np.ndarray):
         activations = activations.pint.dequantify()
     # linear scale:
@@ -458,17 +459,15 @@ def plot_blob(
 ):
     """Plots a blob of activity on the brain.
 
-    Parameters
-    ----------
-    blob_img (xr.DataArray): Activation values for each vertex.
-    brain (TrimeshSurface): Brain Surface with brain mesh.
-    seed (int): Seed vertex for the blob.
-    title (str): Title for the plot.
-    log_scale (bool): Whether to map activations on a logarithmic scale.
+    Args:
+        blob_img (xr.DataArray): Activation values for each vertex.
+        brain (TrimeshSurface): Brain Surface with brain mesh.
+        seed (int): Seed vertex for the blob.
+        title (str): Title for the plot.
+        log_scale (bool): Whether to map activations on a logarithmic scale.
 
-    Returns
-    -------
-    None
+    Returns:
+        None
     """
 
     if seed is None:

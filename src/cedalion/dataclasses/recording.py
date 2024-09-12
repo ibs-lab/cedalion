@@ -126,9 +126,9 @@ class Recording:
     @property
     def wavelengths(self):
         wl = [
-            ml["wavelength"].tolist()
-            for key, ml in self._measurement_lists.items()
-            if "wavelength" in ml.columns
+            ts.wavelength.values
+            for ts in self.timeseries.values()
+            if "wavelength" in ts.coords
         ]
         return list(np.unique(np.hstack(wl)))
 
