@@ -232,12 +232,11 @@ class OneSurfaceFewVoxelsHeadModel:
             cell_coords.values[cell_indices, :], workers=-1
         )
        
-        map_voxel_to_vertex = coo_array(
-            (np.ones(len(cell_indices)), (cell_indices, vertex_indices)), shape=(ncells, nvoxels))
-        
-        self.voxel_to_few_voxel_brain =  self.voxel_to_few_voxel_brain @ mask
-        print('Reduced %d brain voxels to %d.' % (self.brain.voxels.shape[0], voxels.shape[0]))
+        self.voxel_to_few_voxel_brain = coo_array((np.ones(len(cell_indices)), 
+                                                   (cell_indices, vertex_indices)), 
+                                                  shape=(ncells, nvoxels))
         self.brain.voxels = voxels
+        print('Reduced %d brain voxels to %d.' % (self.brain.voxels.shape[0], voxels.shape[0]))
 
         return self
 
