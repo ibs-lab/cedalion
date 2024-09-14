@@ -44,7 +44,7 @@ def load_Adot(fn: str):
 def save_fluence(fn : str, fluence_all, fluence_at_optodes):
     """Save forward model computation results.
 
-    This method uses a lossy compressions algorithm to reduce file size.
+    This method uses a lossy compression algorithm to reduce file size.
     """
 
     with h5py.File(fn, "w") as f:
