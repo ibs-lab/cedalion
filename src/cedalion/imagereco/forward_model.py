@@ -647,7 +647,7 @@ class ForwardModel:
         length = xrutils.norm(pts_ras[1] - pts_ras[0], pts_ras.points.crs)
         return length.pint.magnitude.item()
 
-    def _get_fluence_from_mcx(self, i_optode: int, nphoton: int):
+    def _get_fluence_from_mcx(self, i_optode: int, **kwargs):
         """Run MCX simulation to get fluence for one optode.
 
         Args:
@@ -658,8 +658,10 @@ class ForwardModel:
             np.ndarray: Fluence in each voxel.
         """
 
+        kwargs.setdefault("nphoton", 1e8)
+
         cfg = {
-            "nphoton": nphoton,
+            "nphoton": kwargs['nphoton'],
             "vol": self.volume,
             "tstart": 0,
             "tend": 5e-9,
@@ -670,16 +672,24 @@ class ForwardModel:
             "issrcfrom0": 1,
             "isnormalized": 1,
             "outputtype": "fluence",
-            "seed": int(np.floor(np.random.rand() * 1e7)),
-            "issavedet": 1,
+            "issavedet": 0,
             "unitinmm": self.unitinmm,
         }
 
-        import pmcx
-        result = pmcx.run(cfg)
+        # merging default cfg with additional positional arguments
+
+        cfg = { **cfg, **kwargs }
+
+        # if pmcx fails, try pmcxcl
+
+        if "cuda" in cfg and cfg["cuda"]:
+            import pmcx
+            result = pmcx.run(cfg)
+        else:
+            import pmcxcl
+            result = pmcxcl.run(cfg)
 
         fluence = result["flux"][:, :, :, 0]  # there is only one time bin
-        fluence = fluence * cfg["tstep"] / result["stat"]["normalizer"]
 
         return fluence
 
@@ -722,11 +732,13 @@ class ForwardModel:
 
         return result
 
-    def compute_fluence_mcx(self, nphoton: int = 1e8):
+    def compute_fluence_mcx(self, **kwargs):
         """Compute fluence for each channel and wavelength using MCX package.
 
         Args:
             nphoton (int): Number of photons to simulate.
+            along with other pmcx/pmcxcl accepted input fields,
+            see https://pypi.org/project/pmcx/
 
         Returns:
             xr.DataArray: Fluence in each voxel for each channel and wavelength.
@@ -763,9 +775,9 @@ class ForwardModel:
             label = self.optode_pos.label.values[i_opt]
             print(f"simulating fluence for {label}. {i_opt+1} / {n_optodes}")
 
-            # run MCX
+            # run MCX or MCXCL
             # shape: [i,j,k]
-            fluence = self._get_fluence_from_mcx(i_opt, nphoton=nphoton)
+            fluence = self._get_fluence_from_mcx(i_opt, **kwargs)
 
             # FIXME shortcut: currently tissue props are wavelength independent -> copy
             for i_wl in range(n_wavelength):
