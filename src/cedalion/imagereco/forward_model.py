@@ -446,10 +446,7 @@ class OneSurfaceFewVoxelsHeadModel:
 
             if len(voxel_idx) > 0:
                 # Get voxel coordinates from voxel indices
-                try: 
-                    shape = self.segmentation_masks.shape[-3:]
-                except:
-                    shape = self.segmentation_masks.to_dataarray().shape[-3:]
+                shape = self.segmentation_masks.shape[-3:]
                 voxels = np.array(np.unravel_index(voxel_idx, shape)).T
 
                 # Choose the closest voxel
@@ -459,10 +456,9 @@ class OneSurfaceFewVoxelsHeadModel:
             else:
                 # If no voxel maps to that scalp surface vertex, 
                 # simply choose the closest of all scalp voxels
-                scalp_mask = self.segmentation_masks.sel(segmentation_type="scalp").to_dataarray()
+                scalp_mask = self.segmentation_masks.sel(segmentation_type="scalp")
                 voxels = np.argwhere(np.array(scalp_mask)[0] > 0.99)
 
-                from scipy.spatial import KDTree
                 kdtree = KDTree(voxels)
                 dist, voxel_idx = kdtree.query(self.scalp.mesh.vertices[idx[0,0]],
                                                workers=-1)
