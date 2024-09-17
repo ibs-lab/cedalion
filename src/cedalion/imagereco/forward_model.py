@@ -429,7 +429,7 @@ class TwoSurfaceHeadModel:
         brain =  trimesh.load(os.path.join(foldername, 'brain.ply'), process=False)
         scalp =  trimesh.load(os.path.join(foldername, 'scalp.ply'), process=False)
         if os.path.exists(os.path.join(foldername, 'landmarks.nc')):
-            landmarks_ijk = xr.load_dataarray(os.path.join(foldername, 'landmarks.nc'))
+            landmarks_ijk = xr.load_dataset(os.path.join(foldername, 'landmarks.nc'))
             landmarks_ijk = xr.DataArray(
                 landmarks_ijk.to_array()[0],
                 coords={
@@ -453,7 +453,7 @@ class TwoSurfaceHeadModel:
         brain_ijk = cdc.TrimeshSurface(brain, 'ijk', cedalion.units.Unit("1"))
         scalp_ijk = cdc.TrimeshSurface(scalp, 'ijk', cedalion.units.Unit("1"))
         t_ijk2ras = cdc.affine_transform_from_numpy(
-            np.array(t_ijk2ras.to_dataarray()[0]), "ijk", "unknown", "1", "mm"
+            np.array(t_ijk2ras), "ijk", "unknown", "1", "mm"
         )
         t_ras2ijk = xrutils.pinv(t_ijk2ras)
 
