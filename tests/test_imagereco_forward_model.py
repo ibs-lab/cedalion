@@ -35,7 +35,6 @@ def test_OneSurfaceFewVoxelsHeadModel():
         landmarks_ras_file=landmarks_file,
         # disable mesh smoothing and decimation to speed up runtime
         smoothing=0, 
-        brain_face_count=None,
         scalp_face_count=None
     )
 
@@ -44,14 +43,15 @@ def test_OneSurfaceFewVoxelsHeadModel():
         tmp_folder = os.path.join(dirpath, "test_head")
         head.save(tmp_folder)
         # load from folder
-        head2 = fw.TwoSurfaceHeadModel.load(tmp_folder)
+        head2 = fw.OneSurfaceFewVoxelsHeadModel.load(tmp_folder)
         # compare
         assert (head.landmarks == head2.landmarks).all()
         assert (head.segmentation_masks == head2.segmentation_masks).all()
         assert (head.brain.voxels == head2.brain.voxels).all()
         assert (head.t_ijk2ras.values == head2.t_ijk2ras.values).all()
         assert (head.t_ras2ijk.values == head2.t_ras2ijk.values).all()
-        assert allclose(head.voxel_to_vertex_brain, head2.voxel_to_vertex_brain)
+        assert allclose(head.voxel_to_few_voxel_brain,
+                        head2.voxel_to_few_voxel_brain)
         assert allclose(head.voxel_to_vertex_scalp, head2.voxel_to_vertex_scalp)
 
 
