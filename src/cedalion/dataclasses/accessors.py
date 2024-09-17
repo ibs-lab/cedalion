@@ -1,13 +1,14 @@
-from typing import Dict
+from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
-import scipy.signal
 import xarray as xr
-import cedalion.typing as cdt
-import cedalion.dataclasses as cdc
-from typing import Union, List
 from numpy.typing import ArrayLike
+
+import cedalion.dataclasses as cdc
+import cedalion.typing as cdt
+from cedalion import Quantity, units
+from cedalion.sigproc.frequency import freq_filter
 
 
 @xr.register_dataarray_accessor("cd")
@@ -66,10 +67,16 @@ class CedalionAccessor:
         durations = end - start
         assert np.max(durations) - np.min(durations) <= 1
         duration = np.max(durations)
+        duration_idx = np.argmax(durations)
 
-        # FIXME limit reltime precision (to ns?) to avoid
-        # conflicts when concatenating epochs
-        reltime = np.round(self._obj.time[start[0] : end[0]] - tmp.onset.iloc[0], 9)
+        # limit reltime precision (to ns?) to avoid conflicts when concatenating epochs
+        # - different fix by DBoas & AvL on 01.08.24: Use times of longest epoch
+        reltime = np.round(
+            self._obj.time[start[duration_idx] : end[duration_idx]]
+            - tmp.onset.iloc[duration_idx],
+            9,
+        )
+
         epochs = xr.concat(
             [
                 self._obj[:, :, start[i] : start[i] + duration].drop_vars(
@@ -79,6 +86,7 @@ class CedalionAccessor:
             ],
             dim="epoch",
         )
+
         epochs = epochs.rename({"time": "reltime"})
         epochs = epochs.assign_coords(
             {"reltime": reltime.values, "trial_type": ("epoch", tmp.trial_type.values)}
@@ -99,18 +107,14 @@ class CedalionAccessor:
         """
         array = self._obj
 
-        fny = array.cd.sampling_rate / 2
-        b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
+        # FIXME accept unit-less parameters and interpret them as Hz
+        if not isinstance(fmin, Quantity):
+            fmin = fmin * units.Hz
 
-        if (units := array.pint.units) is not None:
-            array = array.pint.dequantify()
+        if not isinstance(fmax, Quantity):
+            fmax = fmax * units.Hz
 
-        result = xr.apply_ufunc(scipy.signal.filtfilt, b, a, array)
-
-        if units is not None:
-            result = result.pint.quantify(units)
-
-        return result
+        return freq_filter(array, fmin, fmax, butter_order)
 
 
 @xr.register_dataarray_accessor("points")
@@ -168,7 +172,9 @@ class PointsAccessor:
 
         assert transform_units is not None
         assert transform.shape == (4, 4)  # FIXME assume 3D
-        assert from_crs in obj.dims
+        assert from_crs in obj.dims, f"Coordinate systems of points " \
+                                     f"({from_crs}) and transform " \
+                                     f"({obj.dims}) do not match."
 
         transform = transform.pint.dequantify()
 
@@ -202,7 +208,6 @@ class PointsAccessor:
 
         rzs = transform[:-1, :-1]  # rotations, zooms, shears
         trans = transform[:-1, -1]  # translatations
-
         transformed = obj.values @ rzs.T + trans
 
         transformed = xr.DataArray(
@@ -231,35 +236,60 @@ class PointsAccessor:
         label: Union[str, List[str]],
         coordinates: ArrayLike,
         type: Union[cdc.PointType, List[cdc.PointType]],
+        group: Union[str, List[str]] = None,
     ) -> cdt.LabeledPointCloud:
-        if isinstance(label, str):  # add single point
-            assert isinstance(type, cdc.PointType)
+        # Handle the single point case
+        if isinstance(label, str):
+            assert isinstance(
+                type, cdc.PointType
+            ), "Type must be a PointType for a single label"
             coordinates = np.asarray(coordinates)
-            assert coordinates.ndim == 1
+            assert (
+                coordinates.ndim == 1
+            ), "Coordinates for a single point must be 1-dimensional"
 
             if label in self._obj.label:
                 raise KeyError(f"there is already a point with label '{label}'")
 
+            coords_dict = {"label": ("label", [label]), "type": ("label", [type])}
+            if group is not None:
+                assert isinstance(
+                    group, str
+                ), "Group must be a string for a single label"
+                coords_dict["group"] = ("label", [group])
+
             tmp = xr.DataArray(
                 coordinates.reshape(1, -1),
                 dims=self._obj.dims,
-                coords={"label": ("label", [label]), "type": ("label", [type])},
+                coords=coords_dict,
             )
+
+        # Handle the case where multiple points are added
         else:
-            assert len(label) == len(type)
-            assert len(label) == len(coordinates)
+            assert len(label) == len(type), "Labels and types must have the same length"
+            if group is not None:
+                assert len(label) == len(
+                    group
+                ), "Labels and groups must have the same length"
 
             for lbl in label:
                 if lbl in self._obj.label:
                     raise KeyError(f"there is already a point with label '{lbl}'")
 
+            coords_dict = {"label": ("label", label), "type": ("label", type)}
+            if group is not None:
+                coords_dict["group"] = ("label", group)
+
             tmp = xr.DataArray(
                 coordinates,
                 dims=self._obj.dims,
-                coords={"label": ("label", label), "type": ("label", type)},
+                coords=coords_dict,
             )
 
+        # Quantify the temporary DataArray with units from the original object
         tmp = tmp.pint.quantify(self._obj.pint.units)
+
+        # Merge the new points into the existing DataArray
         merged = xr.concat((self._obj, tmp), dim="label")
 
         return merged
@@ -300,3 +330,19 @@ class StimAccessor:
         stim = self._obj
         for old_trial_type, new_trial_type in rename_dict.items():
             stim.loc[stim.trial_type == old_trial_type, "trial_type"] = new_trial_type
+
+    def conditions(self):
+        return self._obj.trial_type.unique()
+
+    # FIXME obsolete?
+    def to_xarray(self, time: xr.DataArray):
+        stim = self._obj
+        conds = self.conditions()
+        stim_arr = xr.DataArray(
+            np.zeros((time.shape[0], len(conds))),
+            dims=["time", "condition"],
+            coords={"time": time, "condition": conds},
+        )
+        for index, row in stim.iterrows():
+            stim_arr.loc[row.onset, row.trial_type] = 1
+        return stim_arr

@@ -25,6 +25,7 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.DS_store
 MANIFEST
 
 # PyInstaller
@@ -174,3 +175,7 @@ docs/api/*
 .vscode/
 
 scratch/
+
+# plugins
+plugins/
+

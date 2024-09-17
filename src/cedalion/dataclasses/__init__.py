@@ -10,6 +10,7 @@ from .geometry import (
     TrimeshSurface,
     VTKSurface,
     affine_transform_from_numpy,
+    Voxels,
 )
 from .schemas import (
     build_labeled_points,

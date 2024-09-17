@@ -51,6 +51,7 @@ def norm(array: xr.DataArray, dim: str) -> xr.DataArray:
     """Calculate the vector norm along a given dimension.
 
     Extends the behavior of numpy.linalg.norm to xarray DataArrays.
+
     Args:
         array (xr.DataArray): Input array
         dim (str): Dimension along which to calculate the norm
@@ -80,8 +81,9 @@ def mask(array: xr.DataArray, initval: bool) -> xr.DataArray:
     return xr.full_like(array, initval, dtype=bool)
 
 
-def apply_mask(data_array: xr.DataArray,
-               mask: xr.DataArray, operator: str, dim_collapse: str) -> xr.DataArray:
+def apply_mask(
+    data_array: xr.DataArray, mask: xr.DataArray, operator: str, dim_collapse: str
+) -> xr.DataArray:
     """Apply a boolean mask to a DataArray according to the defined "operator".
 
     Args:
@@ -122,14 +124,16 @@ def apply_mask(data_array: xr.DataArray,
         masked_data_array = data_array.where(mask, other=np.nan)
     elif operator.lower() == "drop":
         # drops value in the data_array where mask is False.
-        # Note: values are only dropped if mask has "False" across the entire relevant dimension
+        # Note: values are only dropped if mask has "False" across the entire relevant
+        # dimension
         masked_data_array = data_array.where(mask, drop=True)
 
     # return the masked elements if dimensions were collapsed
     if flag_collapse:
         masked_elements = mask.where(~mask, drop=True)[dim_collapse].values
     else:
-        masked_elements = "N/A" #FIXME clean this up: return the masked elements as a list of indices
+        # FIXME clean this up: return the masked elements as a list of indices
+        masked_elements = "N/A"
 
     return masked_data_array, masked_elements
 
@@ -144,13 +148,41 @@ def convolve(data_array: xr.DataArray, kernel: np.ndarray, dim: str) -> xr.DataA
         data_array = data_array.pint.dequantify()
 
     convolved = xr.apply_ufunc(
-        lambda x: np.convolve(x, kernel, mode='same'),
+        lambda x: np.convolve(x, kernel, mode="same"),
         data_array,
         input_core_dims=[[dim]],
         output_core_dims=[[dim]],
-        vectorize=True)
+        vectorize=True,
+    )
 
     if units is not None:
         convolved = convolved.pint.quantify(units)
 
     return convolved
+
+
+def other_dim(data_array: xr.DataArray, *dims: str) -> str:
+    """Get the dimension name not listed in *dims.
+
+    Checks that there is only one more dimension than given in dims  and returns
+    its name.
+
+    Args:
+        data_array: an xr.DataArray
+        *dims: names of dimensions
+
+    Returns:
+        The name of the dimension of data_array.
+    """
+
+    dims = set(dims)
+    array_dims = set(data_array.dims)
+
+    ndim_expected = len(dims) + 1
+    if data_array.ndim != ndim_expected:
+        raise ValueError(f"expected data_array to have ndim={ndim_expected}.")
+
+    if not dims.issubset(data_array.dims):
+        raise ValueError("not all provided dimensions found in data_array")
+
+    return (array_dims - dims).pop()

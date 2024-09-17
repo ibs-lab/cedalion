@@ -7,6 +7,7 @@ import cedalion.typing as cdt
 from cedalion import Quantity, units
 from cedalion.validators import check_dimensionality
 import cedalion.dataclasses as cdc
+from typing import Annotated
 
 
 @cdc.validate_schemas
@@ -32,8 +33,8 @@ def sampling_rate(timeseries: cdt.NDTimeSeries) -> Quantity:
 @cdc.validate_schemas
 def freq_filter(
     timeseries: cdt.NDTimeSeries,
-    fmin: Quantity,
-    fmax: Quantity,
+    fmin: Annotated[Quantity, "[frequency]"],
+    fmax: Annotated[Quantity, "[frequency]"],
     butter_order: int = 4,
 ) -> cdt.NDTimeSeries:
     """Apply a Butterworth bandpass frequency filter.
@@ -55,12 +56,21 @@ def freq_filter(
     fmin = float(fmin / fny)
     fmax = float(fmax / fny)
 
-    b, a = scipy.signal.butter(butter_order, (fmin, fmax), "bandpass")
+    if fmin == 0:
+        sos = scipy.signal.butter(butter_order, fmax, "low", output="sos")
+    elif fmax == 0:
+        sos = scipy.signal.butter(butter_order, fmin, "high", output="sos")
+    else:
+        sos = scipy.signal.butter(butter_order, [fmin, fmax], "bandpass", output="sos")
 
     if (units := timeseries.pint.units) is not None:
-        array = timeseries.pint.dequantify()
+        timeseries = timeseries.pint.dequantify()
 
-    result = xr.apply_ufunc(scipy.signal.filtfilt, b, a, array)
+
+    dims = timeseries.dims
+    timeseries = timeseries.transpose(..., "time")
+    result = xr.apply_ufunc(scipy.signal.sosfiltfilt, sos, timeseries)
+    result = result.transpose(*dims)
 
     if units is not None:
         result = result.pint.quantify(units)

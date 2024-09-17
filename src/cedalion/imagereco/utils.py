@@ -89,20 +89,16 @@ def map_segmentation_mask_to_surface(
 ) -> scipy.sparse.coo_matrix:
     """Find for each voxel the closest vertex on the surface.
 
-    Parameters
-    ----------
-    segmentation_mask : xr.DataArray
-        A 3D mask of the brain segmentation.
-    transform_vox2ras : cdt.AffineTransform
-        Transformation from voxel to RAS coordinates.
-    surface : cdc.Surface
-        The scalp surface mesh to which the voxels are mapped.
-    
-    Returns
-    -------
-    map_voxel_to_vertex : scipy.sparse.coo_matrix
-        A sparse matrix of shape (ncells, nvertices) that maps all voxels to 
-        the surface vertices.
+    Args:
+        segmentation_mask (xr.DataArray): A binary mask of shape (segmentation_type, i,
+            j, k).
+        transform_vox2ras (xr.DataArray): The affine transformation from voxel to RAS
+            space.
+        surface (cedalion.dataclasses.Surface): The surface to map the voxels to.
+
+    Returns:
+        coo_array: A sparse matrix of shape (ncells, nvertices) that maps voxels to
+            cells.
     """
 
     assert surface.crs == transform_vox2ras.dims[0]
@@ -134,6 +130,17 @@ def map_segmentation_mask_to_surface(
 
 
 def normal_hrf(t, t_peak, t_std, vmax):
+    """Create a normal hrf.
+
+    Args:
+        t (np.ndarray): The time points.
+        t_peak (float): The peak time.
+        t_std (float): The standard deviation.
+        vmax (float): The maximum value of the HRF.
+
+    Returns:
+        np.ndarray: The HRF.
+    """
     hrf = scipy.stats.norm.pdf(t, loc=t_peak, scale=t_std)
     hrf *= vmax / hrf.max()
     return hrf
@@ -147,6 +154,20 @@ def create_mock_activation_below_point(
     spatial_size: units.Quantity,
     vmax: units.Quantity,
 ):
+    """Create a mock activation below a point.
+
+    Args:
+        head_model (cedalion.imagereco.forward_model.TwoSurfaceHeadModel): The head
+            model.
+        point (cdt.LabeledPointCloud): The point below which to create the activation.
+        time_length (units.Quantity): The length of the activation.
+        sampling_rate (units.Quantity): The sampling rate.
+        spatial_size (units.Quantity): The spatial size of the activation.
+        vmax (units.Quantity): The maximum value of the activation.
+
+    Returns:
+        xr.DataArray: The activation.
+    """
     # assert head_model.crs == point.points.crs
 
     _, vidx = head_model.brain.kdtree.query(point)
