@@ -54,6 +54,6 @@ dependencies:
       - pywavefront==1.3
       - setuptools-scm
       - snirf==0.8
-      - pmcx==0.3.3
+      - pmcx==0.3.4
+      - pmcxcl==0.2.0
       - sphinxcontrib-bibtex
-      
