@@ -18,7 +18,7 @@ import time
 warnings.simplefilter("ignore")
 
 
-class _MAIN_GUI(QtWidgets.Q_MAIN_GUIWindow):
+class _MAIN_GUI(QtWidgets.QMainWindow):
     def __init__(self, snirfRec = None):
         # Initialize
         super().__init__()
