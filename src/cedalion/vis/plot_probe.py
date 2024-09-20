@@ -1,6 +1,6 @@
 """Interactive GUI to view the HRF in probe space after data has been processed.
 
-Based on Homer3 [1] v1.80.2 "PlotProbe2.m"
+Based on Homer3 v1.80.2 "PlotProbe2.m" (:cite:t:`Huppert2009`)
     Boston University Neurophotonics Center
     https://github.com/BUNPC/Homer3
 
