@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Jul 23 11:52:04 2024
+"""Interactive GUI to plot fNIRS probe and channel time courses.
 
-@author: ahns97
+Initial Contributors:
+    - Sung Ahn | ahnsm@bu.edu | 2024
 """
 
 import cedalion
@@ -12,14 +11,14 @@ import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import \
     NavigationToolbar2QT as NavigationToolbar
-from matplotlib.backends.qt_compat import QtWidgets, QtGui, QtCore
+from matplotlib.backends.qt_compat import QtWidgets, QtCore
 from matplotlib.figure import Figure
 import warnings
 import time
 warnings.simplefilter("ignore")
 
 
-class Main(QtWidgets.QMainWindow):
+class _MAIN_GUI(QtWidgets.Q_MAIN_GUIWindow):
     def __init__(self, snirfRec = None):
         # Initialize
         super().__init__()
@@ -60,9 +59,9 @@ class Main(QtWidgets.QMainWindow):
         
         # Connect Plots
         self.shift_pressed = False
-        self.plots.mpl_connect('key_press_event', self.shift_is_pressed)
-        self.plots.mpl_connect('key_release_event', self.shift_is_released)
-        self.plots.mpl_connect('pick_event', self.optode_picked)
+        self.plots.mpl_connect('key_press_event', self._shift_is_pressed)
+        self.plots.mpl_connect('key_release_event', self._shift_is_released)
+        self.plots.mpl_connect('pick_event', self._optode_picked)
         
         
         # Create Control Panel
@@ -84,7 +83,7 @@ class Main(QtWidgets.QMainWindow):
         self.ts.setCurrentRow(0)
         self.ts.setFixedHeight(60)
         self.ts.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.ts.currentTextChanged.connect(self.ts_changed)
+        self.ts.currentTextChanged.connect(self._ts_changed)
         ts_layout.addWidget(QtWidgets.QLabel("Timeseries:"), 0,0)
         ts_layout.addWidget(self.ts, 0,1)
         
@@ -98,7 +97,7 @@ class Main(QtWidgets.QMainWindow):
         self.auxs = QtWidgets.QComboBox()
         self.auxs.addItems(["None"])
         self.auxs.setCurrentIndex(0)
-        self.auxs.currentTextChanged.connect(self.aux_changed)
+        self.auxs.currentTextChanged.connect(self._aux_changed)
         aux_layout.addWidget(QtWidgets.QLabel("Aux:"), 0,0)
         aux_layout.addWidget(self.auxs, 0,1)
         
@@ -112,7 +111,7 @@ class Main(QtWidgets.QMainWindow):
         self.wv = QtWidgets.QListWidget()
         self.wv.setFixedHeight(45)
         self.wv.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self.wv.itemSelectionChanged.connect(self.wv_changed)
+        self.wv.itemSelectionChanged.connect(self._wv_changed)
         self.wv_label = QtWidgets.QLabel("Wavelength/Concentration:")
         wv_layout.addWidget(self.wv_label, 0,0)
         wv_layout.addWidget(self.wv, 0,1)
@@ -141,7 +140,7 @@ class Main(QtWidgets.QMainWindow):
         # Create button action for opening file
         open_btn = QtWidgets.QAction("Open...", self)
         open_btn.setStatusTip("Open SNIRF file")
-        open_btn.triggered.connect(self.open_dialog)
+        open_btn.triggered.connect(self._open_dialog)
         
         ## Create menu
         menu = QtWidgets.QMenuBar(self)
@@ -154,11 +153,11 @@ class Main(QtWidgets.QMainWindow):
         
         # In case there is snirfRec
         if self.snirfRec is not None:
-            self.init_calc()
+            self._init_calc()
             
         
         
-    def open_dialog(self):
+    def _open_dialog(self):
         # Grab the appropriate SNIRF file
         self._fname = QtWidgets.QFileDialog.getOpenFileName(
             self,
@@ -176,9 +175,9 @@ class Main(QtWidgets.QMainWindow):
         self.ts.setCurrentRow(0)
         self.aux_window.setText('0')
         self.stim_togg.setCheckState(QtCore.Qt.CheckState.Unchecked)
-        self.init_calc()
+        self._init_calc()
         
-    def init_calc(self):
+    def _init_calc(self):
         # Extract necessary data
         self.optodes_drawn = False
         
@@ -237,10 +236,10 @@ class Main(QtWidgets.QMainWindow):
             self.stim_togg.setCheckable(False)
         
         self.snirfData = None
-        self.draw_optodes()
+        self._draw_optodes()
         
         
-    def draw_optodes(self):
+    def _draw_optodes(self):
         if self.optodes_drawn:
             return
         
@@ -302,21 +301,21 @@ class Main(QtWidgets.QMainWindow):
         self._optode_ax.figure.canvas.draw()
 
 
-    def shift_is_pressed(self, event):
+    def _shift_is_pressed(self, event):
         if self.shift_pressed == False and event.key == "shift":
             self.shift_pressed = True
         else:
             return
     
     
-    def shift_is_released(self, event):
+    def _shift_is_released(self, event):
         if self.shift_pressed == True and event.key == "shift":
             self.shift_pressed = False
         else:
             return
 
 
-    def optode_picked(self, event):
+    def _optode_picked(self, event):
         if self.ts.currentItem().text() == "None":
             return
         
@@ -339,7 +338,7 @@ class Main(QtWidgets.QMainWindow):
         dataind = event.ind[indmin]
         
         self.selected.append(dataind)
-        self.draw_timeseries()
+        self._draw_timeseries()
         
         
     def _toggle_circles(self):
@@ -362,14 +361,14 @@ class Main(QtWidgets.QMainWindow):
 
     def _toggle_stims(self, s):
         self.plot_stims = s
-        self.draw_timeseries()
+        self._draw_timeseries()
         
     
-    def wv_changed(self):
-        self.draw_timeseries()
+    def _wv_changed(self):
+        self._draw_timeseries()
         
 
-    def ts_changed(self, s):
+    def _ts_changed(self, s):
         # Extract data
         if s == "None":
             self.snirfData = None
@@ -396,10 +395,10 @@ class Main(QtWidgets.QMainWindow):
                 self.wv.insertItem(i_w,f"[{str(wvl)}]")
             self.wv.setCurrentRow(0)
         
-        self.draw_timeseries()
+        self._draw_timeseries()
 
 
-    def draw_timeseries(self):
+    def _draw_timeseries(self):
         self._dataTimeSeries_ax.clear()
         
         if self.snirfData is None:
@@ -550,12 +549,6 @@ class Main(QtWidgets.QMainWindow):
                                                         zorder=1,
                                                         c=stim_col[i_t%5]
                                                         )
-                        # self._dataTimeSeries_ax.axvline(dat.onset+dat.duration, 
-                        #                                 ls="--", 
-                        #                                 lw=1, 
-                        #                                 zorder=1, 
-                        #                                 c="gray"
-                        #                                 )
                         self._dataTimeSeries_ax.fill(
                                                      [dat.onset, dat.onset, dat.onset+dat.duration, dat.onset+dat.duration],
                                                      [ymin, ymax, ymax, ymin],
@@ -573,7 +566,7 @@ class Main(QtWidgets.QMainWindow):
         
         self.statbar.showMessage("Timeseries Drawn!")
     
-    def aux_changed(self,s): # TODO
+    def _aux_changed(self,s): # TODO
         self._auxTimeSeries_ax.clear()
         
         if s == 'None' or s == 'dark signal':
@@ -588,29 +581,22 @@ class Main(QtWidgets.QMainWindow):
             self.aux_sel = self.snirfRec.aux_ts[s]
             self.aux_type = s
             
-        self.draw_timeseries()
+        self._draw_timeseries()
 
 
-def run_vis(snirfRec = None):
+def run_vis(
+    snirfRec: cdc.Recording
+):
+    """Opens the visualization GUI.
+
+    Args:
+        snirfRec: The fNIRS data to be motion corrected.
     """
-    Parameters
-    ----------
-    snirfRec : Recording, optional
-        Pass the cedalion Recording. The default is None.
-
-    Opens a gui that loads the recording, if given.
-
-    """
-    if type(snirfRec) is not cdc.recording.Recording:
-        app = QtWidgets.QApplication(sys.argv)
-        main_gui = Main()
-        main_gui.show()
-        sys.exit(app.exec())
-    else:
-        app = QtWidgets.QApplication(sys.argv)
-        main_gui = Main(snirfRec = snirfRec)
-        main_gui.show()
-        sys.exit(app.exec())
+    
+    app = QtWidgets.QApplication(sys.argv)
+    main_gui = _MAIN_GUI(snirfRec = snirfRec)
+    main_gui.show()
+    sys.exit(app.exec())
 
 
 

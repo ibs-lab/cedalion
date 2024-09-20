@@ -1,11 +1,15 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Jul 18 17:34 2024
+"""Interactive GUI to view the HRF in probe space after data has been processed.
 
-@author: ahns97
+Based on Homer3 [1] v1.80.2 "PlotProbe2.m"
+    Boston University Neurophotonics Center
+    https://github.com/BUNPC/Homer3
+
+Initial Contributors:
+    - Sung Ahn | ahnsm@bu.edu | 2024
 """
 
 import cedalion
+import cedalion.typing as cdt
 import sys
 import numpy as np
 import xarray as xr
@@ -19,7 +23,7 @@ import time
 warnings.simplefilter("ignore")
 
 
-class Main(QtWidgets.QMainWindow):
+class _MAIN_GUI(QtWidgets.Q_MAIN_GUIWindow):
     def __init__(self, snirfData = None, geo2d = None, geo3d = None):
         # Initialize
         super().__init__()
@@ -98,10 +102,6 @@ class Main(QtWidgets.QMainWindow):
         y_scale_layout.addWidget(QtWidgets.QLabel("Y scale"))
         y_scale_layout.addWidget(self.y_scale)
         plot_scale_layout.addLayout(y_scale_layout)
-        
-        # ## Axis Image
-        # axim_btn = QtWidgets.QCheckBox("Axis Image")
-        # plot_scale_layout.addWidget(axim_btn)
         
         ## Add Scaler
         control_panel_layout.addWidget(plot_scale, stretch=1)
@@ -193,7 +193,7 @@ class Main(QtWidgets.QMainWindow):
         # Create button action for opening file
         open_btn = QtWidgets.QAction("Open...", self)
         open_btn.setStatusTip("Open SNIRF file")
-        open_btn.triggered.connect(self.open_dialog)
+        open_btn.triggered.connect(self._open_dialog)
         
         ## Create menu
         menu = QtWidgets.QMenuBar(self)
@@ -215,10 +215,10 @@ class Main(QtWidgets.QMainWindow):
             self.detectorPos3D = self.geo3d.sel(label = ["D" in str(s.values) for s in self.geo3d.label])
             
             print("starting calculations!")
-            self.init_calc()
+            self._init_calc()
         
     
-    def open_dialog(self):
+    def _open_dialog(self):
         # Grab the appropriate SNIRF file
         self._fname = QtWidgets.QFileDialog.getOpenFileName(
             self,
@@ -241,9 +241,9 @@ class Main(QtWidgets.QMainWindow):
         self.sourcePos3D = self.snirfObj[0].geo3d.sel(label = ["S" in str(s.values) for s in self.snirfObj[0].geo3d.label])
         self.detectorPos3D = self.snirfObj[0].geo3d.sel(label = ["D" in str(s.values) for s in self.snirfObj[0].geo3d.label])
         
-        self.init_calc()
+        self._init_calc()
     
-    def init_calc(self):
+    def _init_calc(self):
         t0 = time.time()
         
         # Initialize certain values to begin
@@ -273,13 +273,11 @@ class Main(QtWidgets.QMainWindow):
         self.sPosVal = self.sPos.values
         self.dPosVal = self.dPos.values
         
-        self.channel_idx = np.arange(0,len(self.snirfData.channel))
         self.src_idx = [np.arange(0,len(self.sPos))[self.sPos.label == src][0] for src in self.snirfData.source]
         self.det_idx = [np.arange(0,len(self.dPos))[self.dPos.label == det][0] for det in self.snirfData.detector]
         
         # Find Channel distances
         self.chan_dist = np.sqrt(np.sum((self.sourcePos3D.values[self.src_idx] - self.detectorPos3D.values[self.det_idx])**2,1))
-        self.dist = np.sqrt(np.sum((self.sPosVal[self.src_idx] - self.dPosVal[self.det_idx])**2,1))
         
         # Find the extreme coordinates of the optodes
         self.sdMin = np.array([min([min(self.sPos[:,0]),min(self.dPos[:,0])]).values,min([min(self.sPos[:,1]),min(self.dPos[:,1])]).values])
@@ -366,7 +364,7 @@ class Main(QtWidgets.QMainWindow):
             
         t1 = time.time()
         print(f'Calculations complete in {t1-t0:.2f} seconds!')
-        self.draw_hrf()
+        self._draw_hrf()
         self.conditions.setCurrentRow(0)
         
     def _change_hrf_vis(self):
@@ -389,7 +387,7 @@ class Main(QtWidgets.QMainWindow):
         
         self._ax.figure.canvas.draw()
         
-    def _redraw_hrf(self):
+    def _re_draw_hrf(self):
         for i_con in range(self.trial_types):
             for i_ch in range(self.channels):
                 for i_col in range(self.chromophores):
@@ -443,7 +441,7 @@ class Main(QtWidgets.QMainWindow):
         self.axWid = self.plot_Xscale/self.nAcross
         self.xT = [xa1 - self.axWid/8 + (1/4)*self.axWid*((self.t - self.minT)/(self.maxT-self.minT)) for xa1 in self.xa]
         
-        self._redraw_hrf()
+        self._re_draw_hrf()
         
     def _yscale_changed(self, i):
         # Pass the new yscale and draw hrf again
@@ -453,7 +451,7 @@ class Main(QtWidgets.QMainWindow):
         for trial in range(self.trial_types):
             self.hrfT[trial] = self.ya - self.axHgt/8 + (1/4)*self.axHgt*((self.hrf_val[trial] - self.cmin)/(self.cmax - self.cmin))
         
-        self._redraw_hrf()
+        self._re_draw_hrf()
         # print("HRFs should have changed!")
         
     def _mindist_changed(self, i):
@@ -475,7 +473,7 @@ class Main(QtWidgets.QMainWindow):
         self.ssFadeThres = i
         self._change_hrf_vis()
         
-    def draw_hrf(self):
+    def _draw_hrf(self):
         print("Plotting Optodes!")
         t0 = time.time()
         self._ax.clear()
@@ -529,42 +527,26 @@ class Main(QtWidgets.QMainWindow):
 
 # if __name__ == "__main__":
 #     app = QtWidgets.QApplication(sys.argv)
-#     main_gui = Main()
+#     main_gui = _MAIN_GUI()
 #     main_gui.show()
 #     sys.exit(app.exec())
 
 
-def run_vis(snirfData = None, geo2d = None, geo3d = None):
+def run_vis(
+    snirfData: cdt.NDTimeSeries, geo2d: cdt.LabeledPointCloud, geo3d: cdt.LabeledPointCloud
+):
+    """Opens the visualization GUI.
+
+    Args:
+        snirfData: The HRF data.
+        geo2d: The 2d probe geometry data.
+        geo3d: The 3d probe geometry data.
     """
-    Parameters
-    ----------
-    snirfData : xarray, optional
-        Pass the xarray with the HRF data. The default is None.
-    geo2d : xarray, optional
-        Pass the xarray with the 2d probe geometry data. The default is None.
-    geo3d : xarray, optional
-        Pass the xarray with the 3d probe geometry data. The default is None.
-
-    Opens a gui that loads the HRF, if given.
-
-    Raises
-    ------
-    Exception
-        If the argument passed is not valid, raises an exception.
-
-    """    
     
-    if snirfData is not None and type(snirfData) != xr.core.dataarray.DataArray:
-        raise Exception("Please provide valid snirfData!")
-    elif geo2d is not None and type(geo2d) != xr.core.dataarray.DataArray or np.shape(geo2d)[1] != 2:
-        raise Exception("Please provide valide geo2d!")
-    elif geo3d is not None and type(geo3d) != xr.core.dataarray.DataArray or np.shape(geo3d)[1] != 3:
-        raise Exception("Please provide valid geo3d!")
-    else:
-        app = QtWidgets.QApplication(sys.argv)
-        main_gui = Main(snirfData = snirfData, geo2d = geo2d, geo3d = geo3d)
-        main_gui.show()
-        sys.exit(app.exec())
+    app = QtWidgets.QApplication(sys.argv)
+    main_gui = _MAIN_GUI(snirfData = snirfData, geo2d = geo2d, geo3d = geo3d)
+    main_gui.show()
+    sys.exit(app.exec())
 
 
 
