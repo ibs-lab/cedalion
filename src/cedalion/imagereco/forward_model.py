@@ -16,7 +16,7 @@ import cedalion.dataclasses as cdc
 from cedalion.geometry.registration import register_trans_rot_isoscale
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-from cedalion.geometry.segmentation import surface_from_segmentation
+from cedalion.geometry.segmentation import surface_from_segmentation, voxels_from_segmentation
 from cedalion.imagereco.utils import map_segmentation_mask_to_surface
 
 from .tissue_properties import get_tissue_properties
