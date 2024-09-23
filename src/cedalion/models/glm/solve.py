@@ -2,8 +2,7 @@ from collections import defaultdict
 
 import numpy as np
 import xarray as xr
-from nilearn.glm.first_level import run_glm as nilearn_run_glm
-
+import statsmodels.api as sm
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 
@@ -21,9 +20,6 @@ def _hash_channel_wise_regressor(regressor: xr.DataArray) -> list[int]:
     tmp = regressor.pint.dequantify()
     n_channel = regressor.sizes["channel"]
     return [hash(tmp.isel(channel=i).values.data.tobytes()) for i in range(n_channel)]
-
-
-
 
 
 def fit(
@@ -46,7 +42,7 @@ def fit(
 
     """
     if noise_model != "ols":
-        raise NotImplementedError("support for other noise models is missing")
+        raise NotImplementedError("Support for other noise models is missing")
 
     # FIXME: unit handling?
     # shoud the design matrix be dimensionless? -> thetas will have units
@@ -64,15 +60,14 @@ def fit(
             "time", "channel"
         )
 
-        _, glm_est = nilearn_run_glm(
-            group_y.values, group_design_matrix.values, noise_model=noise_model
-        )
-        assert len(glm_est) == 1  # FIXME, holds only for OLS
-        glm_est = next(iter(glm_est.values()))
+        model = sm.OLS(group_y.values, group_design_matrix.values)
+        results = model.fit()
+
+        # can't use results.summary() or results.conf_int() etc. if multiple channels are fitted at once
 
         thetas[dim3].append(
             xr.DataArray(
-                glm_est.theta[:, :, None],
+                results.params[:, :, None],
                 dims=("regressor", "channel", dim3_name),
                 coords={
                     "regressor": group_design_matrix.regressor,
@@ -82,10 +77,8 @@ def fit(
             )
         )
 
-    # concatenate channels
+    # Concatenate thetas across channels and dim3
     thetas = [xr.concat(v, dim="channel") for v in thetas.values()]
-
-    # concatenate dim3
     thetas = xr.concat(thetas, dim=dim3_name)
 
     return thetas
