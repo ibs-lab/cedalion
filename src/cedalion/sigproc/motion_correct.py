@@ -17,7 +17,7 @@ from .quality import (detect_baselineshift, detect_outliers, id_motion,
 #%% SPLINE
 @cdc.validate_schemas
 def motion_correct_spline(
-    fNIRSdata: cdt.NDTimeSeries, tIncCh: cdt.NDTimeSeries
+    fNIRSdata: cdt.NDTimeSeries, tIncCh: cdt.NDTimeSeries, p: float
 ) -> cdt.NDTimeSeries:
     """Apply motion correction using spline interpolation to fNIRS data.
 
@@ -48,7 +48,7 @@ def motion_correct_spline(
             dodSpline_chan = channel.copy()
 
             # get list of start and finish of each motion artifact segment
-            lstMA = np.where(tInc_channel == 1)[0]
+            lstMA = np.where(tInc_channel ==0)[0]
             if len(lstMA) != 0:
                 temp = np.diff(tInc_channel.values.astype(int))
                 lstMs = np.where(temp == -1)[0]
@@ -71,7 +71,7 @@ def motion_correct_spline(
                     idx = np.arange(lstMs[ii], lstMf[ii])
 
                     if len(idx) > 3:
-                        splInterp_obj = UnivariateSpline(t[idx], channel[idx])
+                        splInterp_obj = UnivariateSpline(t[idx], channel[idx], s= p*len(t[idx]))
                         splInterp = splInterp_obj(t[idx])
 
                         dodSpline_chan[idx] = channel[idx] - splInterp
@@ -145,7 +145,7 @@ def motion_correct_spline(
 
                     dodSpline_chan[idx] = channel[idx] - meanCurr + meanPrev
 
-                dodSpline.sel(channel=ch, wavelength=wl).values = dodSpline_chan
+            dodSpline.loc[dict(channel=ch, wavelength=wl)] = dodSpline_chan
 
     # dodSpline = dodSpline.unstack('measurement').pint.quantify()
 
@@ -183,6 +183,7 @@ def compute_window(
 @cdc.validate_schemas
 def motion_correct_splineSG(
     fNIRSdata: cdt.NDTimeSeries,
+    p: float,
     frame_size: Quantity = 10 * units.s,
 ):
     """Apply motion correction using spline interpolation and Savitzky-Golay filter.
@@ -214,7 +215,7 @@ def motion_correct_splineSG(
 
     tIncCh_pad = tIncCh.pad(time=extend, mode="constant", constant_values=False)
 
-    dodSpline = motion_correct_spline(fNIRSdata_lpf2_pad, tIncCh_pad)
+    dodSpline = motion_correct_spline(fNIRSdata_lpf2_pad, tIncCh_pad, p)
 
     # remove padding
     dodSpline = dodSpline.transpose("channel", "wavelength", "time")
