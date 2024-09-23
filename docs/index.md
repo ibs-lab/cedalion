@@ -13,6 +13,7 @@ rationale.md
 getting_started/index.md
 data_structures/index.md
 examples/index.md
+gallery.rst
 community/index.md
 API <api/modules.rst>
 references.rst
