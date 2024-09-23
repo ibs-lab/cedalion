@@ -52,6 +52,7 @@ def load_tsv(tsv_fname: str, crs: str='ijk', units: str='mm') -> xr.DataArray:
         return geo3d
     elif tsv_type == 'landmarks':
         landmarks = xr.DataArray(np.array(list(data.values())),
+                                 dims=['label', crs],
 		                         coords={"label": ("label", list(data.keys())),
 					    				 "type": ("label", [PointType.LANDMARK] \
                                                            * len(data))
