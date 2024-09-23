@@ -267,7 +267,7 @@ def motion_correct_PCA(
 
 
     # apply mask to get only points with motion
-    y, m = xrutils.apply_mask(fNIRSdata, tInc, 'drop', 'none')
+    y, m = xrutils.apply_mask(fNIRSdata, ~tInc, 'drop', 'none')
 
     # stack y and od
     y = (
@@ -275,7 +275,8 @@ def motion_correct_PCA(
         .sortby("wavelength")
         .pint.dequantify()
     )
-
+    y_zscore = ( y - y.mean('time') ) / y.std('time')
+    
     fNIRSdata_stacked = (
         fNIRSdata.stack(measurement=["channel", "wavelength"])
         .sortby("wavelength")
@@ -283,10 +284,10 @@ def motion_correct_PCA(
     )
 
     # PCA
-    yo = y.copy()
-    c = np.dot(y.T, y)
+    yo = y_zscore.copy()
+    c = np.dot(y_zscore.T, y_zscore)
 
-    V, St, foo = xr.apply_ufunc(svd, c)
+    V, St, foo = svd(c)
 
     svs = St / np.sum(St)
 
@@ -303,11 +304,12 @@ def motion_correct_PCA(
     ev = np.diag(np.squeeze(ev))
 
     # remove top PCs
-    yc = yo - np.dot(np.dot(y, V), np.dot(ev, V.T))
-
+    yc = yo - np.dot(np.dot(yo, V), np.dot(ev, V.T))
+    
+    yc = (yc * y.std('time')) + y.mean('time')
     # insert cleaned signal back into od
-    lstMs = np.where(np.diff(tInc.values.astype(int)) == 1)[0]
-    lstMf = np.where(np.diff(tInc.values.astype(int)) == -1)[0]
+    lstMs = np.where(np.diff(tInc.values.astype(int)) == -1)[0]
+    lstMf = np.where(np.diff(tInc.values.astype(int)) == 1)[0]
 
     if len(lstMs) == 0:
         lstMs = np.asarray([0])
@@ -421,7 +423,7 @@ def motion_correct_PCA_recurse(
     )  # unit stripped error x2
 
     tInc = id_motion_refine(tIncCh, "all")[0]
-    tInc.values = np.hstack([False, tInc.values[:-1]])
+    tInc.values = np.hstack([tInc.values[0], tInc.values[:-1]])
 
     nI = 0
     fNIRSdata_cleaned = fNIRSdata.copy()
@@ -437,6 +439,6 @@ def motion_correct_PCA_recurse(
             fNIRSdata_cleaned, t_motion, t_mask, stdev_thresh, amp_thresh
         )
         tInc = id_motion_refine(tIncCh, "all")[0]
-        tInc.values = np.hstack([False, tInc.values[:-1]])
+        tInc.values = np.hstack([tInc.values[0], tInc.values[:-1]])
 
     return fNIRSdata_cleaned, svs, nSV_ret, tInc
