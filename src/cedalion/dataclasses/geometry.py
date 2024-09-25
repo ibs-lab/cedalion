@@ -312,9 +312,6 @@ class TrimeshSurface(Surface):
             normal = np.mean([vertex_normals[n] for n in neighbors], axis=0)
             if np.linalg.norm(normal) > 0.99:
                 vertex_normals[idx] = normal / np.linalg.norm(normal)
-            else:
-                print("%d neighbors" % len(neighbors))
-                print("%d vertex index" % idx[0])
             
 
         mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, vertex_normals=vertex_normals)

@@ -196,7 +196,63 @@ class OneSurfaceFewVoxelsHeadModel:
             voxel_to_vertex_scalp=voxel_to_vertex_scalp,
         )
 
-    def reduce_voxels(self, Adot: xr.DataArray, sensitivity_threshold: float = 1e-9):
+    def reduce_voxels_to_probe(self, geo3d: xr.DataArray, max_dist: float = 50,
+                               brain_seg_types=["gm", "wm"]):
+        """Reduce the number of brain voxels to registered probe locations by
+        distance smaller than max_dist. Voxels further away than max_dist are
+        assumed not be able to contribute to the measurements. This method is
+        useful if you have a probe geometry, that is only covering parts of the
+        head.
+
+        Parameters
+        ----------
+        geo3d : xr.DataArray
+            Probe geometry in 3D space.
+        max_dist : float
+            Maximum distance from probe to brain voxel to be considered.
+
+        Returns
+        -------
+        OneSurfaceFewVoxelsHeadModel
+            Reduced head model.
+        """
+     
+        mask = np.zeros(self.brain.voxels.shape[0], dtype=bool)
+        for p in np.array(geo3d):
+            mask = mask | (np.linalg.norm(self.brain.voxels - p, axis=1) < max_dist)
+        
+        voxels = self.brain.voxels[mask]
+
+        # new mapping needed
+        kdtree = KDTree(voxels)
+        brain_mask = self.segmentation_masks.sel(segmentation_type=brain_seg_types).any("segmentation_type")
+        cell_coords = cell_coordinates(brain_mask, flat=True)
+        cell_coords = cell_coords.points.apply_transform(self.t_ijk2ras) 
+        cell_coords = cell_coords.pint.to(self.brain.units).pint.dequantify()  
+        ncells = cell_coords.sizes["label"]
+        nvoxels = voxels.shape[0]
+
+        # Find indices of cells that belong to the mask
+        cell_indices = np.flatnonzero(self.voxel_to_few_voxel_brain @ mask)
+
+        dists, vertex_indices = kdtree.query(
+            cell_coords.values[cell_indices, :], workers=-1
+        )
+       
+        self.voxel_to_few_voxel_brain = coo_array((np.ones(len(cell_indices)), 
+                                                   (cell_indices, vertex_indices)), 
+                                                  shape=(ncells, nvoxels))
+        print('Reduced %d brain voxels to %d (ratio: %f).' %
+              (self.brain.voxels.shape[0], voxels.shape[0],
+               round(voxels.shape[0]/self.brain.voxels.shape[0], 2)))
+        self.brain.voxels = voxels
+
+        return self
+
+
+    def reduce_voxels_to_sensitivity(self, Adot: xr.DataArray,
+                                     sensitivity_threshold: float = 1e-9,
+                                     brain_seg_types: list = ["gm", "wm"]):
         """Reduce the number of brain voxels head model to voxels with sensitivity 
         larger than 0 as given in sensitivity matrix Adot.
 
@@ -215,12 +271,13 @@ class OneSurfaceFewVoxelsHeadModel:
         Adot_brain = np.array(Adot[:,Adot.is_brain,:])
         Adot_summed = np.sum(Adot_brain, axis=2)
         Adot_summed = np.sum(Adot_summed, axis=0)
+        
         assert Adot_summed.shape[0] == self.brain.voxels.shape[0]
         mask = (Adot_summed > sensitivity_threshold)
         voxels = self.brain.voxels[mask]
+
         # new mapping needed
         kdtree = KDTree(voxels)
-        brain_seg_types = ["gm", "wm"]
         brain_mask = self.segmentation_masks.sel(segmentation_type=brain_seg_types).any("segmentation_type")
         cell_coords = cell_coordinates(brain_mask, flat=True)
         cell_coords = cell_coords.points.apply_transform(self.t_ijk2ras) 
@@ -228,8 +285,9 @@ class OneSurfaceFewVoxelsHeadModel:
         ncells = cell_coords.sizes["label"]
         nvoxels = voxels.shape[0]
 
-        # Find the closest vertex for each cell
-        cell_indices = np.flatnonzero(brain_mask.values) 
+        # Find indices of cells that belong to the mask
+        cell_indices = np.flatnonzero(self.voxel_to_few_voxel_brain @ mask)
+
         dists, vertex_indices = kdtree.query(
             cell_coords.values[cell_indices, :], workers=-1
         )
@@ -237,8 +295,10 @@ class OneSurfaceFewVoxelsHeadModel:
         self.voxel_to_few_voxel_brain = coo_array((np.ones(len(cell_indices)), 
                                                    (cell_indices, vertex_indices)), 
                                                   shape=(ncells, nvoxels))
+        print('Reduced %d brain voxels to %d (ratio: %f).' %
+              (self.brain.voxels.shape[0], voxels.shape[0],
+               round(voxels.shape[0]/self.brain.voxels.shape[0], 2)))
         self.brain.voxels = voxels
-        print('Reduced %d brain voxels to %d.' % (self.brain.voxels.shape[0], voxels.shape[0]))
 
         return self
 

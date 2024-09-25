@@ -66,10 +66,15 @@ def reduce_and_map_brain_voxels(
     volume_reduced = cdc.Voxels(volume.voxels[np.where(dists<max_dist)], volume.crs, volume.units)
     nvertices = len(volume_reduced.voxels)
    
-    # for each cell query the closests vertex in the reduced volume
+    # for each reduced brain voxel query the closests voxel (i.e. the same) in
+    # the reduced volume to get its index
+    map_voxels_to_reduced = np.argwhere(dists<max_dist)[:,0]
+    cell_indices = cell_indices[map_voxels_to_reduced]
     dists, vertex_indices = volume_reduced.kdtree.query(
         cell_coords.values[cell_indices, :], workers=-1
     )
+    # ensure that the same voxel is mapped to itself
+    assert (dists == 0.0).all()
 
     # construct a sparse matrix of shape (ncells, nvertices)
     # that maps voxels to cells
