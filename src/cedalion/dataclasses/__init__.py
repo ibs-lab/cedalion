@@ -6,6 +6,7 @@
 from .geometry import (
     PointType,
     Surface,
+    Voxels,
     TrimeshSurface,
     VTKSurface,
     affine_transform_from_numpy,
