@@ -17,7 +17,7 @@ from .quality import (detect_baselineshift, detect_outliers, id_motion,
 #%% SPLINE
 @cdc.validate_schemas
 def motion_correct_spline(
-    fNIRSdata: cdt.NDTimeSeries, tIncCh: cdt.NDTimeSeries
+    fNIRSdata: cdt.NDTimeSeries, tIncCh: cdt.NDTimeSeries, p: float
 ) -> cdt.NDTimeSeries:
     """Apply motion correction using spline interpolation to fNIRS data.
 
@@ -48,7 +48,7 @@ def motion_correct_spline(
             dodSpline_chan = channel.copy()
 
             # get list of start and finish of each motion artifact segment
-            lstMA = np.where(tInc_channel == 1)[0]
+            lstMA = np.where(tInc_channel ==0)[0]
             if len(lstMA) != 0:
                 temp = np.diff(tInc_channel.values.astype(int))
                 lstMs = np.where(temp == -1)[0]
@@ -71,7 +71,7 @@ def motion_correct_spline(
                     idx = np.arange(lstMs[ii], lstMf[ii])
 
                     if len(idx) > 3:
-                        splInterp_obj = UnivariateSpline(t[idx], channel[idx])
+                        splInterp_obj = UnivariateSpline(t[idx], channel[idx], s= p*len(t[idx]))
                         splInterp = splInterp_obj(t[idx])
 
                         dodSpline_chan[idx] = channel[idx] - splInterp
@@ -145,7 +145,7 @@ def motion_correct_spline(
 
                     dodSpline_chan[idx] = channel[idx] - meanCurr + meanPrev
 
-                dodSpline.sel(channel=ch, wavelength=wl).values = dodSpline_chan
+            dodSpline.loc[dict(channel=ch, wavelength=wl)] = dodSpline_chan
 
     # dodSpline = dodSpline.unstack('measurement').pint.quantify()
 
@@ -183,6 +183,7 @@ def compute_window(
 @cdc.validate_schemas
 def motion_correct_splineSG(
     fNIRSdata: cdt.NDTimeSeries,
+    p: float,
     frame_size: Quantity = 10 * units.s,
 ):
     """Apply motion correction using spline interpolation and Savitzky-Golay filter.
@@ -214,7 +215,7 @@ def motion_correct_splineSG(
 
     tIncCh_pad = tIncCh.pad(time=extend, mode="constant", constant_values=False)
 
-    dodSpline = motion_correct_spline(fNIRSdata_lpf2_pad, tIncCh_pad)
+    dodSpline = motion_correct_spline(fNIRSdata_lpf2_pad, tIncCh_pad, p)
 
     # remove padding
     dodSpline = dodSpline.transpose("channel", "wavelength", "time")
@@ -267,7 +268,7 @@ def motion_correct_PCA(
 
 
     # apply mask to get only points with motion
-    y, m = xrutils.apply_mask(fNIRSdata, tInc, 'drop', 'none')
+    y, m = xrutils.apply_mask(fNIRSdata, ~tInc, 'drop', 'none')
 
     # stack y and od
     y = (
@@ -275,7 +276,8 @@ def motion_correct_PCA(
         .sortby("wavelength")
         .pint.dequantify()
     )
-
+    y_zscore = ( y - y.mean('time') ) / y.std('time')
+    
     fNIRSdata_stacked = (
         fNIRSdata.stack(measurement=["channel", "wavelength"])
         .sortby("wavelength")
@@ -283,10 +285,10 @@ def motion_correct_PCA(
     )
 
     # PCA
-    yo = y.copy()
-    c = np.dot(y.T, y)
+    yo = y_zscore.copy()
+    c = np.dot(y_zscore.T, y_zscore)
 
-    V, St, foo = xr.apply_ufunc(svd, c)
+    V, St, foo = svd(c)
 
     svs = St / np.sum(St)
 
@@ -303,11 +305,12 @@ def motion_correct_PCA(
     ev = np.diag(np.squeeze(ev))
 
     # remove top PCs
-    yc = yo - np.dot(np.dot(y, V), np.dot(ev, V.T))
-
+    yc = yo - np.dot(np.dot(yo, V), np.dot(ev, V.T))
+    
+    yc = (yc * y.std('time')) + y.mean('time')
     # insert cleaned signal back into od
-    lstMs = np.where(np.diff(tInc.values.astype(int)) == 1)[0]
-    lstMf = np.where(np.diff(tInc.values.astype(int)) == -1)[0]
+    lstMs = np.where(np.diff(tInc.values.astype(int)) == -1)[0]
+    lstMf = np.where(np.diff(tInc.values.astype(int)) == 1)[0]
 
     if len(lstMs) == 0:
         lstMs = np.asarray([0])
@@ -421,7 +424,7 @@ def motion_correct_PCA_recurse(
     )  # unit stripped error x2
 
     tInc = id_motion_refine(tIncCh, "all")[0]
-    tInc.values = np.hstack([False, tInc.values[:-1]])
+    tInc.values = np.hstack([tInc.values[0], tInc.values[:-1]])
 
     nI = 0
     fNIRSdata_cleaned = fNIRSdata.copy()
@@ -437,6 +440,6 @@ def motion_correct_PCA_recurse(
             fNIRSdata_cleaned, t_motion, t_mask, stdev_thresh, amp_thresh
         )
         tInc = id_motion_refine(tIncCh, "all")[0]
-        tInc.values = np.hstack([False, tInc.values[:-1]])
+        tInc.values = np.hstack([tInc.values[0], tInc.values[:-1]])
 
     return fNIRSdata_cleaned, svs, nSV_ret, tInc
