@@ -8,7 +8,7 @@ import cedalion
 from cedalion.dataclasses import PointType, TrimeshSurface, build_labeled_points
 
 
-def load_tsv(tsv_fname: str, crs: str='ijk', units: str='mm') -> xr.DataArray:
+def load_tsv(tsv_fname: str, crs: str='digitized', units: str='mm') -> xr.DataArray:
     """Load a tsv file containing optodes or landmarks.
 
     Parameters
