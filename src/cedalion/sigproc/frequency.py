@@ -27,7 +27,7 @@ def sampling_rate(timeseries: cdt.NDTimeSeries) -> Quantity:
     time_unit = units.Unit(timeseries.time.attrs["units"])
 
     mean_diff = np.diff(timeseries.time).mean() * time_unit
-    return (1.0 / mean_diff).to("mHz")
+    return (1.0 / mean_diff).to("Hz") # report sampling rate in Hz
 
 
 @cdc.validate_schemas
