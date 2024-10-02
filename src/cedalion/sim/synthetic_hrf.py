@@ -104,7 +104,7 @@ def generate_hrf(
     return tbasis
 
 
-def build_blob(
+def build_blob_from_seed_landmark(
     head_model: cfm.TwoSurfaceHeadModel,
     landmark: str,
     scale: Quantity = 1 * units.cm,
@@ -147,6 +147,47 @@ def build_blob(
     blob_img = blob_img / np.max(blob_img)
     blob_img = xr.DataArray(blob_img, dims=["vertex"])
 
+    return blob_img
+
+def build_blob_from_seed_vertex( head_model: cfm.TwoSurfaceHeadModel,
+    vertex: str,
+    scale: Quantity = 1 * units.mm,
+    m: float = 10.0,
+):
+    """Generates a blob of activity at a seed vertex.
+
+    This function generates a blob of activity on the brain surface.
+    The blob is centered at the vertex closest to the seed landmark.
+
+    Args:
+        head_model (cfm.TwoSurfaceHeadModel): Head model with brain and scalp surfaces.
+        landmark (str): Name of the seed landmark.
+        scale (Quantity): Scale of the blob.
+        m (float): Geodesic distance parameter. Larger values of m will smooth &
+            regularize the distance computation. Smaller values of m will roughen and
+            will usually increase error in the distance computation.
+
+    Returns:
+        xr.DataArray: Blob image with activation values for each vertex.
+    
+    Initial Contributors:
+        - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
+        - Laura Carlton | lcarlton@bu.edu | 2024
+
+    """
+    scale = (scale / head_model.brain.units).to_base_units().magnitude
+
+    cortex_surface = cdg.PycortexSurface.from_trimeshsurface(head_model.brain)
+
+    distances_from_seed = cortex_surface.geodesic_distance([vertex], m=m)
+    # distances can be distord due to mesh decimation or unsuitable m value
+
+    norm_pdf = stats.norm(scale=scale).pdf
+
+    blob_img = norm_pdf(distances_from_seed)
+    blob_img = blob_img / np.max(blob_img)
+    blob_img = xr.DataArray(blob_img, dims=["vertex"])
+    
     return blob_img
 
 
