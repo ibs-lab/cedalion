@@ -37,7 +37,7 @@ def add_event_timing(
     return timing
 
 def gen_random_events(
-        time: cdt.NDTimeSeries,
+        time: xr.DataArray,
         num_events: int,
         types: List[str],
         channels: Union[List[str], None] = None,
@@ -65,7 +65,31 @@ def gen_random_events(
 
     return timing
 
+def gen_spike(time: xr.DataArray, onset_time, duration):
+    """Generate a spike event.
 
+    Args:
+        time: Time series to which the spike is added.
+        onset_time: Time of the spike.
+        duration: Duration of the spike.
+
+    Returns:
+        DataFrame with event timing data (columns onset_time, duration, trial_type, value, channel).
+    """
+    duration = 5 if duration > 5 else duration
+    return xr.DataArray(np.exp(-0.5*((time-onset_time)/duration)**2), dims="time", coords={"time":time})
+
+def gen_bl_shift(time: xr.DataArray, onset_time):
+    """Generate a baseline shift event.
+
+    Args:
+        time: Time series to which the baseline shift is added.
+        onset_time: Time of the baseline shift.
+
+    Returns:
+        DataFrame with event timing data (columns onset_time, duration, trial_type, value, channel).
+    """
+    return xr.DataArray(np.heaviside(time-onset_time, 1), dims="time", coords={"time":time})
 
 def add_artifacts_amp(amp: cdt.NDTimeSeries, timing: pd.DataFrame, scale: float = 1):
     """Add (scaled) artifacts to amplitude data.
@@ -86,12 +110,13 @@ def add_artifacts_amp(amp: cdt.NDTimeSeries, timing: pd.DataFrame, scale: float 
         channels = row['channel']
 
         if type in ARTIFACTS:
-            print(f"Adding {type} at {onset_time} to {channels if channels else 'all channels'}")
+            print(f"Adding {type} at {onset_time} for {duration} to {channels if channels else 'all channels'}")
             if type == "spike":
-                spike = xr.DataArray(np.exp(-0.5*((amp.time-onset_time)/duration)**2), dims="time", coords={"time":amp.time})
+                spike = gen_spike(amp_copy.time, onset_time, duration)
                 amp_copy.loc[dict(channel=channels if channels else slice(None))] += spike*scale*0.1*units.volt
             elif type == "bl_shift":
-                amp_copy.loc[dict(channel=channels if channels else slice(None), time=slice(onset_time,None))] += 0.1*scale*units.volt
+                bl_shift = gen_bl_shift(amp_copy.time, onset_time)
+                amp_copy.loc[dict(channel=channels if channels else slice(None))] += bl_shift*scale*0.1*units.volt
         else:
             print(f"Unknown artifact type {type}")
     return amp_copy
