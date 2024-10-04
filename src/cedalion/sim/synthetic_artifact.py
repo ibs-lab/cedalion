@@ -88,7 +88,7 @@ def add_artifacts_amp(amp: cdt.NDTimeSeries, timing: pd.DataFrame, scale: float 
         if type in ARTIFACTS:
             print(f"Adding {type} at {onset_time} to {channels if channels else 'all channels'}")
             if type == "spike":
-                spike = xr.DataArray(np.exp(-0.5*((amp.time-onset_time)/3)**2), dims="time", coords={"time":amp.time})
+                spike = xr.DataArray(np.exp(-0.5*((amp.time-onset_time)/duration)**2), dims="time", coords={"time":amp.time})
                 amp_copy.loc[dict(channel=channels if channels else slice(None))] += spike*scale*0.1*units.volt
             elif type == "bl_shift":
                 amp_copy.loc[dict(channel=channels if channels else slice(None), time=slice(onset_time,None))] += 0.1*scale*units.volt
