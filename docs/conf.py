@@ -69,3 +69,8 @@ myst_substitutions = {
 
 # -- sphinx_autodoc_typehints -------------------------------------------------
 always_use_bars_union = True
+
+# -- Nbsphinx gallery ----------------------------------------------------------------
+nbsphinx_thumbnails = {
+    'examples/*/*': '_static/IBS_Logo_sm.png',
+}
