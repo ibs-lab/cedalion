@@ -37,6 +37,7 @@ class PointType(Enum):
 
 @dataclass
 class Surface(ABC):
+    """Abstract base class for surfaces."""
     mesh: Any
     crs: str
     units: pint.Unit
@@ -75,6 +76,7 @@ class Surface(ABC):
         return self._kdtree
 
     def snap(self, points: cdt.LabeledPointCloud):
+        """Snap points to the nearest vertices on the surface."""
         if self.crs != points.points.crs:
             raise ValueError("CRS mismatch")
 
@@ -95,7 +97,71 @@ class Surface(ABC):
 
 
 @dataclass
+class Voxels():
+    """3D voxels represented by a np.array.
+
+    Attributes:
+        voxels (np.ndarray): The voxels.
+        crs (str): The coordinate reference system of the voxels.
+        units (pint.Unit): The units of the voxels.
+    """
+    voxels: np.ndarray
+    crs: str
+    units: pint.Unit
+
+    @property
+    def vertices(self) -> cdt.LabeledPointCloud:
+        result = xr.DataArray(
+            self.voxels,
+            dims=["label", self.crs],
+            coords={"label": np.arange(len(self.voxels))},
+            attrs={"units": self.units},
+        )
+        result = result.pint.quantify()
+
+        return result
+
+    @property
+    def nvertices(self) -> int:
+        return len(self.voxels)
+
+    def apply_transform(self, transform: cdt.AffineTransform) -> "Voxels":
+        # convert to homogeneous coordinates
+        num, dim = self.voxels.shape
+        hom = np.ones((num,dim+1))
+        hom[:,:3] = self.voxels
+        # apply transformation
+        hom = (transform.pint.dequantify().values.dot(hom.T)).T
+        # backtransformation
+        transformed = np.array([hom[i,:3] / hom[i,3] for i in range(hom.shape[0])])
+
+        new_units = self.units * transform.pint.units
+        new_crs = transform.dims[0]
+
+        return Voxels(transformed, new_crs, new_units)
+
+    def _build_kdtree(self):
+        self._kdtree = KDTree(self.voxels)
+
+    def __post_init__(self):
+        self._kdtree = None
+
+    @property
+    def kdtree(self):
+        if self._kdtree is None:
+            self._build_kdtree()
+        return self._kdtree
+
+
+@dataclass
 class TrimeshSurface(Surface):
+    """A surface represented by a trimesh object.
+
+    Attributes:
+        mesh (trimesh.Trimesh): The trimesh object representing the surface.
+        crs (str): The coordinate reference system of the surface.
+        units (pint.Unit): The units of the surface.
+    """
     mesh: trimesh.Trimesh
 
     @property
@@ -122,6 +188,14 @@ class TrimeshSurface(Surface):
         self._kdtree = KDTree(self.mesh.vertices)
 
     def apply_transform(self, transform: cdt.AffineTransform) -> "TrimeshSurface":
+        """Apply an affine transformation to this surface.
+
+        Args:
+            transform (cdt.AffineTransform): The affine transformation to apply.
+
+        Returns:
+            TrimeshSurface: The transformed surface.
+        """
         transformed = self.mesh.copy()
 
         new_units = self.units * transform.pint.units
@@ -260,8 +334,8 @@ class PycortexSurface(Surface):
     References:
         Functions in this class are based on the implementation
         in Pycortex (:cite:t:`Gao2015`).
-        Gao JS, Huth AG, Lescroart MD and Gallant JL (2015) 
-        Pycortex: an interactive surface visualizer for fMRI. 
+        Gao JS, Huth AG, Lescroart MD and Gallant JL (2015)
+        Pycortex: an interactive surface visualizer for fMRI.
         Front. Neuroinform. 9:23. doi: 10.3389/fninf.2015.00023
     """
 
@@ -337,7 +411,10 @@ class PycortexSurface(Surface):
 
     @property
     def ppts(self) -> np.ndarray:
-        """3D matrix of points in each face: n faces x 3 points per face x 3 coords per point."""
+        """3D matrix of points in each face.
+
+        n faces x 3  per face x 3 coords per point.
+        """
         return self.mesh.pts[self.mesh.polys]
 
     @property
@@ -385,7 +462,7 @@ class PycortexSurface(Surface):
         )
         # Normalize to norm 1
         nfnorms = nnfnorms / np.sqrt((nnfnorms**2).sum(1))[:, np.newaxis]
-        # Ensure that there are no nans (shouldn't be a problem with well-formed surfaces)
+        # Ensure that there are no nans. Shouldn't be a problem with well-formed srfcs.
         return np.nan_to_num(nfnorms)
 
     @property
@@ -436,15 +513,18 @@ class PycortexSurface(Surface):
 
     @property
     def laplace_operator(self):
-        """Laplace-Beltrami operator for this surface. A sparse adjacency matrix with
+        """Laplace-Beltrami operator for this surface.
+
+        A sparse adjacency matrix with
         edge weights determined by the cotangents of the angles opposite each edge.
-        Returns a 4-tuple (B, D, W, V) where D is the 'lumped mass matrix', W is the weighted
-        adjacency matrix, and V is a diagonal matrix that normalizes the adjacencies.
-        The 'stiffness matrix', A, can be computed as V - W.
+        Returns a 4-tuple (B, D, W, V) where D is the 'lumped mass matrix', W is the
+        weighted adjacency matrix, and V is a diagonal matrix that normalizes the
+        adjacencies. The 'stiffness matrix', A, can be computed as V - W.
 
         The full LB operator can be computed as D^{-1} (V - W).
 
-        B is the finite element method (FEM) 'mass matrix', which replaces D in FEM analyses.
+        B is the finite element method (FEM) 'mass matrix', which replaces D in FEM
+        analyses.
 
         See 'Discrete Laplace-Beltrami operators for shape analysis and segmentation'
         by Reuter et al., 2009 for details.
@@ -505,22 +585,21 @@ class PycortexSurface(Surface):
 
     def surface_gradient(self, scalars, at_verts=True):
         """Gradient of a function with values `scalars` at each vertex on the surface.
+
         If `at_verts`, returns values at each vertex. Otherwise, returns values at each
         face.
 
-        Parameters
-        ----------
-        scalars : 1D ndarray, shape (total_verts,)
-            A scalar-valued function across the cortex.
-        at_verts : bool, optional
-            If True (default), values will be returned for each vertex. Otherwise,
-            values will be returned for each face.
+        Args:
+            scalars : 1D ndarray, shape (total_verts,) a scalar-valued function across
+                the cortex.
+            at_verts : bool, optional
+                If True (default), values will be returned for each vertex. Otherwise,
+                values will be returned for each face.
 
-        Returns
-        -------
-        gradu : 2D ndarray, shape (total_verts,3) or (total_polys,3)
-            Contains the x-, y-, and z-axis gradients of the given `scalars` at either
-            each vertex (if `at_verts` is True) or each face.
+        Returns:
+            gradu : 2D ndarray, shape (total_verts,3) or (total_polys,3)
+                Contains the x-, y-, and z-axis gradients of the given `scalars` at
+                either each vertex (if `at_verts` is True) or each face.
         """
         pu = scalars[self.mesh.polys]
         fe12, fe23, fe31 = [f.T for f in self._facenorm_cross_edge]
@@ -546,8 +625,10 @@ class PycortexSurface(Surface):
 
 
     def geodesic_distance(self, verts, m=1.0, fem=False):
-        """Minimum mesh geodesic distance (in mm) from each vertex in surface to any
-        vertex in the collection `verts`.
+        """Calcualte the inimum mesh geodesic distance (in mm).
+
+        The geodesic distance is calculated from each vertex in surface to any vertex in
+        the collection `verts`.
 
         Geodesic distance is estimated using heat-based method (see 'Geodesics in Heat',
         Crane et al, 2012). Diffusion of heat along the mesh is simulated and then
@@ -560,23 +641,23 @@ class PycortexSurface(Surface):
         operator and the weighted adjacency matrix), so it will be much faster on
         subsequent runs.
 
-        The time taken by this function is independent of the number of vertices in verts.
+        The time taken by this function is independent of the number of vertices in
+        verts.
 
-        Parameters
-        ----------
-        verts : 1D array-like of ints
-            Set of vertices to compute distance from. This function returns the shortest
-            distance to any of these vertices from every vertex in the surface.
-        m : float, optional
-            Reverse Euler step length. The optimal value is likely between 0.5 and 1.5.
-            Default is 1.0, which should be fine for most cases.
-        fem : bool, optional
-            Whether to use Finite Element Method lumped mass matrix. Wasn't used in
-            Crane 2012 paper. Doesn't seem to help any.
+        Args:
+            verts : 1D array-like of ints
+                Set of vertices to compute distance from. This function returns the
+                shortest distance to any of these vertices from every vertex in the
+                surface.
+            m : float, optional
+                Reverse Euler step length. The optimal value is likely between 0.5 and
+                1.5. Default is 1.0, which should be fine for most cases.
+            fem : bool, optional
+                Whether to use Finite Element Method lumped mass matrix. Wasn't used in
+                Crane 2012 paper. Doesn't seem to help any.
 
-        Returns
-        -------
-        1D ndarray, shape (total_verts,)
+        Returns:
+            1D ndarray, shape (total_verts,)
             Geodesic distance (in mm) from each vertex in the surface to the closest
             vertex in `verts`.
         """
@@ -585,7 +666,8 @@ class PycortexSurface(Surface):
             B, D, W, V = self.laplace_operator
             nLC = W - V  # negative laplace matrix
             if not fem:
-                spD = sparse.dia_matrix((D, [0]), (npt, npt)).tocsr()  # lumped mass matrix
+                # lumped mass matrix
+                spD = sparse.dia_matrix((D, [0]), (npt, npt)).tocsr()
             else:
                 spD = B
 
@@ -595,10 +677,10 @@ class PycortexSurface(Surface):
             # Exclude rows with zero weight (these break the sparse LU)
             goodrows = np.nonzero(~np.array(lfac.sum(0) == 0).ravel())[0]
             self._goodrows = goodrows
-            self._rlfac_solvers[m] = sparse.linalg.dsolve.factorized(
+            self._rlfac_solvers[m] = sparse.linalg.factorized(
                 lfac[goodrows][:, goodrows]
             )
-            self._nLC_solvers[m] = sparse.linalg.dsolve.factorized(
+            self._nLC_solvers[m] = sparse.linalg.factorized(
                 nLC[goodrows][:, goodrows]
             )
 
@@ -619,7 +701,6 @@ class PycortexSurface(Surface):
         gradu = self.surface_gradient(u, at_verts=False)
 
         # Compute X (normalized grad u)
-        graduT = gradu.T
         gusum = np.sum(gradu ** 2, axis=1)
         X = np.nan_to_num((-gradu.T / np.sqrt(gusum)).T)
 
@@ -657,31 +738,29 @@ class PycortexSurface(Surface):
         Other Parameters in kwargs are passed to the geodesic_distance
         function to alter how geodesic distances are actually measured
 
-        Parameters
-        ----------
-        a : int
-            Vertex that is the start of the path
-        b : int
-            Vertex that is the end of the path
-        d : array
-            array of geodesic distances, will be computed if not provided
+        Args:
+            a : int
+                Vertex that is the start of the path
+            b : int
+                Vertex that is the end of the path
+            d : array
+                array of geodesic distances, will be computed if not provided
 
-        Other Parameters
-        ----------------
-        max_len : int, optional, default=1000
-            Maximum path length before the function quits. Sometimes it can get stuck
-            in loops, causing infinite paths.
-        m : float, optional
-            Reverse Euler step length. The optimal value is likely between 0.5 and 1.5.
-            Default is 1.0, which should be fine for most cases.
-        fem : bool, optional
-            Whether to use Finite Element Method lumped mass matrix. Wasn't used in
-            Crane 2012 paper. Doesn't seem to help any.
+            max_len : int, optional, default=1000
+                Maximum path length before the function quits. Sometimes it can get
+                stuck in loops, causing infinite paths.
+            m : float, optional
+                Reverse Euler step length. The optimal value is likely between 0.5 and
+                1.5. Default is 1.0, which should be fine for most cases.
+            fem : bool, optional
+                Whether to use Finite Element Method lumped mass matrix. Wasn't used in
+                Crane 2012 paper. Doesn't seem to help any.
 
-        Returns
-        -------
-        path : list
-            List of the vertices in the path from a to b
+            kwargs: other arugments are passed to self.geodesic_distance
+
+        Returns:
+            path : list
+                List of the vertices in the path from a to b
         """
         path = [a]
         if d is None:
@@ -710,9 +789,11 @@ class PycortexSurface(Surface):
         npt = len(self.mesh.pts)
         npoly = len(self.mesh.polys)
         o = np.ones((npoly,))
-        c1 = sparse.coo_matrix((o, (self.mesh.polys[:,0], range(npoly))), (npt, npoly)).tocsr()
-        c2 = sparse.coo_matrix((o, (self.mesh.polys[:,1], range(npoly))), (npt, npoly)).tocsr()
-        c3 = sparse.coo_matrix((o, (self.mesh.polys[:,2], range(npoly))), (npt, npoly)).tocsr()
+
+        c1 = sparse.coo_matrix((o, (self.mesh.polys[:,0], range(npoly))), (npt, npoly)).tocsr() # noqa: E501
+        c2 = sparse.coo_matrix((o, (self.mesh.polys[:,1], range(npoly))), (npt, npoly)).tocsr() # noqa: E501
+        c3 = sparse.coo_matrix((o, (self.mesh.polys[:,2], range(npoly))), (npt, npoly)).tocsr() # noqa: E501
+
         return c1, c2, c3
 
     @classmethod
@@ -739,6 +820,7 @@ class PycortexSurface(Surface):
 def affine_transform_from_numpy(
     transform: np.ndarray, from_crs: str, to_crs: str, from_units: str, to_units: str
 ) -> cdt.AffineTransform:
+    """Create a AffineTransform object from a numpy array."""
     units = cedalion.units.Unit(to_units) / cedalion.units.Unit(from_units)
 
     return xr.DataArray(transform, dims=[to_crs, from_crs]).pint.quantify(units)

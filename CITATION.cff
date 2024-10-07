@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Intelligent Biomedical Sensing (IBS) Lab"
+- family-names: "Cedalion Developers"
+title: "Cedalion Python Toolbox"
+version: 1.0.0
+date-released: 2024-09-08
+url: "https://github.com/ibs-lab/cedalion"

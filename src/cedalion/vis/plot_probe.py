@@ -208,8 +208,8 @@ class Main(QtWidgets.QMainWindow):
             if np.shape(self.snirfData)[1] != len(self.snirfData.channel):
                 self.snirfData = self.snirfData.transpose("trial_type", "channel", "chromo", "reltime")
             
-            self.sPos = self.geo2d.sel(label = ["S" in str(s.values) for s in self.geo2d.label])
-            self.dPos = self.geo2d.sel(label = ["D" in str(s.values) for s in self.geo2d.label])
+            self.sPos = self.geo2d.sel(label = ["S" in s for s in self.geo2d.label.values])
+            self.dPos = self.geo2d.sel(label = ["D" in s for s in self.geo2d.label.values])
             
             self.sourcePos3D = self.geo3d.sel(label = ["S" in str(s.values) for s in self.geo3d.label])
             self.detectorPos3D = self.geo3d.sel(label = ["D" in str(s.values) for s in self.geo3d.label])

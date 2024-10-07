@@ -1,30 +1,33 @@
-import matplotlib.pyplot as p
-import xarray as xr
+import math
 
-from cedalion.dataclasses import PointType
+import matplotlib
+import matplotlib.pyplot as p
+import matplotlib.transforms as transforms
+import numpy as np
+import pandas as pd
+import pyvista as pv
+import vtk
+import xarray as xr
+from matplotlib.patches import Rectangle, Circle, Ellipse
+from vtk.util.numpy_support import numpy_to_vtk
+import itertools
+from numpy.typing import ArrayLike
+import cedalion.nirs
+import cedalion.data
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
-import pyvista as pv
-from vtk.util.numpy_support import numpy_to_vtk
-import vtk
-
-import numpy as np
-import pint_xarray
-
-# Laura's scalp_plot additional imports
-import math
-import pandas as pd
-import matplotlib
-import scipy.stats as stats
-import matplotlib.colors as clrs
-from scipy import signal 
-import seaborn as sns
-import cedalion 
-import cedalion.nirs
 import cedalion.xrutils as xrutils
-
+from cedalion.dataclasses import PointType
+import cedalion.geometry.registration as registration
+from cedalion import Quantity
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
+    """Plots a 3D visualization of a montage.
+
+    Args:
+        amp (xr.DataArray): Time series data array.
+        geo3d (xr.DataArray): Landmark coordinates.
+    """
     geo3d = geo3d.pint.dequantify()
 
     f = p.figure()
@@ -57,13 +60,15 @@ def plot3d(
         brain_mesh (TrimeshSurface): The brain mesh as a TrimeshSurface object.
         scalp_mesh (TrimeshSurface): The scalp mesh as a TrimeshSurface object.
         geo3d (xarray.Dataset): Dataset containing 3-dimentional point centers.
-        timeseries
-        poly_lines
-        brain_scalars
+        timeseries: Time series data array.
+        poly_lines: List of lists of points to be plotted as polylines.
+        brain_scalars: Scalars to be used for coloring the brain mesh.
         plotter (pv.Plotter, optional): An existing PyVista plotter instance to use for plotting. If None, a new
             PyVista plotter instance is created. Default is None.
+
+    Initial Contributors:
+        - Eike Middell | middell@tu-berlin.de | 2024
     """
-    #pv.set_jupyter_backend("server")
 
     if plotter is None:
         plt = pv.Plotter()
@@ -157,8 +162,12 @@ def plot_surface(
     Returns:
         function: If `pick_landmarks` is True, returns a function that when called, provides the current picked points
         and their labels. This function prints warnings if some labels are missing or are repeated.
+
+    Initial Contributors:
+        - Eike Middell | middell@tu-berlin.de | 2024
+        - Masha Iudina | mashayudi@gmail.com | 2024
     """
-    pv.set_jupyter_backend("server") 
+
     if isinstance(surface, cdc.VTKSurface):
         mesh = surface.mesh
     elif isinstance(surface, cdc.TrimeshSurface):
@@ -270,8 +279,11 @@ def plot_labeled_points(
         ppoints (list, optional): A list to store indices of picked points, enables picking if not None. Default is None.
         labels (list of str, optional): List of labels to show if `show_labels` is True. If None and `show_labels` is True,
             the labels from `points` are used.
+
+    Initial Contributors:
+        - Eike Middell | middell@tu-berlin.de | 2024
     """
-    pv.set_jupyter_backend("server")
+
     # FIXME make these configurable
     default_point_colors = {
         PointType.UNKNOWN: "gray",
@@ -329,6 +341,17 @@ def plot_vector_field(
     vectors: xr.DataArray,
     ppoints = None
 ):
+    """Plots a vector field on a PyVista plotter.
+
+    Args:
+        plotter (pv.Plotter): A PyVista plotter instance used for rendering the vector
+            field.
+        points (cdt.LabeledPointCloud): A labeled point cloud data structure containing
+            point coordinates.
+        vectors (xr.DataArray): A data array containing the vector field.
+        ppoints (list, optional): A list to store indices of picked points, enables
+            picking if not None. Default is None.
+    """
     assert len(points) == len(vectors)
     assert all(points.label.values == vectors.label.values)
     assert points.points.crs == vectors.dims[1]
@@ -378,6 +401,9 @@ class OptodeSelector:
         on_pick(picked_point): Callback function for picking points in the visualization.
         update_visualization(): Clears the existing plot and re-renders the point cloud.
         enable_picking(): Enables interactive picking of points on the plot.
+
+    Initial Contributors:
+        - Masha Iudina | mashayudi@gmail.com | 2024
     """
     def __init__(self, surface, points, normals=None, plotter=None, labels = None):
         self.points = points
@@ -418,7 +444,7 @@ class OptodeSelector:
                     sphere_actor = plotter.add_mesh(s, color=color)
                 self.actors.append(sphere_actor)
                 if self.labels is not None:
-                    plotter.add_point_labels(x[i_point].values, [str(labels[i_point])])
+                    plotter.add_point_labels(x[i_point].values, [str(self.labels[i_point])])
 
 
     def on_pick(self, picked_point):
@@ -512,21 +538,36 @@ class OptodeSelector:
 
 
 
+# original implementation using a different and in principle superior projection method
+def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, threshold_ind = None,
+               threshold_col = None, saturation=None, vmin=0, vmax=1, savePath = None, 
+               remove_short=0, flagFontSize=0, flagMarkerSize=8):
+    """Creates a 2D montage of optodes with channels coloured according to a given metric.
 
-def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_ind = None, threshold_col = None, saturation=None, vmin=0, vmax=1, savePath = None, remove_short=0, flagFontSize=0, flagMarkerSize=8):
-    '''
-    CREATE A 2D MONTAGE OF OPTODES WITH CHANNELS COLOURED ACCORDING TO A GIVEN METRIC
-    
-    Parameters:
-        snirfObj -> valid snirfObj to extract the measurement list
-        ax -> axis object to plot the montage
-        metric -> metric to plot onto the channels
-        colormap -> colormap to use to color the channels (default = jet)
-        title -> title for the plot (default = SQE)
-        threshold -> metrics values below threshold will be plotted as dotted lines (default = 0)
-        vmin -> minimum value for the colorbar (default = 0)
-        vmax -> maximum value for the colorbar (default = 1)
-    '''
+    First version created by Laura Carlton, BU, 2024
+
+    Args:
+        REQUIRED:
+        recording (): recording object that contains the information of all the measurements
+        metric (numpy array or list): metric to plot with dimensions (num_channels) #FIXME this should probably changed to an xarray that contains a channel coordinate for each entry
+        ax (matplotlib.pyplot axes object): the axes object on which to create the plot
+
+        OPTIONAL:
+        colormap (matplotlib colormap): colormap (default is bwr)
+        title (string): if you want to automatically add a title to the plot (default is None)
+        threshold_ind (int): threshold index to include in the colorbar (default is None)
+        threshold_col (list): mask for for channels that are above or below a certain threshold (if 1 then alpha is set to 0.4 so channel is faded) (default is None)
+        saturation (list): mask for channels that are saturated (if 1 then color is grey) (default is None)
+        vmin (int or float): minimum value in colorbar (default is 0)
+        vmax (int or float): maximum value in colorbar (default is 1)
+        savePath (string): path to save the figure (default is None)
+        remove_short (boolean): flag to not plot short separation channels (default is 0 so they do get plotted)
+        flagFontSize (boolean): change the size of the source/detector labels (default is 0 so no labels)
+        flagMarkerSize (boolean): change the size of the source/detector markers (default is 8)
+
+    Initial Contributors:
+        - Laura Carlton | lcarlton@bu.edu | 2024
+    """
 
     def cart2sph(x, y, z):
         hxy = np.hypot(x, y)
@@ -534,12 +575,12 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
         el = np.arctan2(z, hxy)
         az = np.arctan2(y, x)
         return az, el, r
-    
+
     def pol2cart(theta, rho):
         x = rho * np.cos(theta)
         y = rho * np.sin(theta)
         return x, y
-    
+
     def convert_optodePos3D_to_circular2D(pos, tranformation_matrix, norm_factor):
         pos = np.append(pos, np.ones((pos.shape[0],1)), axis=1)
         pos_sphere = np.matmul(pos,tranformation_matrix)
@@ -552,31 +593,20 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
         x = x/norm_factor
         y = y/norm_factor
         return x, y
-    
-    channels_df = pd.read_excel('10-5-System_Mastoids_EGI129.xlsx') 
+
+
+    path = cedalion.data.get("10-5-System_Mastoids_EGI129.tsv")
+    with path.open("r") as fin:
+        channels_df = pd.read_csv(fin, sep='\t') 
+
     probe_landmark_pos3D = []
     circular_landmark_pos3D = []
-    geo3d = snirfObj.geo3d
-    
-    # landmarks = geo3d.loc[geo3d.type == cedalion.io.snirf.PointType.LANDMARK]
-    # sources = geo3d.loc[geo3d.type == cedalion.io.snirf.PointType.SOURCE]
-    # detectors = geo3d.loc[geo3d.type == cedalion.io.snirf.PointType.DETECTOR]
-    
+    geo3d = recording.geo3d
 
-    # extracts all datapoints from geo3d that have the label 'SOURCE'
-    sourcetype = cedalion.dataclasses.geometry.PointType(1)
-    # yields a boolean xarray with True where the type is equal to the sourcetype
-    bool_idx = geo3d.coords['type'] == sourcetype
-    # extracts the data from geo3D where x is True. Result is another geo3D xarray reduced to this subset
-    sources = geo3d.where(bool_idx, drop=True)
+    landmarks = geo3d.loc[geo3d.type == cdc.PointType.LANDMARK]
+    sources = geo3d.loc[geo3d.type == cdc.PointType.SOURCE]
+    detectors = geo3d.loc[geo3d.type == cdc.PointType.DETECTOR]
 
-    detectortype = cedalion.dataclasses.geometry.PointType(2)
-    bool_idx = geo3d.coords['type'] == detectortype
-    detectors = geo3d.where(bool_idx, drop=True)
-
-    landmarktype = cedalion.dataclasses.geometry.PointType(3)
-    bool_idx = geo3d.coords['type'] == landmarktype
-    landmarks = geo3d.where(bool_idx, drop=True)
 
     #### find the landmarks in the probe ####
     for u in range(len(landmarks)):
@@ -586,48 +616,41 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
             landmark_pos3D = landmarks[u,0:3].to_numpy().tolist()
             landmark_pos3D.extend([1])
             probe_landmark_pos3D.append(landmark_pos3D)
-            
+
     landmarks2D_theta = (channels_df['Theta']*2*math.pi/360).to_numpy()
     landmarks2D_phi = ((90-channels_df['Phi'])*2*math.pi/360).to_numpy()
     x,y = pol2cart(landmarks2D_theta, landmarks2D_phi)
-    
+
     norm_factor = max(np.sqrt(np.add(np.square(x),np.square(y))))
     temp = np.linalg.inv(np.matmul(np.transpose(probe_landmark_pos3D),probe_landmark_pos3D))
     tranformation_matrix = np.matmul(temp,np.matmul(np.transpose(probe_landmark_pos3D),circular_landmark_pos3D))        
-    tranformation_matrix = tranformation_matrix
-    # tranformation_matrix = np.linalg.lstsq(probe_landmark_pos3D, circular_landmark_pos3D, rcond=None)
-        
-    # measurements = snirfObj.nirs[0].data[0].measurementList
+
     skipped_channels = []
     skipped_detectors = []
     skipped_metrics = []
-    data = snirfObj["amp"] # .data[0]
+    data = recording["amp"] # .data[0]
     nMeas = len(data.channel)
-    
+
     if remove_short == 1: # then remove any channels that are less than 10mm 
-        
-    
+
+
         for u in range(nMeas):
-            
+
             sourceIndex =  data.source[u]
             detectorIndex =  data.detector[u]
-            
-            dist = xrutils.norm(geo3d.loc[data.source[u]] - geo3d.loc[data.detector[u]], dim="pos")
-            
 
-            # x = snirfObj.nirs[0].probe.sourcePos3D[sourceIndex-1]
-            # y= snirfObj.nirs[0].probe.detectorPos3D[detectorIndex-1]
-            # dist = math.dist(x,y)
-                
-            if dist.values < 10:
+            dist = xrutils.norm(geo3d.loc[data.source[u]] - geo3d.loc[data.detector[u]], dim="pos")
+
+
+            if dist < 10:
                     skipped_channels.append([sourceIndex, detectorIndex])
                     skipped_detectors.append(detectorIndex)
                     skipped_metrics.append(u)
-    
+
     # if the metrics/threshold_col given include those for short channels, remove them from the array 
     if len(metric) == nMeas//2:
         metric = np.delete(metric,skipped_metrics)
-    
+
     if type(threshold_col) == list:
         if len(threshold_col) == nMeas//2:
             threshold_col = np.delete(threshold_col,skipped_metrics)
@@ -635,48 +658,40 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
     #### scale indices #####
     sourcePos2DX , sourcePos2DY = convert_optodePos3D_to_circular2D(sources, tranformation_matrix, norm_factor)
     detectorPos2DX , detectorPos2DY = convert_optodePos3D_to_circular2D(detectors, tranformation_matrix, norm_factor)
-    
-    # sourcePos2D = snirfObj.nirs[0].probe.sourcePos2D
-    # sourcePos2DX = sourcePos2D[:,0]
-    # sourcePos2DY = sourcePos2D[:,1]
-    # detectorPos2D = snirfObj.nirs[0].probe.detectorPos2D
-    # detectorPos2DX = detectorPos2D[:,0]
-    # detectorPos2DY = detectorPos2D[:,1]
-    
-    
+
     scale = 1.3
     sourcePos2DX = sourcePos2DX*scale
     detectorPos2DX = detectorPos2DX*scale
     sourcePos2DY = sourcePos2DY*scale
     detectorPos2DY = detectorPos2DY*scale
-        
+
     #### plot the positions on the unit circle ####
     t = np.linspace(0, 2 * np.pi, 100)
     head_x = [math.sin(i) for i in t]
     head_y = [math.cos(i) for i in t]
-        
-    
+
+
     #### plot the channels according to the metrics ####
     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = matplotlib.cm.ScalarMappable(cmap=colormap,norm=norm)
     fontDict_src = dict(color='r', fontweight = 'bold', fontstretch= 'expanded',fontsize = flagFontSize, ha='center',va='center')
     fontDict_det = dict(color='b', fontweight = 'bold', fontstretch= 'expanded',fontsize = flagFontSize, ha='center',va='center')
-    
+
     i =0
     for u in range(nMeas):
         sourceIndex =  data.source[u]
         detectorIndex =  data.detector[u]
-        
+
         # skip the short_channels 
         if [sourceIndex, detectorIndex] in skipped_channels:
             continue
-        
-        
+
+
         iS = int(sourceIndex.to_numpy().tolist()[1:])
         iD = int(detectorIndex.to_numpy().tolist()[1:])
         x = [sourcePos2DX[iS-1], detectorPos2DX[iD-1]]
         y = [sourcePos2DY[iS-1], detectorPos2DY[iD-1]]
-        
+
 
         try:
             assert(threshold_col == None)
@@ -690,7 +705,7 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
         else:
             linestyle = '-'
             alpha=1
-        
+
         try:
             assert(saturation == None)
         except:
@@ -701,42 +716,274 @@ def scalp_plot(snirfObj, metric, ax, colormap=p.cm.bwr, title=None, threshold_in
                 color = colormap(norm(metric[i]))
         else:
             color = colormap(norm(metric[i]))
-            
+
         ax.plot(x,y, color=color,linestyle=linestyle, linewidth = 2, alpha=alpha)
         if flagFontSize>0:
             ax.text(x[0], y[0],str(iS),fontdict=fontDict_src) # bbox=dict(color = 'r',boxstyle = "round, pad=0.3", alpha=0.05))
             ax.text(x[1], y[1], str(iD),fontdict=fontDict_det) # bbox=dict(color='b',boxstyle = "round, pad=0.3", alpha=0.05))
         i+=1
-    
+
     ax.plot(head_x,head_y,'k')
-    
+
     if flagMarkerSize>0:
         for u in range(len(sourcePos2DX)):
             ax.plot(sourcePos2DX[u] , sourcePos2DY[u], 'r.', markersize=flagMarkerSize)
-        
+
         for u in range(len(detectorPos2DX)):
-            if u+1 in skipped_detectors:
-                continue
             ax.plot(detectorPos2DX[u] , detectorPos2DY[u], 'b.',markersize=flagMarkerSize)
-     
+
     if threshold_ind != None:
         ticks = [vmin, (vmin+vmax)//2, threshold_ind, vmax]
     else:   
         ticks = [vmin, (vmin+vmax)//2, vmax]
-        
+
     ax.plot(0, 1 , marker="^",markersize=16)
-    p.colorbar(sm,shrink =0.6, ticks=ticks)
+    p.colorbar(sm, ax=ax, shrink=0.6, ticks=ticks)
     ax.set_title(title)
     p.tight_layout()
     p.axis('equal')
     p.axis('off')
-    
+
     if savePath is not None: 
         p.savefig(savePath, dpi=1200)
+
+
+
+COLORBREWER_Q8 = [
+    "#e41a1c",
+    "#4daf4a",
+    "#377eb8",
+    "#984ea3",
+    "#ff7f00",
+    "#ffff33",
+    "#a65628",
+    "#f781bf",
+]
+
+
+def plot_stim_markers(
+    ax, stim: pd.DataFrame, fmt: dict[str, dict] | None = None, y: float = 0.03
+):
+    """Add stimulus indicators to an Axes.
+
+    For each trial a Rectangle is plotted in x from onset to onset+duration.
+    The height of the rectangle is specified in axes coordinates. In the default
+    setting a small bar at bottom of the axes is drawn. By setting y to 1. the
+    stimulus marker covers the full height of the axes.
+
+    Args:
+        ax: the matplotlib axes to operate on
+        stim: a stimulas data frame
+        fmt: for each trial_type a dictioniary of keyword arguments can be provided.
+            These kwargs are passed to matplotlib.patches.Rectangle to format
+            the stimulus indicator.
+        y : the height of the Rectangle in axes coordinates.
+
+    Initial Contributors:
+        - Eike Middell | middell@tu-berlin.de | 2024
+    """
+    trans = transforms.blended_transform_factory(
+    ax.transData, ax.transAxes)
+
+    base_fmt = {"fc" : 'None'}
+
+    if fmt is None:
+        fmt = {}
+        trial_types = stim["trial_type"].drop_duplicates().values
+        for trial_type, color in zip(trial_types, itertools.cycle(COLORBREWER_Q8)):
+            fmt[trial_type] = {"ec": color, "fc": color, "alpha": 0.3}
+
+    labeled_patches = []
+
+    for _, row in stim.iterrows():
+        trial_type = row["trial_type"]
+        if trial_type in fmt:
+            trial_fmt = base_fmt | fmt[trial_type]
+        else:
+            trial_fmt = base_fmt | {"c": "k"}
+
+        rect = Rectangle(
+            (row["onset"], 0),
+            row["duration"],
+            y,
+            transform=trans,
+            **trial_fmt,
+        )
+
+        # for each trial_type label one patch to put it in the legend
+        if trial_type not in labeled_patches:
+            rect.set_label(trial_type)
+            labeled_patches.append(trial_type)
+
+        ax.add_patch(rect)
+
+
+def scalp_plot(
+    ts: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
+    metric: xr.DataArray | ArrayLike,
+    ax,
+    title : str | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str = "bwr",
+    min_dist : Quantity | None = None,
+    min_metric : float | None = None,
+    channel_lw : float = 2.,
+    optode_size : float = 36.,
+    optode_labels : bool = False,
+    cb_label : str | None = None
+):
+    """Creates a 2D plot of the head with channels coloured according to a given metric.
+
+    Args:
+        ts: a NDTimeSeries to provide channel definitions
+        geo3d: a LabeledPointCloud to provide the probe geometry
+        metric ((:class:`DataArray`, (channel,) | ArrayLike)): the scalar metric to be
+            plotted for each channel. If provided as a DataArray it needs a channel
+            dimension. If provided as a plain array or list it must have the same
+            length as ts.channel and the matching is done by position.
+        ax: the matplotlib.Axes object into which to draw
+        title: the axes title
+        vmin: the minimum value of the metric
+        vmax: the maximum value of the metric
+        cmap: the name of the colormap
+        min_dist: if provided channels below this distance threshold are not drawn
+        min_metric: if provided channels below this metric threshold are toned down
+        channel_lw: channel line width
+        optode_size: optode marker size
+        optode_labels: if True draw optode labels instead of markers
+
+    Initial Contributors:
+        - Laura Carlton | lcarlton@bu.edu | 2024
+        - Eike Middell | middell@tu-berlin.de | 2024
+    """
+
+
+    geo2d = registration.simple_scalp_projection(geo3d)
+    channel_dists = cedalion.nirs.channel_distances(ts, geo3d)
+
+
+    if not isinstance(metric, xr.DataArray):
+        if len(metric) != ts.sizes["channel"]:
+            raise ValueError("metric is not a DataArray and does not match in size.")
+
+        metric = xr.DataArray(metric, dims=["channel"], coords={"channel": ts.channel})
+
+    metric_channels = set(metric.channel.values)
+
+    # FIXME use metric unit in colorbar label?
+    metric = metric.pint.dequantify()
+
+    channel = ts.channel.values
+    source = ts.source.values
+    detector = ts.detector.values
+
+    if vmin is None:
+        vmin = np.nanmin(metric)
+    if vmax is None:
+        vmax = np.nanmax(metric)
+
+    norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+    cmap = p.cm.get_cmap(cmap)
     
+    
+    ax.set_aspect("equal", adjustable="datalim")
+
+    # head and ears
+    ax.add_patch(Circle((0,0), 1., ec="k", fc="None"))
+    ax.add_patch(Ellipse((1.05, 0), .1, .3, ec="k", fc="None"))
+    ax.add_patch(Ellipse((-1.05, 0), .1, .3, ec="k", fc="None"))
+
+    # nose marker
+    angles = [np.pi/2 + .05, np.pi/2, np.pi/2 + -.05]
+    r = [1., 1.1, 1.0]
+    ax.plot( r * np.cos(angles), r * np.sin(angles), "k-")
+
+    
+    # draw lines for channels
+    used_sources = set()
+    used_detectors = set()
+
+    for ch,src,det,dist in zip(channel, source, detector, channel_dists):
+        s = geo2d.loc[src]
+        d = geo2d.loc[det]
+
+        if (min_dist is not None) and (dist.item() < min_dist):
+            continue
+
+        used_sources.add(str(src))
+        used_detectors.add(str(det))
+
+        if ch in metric_channels:
+            v = metric.sel(channel=ch).item()
+        else:
+            v = np.nan
+
+        c = cmap(norm(v))
+        line_fmt = {'c' : c, 'ls' : '-', 'lw' : channel_lw, 'alpha' : 1.0}
+
+        if (min_metric is not None) and (v < min_metric):
+            line_fmt['alpha'] = 0.4
+
+        ax.plot([s[0], d[0]], [s[1], d[1]], **line_fmt)
+
+    # draw markers or labels for sources and detectors
+    # /!\ isin with np strings and sets is tricky. probably because of the hash
+    s = geo2d.sel(label=geo2d.label.isin(list(used_sources)))
+    d = geo2d.sel(label=geo2d.label.isin(list(used_detectors)))
+    
+    COLOR_SOURCE = "#e41a1c" # colorbrewer red
+    COLOR_DETECTOR = "#377eb8" # colorbrewer blue
+
+    if optode_labels:
+        for sd, color in [(s, COLOR_SOURCE), (d, COLOR_DETECTOR)]:
+            for i in range(len(sd)):
+                ax.text(
+                    sd[i, 0],
+                    sd[i, 1],
+                    sd.label.values[i],
+                    ha="center",
+                    va="center",
+                    fontsize="small",
+                    weight="semibold",
+                    color=color,
+                    zorder=200)
+    else:
+        ax.scatter(
+            s[:, 0],
+            s[:, 1],
+            s=optode_size,
+            marker="s",
+            ec="k",
+            fc=COLOR_SOURCE,
+            zorder=100,
+        )
+        ax.scatter(
+            d[:, 0],
+            d[:, 1],
+            s=optode_size,
+            marker="s",
+            ec="k",
+            fc=COLOR_DETECTOR,
+            zorder=100,
+        )
+
+    # remove axes and ticks
+    ax.set_axis_off()
+    ax.set_xlim(-1.1, 1.1)
+    # ax.set_ylim(-1.1, 1.1)
+
+    # colorbar
+    cb = p.colorbar(
+        matplotlib.cm.ScalarMappable(cmap=cmap,norm=norm),
+        ax=ax,
+        shrink=0.6
+    )
+    cb.set_label(cb_label)
+
+    if title:
+        ax.set_title(title)
 
 
-
-
-
-
+    #cb.set_ticks([vmin, (vmin+vmax)//2, vmax])

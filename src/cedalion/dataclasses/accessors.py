@@ -1,34 +1,56 @@
-from typing import Dict
+from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
-import scipy.signal
 import xarray as xr
-import cedalion.typing as cdt
-import cedalion.dataclasses as cdc
-from typing import Union, List
 from numpy.typing import ArrayLike
+
+import cedalion.dataclasses as cdc
+import cedalion.typing as cdt
+from cedalion import Quantity, units
+from cedalion.sigproc.frequency import freq_filter
 
 
 @xr.register_dataarray_accessor("cd")
 class CedalionAccessor:
+    """Accessor for time series data stored in xarray DataArrays."""
     def __init__(self, xarray_obj):
-        """TBD."""
+        """Initialize the CedalionAccessor.
+
+        Args:
+            xarray_obj (xr.DataArray): The DataArray to which this accessor is attached.
+        """
         self._validate(xarray_obj)
         self._obj = xarray_obj
 
     @staticmethod
     def _validate(obj):
-        # verify there is a column latitude and a column longitude
+        """Make sure the DataArray has the required dimensions and coordinates."""
 
         if not (("time" in obj.dims) and ("time" in obj.coords)):
             raise AttributeError("Missing time dimension.")
 
     @property
     def sampling_rate(self):
+        """Return the sampling rate of the time series.
+
+        The sampling rate is calculated as the reciprocal of the mean time difference
+            between consecutive samples.
+        """
         return 1 / np.diff(self._obj.time).mean()
 
     def to_epochs(self, df_stim, trial_types, before, after):
+        """Extract epochs from the time series based on stimulus events.
+
+        Args:
+            df_stim (pandas.DataFrame): DataFrame containing stimulus events.
+            trial_types (list): List of trial types to include in the epochs.
+            before (float): Time in seconds before stimulus event to include in epoch.
+            after (float): Time in seconds after stimulus event to include in epoch.
+
+        Returns:
+            xarray.DataArray: Array containing the extracted epochs.
+        """
         # FIXME before units
         # FIXME error handling of boundaries
         tmp = df_stim[df_stim.trial_type.isin(trial_types)]
@@ -47,9 +69,13 @@ class CedalionAccessor:
         duration = np.max(durations)
         duration_idx = np.argmax(durations)
 
-        # FIXME limit reltime precision (to ns?) to avoid conflicts when concatenating epochs
+        # limit reltime precision (to ns?) to avoid conflicts when concatenating epochs
         # - different fix by DBoas & AvL on 01.08.24: Use times of longest epoch
-        reltime = np.round(self._obj.time[start[duration_idx] : end[duration_idx]] - tmp.onset.iloc[duration_idx], 9)
+        reltime = np.round(
+            self._obj.time[start[duration_idx] : end[duration_idx]]
+            - tmp.onset.iloc[duration_idx],
+            9,
+        )
 
         epochs = xr.concat(
             [
@@ -60,7 +86,7 @@ class CedalionAccessor:
             ],
             dim="epoch",
         )
-        
+
         epochs = epochs.rename({"time": "reltime"})
         epochs = epochs.assign_coords(
             {"reltime": reltime.values, "trial_type": ("epoch", tmp.trial_type.values)}
@@ -69,33 +95,26 @@ class CedalionAccessor:
         return epochs
 
     def freq_filter(self, fmin, fmax, butter_order=4):
-        """Apply a Butterworth frequency filter."""
+        """Applys a Butterworth filter.
+
+        Args:
+            fmin (float): The lower cutoff frequency.
+            fmax (float): The upper cutoff frequency.
+            butter_order (int): The order of the Butterworth filter.
+
+        Returns:
+            result (xarray.DataArray): The filtered time series.
+        """
         array = self._obj
 
-        fny = array.cd.sampling_rate / 2
-        
-        if fmin == 0:
-            b, a = scipy.signal.butter(butter_order, fmax / fny, "low")
+        # FIXME accept unit-less parameters and interpret them as Hz
+        if not isinstance(fmin, Quantity):
+            fmin = fmin * units.Hz
 
-        elif fmax == 0:
-            b, a = scipy.signal.butter(butter_order, fmin / fny, "high")
+        if not isinstance(fmax, Quantity):
+            fmax = fmax * units.Hz
 
-        else:
-            b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
-
-        # b, a = scipy.signal.butter(butter_order, (fmin / fny, fmax / fny), "bandpass")
-
-
-
-        if (units := array.pint.units) is not None:
-            array = array.pint.dequantify()
-
-        result = xr.apply_ufunc(scipy.signal.filtfilt, b, a, array)
-
-        if units is not None:
-            result = result.pint.quantify(units)
-
-        return result
+        return freq_filter(array, fmin, fmax, butter_order)
 
 
 @xr.register_dataarray_accessor("points")
@@ -153,7 +172,9 @@ class PointsAccessor:
 
         assert transform_units is not None
         assert transform.shape == (4, 4)  # FIXME assume 3D
-        assert from_crs in obj.dims
+        assert from_crs in obj.dims, f"Coordinate systems of points " \
+                                     f"({from_crs}) and transform " \
+                                     f"({obj.dims}) do not match."
 
         transform = transform.pint.dequantify()
 
@@ -210,23 +231,31 @@ class PointsAccessor:
         current = self.crs
         return self._obj.rename({current: value})
 
-    def add(self,
-           label: Union[str, List[str]],
-           coordinates: ArrayLike,
-           type: Union[cdc.PointType, List[cdc.PointType]],
-           group: Union[str, List[str]] = None) -> cdt.LabeledPointCloud:
+    def add(
+        self,
+        label: Union[str, List[str]],
+        coordinates: ArrayLike,
+        type: Union[cdc.PointType, List[cdc.PointType]],
+        group: Union[str, List[str]] = None,
+    ) -> cdt.LabeledPointCloud:
         # Handle the single point case
         if isinstance(label, str):
-            assert isinstance(type, cdc.PointType), "Type must be a PointType for a single label"
+            assert isinstance(
+                type, cdc.PointType
+            ), "Type must be a PointType for a single label"
             coordinates = np.asarray(coordinates)
-            assert coordinates.ndim == 1, "Coordinates for a single point must be 1-dimensional"
+            assert (
+                coordinates.ndim == 1
+            ), "Coordinates for a single point must be 1-dimensional"
 
             if label in self._obj.label:
                 raise KeyError(f"there is already a point with label '{label}'")
 
             coords_dict = {"label": ("label", [label]), "type": ("label", [type])}
             if group is not None:
-                assert isinstance(group, str), "Group must be a string for a single label"
+                assert isinstance(
+                    group, str
+                ), "Group must be a string for a single label"
                 coords_dict["group"] = ("label", [group])
 
             tmp = xr.DataArray(
@@ -239,7 +268,9 @@ class PointsAccessor:
         else:
             assert len(label) == len(type), "Labels and types must have the same length"
             if group is not None:
-                assert len(label) == len(group), "Labels and groups must have the same length"
+                assert len(label) == len(
+                    group
+                ), "Labels and groups must have the same length"
 
             for lbl in label:
                 if lbl in self._obj.label:
@@ -262,19 +293,27 @@ class PointsAccessor:
         merged = xr.concat((self._obj, tmp), dim="label")
 
         return merged
+
     def remove(self, label):
         raise NotImplementedError()
 
 
 @pd.api.extensions.register_dataframe_accessor("cd")
 class StimAccessor:
+    """Accessor for stimulus DataFrames."""
     def __init__(self, pandas_obj):
-        """TBD."""
+        """Initialize the StimAccessor.
+
+        Args:
+            pandas_obj (pd.DataFrame): The pandas DataFrame to which this accessor is
+                attached.
+        """
         self._validate(pandas_obj)
         self._obj = pandas_obj
 
     @staticmethod
     def _validate(obj):
+        """Make sure the DataFrame has the required columns for stimulus data."""
         for column_name in ["onset", "duration", "value", "trial_type"]:
             if column_name not in obj.columns:
                 raise AttributeError(
@@ -282,6 +321,28 @@ class StimAccessor:
                 )
 
     def rename_events(self, rename_dict):
+        """Renames trial types in the DataFrame based on the provided dictionary.
+
+        Args:
+            rename_dict (dict): A dictionary with the old trial type as key and the new
+                trial type as value.
+        """
         stim = self._obj
         for old_trial_type, new_trial_type in rename_dict.items():
             stim.loc[stim.trial_type == old_trial_type, "trial_type"] = new_trial_type
+
+    def conditions(self):
+        return self._obj.trial_type.unique()
+
+    # FIXME obsolete?
+    def to_xarray(self, time: xr.DataArray):
+        stim = self._obj
+        conds = self.conditions()
+        stim_arr = xr.DataArray(
+            np.zeros((time.shape[0], len(conds))),
+            dims=["time", "condition"],
+            coords={"time": time, "condition": conds},
+        )
+        for index, row in stim.iterrows():
+            stim_arr.loc[row.onset, row.trial_type] = 1
+        return stim_arr

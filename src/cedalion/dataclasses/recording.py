@@ -19,6 +19,22 @@ class Recording:
     It maps to the NirsElement in the snirf format but it also holds additional
     attributes (masks, headmodel, aux_obj) for which there is no corresponding
     entity in the snirf format.
+
+    Attributes:
+        timeseries (OrderedDict[str, NDTimeSeries]): A dictionary of timeseries objects.
+            The keys are the names of the timeseries.
+        masks (OrderedDict[str, xr.DataArray]): A dictionary of masks. The keys are the
+            names of the masks.
+        geo3d (LabeledPointCloud): A labeled point cloud representing the 3D geometry of
+            the recording.
+        geo2d (LabeledPointCloud): A labeled point cloud representing the 2D geometry of
+            the recording.
+        stim (pd.DataFrame): A dataframe containing the stimulus information.
+        aux_ts (OrderedDict[str, NDTimeSeries]): A dictionary of auxiliary timeseries
+            objects.
+        aux_obj (OrderedDict[str, Any]): A dictionary of auxiliary objects.
+        head_model (Optional[Any]): A head model object.
+        meta_data (OrderedDict[str, Any]): A dictionary of meta data.
     """
 
     timeseries: OrderedDict[str, NDTimeSeries] = field(default_factory=OrderedDict)
@@ -37,6 +53,7 @@ class Recording:
     )
 
     def __repr__(self):
+        """Return a string representation of the Recording object."""
         return (
             f"<Recording | "
             f" timeseries: {list(self.timeseries.keys())}, "
@@ -47,6 +64,15 @@ class Recording:
         )
 
     def get_timeseries(self, key: Optional[str] = None) -> NDTimeSeries:
+        """Get a timeseries object by key.
+
+        Args:
+            key (Optional[str]): The key of the timeseries to retrieve. If None, the
+                last timeseries is returned.
+
+        Returns:
+            NDTimeSeries: The requested timeseries object.
+        """
         if not self.timeseries:
             raise ValueError("timeseries dict is empty.")
 
@@ -72,6 +98,15 @@ class Recording:
         self.timeseries[key] = value
 
     def get_mask(self, key: Optional[str] = None) -> xr.DataArray:
+        """Get a mask by key.
+
+        Args:
+            key (Optional[str]): The key of the mask to retrieve. If None, the last
+                mask is returned.
+
+        Returns:
+            xr.DataArray: The requested mask.
+        """
         if not self.masks:
             raise ValueError("masks dict is empty.")
 
@@ -83,12 +118,28 @@ class Recording:
             return self.masks[last_key]
 
     def set_mask(self, key: str, value: xr.DataArray, overwrite: bool = False):
+        """Set a mask.
+
+        Args:
+            key (str): The key of the mask to set.
+            value (xr.DataArray): The mask to set.
+            overwrite (bool): Whether to overwrite an existing mask with the same key.
+                Defaults to False.
+        """
         if (overwrite is False) and (key in self.masks):
             raise ValueError(f"a mask with key '{key}' already exists!")
 
         self.masks[key] = value
 
     def get_timeseries_type(self, key):
+        """Get the type of a timeseries.
+
+        Args:
+            key (str): The key of the timeseries.
+
+        Returns:
+            str: The type of the timeseries.
+        """
         if key not in self.timeseries:
             raise KeyError(f"unknown timeseries '{key}'")
 
@@ -109,6 +160,11 @@ class Recording:
 
     @property
     def source_labels(self):
+        """Get the unique source labels from the timeseries.
+
+        Returns:
+            list: A list of unique source labels.
+        """
         labels = [
             ts.source.values for ts in self.timeseries.values() if "source" in ts.coords
         ]
@@ -116,6 +172,11 @@ class Recording:
 
     @property
     def detector_labels(self):
+        """Get the unique detector labels from the timeseries.
+
+        Returns:
+            list: A list of unique detector labels.
+        """
         labels = [
             ts.detector.values
             for ts in self.timeseries.values()
@@ -125,13 +186,23 @@ class Recording:
 
     @property
     def wavelengths(self):
+        """Get the unique wavelengths from the timeseries.
+
+        Returns:
+            list: A list of unique wavelengths.
+        """
         wl = [
-            ml["wavelength"].tolist()
-            for key, ml in self._measurement_lists.items()
-            if "wavelength" in ml.columns
+            ts.wavelength.values
+            for ts in self.timeseries.values()
+            if "wavelength" in ts.coords
         ]
         return list(np.unique(np.hstack(wl)))
 
     @property
     def trial_types(self):
+        """Get the unique trial types from the stimulus dataframe.
+
+        Returns:
+            list: A list of unique trial types.
+        """
         return list(self.stim["trial_type"].drop_duplicates())

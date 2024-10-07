@@ -3,7 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - click=8.1
-  - h5py=3.8
+  - h5py=3.11
   - ipython=8.13.2
   - ipywidgets=8.1.2
   - jupyter
@@ -13,7 +13,7 @@ dependencies:
   - nilearn=0.10
   - notebook=6.5.4
   - numpy=1.26
-  - opencv=4.6
+  - opencv
   - pandas=2.2
   - pint-xarray=0.3
   - pip
@@ -38,14 +38,14 @@ dependencies:
   - trame-vtk=2.8
   - trame-vuetify=2.6
   - trame-components=2.3
-  - vtk=9.2.2
+  - vtk=9.2.6
 
   - nbsphinx
   - nbstripout
   - sphinx
   - myst-parser
   - sphinx-autodoc-typehints
-  - sphinx_rtd_theme
+  - sphinx_rtd_theme=2.0.0
 
   - pip:
       - mne==1.7
@@ -56,3 +56,4 @@ dependencies:
       - snirf==0.8
       - pmcx==0.3.3
       - sphinxcontrib-bibtex
+      

@@ -10,5 +10,5 @@ repos:
     - id: ruff
       files: ^src/cedalion/
     # Run the formatter.
-    - id: ruff-format
-      files: ^src/cedalion/
+    #- id: ruff-format
+    #  files: ^src/cedalion/
