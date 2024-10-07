@@ -21,18 +21,23 @@ import matplotlib.gridspec as gridspec
 import os 
 import matplotlib.colors as clrs
 import matplotlib
+from cedalion.typing import NDTimeSeries
+from typing import Annotated
+
 logger = logging.getLogger("cedalion")
 
 #%% GETTING METRICS
-def get_data_metrics(amplitudes):
+def get_data_metrics(amplitudes: NDTimeSeries,
+                        window_length: Annotated[Quantity, "[time]"],
+                        psp_thresh: float = 2.0,
+                        sci_thresh: float = 0.8,
+                        snr_thresh: float = 0.1):
     
+    snr_val, snr_mask = snr(amplitudes, snr_thresh)
+    sci_val, sci_mask = sci(amplitudes, sci_thresh)
+    psp_val, psp_mask = psp(amplitudes, psp_thresh)
+    gvtd_val = gvtd(amplitudes)
 
-    snr_val = get_snr(amplitudes)
-    sci_val, sci_mask = get_sci(amplitudes)
-    psp_val, psp_mask = get_psp(amplitudes)
-    gvtd_val = get_gvtd(amplitudes)
-    
-    masks = [sci_mask, psp_mask]
     
     scixpsp_mask =  sci_mask & psp_mask #xr.where(sci_mask & psp_mask == False, sci_mask, psp_mask)
     scixpsp_mask = ~scixpsp_mask
@@ -49,22 +54,6 @@ def get_data_metrics(amplitudes):
         }
     
     return metric_dict
-
-def get_snr(amplitudes: cdt.NDTimeSeries, snr_thresh: float = 2.0):
-    snr_val, snr_mask = snr(amplitudes, snr_thresh)
-    return snr_val
-
-def get_psp(amplitudes: cdt.NDTimeSeries, window_length: Quantity = 5*units.s, psp_thresh: float = 0.1):
-    psp_val, psp_mask = psp(amplitudes, window_length, psp_thresh)
-    return psp_val, psp_mask
-
-def get_sci(amplitudes: cdt.NDTimeSeries, window_length: Quantity = 5*units.s, sci_thresh: float = 0.7):
-    sci_val, sci_mask = sci(amplitudes, window_length, sci_thresh)
-    return sci_val, sci_mask
-
-def get_gvtd(amplitudes: cdt.NDTimeSeries):
-    gvtd_val = gvtd(amplitudes)
-    return gvtd_val
 
 
 
@@ -98,7 +87,7 @@ def plot_stim_marks(stim):
 
     pass
 
-def plot_timeseries_all_channels(scixpsp_mask, stim, ax, title, savePath = None):
+def plot_binary_timeseries_all_channels(scixpsp_mask, stim, ax, title, savePath = None):
     
     colors=["black","white"]
     cmap = clrs.ListedColormap(colors)
@@ -157,7 +146,7 @@ def generate_report_single_run(snirfObj, title=None, savePath=None):
                           threshold_ind=5, threshold_col = threshold_col.sel(wavelength=wavelengths[1]),
                           title='SNR: $\lambda$ = ' + str(wavelengths[1]), remove_short=True)
 
-    #TODO need to generate this metric 
+
     threshold_col = metric_dict['perc_channel_thresholded'] < 0.6
     ax3 = fig.add_subplot(gs[0,2])
     plots.scalp_plot(snirfObj, metric_dict['perc_channel_thresholded'], 
@@ -166,7 +155,7 @@ def generate_report_single_run(snirfObj, title=None, savePath=None):
                           title='% of time SCI x PSP above thresholds', remove_short=True)
 
     ax4 = fig.add_subplot(gs[1,:])
-    plot_timeseries_all_channels(metric_dict['SCIxPSP_mask'], snirfObj.stim, 
+    plot_binary_timeseries_all_channels(metric_dict['SCIxPSP_mask'], snirfObj.stim, 
                                  ax4, title = 'SCI x PSP')   
     
     ax5 = fig.add_subplot(gs[2,:], sharex=ax4)
@@ -181,6 +170,7 @@ def generate_report_single_run(snirfObj, title=None, savePath=None):
 
     return metric_dict
 
+#%%
 # def generate_report_group():
 #     '''
 #     - run the report for each run of each subject

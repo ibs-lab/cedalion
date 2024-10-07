@@ -24,16 +24,17 @@ import matplotlib
 logger = logging.getLogger("cedalion")
 
 #%% GETTING METRICS
-def get_data_metrics(amplitudes):
+def get_data_metrics(amplitudes,
+                     snr_threshold,
+                     psp_threshold, 
+                     sci_threshold):
     
 
     snr_val = get_snr(amplitudes)
     sci_val, sci_mask = get_sci(amplitudes)
     psp_val, psp_mask = get_psp(amplitudes)
     gvtd_val = get_gvtd(amplitudes)
-    
-    masks = [sci_mask, psp_mask]
-    
+        
     scixpsp_mask =  sci_mask & psp_mask #xr.where(sci_mask & psp_mask == False, sci_mask, psp_mask)
     scixpsp_mask = ~scixpsp_mask
     perc_channel = scixpsp_mask.sum('time')/scixpsp_mask.shape[1]
