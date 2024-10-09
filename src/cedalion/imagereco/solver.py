@@ -21,3 +21,4 @@ def pseudo_inverse_stacked(Adot, alpha=0.01):
     B = xr.DataArray(B, dims=("flat_vertex", "flat_channel"))
 
     return B
+
