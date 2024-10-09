@@ -25,7 +25,8 @@ from cedalion.imagereco.utils import map_segmentation_mask_to_surface
 from .tissue_properties import get_tissue_properties
 from tqdm import tqdm 
 
-#%%
+#%% GETTING THE SPATIAL BASIS 
+
 def get_sensitivity_mask(sensitivity: xr.DataArray, threshold: float = -2, wavelength_idx: int = 0):
     """Generate a mask indicating vertices with sensitivity above a certain threshols
  
@@ -67,7 +68,7 @@ def downsample_mesh(mesh: xr.DataArray,
     """
     
     mesh_units = mesh.pint.units
-    threshold = threshold.pint.to(mesh_units)
+    threshold = threshold.to(mesh_units)
     
     mesh = mesh.rename({'label':'vertex'}).pint.dequantify()
     mesh_masked = mesh[mask,:]
@@ -80,7 +81,7 @@ def downsample_mesh(mesh: xr.DataArray,
             continue
         
         # Query the nearest neighbor within the threshold
-        distance, _ = tree.query(vv, distance_upper_bound=threshold)
+        distance, _ = tree.query(vv, distance_upper_bound=threshold.magnitude)
 
         
         # If no point is within the threshold, append the new point
@@ -122,9 +123,14 @@ def get_kernel_matrix(mesh_downsampled: xr.DataArray,
         - Laura Carlton | lcarlton@bu.edu | 2024
 
     """
+    assert mesh.pint.units == mesh_downsampled.pint.units
+    
+    
+    mesh_units = mesh.pint.units
+    sigma = sigma.to(mesh_units)
     
     # Covariance matrix
-    cov_matrix = (sigma**2) * np.eye(3)
+    cov_matrix = (sigma.magnitude **2) * np.eye(3)
     inv_cov = np.linalg.inv(cov_matrix)  # Inverse of Cov_matrix
     det_cov = np.linalg.det(cov_matrix)  # Determinant of Cov_matrix
     denominator = np.sqrt((2 * np.pi) ** 3 * det_cov)  # Pre-calculate denominator
@@ -147,6 +153,8 @@ def get_kernel_matrix(mesh_downsampled: xr.DataArray,
                                     )
     
     return kernel_matrix_xr
+
+
 
 def get_G_matrix(head: cfm.TwoSurfaceHeadModel, 
                  M: xr.DataArray,
@@ -189,7 +197,11 @@ def get_G_matrix(head: cfm.TwoSurfaceHeadModel,
     
     return G
 
+#%% TRANSFORMING A 
 
+
+# TODO -  H = A @ G
+# use this for image recon 
 
 
 
