@@ -219,6 +219,7 @@ class TwoSurfaceHeadModel:
         brain_face_count: Optional[int] = 180000,
         scalp_face_count: Optional[int] = 60000,
         fill_holes: bool = False,
+        parcel_file: str = None,
     ) -> "TwoSurfaceHeadModel":
         """Constructor from binary masks, brain and head surfaces as gained from MRI scans.
 
@@ -238,6 +239,7 @@ class TwoSurfaceHeadModel:
             brain_face_count (Optional[int]): Number of faces for the brain surface.
             scalp_face_count (Optional[int]): Number of faces for the scalp surface.
             fill_holes (bool): Whether to fill holes in the segmentation masks.
+            parcel_file (Optional[str]): Path to parcel json file.
 
         Returns:
             TwoSurfaceHeadModel: An instance of the TwoSurfaceHeadModel class.
@@ -324,6 +326,13 @@ class TwoSurfaceHeadModel:
         voxel_to_vertex_scalp = map_segmentation_mask_to_surface(
             scalp_mask, t_ijk2ras, scalp_ijk.apply_transform(t_ijk2ras)
         )
+
+        # load parcellations
+        if parcel_file is not None:
+            parcels = cedalion.io.read_parcellations(segmentation_dir, parcel_file)
+            brain_ijk.vertices = brain_ijk.vertices.expand_dims(
+                parcel=len(brain_ijk.vertices)).assign_coords(
+                    parcel = parcels.Label.tolist())
 
         return cls(
             segmentation_masks=segmentation_masks,
@@ -987,15 +996,22 @@ class ForwardModel:
         # shape [nchannel, nvertices, nwavelength]
         Adot = np.concatenate([Adot_brain, Adot_scalp], axis=1)
 
-        return xr.DataArray(
+        Adot = xr.DataArray(
             Adot,
             dims=["channel", "vertex", "wavelength"],
             coords={
                 "channel": ("channel", channels),
                 "wavelength": ("wavelength", wavelengths),
-                "is_brain": ("vertex", is_brain),
+                "is_brain": ("vertex", is_brain)
             },
         )
+
+        if "parcel" in self.head_model.brain.vertices.coords:
+            parcels = np.concatenate(
+                (self.head_model.brain.vertices.coords["parcel"].values, n_scalp * ['scalp']))  # noqa: E501
+            Adot = Adot.assign_coords(parcel = ("vertex", parcels))
+
+        return Adot
 
 
     def compute_sensitivity(self, fluence_all, fluence_at_optodes):
@@ -1050,15 +1066,22 @@ class ForwardModel:
         # shape [nchannel, nvertices, nwavelength]
         Adot = np.concatenate([Adot_brain, Adot_scalp], axis=1)
 
-        return xr.DataArray(
+        Adot = xr.DataArray(
             Adot,
             dims=["channel", "vertex", "wavelength"],
             coords={
                 "channel": ("channel", channels),
                 "wavelength": ("wavelength", wavelengths),
-                "is_brain": ("vertex", is_brain),
+                "is_brain": ("vertex", is_brain)
             },
         )
+
+        if "parcel" in self.head_model.brain.vertices.coords:
+            parcels = np.concatenate(
+                (self.head_model.brain.vertices.coords["parcel"].values, n_scalp * ['scalp']))  # noqa: E501
+            Adot = Adot.assign_coords(parcel = ("vertex", parcels))
+
+        return Adot
 
     # FIXME: better name for Adot * ext. coeffs
     # FIXME: hardcoded for 2 chromophores (HbO and HbR) and wavelengths
