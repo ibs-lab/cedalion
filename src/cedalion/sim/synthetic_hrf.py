@@ -40,7 +40,7 @@ def generate_hrf(
     Returns:
         xarray.DataArray: A DataArray object with dimensions "time" and "chromo",
             containing the HRF basis functions for each chromophore.
-        
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -114,6 +114,8 @@ def build_blob(
 
     This function generates a blob of activity on the brain surface.
     The blob is centered at the vertex closest to the seed landmark.
+    Geodesic distances, and therefore also the blob, can be distorded
+    due to mesh decimation or unsuitable m value.
 
     Args:
         head_model (cfm.TwoSurfaceHeadModel): Head model with brain and scalp surfaces.
@@ -125,23 +127,55 @@ def build_blob(
 
     Returns:
         xr.DataArray: Blob image with activation values for each vertex.
-    
+
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
 
     """
 
-    scale = (scale / head_model.brain.units).to_base_units().magnitude
+    scale_unit = (scale / head_model.brain.units).to_base_units().magnitude
 
     seed_lm = head_model.landmarks.sel(label=landmark).pint.dequantify()
     seed_vertex = head_model.brain.mesh.kdtree.query(seed_lm)[1]
+    seed_pos = head_model.brain.mesh.vertices[seed_vertex]
 
-    cortex_surface = cdg.PycortexSurface.from_trimeshsurface(head_model.brain)
+    # if the mesh is not contiguous:
+    # only calculate distances on the submesh on which the seed vertex lies
 
-    distances_from_seed = cortex_surface.geodesic_distance([seed_vertex], m=m)
-    # distances can be distord due to mesh decimation or unsuitable m value
+    # get a list of the distinct submeshes
+    mesh_split = head_model.brain.mesh.split(only_watertight=False)
 
-    norm_pdf = stats.norm(scale=scale).pdf
+    # check in which submesh the seed vertex is
+    for i, submesh in enumerate(mesh_split):
+        if seed_pos in submesh.vertices:
+            break
+
+    # get index of the seed vertex in the submesh
+    seed_vertex = np.where((submesh.vertices == seed_pos).all(axis=1))[0]
+
+    # create a pycortex surface of the submesh to calculate geodesic distances
+    cortex_surface = cdg.PycortexSurface(
+        cdg.SimpleMesh(submesh.vertices, submesh.faces),
+        crs=head_model.brain.crs,
+        units=head_model.brain.units,
+    )
+    distances_on_submesh = cortex_surface.geodesic_distance([seed_vertex], m=m)
+
+    # find indices of submesh in original mesh
+    # convert meshes into set of tuples for fast lookup
+    submesh_set = set(map(tuple, submesh.vertices))
+    submesh_indices = [
+        i
+        for i, coord in enumerate(map(tuple, head_model.brain.mesh.vertices))
+        if coord in submesh_set
+    ]
+
+    # set distances on vertices outside of the submesh to inf
+    distances_from_seed = np.ones(head_model.brain.mesh.vertices.shape[0]) * np.inf
+    distances_from_seed[submesh_indices] = distances_on_submesh
+
+    # plug the distances in a normal distribution
+    norm_pdf = stats.norm(scale=scale_unit).pdf
 
     blob_img = norm_pdf(distances_from_seed)
     blob_img = blob_img / np.max(blob_img)
@@ -164,7 +198,7 @@ def hrfs_from_image_reco(
 
     Returns:
         cdt.NDTimeseries: HRFs in channel space.
-        
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -215,7 +249,7 @@ def add_hrf_to_vertices(
     Returns:
         xr.DataArray: Combined image of HbO and HbR responses across all vertices for
             all time points.
-        
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -279,7 +313,7 @@ def build_stim_df(
 
     Returns:
         pd.DataFrame: DataFrame containing stimulus metadata.
-    
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -350,7 +384,7 @@ def add_hrf_to_od(od: cdt.NDTimeSeries, hrfs: cdt.NDTimeSeries, stim_df: pd.Data
 
     Returns:
         cdt.NDTimeSeries: OD data with HRFs added based on the stimulus dataframe.
-    
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -415,7 +449,7 @@ def hrf_to_long_channels(
     Returns:
         xr.DataArray: HRFs in channel space with dimensions
             ["channel", "time", "wavelength"].
-        
+
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
 
@@ -470,7 +504,8 @@ def get_colors(
     if log_scale:
         activations = np.log(activations + 1)
         activations = (activations / max_scale) * 255
-    colors = np.zeros((vertex_colors.shape))
+    activations = activations.astype(np.uint8)
+    colors = np.zeros((vertex_colors.shape), dtype=np.uint8)
     colors[:, 3] = 255
     colors[:, 0] = 255
     activations = 255 - activations
@@ -499,7 +534,7 @@ def plot_blob(
 
     Returns:
         None
-    
+
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
 
