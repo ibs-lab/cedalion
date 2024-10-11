@@ -3,6 +3,7 @@ import xarray as xr
 import os
 from typing import Dict, Tuple
 import numpy as np
+import pandas as pd
 from cedalion.dataclasses import affine_transform_from_numpy
 
 # FIXME
@@ -112,6 +113,29 @@ def read_segmentation_masks(
     affine = affines[0]
 
     return masks, affine
+
+def read_parcellations(
+    basedir: str,
+    parcel_file: str = "parcels",
+    ):
+    """Read parcellation labels from a json file.
+
+    Args:
+        basedir (str): The path to the base segmentation directory
+        parcel_file (str): The parcels file name
+
+    Returns:
+        pd.DataFrame: Contains vertices' labels, their appropriate colors
+    """
+    parcels = pd.read_json(os.path.join(basedir, parcel_file))
+
+    parcels = parcels.explode('Vertices')
+    parcels["Vertices"] = parcels["Vertices"].astype(int)
+    parcels = parcels.sort_values("Vertices")
+
+    parcels["Label"] = parcels["Label"].apply(lambda x: "_".join(x.split(" ")) + "H")
+
+    return parcels
 
 
 def cell_coordinates(mask, affine, units="mm"):
