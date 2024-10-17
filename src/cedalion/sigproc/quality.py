@@ -9,6 +9,8 @@ import pandas as pd
 import xarray as xr
 from numpy.typing import ArrayLike
 from scipy import signal
+from scipy.stats import gaussian_kde
+from scipy.stats import median_abs_deviation
 
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
@@ -275,17 +277,21 @@ def psp(
     return psp_xr, psp_mask
 
 
-
-
-
-
 @cdc.validate_schemas
-def gvtd(amplitudes: NDTimeSeries):
+def gvtd(amplitudes: NDTimeSeries,
+         statType: str = 'default',
+         n_std: int = 10
+         ):
     """Calculate GVTD metric.
 
     Args:
         amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
-            series
+            series 
+            
+        statType (string): statistic of GVTD time trace to use to set the threshold (see get_gvtd_threshold). Default = 'default'
+            
+        n_std (int): number of standard deviations for consider above the statistic of interest. 
+            
     Returns:
         A DataArray with coords from the input NDTimeseries containing the GVTD metric.
     """
@@ -309,8 +315,222 @@ def gvtd(amplitudes: NDTimeSeries):
     # time-points as your original dataMatrix
     GVTD = GVTD.squeeze()
     GVTD.values = np.hstack([0, GVTD.values[:-1]])
+    GVTD = GVTD.drop_vars('wavelength')
+    
+    # Apply threshold mask
+    thresh = get_gvtd_threshold(GVTD, statType=statType, n_std=n_std)
 
-    return GVTD
+    GVTD_mask = xrutils.mask(GVTD, CLEAN)
+    GVTD_mask = GVTD_mask.where(GVTD > thresh, other=TAINTED)
+    
+    return GVTD, GVTD_mask
+
+
+def get_gvtd_threshold(GVTD: NDTimeSeries,
+                       statType: str = 'Default',
+                       n_std: int = 10
+                       ):
+    
+    """Calculate GVTD threshold.
+
+    Args:
+        GVTD (:class:`NDTimeSeries`, (time,)): GVTD timetrace 
+        
+        statType (string): statistic of GVTD time trace to use to set the threshold (see get_gvtd_threshold). Default = 'default'
+            OPTIONS:
+                default - threshold is the mode plus the distance between the smallest GVTD value and the mode.
+                histogram_mode - threshold is the mode plus the standard deviation of the points below the mode * n_std.
+                Kdensity_mode - use kdensity estimation to find the mode the gvtd distribution. threshold is this mode pluts the standard 
+                                deviation of points below the mode * n_std.
+                parabolic_mode - use parabolic interpolation to estimate the mode. threshold is this mode pluts the standard 
+                                deviation of points below the mode * n_std.
+                mean - same as histogram_mode but using the mean instead of the mode. 
+                median - same as histogram_mode but using the median instead of the mode. 
+                MAD - same as histogram_mode but using the MAD instead of the mode. 
+                
+        n_std (int): number of standard deviations for consider above the statistic of interest. 
+            
+    Returns:
+        thresh (float): the threshold above which GVTD is considered motion.
+    """
+    if statType == 'default':
+    
+        min_counts_per_bin = 5
+        
+        n_bins = int(np.round(GVTD.shape[0] / min_counts_per_bin))
+        
+        bin_size = GVTD.max() / n_bins
+        
+        N, edges = np.histogram(GVTD.values, bins=n_bins, range=(0, np.max(GVTD.values)))
+        
+        argmax = np.argmax(N)
+        
+        run_mode = edges[argmax] + bin_size / 2
+        
+        # To find the motion threshold, the distance between the smallest GVTD value and the mode is calculated
+        # Left tail is used, as it is dominated by the physiological signal and not motion artifacts.
+        min_val_to_mode_dist = run_mode - np.min(GVTD)
+        
+        # Motion threshold is defined as mode plus a multiplier of the standard deviation of the data-points below the mode
+        thresh = run_mode + min_val_to_mode_dist
+    
+    
+    elif statType == 'histogram_mode':
+        
+        min_counts_per_bin = 5
+        
+        n_bins = int(np.round(GVTD.shape[0] / min_counts_per_bin))
+        
+        bin_size = GVTD.max() / n_bins
+        
+        N, edges = np.histogram(GVTD.values, bins=n_bins, range=(0, np.max(GVTD.values)))
+        
+        argmax = np.argmax(N)
+        
+        run_mode = edges[argmax] + bin_size / 2
+        
+        # Find time points below the mode
+        points_below_mode = GVTD[GVTD < run_mode]
+        
+        # Number of points below the mode
+        num_points_below_mode = points_below_mode.size
+        
+        # RMS of points below the mode
+        rms_points_below_mode = np.sum((points_below_mode - run_mode) ** 2)
+        
+        # Standard deviation of points below the mode
+        left_std_run = np.sqrt(rms_points_below_mode / num_points_below_mode)
+        
+        # Motion threshold is defined as mode plus a multiplier of the standard deviation of the data-points below the mode
+        thresh = run_mode + n_std * left_std_run
+        
+    elif statType == 'Kdensity_mode':
+        
+        # Assuming gvtdTimeTrace is a numpy array
+        gvtd_log = np.log(GVTD)
+        gvtd_log = gvtd_log.fillna(1e-16)
+        gvtd_log = gvtd_log.where(~np.isinf(gvtd_log), 1e-16)
+    
+        # Kernel density estimate for the log of gvtdTimeTrace
+        kde = gaussian_kde(gvtd_log)
+        xi = np.linspace(np.min(gvtd_log), np.max(gvtd_log), 1000)
+        f = kde(xi)
+        
+        # Find the mode (the point with maximum density)
+        I = np.argmax(f)
+        run_mode = np.exp(xi[I])
+        
+        # Find time points below the mode
+        points_below_mode = GVTD[GVTD < run_mode]
+        
+        # Number of points below the mode
+        num_points_below_mode = points_below_mode.size
+        
+        # RMS of points below the mode
+        rms_points_below_mode = np.sum((points_below_mode - run_mode) ** 2)
+        
+        # Standard deviation of points below the mode
+        left_std_run = np.sqrt(rms_points_below_mode / num_points_below_mode)
+        
+        # Motion threshold is defined as mode plus a multiplier of the standard deviation of the data-points below the mode
+        thresh = run_mode + n_std * left_std_run
+        
+    elif statType == 'parabolic_mode':
+    
+        min_counts_per_bin = 5
+        
+        n_bins = int(np.round(GVTD.shape[0] / min_counts_per_bin))
+        
+        bin_size = GVTD.max() / n_bins
+        
+        N, edges = np.histogram(GVTD.values, bins=n_bins, range=(0, np.max(GVTD.values)))
+        
+        argmax = np.argmax(N)
+        
+        centers = edges + bin_size.values / 2
+        
+        centers = centers[:-1]
+        
+        # Identify the adjacent points around the mode
+        x1, y1 = centers[argmax-1], N[argmax-1]
+        x2, y2 = centers[argmax], N[argmax]
+        x3, y3 = centers[argmax+1], N[argmax+1]
+        
+        # Calculate the quadratic approximation for the mode
+        num = (x2**2 - x1**2) * (y2 - y3) - (x2**2 - x3**2) * (y2 - y1)
+        denom = (x2 - x1) * (y2 - y3) - (x2 - x3) * (y2 - y1)
+        run_mode = 0.5 * (num / denom)
+        
+        # Find time points below the mode
+        points_below_mode = GVTD[GVTD < run_mode]
+        
+        # Number of points below the mode
+        num_points_below_mode = points_below_mode.size
+        
+        # RMS of points below the mode
+        rms_points_below_mode = np.sum((points_below_mode - run_mode) ** 2)
+        
+        # Standard deviation of points below the mode
+        left_std_run = np.sqrt(rms_points_below_mode / num_points_below_mode)
+        
+        # Motion threshold is defined as mode plus a multiplier of the standard deviation of the data-points below the mode
+        thresh = run_mode + n_std * left_std_run
+        
+    
+    elif statType == 'median':
+        
+        # Assuming gvtdTimeTrace is a numpy array
+        run_median = np.median(GVTD)
+        
+        # Find time points below the median
+        points_below_median = GVTD[GVTD < run_median]
+        
+        # Number of points below the median
+        num_points_below_median = points_below_median.size
+        
+        # RMS of points below the median
+        rms_points_below_median = np.sum((points_below_median - run_median) ** 2)
+        
+        # Standard deviation of points below the median
+        left_std_run = np.sqrt(rms_points_below_median / num_points_below_median)
+        
+        # Motion threshold is defined as the median plus a multiplier of the standard deviation of the data-points below the median
+        thresh = run_median + n_std * left_std_run
+    
+    elif statType == 'mean':
+        # Assuming gvtdTimeTrace is a numpy array
+        run_mean = np.mean(GVTD)
+        
+        # Find time points below the mean
+        points_below_mean = GVTD[GVTD < run_mean]
+        
+        # Number of points below the mean
+        num_points_below_mean = points_below_mean.size
+        
+        # RMS of points below the mean
+        rms_points_below_mean = np.sum((points_below_mean - run_mean) ** 2)
+        
+        # Standard deviation of points below the mean
+        left_std_run = np.sqrt(rms_points_below_mean / num_points_below_mean)
+        
+        # Motion threshold is defined as the mean plus a multiplier of the standard deviation of the data-points below the mean
+        thresh = run_mean + n_std * left_std_run
+        
+    elif statType == 'MAD':
+        # Calculate the MAD (median absolute deviation) with a scaling factor of 1
+        run_mad = median_abs_deviation(GVTD, scale=1)
+        
+        # Motion threshold is defined as a multiplier of the MAD
+        thresh = n_std * run_mad
+        
+    else:
+        raise ValueError(f"Unknown stat '{statType}'")
+        
+        
+    return thresh
+    
+
+
 
 @cdc.validate_schemas
 def sci(
