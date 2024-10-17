@@ -216,6 +216,7 @@ def psp(
         A tuple (psp, psp_mask), where psp is a DataArray with coords from the input
         NDTimeseries containing the peak spectral power. psp_mask is a boolean mask
         DataArray with coords from psp, true where psp_thresh is met.
+    
     """
 
     amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
@@ -294,6 +295,12 @@ def gvtd(amplitudes: NDTimeSeries,
             
     Returns:
         A DataArray with coords from the input NDTimeseries containing the GVTD metric.
+        
+    
+    References:
+    Based on Sherafati A, Snyder AZ, Eggebrecht AT, Bergonzi KM, Burns-Yocum TM, Lugar HM, Ferradal SL, Robichaux-Viehoever A, Smyser CD, Palanca BJ, Hershey T, Culver JP. Global motion detection and censoring in high-density diffuse optical tomography. Human Brain Mapping. July 2020 https://onlinelibrary.wiley.com/doi/abs/10.1002/hbm.25111
+
+
     """
 
     fcut_min = 0.01
@@ -352,6 +359,12 @@ def get_gvtd_threshold(GVTD: NDTimeSeries,
             
     Returns:
         thresh (float): the threshold above which GVTD is considered motion.
+    
+    
+    References:
+    Based on Sherafati A, Snyder AZ, Eggebrecht AT, Bergonzi KM, Burns-Yocum TM, Lugar HM, Ferradal SL, Robichaux-Viehoever A, Smyser CD, Palanca BJ, Hershey T, Culver JP. Global motion detection and censoring in high-density diffuse optical tomography. Human Brain Mapping. July 2020 https://onlinelibrary.wiley.com/doi/abs/10.1002/hbm.25111
+
+
     """
     if statType == 'default':
     
