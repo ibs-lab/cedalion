@@ -25,6 +25,12 @@ jobs:
       - name: Setup headless display
         uses: pyvista/setup-headless-display-action@v2
 
+      - name: Setup Miniforge
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          activate-environment: cedalion
+
       - name: Get Date
         id: get-date
         run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
@@ -48,17 +54,14 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
 
       - name: Install cedalion
-        run: |
-           python -m pip install -e . --no-deps --force-reinstall
+        run: python -m pip install -e . --no-deps --force-reinstall
 
       - name: Install nirfaster
-        run: |
-           bash install_nirfaster.sh CPU
+        run: bash install_nirfaster.sh CPU
         shell: bash
 
       - name: Building docs
-        run: |
-          ./scripts/build_docs.sh docs
+        run: ./scripts/build_docs.sh docs
 
       - name: Save website as an artifact
         uses: actions/upload-artifact@v4
