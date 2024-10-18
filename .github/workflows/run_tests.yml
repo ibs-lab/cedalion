@@ -6,7 +6,7 @@ jobs:
   run_pytest:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-13, macos-latest, windows-lastest]
+        os: [ubuntu-latest, macos-13, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
