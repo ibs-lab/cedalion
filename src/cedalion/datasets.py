@@ -19,7 +19,7 @@ DATASETS = pooch.create(
     env="CEDALION_DATA_DIR",
     registry={
         "mne_nirsport2_raw.snirf": "sha256:12e5fabe64ecc7ef4b83f6bcd77abb41f5480d5f17a2b1aae0e2ad0406670944",  # noqa: E501
-        "colin27_segmentation.zip": "sha256:a51700d53a00cc15e82696c40761c902b56543aa7ff41ae9c4b1281de13273b5",  # noqa: E501
+        "colin27_segmentation.zip": "sha256:aba27fd1784f337408e2756c7ce972a131c7b10a6cf2a2bcb69a692b702b0ba7",  # noqa: E501
         "colin27_segmentation_downsampled_3x3x3.zip": "sha256:ab98b6bae3ef76be6110dc544917f4f2f7ef7233ac697d9cf8bb4a395e81b6cd",  # noqa: E501
         "fingertapping.zip": "sha256:f2253cca6eef8221d536da54b74d8556b28be93df9143ea53652fdc3bc011875",  # noqa: E501
         "fingertappingDOT.zip": "sha256:03e620479bd48aea8457050b7ce42e0c73ef5448296272448b54cee0e883853e",  # noqa: E501
