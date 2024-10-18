@@ -17,24 +17,35 @@ jobs:
     defaults:
       run:
         shell: bash -el {0}
-    strategy:
-      max-parallel: 5
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout git repository 
+        uses: actions/checkout@v4
 
       - name: Setup headless display
         uses: pyvista/setup-headless-display-action@v2
 
-      - name: Create conda environment
-        uses: mamba-org/setup-micromamba@v1
+      - name: Get Date
+        id: get-date
+        run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
+        shell: bash
+ 
+      - name: Cache Conda env
+        uses: actions/cache@v4
         with:
-          environment-file: environment_dev.yml
-          micromamba-version: 'latest'
-          cache-environment: true
+          path: ${{ env.CONDA }}/envs
+          key:
+            conda-${{ runner.os }}--${{ runner.arch }}--${{
+            steps.get-date.outputs.today }}-${{
+            hashFiles('environment_dev.yml') }}-${{ env.CACHE_NUMBER }}
+        env:
+          # Increase this value to reset cache if environment_dev.yml has not changed
+          CACHE_NUMBER: 0
+        id: cache
 
-      - name: Conda info
-        run: conda info
+      - name: Update environment
+        run: conda env update -n cedalion -f environment_dev.yml
+        if: steps.cache.outputs.cache-hit != 'true'
 
       - name: Install cedalion
         run: |
@@ -54,4 +65,4 @@ jobs:
         with:
           name: docs-${{ github.ref_name }}
           path: docs/_build/html
-          retention-days: 14
+          retention-days: 2
