@@ -19,10 +19,6 @@ def test_sci(rec):
 def test_psp(rec):
     _, _ = quality.psp(rec["amp"], 2 * units.s, psp_thresh=0.1)
 
-#def test_psp_alternative(rec):
-#    _, _ = quality._psp_alternative(rec["amp"], 2 * units.s, psp_thresh=0.1)
-
-
 def test_snr(rec):
     _, _ = quality.snr(rec["amp"], snr_thresh=2.0)
 
@@ -39,7 +35,7 @@ def test_snr(rec):
     ],
 )
 def test_gvtd(rec, stat_type):
-    _ = quality.gvtd(rec["amp"], statType=stat_type)
+    _, _ = quality.gvtd(rec["amp"], statType=stat_type)
 
 
 def test_mean_amp(rec):

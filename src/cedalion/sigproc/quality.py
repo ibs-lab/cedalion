@@ -76,120 +76,6 @@ def prune_ch(
     return amplitudes, prune_list
 
 
-# fails in unit test
-# PSP > threshold is CLEAN
-@cdc.validate_schemas
-def _psp_alternative(
-    amplitudes: NDTimeSeries,
-    window_length: Annotated[Quantity, "[time]"],
-    psp_thresh: float,
-    cardiac_fmin: Annotated[Quantity, "[frequency]"] = 0.5 * units.Hz,
-    cardiac_fmax: Annotated[Quantity, "[frequency]"] = 2.5 * units.Hz,
-):
-    """Calculate the peak spectral power.
-
-    The peak spectral power metric is based on :cite:t:`Pollonini2014` /
-    :cite:t:`Pollonini2016`.
-
-    Args:
-        amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
-            series
-        window_length (:class:`Quantity`, [time]): size of the computation window
-        psp_thresh: if the calculated PSP metric falls below this threshold then the
-            corresponding time window should be excluded.
-        cardiac_fmin : minimm frequency to extract cardiac component
-        cardiac_fmax : maximum frequency to extract cardiac component
-
-    Returns:
-        A tuple (psp, psp_mask), where psp is a DataArray with coords from the input
-        NDTimeseries containing the peak spectral power. psp_mask is a boolean mask
-        DataArray with coords from psp, true where psp_thresh is met.
-    """
-    amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
-
-    amp = (amp - amp.mean("time")) / amp.std("time")
-
-    # convert window_length to samples
-    nsamples = (window_length * sampling_rate(amp)).to_base_units()
-    nsamples = int(np.floor(nsamples))
-
-    # This creates a new DataArray with a new dimension "window", that is
-    # window_len_samples large. The time dimension will contain the time coordinate of
-    # the first sample in the window. Setting the stride size to the same value as the
-    # window length will result in non-overlapping windows.
-    num_windows = int(np.floor(amp.sizes['time'] / nsamples))
-
-    # Manually create windows
-    windowed_data = []
-    for i in range(num_windows):
-        start = i * nsamples
-        end = start + nsamples
-        windowed_data.append(amp.isel(time=slice(start, end)))
-
-
-    fs = amp.cd.sampling_rate
-
-    psp = np.zeros([len(amp["channel"]), len(windowed_data)])
-
-    # Vectorized signal extraction and correlation
-    # sig = windows.transpose("channel", "time", "wavelength", "window").values
-    lags = np.arange(-nsamples + 1, nsamples)
-
-    for w,sig_temp in enumerate(windowed_data): # loop over windows
-        # sig_temp = sig[:,w,:,:]
-        # FIXME assumes 2 wavelengths
-        corr = np.array(
-            [
-                signal.correlate(sig_temp[ch, 0, :], sig_temp[ch, 1, :], "full")
-                for ch in range(len(amp['channel']))
-            ]
-        )
-
-        # FIXME assumes 2 wavelengths
-        corr = corr /(nsamples - np.abs(lags))
-        corr_len = corr.shape[1]
-
-        # Update similarity
-        corr_norm = np.array(
-            [
-                (corr_len * corr[ch,:]) / np.sqrt(np.sum(np.abs(sig_temp[ch, 0, :]) ** 2) * np.sum(np.abs(sig_temp[ch, 1, :]) ** 2)).values
-                for ch in range(len(amp['channel']))
-                ]
-            )
-        
-        
-        # nperseg = corr.shape[1]
-        # window = np.hamming(nperseg)
-        # window_seg = corr * window
-        
-        # fft_out = np.fft.rfft(window_seg, axis=1)
-        # psd = (np.abs(fft_out) **2)/ (np.sum(window ** 2))
-        # freqs = np.fft.rfftfreq(nperseg, 1/fs)
-
-        for ch in range(len(amp['channel'])):
-            window = signal.windows.hamming(len(corr[ch,:]))
-            f, pxx = signal.welch(
-                corr_norm[ch, :],
-                window=window,
-                nfft=len(corr_norm[ch, :]),
-                fs=fs,
-                scaling="spectrum",
-            )
-
-            psp[ch, w] = np.max(pxx[f<cardiac_fmax.magnitude])
-
-    # keep dims channel and time
-    window_length = nsamples/fs
-    window_times = np.arange(0, num_windows*window_length, window_length)
-    psp_xr = xr.DataArray(psp, dims=["channel", "time"], coords={"channel" : amp.channel.values, "time" : window_times})
-    
-    # Apply threshold mask
-    psp_mask = xrutils.mask(psp_xr, CLEAN)
-    psp_mask = psp_mask.where(psp_xr > psp_thresh, other=TAINTED)
-
-    return psp_xr, psp_mask
-
-# alternative implementation
 @cdc.validate_schemas
 def psp(
     amplitudes: NDTimeSeries,
@@ -216,7 +102,6 @@ def psp(
         A tuple (psp, psp_mask), where psp is a DataArray with coords from the input
         NDTimeseries containing the peak spectral power. psp_mask is a boolean mask
         DataArray with coords from psp, true where psp_thresh is met.
-    
     """
 
     amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
@@ -239,20 +124,20 @@ def psp(
     # Vectorized signal extraction and correlation
     sig = windows.transpose("channel", "time", "wavelength", "window").values
     nchannel = windows.sizes["channel"]
-    ntime = windows.sizes["time"] # after rolling this is the number of windows
+    ntime = windows.sizes["time"]  # after rolling this is the number of windows
 
     lags = np.arange(-nsamples + 1, nsamples)
     nlags = len(lags)
-    norm_unbiased = (nsamples - np.abs(lags)) # shape (nlags,)
+    norm_unbiased = nsamples - np.abs(lags)  # shape (nlags,)
 
     hamming_window = np.hamming(nlags)
     hamming_window_norm = np.sum(hamming_window) ** 2
 
     # nsample / (sigma(wl1)*sigma(wl2)) , shape(nchannel, ntime)
-    corr_coeff_denom = nsamples / np.sqrt(np.sum(np.power(sig, 2), axis=-1)).prod(-1) 
+    corr_coeff_denom = nsamples / np.sqrt(np.sum(np.power(sig, 2), axis=-1)).prod(-1)
 
     corr = np.zeros((ntime, nchannel, nlags))
-    for w in range(ntime): # loop over windows
+    for w in range(ntime):  # loop over windows
         for ch in range(nchannel):
             corr[w, ch, :] = signal.correlate(
                 sig[ch, w, 0, :], sig[ch, w, 1, :], "full"
@@ -263,10 +148,10 @@ def psp(
     corr /= norm_unbiased[None, None, :]
     corr *= hamming_window[None, None, :]
 
-    fft_out = np.fft.rfft(corr, axis=-1) # shape (ntime, nchannel, nfreqs)
+    fft_out = np.fft.rfft(corr, axis=-1)  # shape (ntime, nchannel, nfreqs)
     power = (np.abs(fft_out) ** 2) / hamming_window_norm
 
-    psp = np.max(power, axis=2).T # shape(nchannel, ntime)
+    psp = np.max(power, axis=2).T  # shape(nchannel, ntime)
 
     # keep dims channel and time
     psp_xr = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
@@ -279,28 +164,21 @@ def psp(
 
 
 @cdc.validate_schemas
-def gvtd(amplitudes: NDTimeSeries,
-         statType: str = 'default',
-         n_std: int = 10
-         ):
-    """Calculate GVTD metric.
+def gvtd(amplitudes: NDTimeSeries, statType: str = "default", n_std: int = 10):
+    """Calculate GVTD metric based on :cite:t:`Sherafati2020`.
 
     Args:
         amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
-            series 
-            
-        statType (string): statistic of GVTD time trace to use to set the threshold (see get_gvtd_threshold). Default = 'default'
-            
-        n_std (int): number of standard deviations for consider above the statistic of interest. 
-            
+            series
+
+        statType (string): statistic of GVTD time trace to use to set the threshold
+            (see get_gvtd_threshold). Default = 'default'
+
+        n_std (int): number of standard deviations for consider above the statistic of
+            interest.
+
     Returns:
         A DataArray with coords from the input NDTimeseries containing the GVTD metric.
-        
-    
-    References:
-    Based on Sherafati A, Snyder AZ, Eggebrecht AT, Bergonzi KM, Burns-Yocum TM, Lugar HM, Ferradal SL, Robichaux-Viehoever A, Smyser CD, Palanca BJ, Hershey T, Culver JP. Global motion detection and censoring in high-density diffuse optical tomography. Human Brain Mapping. July 2020 https://onlinelibrary.wiley.com/doi/abs/10.1002/hbm.25111
-
-
     """
 
     fcut_min = 0.01
@@ -322,227 +200,226 @@ def gvtd(amplitudes: NDTimeSeries,
     # time-points as your original dataMatrix
     GVTD = GVTD.squeeze()
     GVTD.values = np.hstack([0, GVTD.values[:-1]])
-    GVTD = GVTD.drop_vars('wavelength')
-    
+    GVTD = GVTD.drop_vars("wavelength")
+
     # Apply threshold mask
     thresh = get_gvtd_threshold(GVTD, statType=statType, n_std=n_std)
 
     GVTD_mask = xrutils.mask(GVTD, CLEAN)
     GVTD_mask = GVTD_mask.where(GVTD > thresh, other=TAINTED)
-    
+
     return GVTD, GVTD_mask
 
 
-def get_gvtd_threshold(GVTD: NDTimeSeries,
-                       statType: str = 'Default',
-                       n_std: int = 10
-                       ):
-    
-    """Calculate GVTD threshold.
+def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int = 10):
+    """Calculate GVTD threshold based on :cite:t:`Sherafati2020`.
 
     Args:
-        GVTD (:class:`NDTimeSeries`, (time,)): GVTD timetrace 
-        
-        statType (string): statistic of GVTD time trace to use to set the threshold (see get_gvtd_threshold). Default = 'default'
-            OPTIONS:
-                default - threshold is the mode plus the distance between the smallest GVTD value and the mode.
-                histogram_mode - threshold is the mode plus the standard deviation of the points below the mode * n_std.
-                Kdensity_mode - use kdensity estimation to find the mode the gvtd distribution. threshold is this mode pluts the standard 
-                                deviation of points below the mode * n_std.
-                parabolic_mode - use parabolic interpolation to estimate the mode. threshold is this mode pluts the standard 
-                                deviation of points below the mode * n_std.
-                mean - same as histogram_mode but using the mean instead of the mode. 
-                median - same as histogram_mode but using the median instead of the mode. 
-                MAD - same as histogram_mode but using the MAD instead of the mode. 
-                
-        n_std (int): number of standard deviations for consider above the statistic of interest. 
-            
+        GVTD (:class:`NDTimeSeries`, (time,)): GVTD timetrace
+
+        statType (string): statistic of GVTD time trace to use to set the threshold
+            (see get_gvtd_threshold):
+
+            - *default*: threshold is the mode plus the distance between the smallest
+              GVTD value and the mode.
+            - *histogram_mode*: threshold is the mode plus the standard deviation of the
+              points below the mode * n_std.
+            - *Kdensity_mode*: use kdensity estimation to find the mode the gvtd
+              distribution. threshold is this mode pluts the standard deviation of
+              points below the mode * n_std.
+            - *parabolic_mode*: use parabolic interpolation to estimate the mode.
+              threshold is this mode pluts the standard deviation of points below the
+              mode*n_std.
+            - *mean*: same as histogram_mode but using the mean instead of the mode.
+            - *median*: same as histogram_mode but using the median instead of the mode.
+            - *MAD*: same as histogram_mode but using the MAD instead of the mode.
+
+        n_std (int): number of standard deviations for consider above the statistic of
+            interest.
+
     Returns:
         thresh (float): the threshold above which GVTD is considered motion.
-    
-    
-    References:
-    Based on Sherafati A, Snyder AZ, Eggebrecht AT, Bergonzi KM, Burns-Yocum TM, Lugar HM, Ferradal SL, Robichaux-Viehoever A, Smyser CD, Palanca BJ, Hershey T, Culver JP. Global motion detection and censoring in high-density diffuse optical tomography. Human Brain Mapping. July 2020 https://onlinelibrary.wiley.com/doi/abs/10.1002/hbm.25111
-
-
     """
-    if statType == 'default':
-    
+    if statType == "default":
         min_counts_per_bin = 5
-        
+
         n_bins = int(np.round(GVTD.shape[0] / min_counts_per_bin))
-        
+
         bin_size = GVTD.max() / n_bins
-        
-        N, edges = np.histogram(GVTD.values, bins=n_bins, range=(0, np.max(GVTD.values)))
-        
+
+        N, edges = np.histogram(
+            GVTD.values, bins=n_bins, range=(0, np.max(GVTD.values))
+        )
+
         argmax = np.argmax(N)
-        
+
         run_mode = edges[argmax] + bin_size / 2
-        
-        # To find the motion threshold, the distance between the smallest GVTD value and the mode is calculated
-        # Left tail is used, as it is dominated by the physiological signal and not motion artifacts.
+
+        # To find the motion threshold, the distance between the smallest GVTD value and
+        # the mode is calculated left tail is used, as it is dominated by the
+        # physiological signal and not motion artifacts.
         min_val_to_mode_dist = run_mode - np.min(GVTD)
-        
-        # Motion threshold is defined as mode plus a multiplier of the standard deviation of the data-points below the mode
+
+        # Motion threshold is defined as mode plus a multiplier of the standard
+        # deviation of the data-points below the mode
         thresh = run_mode + min_val_to_mode_dist
-    
-    
-    elif statType == 'histogram_mode':
-        
+
+    elif statType == "histogram_mode":
         min_counts_per_bin = 5
-        
+
         n_bins = int(np.round(GVTD.shape[0] / min_counts_per_bin))
-        
+
         bin_size = GVTD.max() / n_bins
-        
-        N, edges = np.histogram(GVTD.values, bins=n_bins, range=(0, np.max(GVTD.values)))
-        
+
+        N, edges = np.histogram(
+            GVTD.values, bins=n_bins, range=(0, np.max(GVTD.values))
+        )
+
         argmax = np.argmax(N)
-        
+
         run_mode = edges[argmax] + bin_size / 2
-        
+
         # Find time points below the mode
         points_below_mode = GVTD[GVTD < run_mode]
-        
+
         # Number of points below the mode
         num_points_below_mode = points_below_mode.size
-        
+
         # RMS of points below the mode
         rms_points_below_mode = np.sum((points_below_mode - run_mode) ** 2)
-        
+
         # Standard deviation of points below the mode
         left_std_run = np.sqrt(rms_points_below_mode / num_points_below_mode)
-        
-        # Motion threshold is defined as mode plus a multiplier of the standard deviation of the data-points below the mode
+
+        # Motion threshold is defined as mode plus a multiplier of the standard
+        # deviation of the data-points below the mode
         thresh = run_mode + n_std * left_std_run
-        
-    elif statType == 'Kdensity_mode':
-        
+
+    elif statType == "Kdensity_mode":
         # Assuming gvtdTimeTrace is a numpy array
         gvtd_log = np.log(GVTD)
         gvtd_log = gvtd_log.fillna(1e-16)
         gvtd_log = gvtd_log.where(~np.isinf(gvtd_log), 1e-16)
-    
+
         # Kernel density estimate for the log of gvtdTimeTrace
         kde = gaussian_kde(gvtd_log)
         xi = np.linspace(np.min(gvtd_log), np.max(gvtd_log), 1000)
         f = kde(xi)
-        
+
         # Find the mode (the point with maximum density)
-        I = np.argmax(f)
-        run_mode = np.exp(xi[I])
-        
+        idx = np.argmax(f)
+        run_mode = np.exp(xi[idx])
+
         # Find time points below the mode
         points_below_mode = GVTD[GVTD < run_mode]
-        
+
         # Number of points below the mode
         num_points_below_mode = points_below_mode.size
-        
+
         # RMS of points below the mode
         rms_points_below_mode = np.sum((points_below_mode - run_mode) ** 2)
-        
+
         # Standard deviation of points below the mode
         left_std_run = np.sqrt(rms_points_below_mode / num_points_below_mode)
-        
-        # Motion threshold is defined as mode plus a multiplier of the standard deviation of the data-points below the mode
+
+        # Motion threshold is defined as mode plus a multiplier of the standard
+        # deviation of the data-points below the mode
         thresh = run_mode + n_std * left_std_run
-        
-    elif statType == 'parabolic_mode':
-    
+
+    elif statType == "parabolic_mode":
         min_counts_per_bin = 5
-        
+
         n_bins = int(np.round(GVTD.shape[0] / min_counts_per_bin))
-        
+
         bin_size = GVTD.max() / n_bins
-        
-        N, edges = np.histogram(GVTD.values, bins=n_bins, range=(0, np.max(GVTD.values)))
-        
+
+        N, edges = np.histogram(
+            GVTD.values, bins=n_bins, range=(0, np.max(GVTD.values))
+        )
+
         argmax = np.argmax(N)
-        
+
         centers = edges + bin_size.values / 2
-        
+
         centers = centers[:-1]
-        
+
         # Identify the adjacent points around the mode
-        x1, y1 = centers[argmax-1], N[argmax-1]
+        x1, y1 = centers[argmax - 1], N[argmax - 1]
         x2, y2 = centers[argmax], N[argmax]
-        x3, y3 = centers[argmax+1], N[argmax+1]
-        
+        x3, y3 = centers[argmax + 1], N[argmax + 1]
+
         # Calculate the quadratic approximation for the mode
         num = (x2**2 - x1**2) * (y2 - y3) - (x2**2 - x3**2) * (y2 - y1)
         denom = (x2 - x1) * (y2 - y3) - (x2 - x3) * (y2 - y1)
         run_mode = 0.5 * (num / denom)
-        
+
         # Find time points below the mode
         points_below_mode = GVTD[GVTD < run_mode]
-        
+
         # Number of points below the mode
         num_points_below_mode = points_below_mode.size
-        
+
         # RMS of points below the mode
         rms_points_below_mode = np.sum((points_below_mode - run_mode) ** 2)
-        
+
         # Standard deviation of points below the mode
         left_std_run = np.sqrt(rms_points_below_mode / num_points_below_mode)
-        
-        # Motion threshold is defined as mode plus a multiplier of the standard deviation of the data-points below the mode
+
+        # Motion threshold is defined as mode plus a multiplier of the standard
+        # deviation of the data-points below the mode
         thresh = run_mode + n_std * left_std_run
-        
-    
-    elif statType == 'median':
-        
+
+    elif statType == "median":
         # Assuming gvtdTimeTrace is a numpy array
         run_median = np.median(GVTD)
-        
+
         # Find time points below the median
         points_below_median = GVTD[GVTD < run_median]
-        
+
         # Number of points below the median
         num_points_below_median = points_below_median.size
-        
+
         # RMS of points below the median
         rms_points_below_median = np.sum((points_below_median - run_median) ** 2)
-        
+
         # Standard deviation of points below the median
         left_std_run = np.sqrt(rms_points_below_median / num_points_below_median)
-        
-        # Motion threshold is defined as the median plus a multiplier of the standard deviation of the data-points below the median
+
+        # Motion threshold is defined as the median plus a multiplier of the standard
+        # deviation of the data-points below the median
         thresh = run_median + n_std * left_std_run
-    
-    elif statType == 'mean':
+
+    elif statType == "mean":
         # Assuming gvtdTimeTrace is a numpy array
         run_mean = np.mean(GVTD)
-        
+
         # Find time points below the mean
         points_below_mean = GVTD[GVTD < run_mean]
-        
+
         # Number of points below the mean
         num_points_below_mean = points_below_mean.size
-        
+
         # RMS of points below the mean
         rms_points_below_mean = np.sum((points_below_mean - run_mean) ** 2)
-        
+
         # Standard deviation of points below the mean
         left_std_run = np.sqrt(rms_points_below_mean / num_points_below_mean)
-        
-        # Motion threshold is defined as the mean plus a multiplier of the standard deviation of the data-points below the mean
+
+        # Motion threshold is defined as the mean plus a multiplier of the standard
+        # deviation of the data-points below the mean
         thresh = run_mean + n_std * left_std_run
-        
-    elif statType == 'MAD':
+
+    elif statType == "MAD":
         # Calculate the MAD (median absolute deviation) with a scaling factor of 1
         run_mad = median_abs_deviation(GVTD, scale=1)
-        
+
         # Motion threshold is defined as a multiplier of the MAD
         thresh = n_std * run_mad
-        
+
     else:
         raise ValueError(f"Unknown stat '{statType}'")
-        
-        
-    return thresh
-    
 
+    return thresh
 
 
 @cdc.validate_schemas
@@ -603,7 +480,7 @@ def _extract_cardiac(
     cardiac_fmin: Annotated[Quantity, "[frequency]"],
     cardiac_fmax: Annotated[Quantity, "[frequency]"],
 ):
-    """ Apply a bandpass or highpass filter to extract the cardiac component."""
+    """Apply a bandpass or highpass filter to extract the cardiac component."""
 
     fs = sampling_rate(amplitudes)
     fny =  fs / 2
@@ -817,17 +694,17 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
     """Refines motion artifact mask to simplify and quantify motion artifacts.
 
     Args:
-        ma_mask :class:`NDTimeSeries`, (time, channel, *): motion artifact mask as
-        generated by id_motion().
+        ma_mask (:class:`NDTimeSeries`, (time, channel, *)): motion artifact mask as
+            generated by id_motion().
 
         operator: operation to apply to the mask. Available operators:
 
-            - "by_channel": collapses the mask along the amplitude/wavelength/chromo
-                dimension to provide a single motion artifact mask per channel (default)
-                over time
-            - "all": collapses the mask along all dimensions to provide a single motion
-                artifact marker for all channels over time i.e. an artifact detected in
-                any channel masks all channels.
+            - *by_channel*: collapses the mask along the amplitude/wavelength/chromo
+              dimension to provide a single motion artifact mask per channel (default)
+              over time
+            - *all*: collapses the mask along all dimensions to provide a single motion
+              artifact marker for all channels over time i.e. an artifact detected in
+              any channel masks all channels.
 
     Returns:
         A tuple (ma_mask_new, ma_info), where `ma_mask_new` is the updated motion
@@ -904,18 +781,21 @@ def detect_outliers_std(
     ts: cdt.NDTimeSeries, t_window: Annotated[Quantity, "[time]"], iqr_threshold=2
 ):
     """Detect outliers in fNIRSdata based on standard deviation of signal.
+
     Args:
-        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
-        t_window :class:`Quantity`: time window over which to calculate standard deviations
-        iqr_threshold: interquartile range threshold (detect outlier as any standard deviation outside 
-                                                      iqr_threshold * [25th percentile, 75th percentile])
+        ts (:class:`NDTimeSeries`, (time, channel, *)): fNIRS timeseries data
+        t_window (:class:`Quantity`): time window over which to calculate standard
+            deviations
+        iqr_threshold: interquartile range threshold (detect outlier as any standard
+            deviation outside iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:
-        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
-        an outlier is detected based on the standard deviation
-    
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE
+        anytime an outlier is detected based on the standard deviation
+
     References:
-        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+        (:cite:t:`Jahani2018`)
     """
 
     ts = ts.pint.dequantify()
@@ -948,19 +828,21 @@ def detect_outliers_std(
 
 
 @cdc.validate_schemas
-def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
+def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold: float = 1.5):
     """Detect outliers in fNIRSdata based on gradient of signal.
+
     Args:
-        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
-        iqr_threshold: interquartile range threshold (detect outlier as any gradient outside 
-                                                      iqr_threshold * [25th percentile, 75th percentile])
+        ts (:class:`NDTimeSeries`, (time, channel, *)): fNIRS timeseries data
+        iqr_threshold: interquartile range threshold (detect outlier as any gradient
+            outside iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:
-        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
-        an outlier is detected
-        
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE
+        anytime an outlier is detected
+
     References:
-        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+        (:cite:t:`Jahani2018`)
     """
 
     ts = ts.pint.dequantify()
@@ -1001,24 +883,26 @@ def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
 def detect_outliers(
     ts: cdt.NDTimeSeries,
     t_window_std: Annotated[Quantity, "[time]"],
-    iqr_threshold_std : float =2,
-    iqr_threshold_grad : float =1.5,
+    iqr_threshold_std: float = 2,
+    iqr_threshold_grad: float = 1.5,
 ):
     """Detect outliers in fNIRSdata based on standard deviation and gradient of signal.
+
     Args:
-        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
-        t_window_std :class:`Quantity`: time window over which to calculate standard deviations
-        iqr_threshold_grad: interquartile range threshold (detect outlier as any gradient outside 
-                                                      iqr_threshold * [25th percentile, 75th percentile])
-        iqr_threshold_std: interquartile range threshold (detect outlier as any standard deviation outside 
-                                                      iqr_threshold * [25th percentile, 75th percentile])
+        ts (:class:`NDTimeSeries`, (time, channel, *)): fNIRS timeseries data
+        t_window_std (:class:`Quantity`): time window over which to calculate std. devs.
+        iqr_threshold_grad: interquartile range threshold (detect outlier as any
+            gradient outside iqr_threshold * [25th percentile, 75th percentile])
+        iqr_threshold_std: interquartile range threshold (detect outlier as any standard
+            deviation outside iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:
-        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
-        an outlier is detected
-    
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE
+        anytime an outlier is detected
+
     References:
-        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+        (:cite:t:`Jahani2018`)
     """
     mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
     mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
@@ -1114,16 +998,19 @@ def _calculate_delta_threshold(ts, segments, threshold_samples):
 
 def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
     """Detect baselineshifts in fNIRSdata.
+
     Args:
-        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
-        outlier_mask :class:`NDTimeSeries`: mask containing FALSE anytime an outlier is detected in signal
+        ts (:class:`NDTimeSeries`, (time, channel, *)): fNIRS timeseries data
+        outlier_mask (:class:`NDTimeSeries`): mask containing FALSE anytime an outlier
+            is detected in signal
 
     Returns:
-        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
-        a baselineshift or outlier is detected 
-    
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE
+        anytime a baselineshift or outlier is detected.
+
     References:
-        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+        (:cite:t:`Jahani2018`)
     """
     ts = ts.pint.dequantify()
 
