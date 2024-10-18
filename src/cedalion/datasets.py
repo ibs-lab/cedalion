@@ -4,6 +4,7 @@ import os.path
 import pickle
 from gzip import GzipFile
 from pathlib import Path
+import pandas as pd
 from cedalion.imagereco.forward_model import TwoSurfaceHeadModel
 
 import pooch
@@ -34,6 +35,20 @@ DATASETS = pooch.create(
         "nn22_resting_state.zip": "sha256:0394347af172d906fe33403e84303435af26d82fdcf1d36dad5c7b05beb82d88",  # noqa:E501
     },
 )
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+
+
+def get_ninja_cap_probe():
+    """Load the fullhead Ninja NIRS cap probe."""
+    probe_dir = os.path.join(DATA_DIR, 'ninja_cap_probe')
+    geo3d = cedalion.io.load_tsv(os.path.join(probe_dir,
+                                              'fullhead_56x144_System2_optodes.tsv'))
+    landmarks = cedalion.io.load_tsv(os.path.join(probe_dir,
+                                                  'fullhead_56x144_System2_landmarks.tsv'))
+    meas_list = pd.read_pickle(os.path.join(probe_dir, 
+                                            'fullhead_56x144_System2_measlist.pkl'))
+    return geo3d, landmarks, meas_list
 
 
 def get_snirf_test_data():
