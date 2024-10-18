@@ -643,9 +643,11 @@ def id_motion(
 
     # t_motion in samples rounded to the nearest sample
     t_motion_samples = t_motion / fNIRSdata.time.diff(dim="time").mean()
+    t_motion_samples = t_motion_samples.pint.dequantify()
     t_motion_samples = int(t_motion_samples.round())
     # t_mask in samples rounded to the nearest sample
     t_mask_samples = t_mask / fNIRSdata.time.diff(dim="time").mean()
+    t_mask_samples = t_mask_samples.pint.dequantify()
     t_mask_samples = int(t_mask_samples.round())
 
     # calculate the "std_diff", the standard deviation of the approx 1st derivative of

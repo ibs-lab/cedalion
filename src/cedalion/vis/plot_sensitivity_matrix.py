@@ -24,7 +24,7 @@ import cedalion.dataclasses as cdc
 class Main():
     def __init__(self, sensitivity, brain_surface, 
                  head_surface=None, labeled_points=None, wavelength=760):
-        
+
         # Initialize
         self.brain = brain_surface
         self.head = head_surface
@@ -36,7 +36,6 @@ class Main():
 
     def plot(self, low_th=-3, high_th=0):
 
-        cedalion.plots.plot_surface(self.plt, self.brain, color="w")
         if self.head is not None:
             cedalion.plots.plot_surface(self.plt, self.head, opacity=.1)
         if self.labeled_points is not None:
@@ -60,5 +59,6 @@ class Main():
         new_cmap_colors = np.vstack((gray, cmap(np.linspace(0, 1, 255))))
         custom_cmap = ListedColormap(new_cmap_colors)
 
-        self.plt.add_mesh(b, scalars=sensitivity_matrix, cmap=custom_cmap, clim=(low_th, high_th), 
-                    scalar_bar_args={'title':'Sensitivity (m⁻¹): Logarithmic Scale', 'shadow':True},)
+        self.plt.add_mesh(b, scalars=sensitivity_matrix, cmap=custom_cmap,
+                          smooth_shading=True, clim=(low_th, high_th),
+                          scalar_bar_args={'title':'Sensitivity (m⁻¹): Logarithmic Scale', 'shadow':True},)
