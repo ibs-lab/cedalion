@@ -34,6 +34,7 @@ def voxels_from_segmentation(
         cdc.Voxels
             Voxels in voxel space.
     """
+
     combined_mask = (
         segmentation_mask.sel(segmentation_type=segmentation_types)
         .any("segmentation_type")
@@ -67,8 +68,7 @@ def surface_from_segmentation(
 
     Returns:
         A cedalion.Surface object.
-    """
-
+    """ 
     combined_mask = (
         segmentation_mask.sel(segmentation_type=segmentation_types)
         .any("segmentation_type")
