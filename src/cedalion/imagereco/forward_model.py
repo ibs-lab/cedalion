@@ -423,7 +423,7 @@ class TwoSurfaceHeadModel:
                 raise ValueError("%s does not exist." % os.path.join(foldername, fn))
 
         # Load all attributes from folder
-        segmentation_masks = xr.load_dataset(
+        segmentation_masks = xr.load_dataarray(
             os.path.join(foldername, "segmentation_masks.nc")
         )
         brain =  trimesh.load(os.path.join(foldername, 'brain.ply'), process=False)
@@ -442,8 +442,8 @@ class TwoSurfaceHeadModel:
             )
         else:
             landmarks_ijk = None
-        t_ijk2ras = xr.load_dataset(os.path.join(foldername, 't_ijk2ras.nc'))
-        t_ras2ijk = xr.load_dataset(os.path.join(foldername, 't_ras2ijk.nc'))
+        t_ijk2ras = xr.load_dataarray(os.path.join(foldername, 't_ijk2ras.nc'))
+        t_ras2ijk = xr.load_dataarray(os.path.join(foldername, 't_ras2ijk.nc'))
         voxel_to_vertex_brain = scipy.sparse.load_npz(os.path.join(foldername,
                                                      'voxel_to_vertex_brain.npz'))
         voxel_to_vertex_scalp = scipy.sparse.load_npz(os.path.join(foldername,
@@ -453,7 +453,7 @@ class TwoSurfaceHeadModel:
         brain_ijk = cdc.TrimeshSurface(brain, 'ijk', cedalion.units.Unit("1"))
         scalp_ijk = cdc.TrimeshSurface(scalp, 'ijk', cedalion.units.Unit("1"))
         t_ijk2ras = cdc.affine_transform_from_numpy(
-            np.array(t_ijk2ras.to_dataarray()[0]), "ijk", "unknown", "1", "mm"
+            np.array(t_ijk2ras), "ijk", "unknown", "1", "mm"
         )
         t_ras2ijk = xrutils.pinv(t_ijk2ras)
 
