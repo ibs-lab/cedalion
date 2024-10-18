@@ -1,3 +1,18 @@
+"""Plots an fNIRS probe's sensitivity profile on a 3D brain surface.
+
+    Args:
+        sensitivity: 
+        brain_surface:
+        head_surface:
+        labeled_points: 
+        wavelength: The wavelength of the light source in nm.
+
+    Initial Contributors:
+        - Shakiba Moradi | shakiba.moradi@tu-berlin.de | 2024
+    """
+
+
+
 import numpy as np
 import matplotlib.pyplot as p
 from matplotlib.colors import ListedColormap
@@ -47,8 +62,3 @@ class Main():
 
         self.plt.add_mesh(b, scalars=sensitivity_matrix, cmap=custom_cmap, clim=(low_th, high_th), 
                     scalar_bar_args={'title':'Sensitivity (m⁻¹): Logarithmic Scale', 'shadow':True},)
-        
-        
-
-
-        

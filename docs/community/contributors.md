@@ -2,7 +2,7 @@
 
 This section is WIP. You will find more information and detailed stats here soon. 
 
-Cedalion is an open source project driven by the [IBS-Lab](https://ibs-lab.com/) with the aim to encourage continuous use, contribution and improvement from the whole community to make it last. Therefore, code credit is important to us.
+Cedalion is an open source project driven by the [IBS-Lab](https://ibs-lab.com/) with the aim to encourage continuous use, contribution and improvement from the whole community to make it last. Therefore, it is important to us establish a transparent system of crediting contributors.
 
 
 ## Code Credit

@@ -13,24 +13,43 @@ jobs:
         shell: bash -l {0}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout git repository 
+        uses: actions/checkout@v4
 
-      - name: Create conda environment
-        uses: mamba-org/setup-micromamba@v1
+      - name: Setup Miniforge
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          environment-file: environment_dev.yml
-          micromamba-version: 'latest'
-          cache-environment: true
+          miniforge-version: latest
+          activate-environment: cedalion
+
+      - name: Get Date
+        id: get-date
+        run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
+        shell: bash
+ 
+      - name: Cache Conda env
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONDA }}/envs
+          key:
+            conda-${{ runner.os }}--${{ runner.arch }}--${{
+            steps.get-date.outputs.today }}-${{
+            hashFiles('environment_dev.yml') }}-${{ env.CACHE_NUMBER }}
+        env:
+          # Increase this value to reset cache if environment_dev.yml has not changed
+          CACHE_NUMBER: 0
+        id: cache
+
+      - name: Update environment
+        run: conda env update -n cedalion -f environment_dev.yml
+        if: steps.cache.outputs.cache-hit != 'true'
 
       - name: Install cedalion
-        run: |
-           python -m pip install -e . --no-deps --force-reinstall
+        run: python -m pip install -e . --no-deps --force-reinstall
 
       - name: Install nirfaster
-        run: |
-           bash install_nirfaster.sh CPU
+        run: bash install_nirfaster.sh CPU
         shell: bash
 
       - name: Running Tests
-        run: |
-           python -m pytest --verbose
+        run: python -m pytest --verbose

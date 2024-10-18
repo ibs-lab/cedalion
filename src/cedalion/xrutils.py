@@ -168,7 +168,7 @@ def other_dim(data_array: xr.DataArray, *dims: str) -> str:
     its name.
 
     Args:
-        data_array: a xr.DataArray
+        data_array: an xr.DataArray
         *dims: names of dimensions
 
     Returns:

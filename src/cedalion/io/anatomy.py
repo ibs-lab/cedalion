@@ -115,6 +115,16 @@ def read_segmentation_masks(
 
 
 def cell_coordinates(mask, affine, units="mm"):
+    """Get the coordinates of each voxel in the transformed mask.
+
+    Args:
+        mask (xr.DataArray): A binary mask of shape (i, j, k).
+        affine (np.ndarray): Affine transformation matrix.
+        units (str): Units of the output coordinates.
+
+    Returns:
+        xr.DataArray: Coordinates of the center of each voxel in the mask.
+    """
     # coordinates in voxel space
     i = np.arange(mask.shape[0])
     j = np.arange(mask.shape[1])

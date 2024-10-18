@@ -150,7 +150,13 @@ def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
 
     snirf supports multidimensional source labels but we don't.
     This function tries to reduce n-dimensional source labels
-    to a unique common prefix to obtain only one label per source
+    to a unique common prefix to obtain only one label per source.
+
+    Args:
+        sourceLabels (np.ndarray): The source labels to reduce.
+
+    Returns:
+        list: The reduced source labels.
     """
     labels = []
     for i_src in range(sourceLabels.shape[0]):
@@ -181,11 +187,10 @@ def labels_and_positions(probe, dim: int = 3):
 
     Args:
         probe: Nirs probe geometry variable, see snirf documentation (:cite:t:`Tucker2022`).
-        dim: must be either 2 or 3.
+        dim (int): Must be either 2 or 3.
 
     Returns:
-        Tuple(np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray):
-            Tuple containing the source, detector and landmark labels/positions.
+        tuple: A tuple containing the source, detector, and landmark labels/positions.
     """
     def convert_none(probe, attrname, default):
         attr = getattr(probe, attrname)
@@ -247,14 +252,13 @@ def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
     """Extract 3D coordinates of optodes and landmarks from probe information.
 
     Args:
-        nirs_element: Nirs data element as specified in the snirf
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
             documentation (:cite:t:`Tucker2022`).
-        dim: must be either 2 or 3.
+        dim (int): Must be either 2 or 3.
 
     Returns:
-        result (xr.DataArray, (label, pos)): A DataArray containing the 3D coordinates
-            of optodes and landmarks, with dimensions 'label' and
-            'pos' and coordinates 'label' and 'type'.
+        xr.DataArray: A DataArray containing the 3D coordinates of optodes and landmarks,
+            with dimensions 'label' and 'pos' and coordinates 'label' and 'type'.
     """
     probe = nirs_element.probe
 
@@ -633,6 +637,18 @@ def _get_time_coords(
     data_element: DataElement,
     df_measurement_list: pd.DataFrame,
 ) -> dict[str, ArrayLike]:
+    """Get time coordinates for the NIRS data element.
+
+    Args:
+        nirs_element (NirsElement): NIRS data element containing metadata.
+        data_element (DataElement): Data element containing time and dataTimeSeries.
+        df_measurement_list (pd.DataFrame): DataFrame containing the measurement list.
+
+    Returns:
+        tuple: A tuple containing:
+            - indices (None): Placeholder for indices.
+            - coordinates (dict[str, ArrayLike]): Dictionary with time coordinates.
+    """
     time = data_element.time
     time_unit = nirs_element.metaDataTags.TimeUnit
 
@@ -651,6 +667,17 @@ def _get_channel_coords(
     nirs_element: NirsElement,
     df_measurement_list: pd.DataFrame,
 ) -> tuple[ArrayLike, dict[str, ArrayLike]]:
+    """Get channel coordinates for the NIRS data element.
+
+    Args:
+        nirs_element (NirsElement): NIRS data element containing probe information.
+        df_measurement_list (pd.DataFrame): DataFrame containing the measurement list.
+
+    Returns:
+        tuple: A tuple containing:
+            - indices (None): Placeholder for indices.
+            - coordinates (dict[str, ArrayLike]): Dictionary with channel coordinates.
+    """
     sourceLabels, detectorLabels, landmarkLabels, _, _, _ = labels_and_positions(
         nirs_element.probe
     )
@@ -813,6 +840,21 @@ def measurement_list_from_stacked(
     detector_labels=None,
     wavelengths=None,
 ):
+    """Create a measurement list from a stacked array.
+
+    Args:
+        stacked_array (xr.DataArray): Stacked array containing the data.
+        data_type (str): Data type of the data.
+        trial_types (list[str]): List of trial types.
+        stacked_channel (str): Name of the channel dimension in the stacked array.
+        source_labels (list[str]): List of source labels.
+        detector_labels (list[str]): List of detector labels.
+        wavelengths (list[float]): List of wavelengths.
+
+    Returns:
+        tuple: A tuple containing the source labels, detector labels, wavelengths, and
+            the measurement list.
+    """
     if source_labels is None:
         source_labels = list(np.unique(stacked_array.source.values))
     if detector_labels is None:
@@ -872,6 +914,14 @@ def measurement_list_from_stacked(
 
 
 def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
+    """Write a recording to a .snirf file.
+
+    See snirf specification for details (:cite:t:`Tucker2022`)
+
+    Args:
+        snirf_file (Snirf): Snirf object to write to.
+        rec (Recording): Recording object to write to the file.
+    """
     # create and populate nirs element
     snirf_file.nirs.appendGroup()
     ne = snirf_file.nirs[-1]
@@ -1002,6 +1052,13 @@ def write_snirf(
     fname: Path | str,
     recordings: cdc.Recording | list[cdc.Recording],
 ):
+    """Write one or more recordings to a .snirf file.
+
+    Args:
+        fname (Path | str): Path to .snirf file.
+        recordings (Recording | list[Recording]): Recording object(s) to write to the
+            file.
+    """
     if isinstance(fname, Path):
         fname = str(fname)
 
