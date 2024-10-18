@@ -6,7 +6,7 @@ jobs:
   run_pytest:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-13, macos-latest, windows-2019]
+        os: [ubuntu-latest, macos-13, macos-latest, windows-lastest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -36,7 +36,7 @@ jobs:
             steps.get-date.outputs.today }}-${{
             hashFiles('environment_dev.yml') }}-${{ env.CACHE_NUMBER }}
         env:
-          # Increase this value to reset cache if environment_dev.yml has not changed 
+          # Increase this value to reset cache if environment_dev.yml has not changed
           CACHE_NUMBER: 0
         id: cache
 
