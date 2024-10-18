@@ -78,12 +78,12 @@ def plot3d(
     if brain_mesh:
         pv_brain = pv.wrap(brain_mesh)
         if brain_scalars is None:
-            plt.add_mesh(pv_brain, color="w")
+            plt.add_mesh(pv_brain, color="w", smooth_shading=True)
         else:
-            plt.add_mesh(pv_brain, scalars=brain_scalars)
+            plt.add_mesh(pv_brain, scalars=brain_scalars, smooth_shading=True)
     if scalp_mesh:
         pv_scalp = pv.wrap(scalp_mesh)
-        plt.add_mesh(pv_scalp, color="w", opacity=0.4)
+        plt.add_mesh(pv_scalp, color="w", opacity=0.4, smooth_shading=True)
 
     point_colors = {
         PointType.SOURCE: "r",
@@ -106,7 +106,7 @@ def plot3d(
             labels = x.label.values
             for i_point in range(len(x)):
                 s = pv.Sphere(radius=point_sizes[type], center=x[i_point])
-                plt.add_mesh(s, color=point_colors[type])
+                plt.add_mesh(s, color=point_colors[type], smooth_shading=True)
                 if labels is not None:
                     plt.add_point_labels(x[i_point].values, [str(labels[i_point])])
 
@@ -124,11 +124,11 @@ def plot3d(
             src = geo3d.loc[timeseries.source[i_chan], :]
             det = geo3d.loc[timeseries.detector[i_chan], :]
             line = pv.Line(src, det)
-            plt.add_mesh(line, color="k")
+            plt.add_mesh(line, color="k", smooth_shading=True)
 
     for points in poly_lines:
         lines = pv.MultipleLines(points)
-        plt.add_mesh(lines, color="m")
+        plt.add_mesh(lines, color="m", smooth_shading=True)
 
     #def callback(point):
     #    mesh = pv.Sphere(radius=3, center=point)
@@ -189,7 +189,8 @@ def plot_surface(
     else:
         rgb = False
 
-    plotter.add_mesh(mesh, color=color, rgb=rgb, opacity=opacity, pickable=True, **kwargs)
+    plotter.add_mesh(mesh, color=color, rgb=rgb, opacity=opacity, smooth_shading=True,
+                     pickable=True, **kwargs)
 
 
     # Define landmark labels
@@ -235,7 +236,8 @@ def plot_surface(
 
         landmark_label = landmark_labels[0]
         # Add new point and label actors
-        point_actor = plotter.add_mesh(pv.Sphere(radius=3, center=new_point), color='green')
+        point_actor = plotter.add_mesh(pv.Sphere(radius=3, center=new_point),
+                                       color='green', smooth_shading=True)
         point_actors.append(point_actor)
         label_actor = plotter.add_point_labels(new_point, [landmark_label], font_size=30)
         label_actors.append(label_actor)
@@ -312,7 +314,7 @@ def plot_labeled_points(
         for i, existing_point in enumerate(points):
             if np.linalg.norm(new_point - existing_point) < threshold_distance:
                 s = pv.Sphere(radius=4, center=existing_point)
-                plotter.add_mesh(s, color='r')
+                plotter.add_mesh(s, color='r', smooth_shading=True)
                 if i not in ppoints:
                     ppoints.append(i)
                 return  # Stop the function after removing the sphere
@@ -325,7 +327,7 @@ def plot_labeled_points(
         point_type = point.coords['type'].item()
         # Create and add a sphere at the point's coordinates
         s = pv.Sphere(radius=default_point_sizes[point_type], center=point.values)
-        plotter.add_mesh(s, color=color or default_point_colors[point_type])
+        plotter.add_mesh(s, color=color or default_point_colors[point_type], smooth_shading=True)
         # Add the label if required
         if show_labels and labels is not None:
             plotter.add_point_labels(point.values[np.newaxis], [str(labels[i_point])])
@@ -439,9 +441,9 @@ class OptodeSelector:
 
                 s = pv.Sphere(radius=default_point_sizes[type], center=x[i_point])
                 if color is None:
-                    sphere_actor = plotter.add_mesh(s, color=default_point_colors[type])
+                    sphere_actor = plotter.add_mesh(s, color=default_point_colors[type], smooth_shading=True)
                 else:
-                    sphere_actor = plotter.add_mesh(s, color=color)
+                    sphere_actor = plotter.add_mesh(s, color=color, smooth_shading=True)
                 self.actors.append(sphere_actor)
                 if self.labels is not None:
                     plotter.add_point_labels(x[i_point].values, [str(self.labels[i_point])])
@@ -489,7 +491,7 @@ class OptodeSelector:
         ).pint.quantify(units="mm")
 
         s = pv.Sphere(radius=2, center=new_point)
-        sphere_actor = plotter.add_mesh(s, color='r')
+        sphere_actor = plotter.add_mesh(s, color='r', smooth_shading=True)
         self.actors.append(sphere_actor)
 
         new_normal = self.find_surface_normal(new_point)
