@@ -26,7 +26,7 @@ DATASETS = pooch.create(
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
-        "ICBM152(2020).zip": "sha256:a7bca3fbb3a05545ccbf19660a99e377165576590d93eac4fbb3ea28acc9f378",  # noqa: E501
+        "ICBM152_2020.zip": "sha256:0721fc4aa3886b8d4af3eb1fbdf74c366e7effdf7503e57bdacfd14edaa429fb",  # noqa: E501
         "fluence_fingertapping_colin27.h5": "sha256:5db30eaaf0dbd614ecefff3734822864b8357841e6c93be78344574889e1d06d",  # noqa:E501
         "fluence_fingertapping_icbm152.h5": "sha256:5b807253e2d0ca0dcc15ac18029cd73404cc9ee589937f2394ae0a2e57dcd98f",  # noqa:E501
         "fluence_fingertappingDOT_colin27.h5": "sha256:f321190e9ab537e0f020cbcca40d9ef909f67ce9c33791be14033daf162acaf7",  # noqa:E501
@@ -76,11 +76,9 @@ def get_colin27_headmodel():
 
 
 def get_icbm152_segmentation():
-    fnames = DATASETS.fetch("ICBM152(2020).zip", processor=pooch.Unzip())
+    fnames = DATASETS.fetch("ICBM152_2020.zip", processor=pooch.Unzip())
 
-    basedir = os.path.dirname(
-        fnames[0]
-    )  # TODO: Upload compressed file without __macosx
+    basedir = os.path.dirname(fnames[0])
 
     mask_files = {
         "csf": "mask_csf.nii",
