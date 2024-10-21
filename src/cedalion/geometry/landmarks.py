@@ -308,7 +308,7 @@ class LandmarksBuilder1010:
 
         for points in self.lines:
             lines = pv.MultipleLines(points)
-            plt.add_mesh(lines, color="m")
+            plt.add_mesh(lines, color="m", smooth_shading=True)
 
         plt.show()
 
