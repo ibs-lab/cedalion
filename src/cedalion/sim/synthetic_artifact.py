@@ -188,18 +188,27 @@ def add_artifacts(ts: cdt.NDTimeSeries, timing: pd.DataFrame, artifacts):
     ts_copy = ts.copy()
     unit = ts_copy.pint.units
 
+    time_start = ts_copy["time"][0].item()
+    time_end = ts_copy["time"][-1].item()
+
     # set parameters for compute_alpha
-    window_size = ts_copy["time"][-1].item() // 100
+    window_size = (time_end - time_start) // 100
     step_size = window_size // 2
     channels = ts_copy.channel.values
     wavelengths = ts_copy.wavelength.values
 
     # generate alpha for each channel/wavelength
-    alphas = {(channel, wavelength): compute_alpha(ts_copy.loc[dict(channel=channel, wavelength=wavelength)], window_size, step_size) for wavelength in wavelengths for channel in channels}
+    alphas = {
+        (channel, wavelength): compute_alpha(ts_copy.loc[dict(channel=channel, wavelength=wavelength)], window_size, step_size) 
+        for wavelength in wavelengths 
+        for channel in channels
+    }
     #print(f"Computed alphas: {alphas}")
 
+
+
     # select events that take place within the time series
-    valid_events = timing[(timing['onset'] >= ts_copy["time"][0]) & (timing['onset'] + timing['duration'] <= ts_copy["time"][-1])]
+    valid_events = timing[(timing['onset'] >= time_start) & (timing['onset'] + timing['duration'] <= time_end)]
 
     for index, row in valid_events.iterrows():
         onset_time = row['onset']
@@ -207,7 +216,7 @@ def add_artifacts(ts: cdt.NDTimeSeries, timing: pd.DataFrame, artifacts):
         type = row['trial_type']
         sel_channels = row['channel'] if row['channel'] else channels
         if type in artifacts.keys():
-            print(f"Adding {type} at {onset_time} for {duration} to {sel_channels}")
+            #print(f"Adding {type} at {onset_time} for {duration} to {sel_channels}")
             artifact = artifacts[type](ts_copy.time, onset_time, duration)
             for channel in list(set(channels) & set(sel_channels)):
                 for wavelength in wavelengths:
