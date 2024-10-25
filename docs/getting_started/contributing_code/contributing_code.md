@@ -39,7 +39,6 @@ data = xr.Dataset(
 ## General Rules and Overview
 ### Style Guide for Python Code
 We follow the PEP 8 Style that is documented [here](https://peps.python.org/pep-0008/) - please try to follow it too. If you work with VS Code, you can use extensions to make your life easier:
-- [Black Formatter](https://marketplace.visualstudio.com/items?itemName=ms-python.black-formatter) that supports you in formatting your code
 - [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) is a fast Python linter that we recommend
 
 Some relevant conventions in a nutshell:
