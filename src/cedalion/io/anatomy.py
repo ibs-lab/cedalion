@@ -114,29 +114,6 @@ def read_segmentation_masks(
 
     return masks, affine
 
-def read_parcellations(
-    basedir: str,
-    parcel_file: str = "parcels",
-    ):
-    """Read parcellation labels from a json file.
-
-    Args:
-        basedir (str): The path to the base segmentation directory
-        parcel_file (str): The parcels file name
-
-    Returns:
-        pd.DataFrame: Contains vertices' labels, their appropriate colors
-    """
-    parcels = pd.read_json(os.path.join(basedir, parcel_file))
-
-    parcels = parcels.explode('Vertices')
-    parcels["Vertices"] = parcels["Vertices"].astype(int)
-    parcels = parcels.sort_values("Vertices")
-
-    parcels["Label"] = parcels["Label"].apply(lambda x: "_".join(x.split(" ")) + "H")
-
-    return parcels
-
 
 def cell_coordinates(mask, affine, units="mm"):
     """Get the coordinates of each voxel in the transformed mask.
