@@ -169,7 +169,7 @@ def compute_alpha(ts: cdt.NDTimeSeries, window_size, step_size):
     amplitudes = calculate_amplitudes(windows)
     return np.median(amplitudes)
 
-def add_artifacts(ts: cdt.NDTimeSeries, timing: pd.DataFrame, artifacts):
+def add_artifacts(ts: cdt.NDTimeSeries, timing: pd.DataFrame, artifacts, scale=False):
     """Add scaled artifacts to timeseries data.
 
     Artifacts are scaled for each channel and wavelength based on the parameter 
@@ -181,12 +181,13 @@ def add_artifacts(ts: cdt.NDTimeSeries, timing: pd.DataFrame, artifacts):
         artifacts (Dict[str, function]): Dictionary of artifact functions. Artifact
             functions must take args (time, onset_time, duration). Keys correspond to
             the trial_type in the timing DataFrame.
+        scale: scale for artifacts, or omit for automatic scaling
 
     Returns:
         Amplitude data with added artifacts.
     """
     ts_copy = ts.copy()
-    unit = ts_copy.pint.units
+    unit = ts_copy.pint.units if ts_copy.pint.units else 1
 
     time_start = ts_copy["time"][0].item()
     time_end = ts_copy["time"][-1].item()
@@ -198,16 +199,20 @@ def add_artifacts(ts: cdt.NDTimeSeries, timing: pd.DataFrame, artifacts):
     wavelengths = ts_copy.wavelength.values
 
     # generate alpha for each channel/wavelength
-    alphas = {
-        (channel, wavelength): compute_alpha(ts_copy.loc[dict(channel=channel, wavelength=wavelength)], window_size, step_size) 
-        for wavelength in wavelengths 
-        for channel in channels
-    }
-    #print(f"Computed alphas: {alphas}")
+    if not scale:
+        alphas = {
+            (channel, wavelength): compute_alpha(ts_copy.loc[dict(channel=channel, wavelength=wavelength)], window_size, step_size) 
+            for wavelength in wavelengths 
+            for channel in channels
+        }
+    else:
+        alphas = {
+            (channel, wavelength): scale 
+            for wavelength in wavelengths 
+            for channel in channels
+        }
 
-
-
-    # select events that take place within the time series
+    # make sure events are within bounds of timeseries
     valid_events = timing[(timing['onset'] >= time_start) & (timing['onset'] + timing['duration'] <= time_end)]
 
     for index, row in valid_events.iterrows():
@@ -216,12 +221,14 @@ def add_artifacts(ts: cdt.NDTimeSeries, timing: pd.DataFrame, artifacts):
         type = row['trial_type']
         sel_channels = row['channel'] if row['channel'] else channels
         if type in artifacts.keys():
-            #print(f"Adding {type} at {onset_time} for {duration} to {sel_channels}")
+
             artifact = artifacts[type](ts_copy.time, onset_time, duration)
             for channel in list(set(channels) & set(sel_channels)):
                 for wavelength in wavelengths:
                     scale = alphas[(channel, wavelength)]
+                    # print(f"Adding {type} at {onset_time} for {duration} to {channel} {wavelength} with scale {scale}")
                     ts_copy.loc[dict(channel=channel, wavelength=wavelength)] += artifact*scale*unit
+
         else:
             print(f"Unknown artifact type {type}")
     return ts_copy
