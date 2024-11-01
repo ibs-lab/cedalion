@@ -33,7 +33,7 @@ snirf2bids_mapping_df = pd.DataFrame(columns=column_names)
 dataset_path = input('Please enter the path to your dataset: ')
 # dataset_path = '/Users/lauracarlton/Documents/DATA/MAFC_raw'
 
-#%% IDENTIFY ALL SNIRF FILES IN THE DIRECTORY AND THEIR PATH 
+#% IDENTIFY ALL SNIRF FILES IN THE DIRECTORY AND THEIR PATH 
 
 file_list = []
 for dirpath, dirnames, filenames in os.walk(dataset_path):
@@ -55,7 +55,7 @@ for dirpath, dirnames, filenames in os.walk(dataset_path):
             file_list.append(parent_folders)
 
 
-#%% CHECK EACH FILE TO GATHER INFO TO POPULATE THE MAPPING_DF
+#% CHECK EACH FILE TO GATHER INFO TO POPULATE THE MAPPING_DF
 
 
 for path_parts in file_list:
