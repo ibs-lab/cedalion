@@ -186,7 +186,7 @@ def labels_and_positions(probe, dim: int = 3):
     """Extract 3D coordinates of optodes and landmarks from a nirs probe variable.
 
     Args:
-        probe: Nirs probe geometry variable, see snirf documentation (:cite:t:`Tucker2022`).
+        probe: Nirs probe geometry variable, see snirf docs (:cite:t:`Tucker2022`).
         dim (int): Must be either 2 or 3.
 
     Returns:
@@ -257,8 +257,9 @@ def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
         dim (int): Must be either 2 or 3.
 
     Returns:
-        xr.DataArray: A DataArray containing the 3D coordinates of optodes and landmarks,
-            with dimensions 'label' and 'pos' and coordinates 'label' and 'type'.
+        xr.DataArray: A DataArray containing the 3D coordinates of optodes and
+            landmarks, with dimensions 'label' and 'pos' and coordinates 'label' and
+            'type'.
     """
     probe = nirs_element.probe
 
@@ -369,8 +370,11 @@ def stim_to_dataframe(stim: Stim):
     if len(stim) == 0:
         return cdc.build_stim_dataframe()
 
-    for st in stim:
+    for i_st, st in enumerate(stim):
         if st.data is None:
+            tmp = cdc.build_stim_dataframe()
+        elif st.data.ndim != 2:
+            log.warning(f"unexpected shape of stim element {i_st}")
             tmp = cdc.build_stim_dataframe()
         else:
             columns = ["onset", "duration", "value"]
