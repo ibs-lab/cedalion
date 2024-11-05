@@ -32,7 +32,7 @@ def ampd(amplitudes: NDTimeSeries, chunk_size=500, step_size=200):
         https://doi.org/10.3390/a5040588
 
     Initial Contributors:
-        isa | EMAIL | 2024
+        Isa Musisi | w.musisi@campus.tu-berlin.de | 2024
 
     """
     # Prepare output array with the same structure as amplitudes, filled with zeros
