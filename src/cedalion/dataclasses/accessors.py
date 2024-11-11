@@ -1,4 +1,4 @@
-from typing import Dict, List, Union
+from typing import Annotated, Dict, List, Union
 
 import numpy as np
 import pandas as pd
@@ -9,11 +9,13 @@ import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 from cedalion import Quantity, units
 from cedalion.sigproc.frequency import freq_filter
+from cedalion.sigproc.epochs import to_epochs
 
 
 @xr.register_dataarray_accessor("cd")
 class CedalionAccessor:
     """Accessor for time series data stored in xarray DataArrays."""
+
     def __init__(self, xarray_obj):
         """Initialize the CedalionAccessor.
 
@@ -39,60 +41,26 @@ class CedalionAccessor:
         """
         return 1 / np.diff(self._obj.time).mean()
 
-    def to_epochs(self, df_stim, trial_types, before, after):
+    def to_epochs(
+        self,
+        df_stim: pd.DataFrame,
+        trial_types: list[str],
+        before: Annotated[Quantity, "[time]"],
+        after: Annotated[Quantity, "[time]"],
+    ):
         """Extract epochs from the time series based on stimulus events.
 
         Args:
-            df_stim (pandas.DataFrame): DataFrame containing stimulus events.
-            trial_types (list): List of trial types to include in the epochs.
-            before (float): Time in seconds before stimulus event to include in epoch.
-            after (float): Time in seconds after stimulus event to include in epoch.
+            df_stim: DataFrame containing stimulus events.
+            trial_types: List of trial types to include in the epochs.
+            before: Time before stimulus event to include in epoch.
+            after: Time after stimulus event to include in epoch.
 
         Returns:
             xarray.DataArray: Array containing the extracted epochs.
         """
-        # FIXME before units
-        # FIXME error handling of boundaries
-        tmp = df_stim[df_stim.trial_type.isin(trial_types)]
-        start = self._obj.time.searchsorted(tmp.onset - before)
-        # end = ts.time.searchsorted(tmp.onset+tmp.duration)
-        end = self._obj.time.searchsorted(tmp.onset + after)
 
-        # assert len(np.unique(end - start)) == 1  # FIXME
-
-        # find the longest number of samples to cover the epoch
-        # because of numerical precision the number of samples per epoch may differ
-        # by one. Larger discrepancies would have other unhandled causes.
-        # Throw an error for these.
-        durations = end - start
-        assert np.max(durations) - np.min(durations) <= 1
-        duration = np.max(durations)
-        duration_idx = np.argmax(durations)
-
-        # limit reltime precision (to ns?) to avoid conflicts when concatenating epochs
-        # - different fix by DBoas & AvL on 01.08.24: Use times of longest epoch
-        reltime = np.round(
-            self._obj.time[start[duration_idx] : end[duration_idx]]
-            - tmp.onset.iloc[duration_idx],
-            9,
-        )
-
-        epochs = xr.concat(
-            [
-                self._obj[:, :, start[i] : start[i] + duration].drop_vars(
-                    ["time", "samples"]
-                )
-                for i in range(len(start))
-            ],
-            dim="epoch",
-        )
-
-        epochs = epochs.rename({"time": "reltime"})
-        epochs = epochs.assign_coords(
-            {"reltime": reltime.values, "trial_type": ("epoch", tmp.trial_type.values)}
-        )
-
-        return epochs
+        return to_epochs(self._obj, df_stim, trial_types, before, after)
 
     def freq_filter(self, fmin, fmax, butter_order=4):
         """Applys a Butterworth filter.
@@ -172,9 +140,11 @@ class PointsAccessor:
 
         assert transform_units is not None
         assert transform.shape == (4, 4)  # FIXME assume 3D
-        assert from_crs in obj.dims, f"Coordinate systems of points " \
-                                     f"({from_crs}) and transform " \
-                                     f"({obj.dims}) do not match."
+        assert from_crs in obj.dims, (
+            f"Coordinate systems of points "
+            f"({from_crs}) and transform "
+            f"({obj.dims}) do not match."
+        )
 
         transform = transform.pint.dequantify()
 
@@ -301,6 +271,7 @@ class PointsAccessor:
 @pd.api.extensions.register_dataframe_accessor("cd")
 class StimAccessor:
     """Accessor for stimulus DataFrames."""
+
     def __init__(self, pandas_obj):
         """Initialize the StimAccessor.
 
