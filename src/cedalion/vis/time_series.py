@@ -58,6 +58,10 @@ class Main(QtWidgets.QMainWindow):
         self.plots.figure.tight_layout()
         self._optode_ax.axis('off')
         self._dataTimeSeries_ax.grid("True",axis="y")
+        pos = self._dataTimeSeries_ax.get_position()  # Get the current position
+        new_pos = [pos.x0 + 0.075, pos.y0, pos.width-0.075, pos.height]  # Adjust the left position
+        self._dataTimeSeries_ax.set_position(new_pos)  # Set the new position
+
         window_layout.addWidget(NavigationToolbar(self.plots,self),stretch=1)
         window_layout.addWidget(self.plots, stretch=8)
         
