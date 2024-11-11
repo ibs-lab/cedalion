@@ -917,10 +917,15 @@ def scalp_plot(
 
         if ch in metric_channels:
             v = metric.sel(channel=ch).item()
+            # if v is nan, then set color to grey
+            if np.isnan(v):
+                c = [0.8, 0.8, 0.8, 0]
+            else:
+                c = cmap(norm(v))
         else:
             v = np.nan
+            c = [0.8, 0.8, 0.8, 0]
 
-        c = cmap(norm(v))
         line_fmt = {'c' : c, 'ls' : '-', 'lw' : channel_lw, 'alpha' : 1.0}
 
         if (min_metric is not None) and (v < min_metric):
@@ -955,7 +960,7 @@ def scalp_plot(
             s[:, 1],
             s=optode_size,
             marker="s",
-            ec="k",
+#            ec="k",
             fc=COLOR_SOURCE,
             zorder=100,
         )
@@ -964,7 +969,7 @@ def scalp_plot(
             d[:, 1],
             s=optode_size,
             marker="s",
-            ec="k",
+#            ec="k",
             fc=COLOR_DETECTOR,
             zorder=100,
         )
