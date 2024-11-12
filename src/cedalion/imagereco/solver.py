@@ -2,6 +2,7 @@
 
 import numpy as np
 import xarray as xr
+import cedalion.xrutils as xrutils
 
 
 def pseudo_inverse_stacked(Adot, alpha=0.01):
@@ -20,6 +21,14 @@ def pseudo_inverse_stacked(Adot, alpha=0.01):
     B = Adot.values.T @ np.linalg.pinv(
         AA + alpha * highest_eigenvalue * np.eye(AA.shape[0])
     )
-    B = xr.DataArray(B, dims=("flat_vertex", "flat_channel"))
+
+    coords = xrutils.coords_from_other(Adot)
+
+    # don't copy the MultiIndexes
+    for k in ["flat_channel", "flat_vertex"]:
+        if k in coords:
+            del coords[k]
+
+    B = xr.DataArray(B, dims=("flat_vertex", "flat_channel"), coords=coords)
 
     return B

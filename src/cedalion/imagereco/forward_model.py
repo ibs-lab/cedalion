@@ -1105,3 +1105,31 @@ class ForwardModel:
         A = xr.DataArray(A, dims=("flat_channel", "flat_vertex"))
 
         return A
+
+
+def apply_inv_sensitivity(
+    od: cdt.NDTimeSeries, inv_sens: xr.DataArray
+) -> tuple[xr.DataArray, xr.DataArray]:
+    """Apply the inverted sensitivity matrix to optical density data.
+
+    Args:
+        od: time series of optical density data
+        inv_sens: the inverted sensitivity matrix
+
+    Returns:
+        Two DataArrays for the brain and scalp with the reconcstructed time series per
+        vertex and chromophore.
+    """
+
+    od_stacked = od.stack({"flat_channel": ["wavelength", "channel"]})
+    delta_conc = inv_sens @ od_stacked
+
+    delta_conc = delta_conc.set_xindex(["chromo", "vertex"])
+    delta_conc = delta_conc.unstack("flat_vertex")
+
+    # unstacking flat_vertex makes is_brain 2D. is_brain[0,:] == is_brain[1,:]
+    is_brain = delta_conc.is_brain[0, :].values
+    delta_conc_brain = delta_conc.sel(vertex=is_brain)
+    delta_conc_scalp = delta_conc.sel(vertex=~is_brain)
+
+    return delta_conc_brain, delta_conc_scalp
