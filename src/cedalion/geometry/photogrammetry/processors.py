@@ -154,6 +154,8 @@ class ColoredStickerProcessor(ScanProcessor):
         # value_threshold: float = 150 / 255.0,
         sticker_radius: Quantity = 6.5 * units.mm,
         min_nvertices: int = 50,
+        cluster_eps : float = 0.2,
+        saturation_min : float = 0.6
     ):
         """Initiliaze the classifier by specifying colors and classnames.
 
@@ -163,13 +165,17 @@ class ColoredStickerProcessor(ScanProcessor):
             #value_threshold: minimum value to still be classified
             sticker_radius: the radius of the colored stickers
             min_nvertices: minimum number of vertices during clustering
-
+            cluster_eps: maximum distance between two vertices for them to be still
+                considered as neighbors. Specified as a fraction of sticker_radius
+            saturation_min: minimum saturation value for all vertices to be considered.
         """
         self.colors = colors
         # self.hue_threshold = hue_threshold
         # self.value_threshold = value_threshold
         self.sticker_radius = sticker_radius
         self.min_nvertices = min_nvertices
+        self.cluster_eps = cluster_eps
+        self.saturation_min = saturation_min
 
     def process(
         self, surface: cdc.TrimeshSurface, details: bool = False
@@ -219,7 +225,7 @@ class ColoredStickerProcessor(ScanProcessor):
             group_counter = 1
             group_mask = (v_min <= v) & (v <= v_max)
             group_mask &= (h_min <= h) & (h <= h_max)
-            group_mask &= 0.6 <= s
+            group_mask &= self.saturation_min <= s
 
             class_vertices = surface.mesh.vertices[group_mask]  # shape=(nvertices, 3)
 
@@ -227,26 +233,32 @@ class ColoredStickerProcessor(ScanProcessor):
             print(class_vertices)
             print(group_name, (h_min, h_max, v_min, v_max))
 
-            cluster_labels = DBSCAN(eps=0.2 * radius_mm).fit_predict(class_vertices)
+            cluster_labels = DBSCAN(eps=self.cluster_eps * radius_mm).fit_predict(
+                class_vertices
+            )
 
-            for label in np.unique(cluster_labels):
+            unique_cluster_labels = np.unique(cluster_labels)
+
+            logger.debug(f"found {len(unique_cluster_labels)} clusters.")
+
+            for label in unique_cluster_labels:
                 cluster_mask = cluster_labels == label
                 cluster_vertices = class_vertices[cluster_mask]
                 cluster_colors = vertex_colors[group_mask][cluster_mask]
                 nverts = len(cluster_vertices)
 
                 if label == -1:  # vertices assigned to no cluster
-                    logging.debug(f"{nverts} vertices belong to no cluster.")
+                    logger.debug(f"{nverts} vertices belong to no cluster.")
                     continue
 
                 if len(cluster_vertices) < self.min_nvertices:
-                    logging.debug(
+                    logger.debug(
                         f"skipping cluster {label} because of too few vertices "
                         f"({nverts} < {self.min_nvertices})."
                     )
                     continue
 
-                logging.debug(f"{group_name} - {label}: {nverts} vertices")
+                logger.debug(f"{group_name} - {label}: {nverts} vertices")
 
                 # tentative center. the stickers are not always uniformly sampled
                 # and the cog is not necessarily at the sticker center.
@@ -262,7 +274,7 @@ class ColoredStickerProcessor(ScanProcessor):
                 hopefully_flat_verts = cluster_vertices[proximity_mask]
 
                 if len(hopefully_flat_verts) == 0:
-                    logging.info(
+                    logger.info(
                         f"skipping cluster {label} because there are no "
                         f"vertices close to the tentative center."
                     )
