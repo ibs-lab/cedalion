@@ -443,3 +443,85 @@ def motion_correct_PCA_recurse(
         tInc.values = np.hstack([tInc.values[0], tInc.values[:-1]])
 
     return fNIRSdata_cleaned, svs, nSV_ret, tInc
+
+def TDDR(ts: cdt.NDTimeSeries):
+    """Implementation of the TDDR algorithm for motion correction.
+
+    References:
+    Fishburn F.A., Ludlum R.S., Vaidya C.J., & Medvedev A.V. (2019).
+    Temporal Derivative Distribution Repair (TDDR): A motion correction
+    method for fNIRS. NeuroImage, 184, 171-179.
+    https://doi.org/10.1016/j.neuroimage.2018.09.025
+    """
+    signal = ts.copy()
+    unit = signal.pint.units if signal.pint.units else 1
+    signal = signal.pint.dequantify()
+
+    if signal.channel.size != 1 or signal.wavelength.size != 1:
+        for ch in signal.channel.values:
+            for wl in signal.wavelength.values:
+                # Select single channel/wavelength
+                curr_signal = signal.loc[dict(channel=[ch], wavelength=[wl])]
+                # Process the single time series
+                corrected = TDDR(curr_signal)
+                # Assign back ensuring coordinate consistency
+                signal.loc[dict(channel=[ch], wavelength=[wl])] = corrected
+        return signal
+
+    # Preprocess: Separate high and low frequencies
+    signal_mean = np.mean(signal)
+    signal -= signal_mean
+    signal_low = signal.cd.freq_filter(0, 0.5, 3)
+    signal_high = signal - signal_low
+    print("Mean after filtering:", np.mean(signal_low))
+
+    # Initialize
+    tune = 4.685
+    D = np.sqrt(np.finfo(signal.dtype).eps)
+    mu = np.inf
+    iter = 0
+
+    # Step 1. Compute temporal derivative of the signal
+    deriv = np.diff(signal_low)
+
+    # Step 2. Initialize observation weights
+    w = np.ones(deriv.shape)
+
+    # Step 3. Iterative estimation of robust weights
+    while iter < 50:
+
+        iter = iter + 1
+        mu0 = mu
+
+        # Step 3a. Estimate weighted mean
+        mu = np.sum(w * deriv) / np.sum(w)
+
+        # Step 3b. Calculate absolute residuals of estimate
+        dev = np.abs(deriv - mu)
+
+        # Step 3c. Robust estimate of standard deviation of the residuals
+        sigma = 1.4826 * np.median(dev)
+
+        # Step 3d. Scale deviations by standard deviation and tuning parameter
+        r = dev / (sigma * tune)
+
+        # Step 3e. Calculate new weights according to Tukey's biweight function
+        w = ((1 - r**2) * (r < 1)) ** 2
+
+        # Step 3f. Terminate if new estimate is within machine-precision of old estimate
+        if abs(mu - mu0) < D * max(abs(mu), abs(mu0)):
+            break
+
+    # Step 4. Apply robust weights to centered derivative
+    new_deriv = w * (deriv - mu)
+
+    # Step 5. Integrate corrected derivative
+    signal_low_corrected = np.cumsum(np.insert(new_deriv, 0, 0.0))
+
+    # Postprocess: Center the corrected signal
+    signal_low_corrected = signal_low_corrected - np.mean(signal_low_corrected)
+
+    # Postprocess: Merge back with uncorrected high frequency component
+    signal_corrected = (signal_low_corrected + signal_high + signal_mean) * unit
+
+    return signal_corrected
