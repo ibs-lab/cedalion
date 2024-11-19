@@ -473,7 +473,6 @@ def TDDR(ts: cdt.NDTimeSeries):
     signal -= signal_mean
     signal_low = signal.cd.freq_filter(0, 0.5, 3)
     signal_high = signal - signal_low
-    print("Mean after filtering:", np.mean(signal_low))
 
     # Initialize
     tune = 4.685
