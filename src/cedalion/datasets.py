@@ -20,14 +20,14 @@ DATASETS = pooch.create(
     env="CEDALION_DATA_DIR",
     registry={
         "mne_nirsport2_raw.snirf": "sha256:12e5fabe64ecc7ef4b83f6bcd77abb41f5480d5f17a2b1aae0e2ad0406670944",  # noqa: E501
-        "colin27_segmentation.zip": "sha256:aba27fd1784f337408e2756c7ce972a131c7b10a6cf2a2bcb69a692b702b0ba7",  # noqa: E501
+        "colin27_segmentation.zip": "sha256:ad02dbd9582033d3c6f712761c2a79228e4bf30c8539f23f3280b8c4c7f9ace1",  # noqa: E501
         "colin27_segmentation_downsampled_3x3x3.zip": "sha256:ab98b6bae3ef76be6110dc544917f4f2f7ef7233ac697d9cf8bb4a395e81b6cd",  # noqa: E501
         "fingertapping.zip": "sha256:f2253cca6eef8221d536da54b74d8556b28be93df9143ea53652fdc3bc011875",  # noqa: E501
         "fingertappingDOT.zip": "sha256:03e620479bd48aea8457050b7ce42e0c73ef5448296272448b54cee0e883853e",  # noqa: E501
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
-        "ICBM152_2020.zip": "sha256:0721fc4aa3886b8d4af3eb1fbdf74c366e7effdf7503e57bdacfd14edaa429fb",  # noqa: E501
+        "ICBM152_2020.zip": "sha256:8dda23aa1f4592d50ba8528bb4ef7124c6593872bddeb9cbd510e7b1891568f3",  # noqa: E501
         "fluence_fingertapping_colin27.h5": "sha256:5db30eaaf0dbd614ecefff3734822864b8357841e6c93be78344574889e1d06d",  # noqa:E501
         "fluence_fingertapping_icbm152.h5": "sha256:5b807253e2d0ca0dcc15ac18029cd73404cc9ee589937f2394ae0a2e57dcd98f",  # noqa:E501
         "fluence_fingertappingDOT_colin27.h5": "sha256:f321190e9ab537e0f020cbcca40d9ef909f67ce9c33791be14033daf162acaf7",  # noqa:E501

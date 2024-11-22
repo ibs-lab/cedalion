@@ -153,9 +153,9 @@ def od2conc(
 
     # conc = Einv @ (optical_density / ( dists * dpf))
     if dpf[0] != 1:
-        conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
+        conc = xr.dot(Einv, od / (dists * dpf), dim=["wavelength"])
     else:
-        conc = xr.dot(Einv, od / (dpf * 1*units.mm), dims=["wavelength"])
+        conc = xr.dot(Einv, od / (dpf * 1*units.mm), dim=["wavelength"])
 
     conc = conc.pint.to("micromolar")
     conc = conc.pint.quantify({"time": od.time.attrs["units"]})  # got lost in xr.dot

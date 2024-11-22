@@ -26,7 +26,7 @@ TAINTED = False
 
 @cdc.validate_schemas
 def prune_ch(
-    amplitudes: cdt.NDTimeSeries, masks: list[cdt.NDTimeSeries], operator: str
+    amplitudes: cdt.NDTimeSeries, masks: list[cdt.NDTimeSeries], operator: str, flag_drop: bool = True
 ):
     """Prune channels from the the input data array using quality masks.
 
@@ -39,6 +39,9 @@ def prune_ch(
 
             - "all": logical AND, keeps channel if it is good across all masks
             - "any": logical OR, keeps channel if it is good in any mask/metric
+
+        flag_drop: if True, channels are dropped from the data_array, otherwise they are
+            set to NaN (default: True)
 
     Returns:
         A tuple (amplitudes_pruned, prune_list), where amplitudes_pruned is
@@ -67,9 +70,14 @@ def prune_ch(
         raise ValueError(f"unsupported operator '{operator}'")
 
     # apply mask to drop channels
-    amplitudes, prune_list = xrutils.apply_mask(
-        amplitudes, mask, "drop", dim_collapse="channel"
-    )
+    if flag_drop:
+        amplitudes, prune_list = xrutils.apply_mask(
+            amplitudes, mask, "drop", dim_collapse="channel"
+        )
+    else:
+        amplitudes, prune_list = xrutils.apply_mask(
+            amplitudes, mask, "nan", dim_collapse="channel"
+        )
 
     return amplitudes, prune_list
 
