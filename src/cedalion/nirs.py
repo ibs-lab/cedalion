@@ -163,6 +163,43 @@ def od2conc(
 
     return conc
 
+def conc2od(
+    conc: xr.DataArray,
+    geo3d: xr.DataArray,
+    dpf: xr.DataArray,
+    spectrum: str = "prahl",
+):
+    """Calculate optical density data from concentration changes.
+
+    Args:
+        conc (xr.DataArray, (channel, *)): The concentration changes by channel.
+        geo3d (xr.DataArray): The 3D coordinates of the optodes.
+        dpf (xr.DataArray, (wavelength, *)): The differential pathlength factor data.
+        spectrum (str, optional): The type of spectrum to use for calculating extinction
+            coefficients. Defaults to "prahl".
+
+    Returns:
+        od (xr.DataArray, (channel, wavelength, *)): A data array containing
+            optical density data.
+    """
+
+    conc = conc.pint.to("molar")
+
+    # Get the extinction coefficients for the chosen spectrum
+    E = cedalion.nirs.get_extinction_coefficients(spectrum, [760.0, 850.0])
+
+    # Calculate distances between optodes for each channel
+    dists = cedalion.nirs.channel_distances(conc, geo3d)
+    dists = dists.pint.to("mm")
+
+    od = xr.dot(E, conc, dims=["chromo"]) * (dists * dpf)
+
+    od = od.rename("optical_density")
+
+    if "time" in od.dims:
+        od = od.pint.quantify({"time": "s"})
+
+    return od
 
 def beer_lambert(
     amplitudes: xr.DataArray,

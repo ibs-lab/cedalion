@@ -206,7 +206,7 @@ def motion_correct_splineSG(
 
     fNIRSdata = fNIRSdata.pint.dequantify()
     fNIRSdata_lpf2 = fNIRSdata.cd.freq_filter(0, 2, butter_order=4)
-    
+
     PADDING_TIME = 12 * units.s # FIXME configurable?
     extend = int(np.round(PADDING_TIME  * fs))  # extension for padding
 
@@ -277,7 +277,7 @@ def motion_correct_PCA(
         .pint.dequantify()
     )
     y_zscore = ( y - y.mean('time') ) / y.std('time')
-    
+
     fNIRSdata_stacked = (
         fNIRSdata.stack(measurement=["channel", "wavelength"])
         .sortby("wavelength")
@@ -306,7 +306,7 @@ def motion_correct_PCA(
 
     # remove top PCs
     yc = yo - np.dot(np.dot(yo, V), np.dot(ev, V.T))
-    
+
     yc = (yc * y.std('time')) + y.mean('time')
     # insert cleaned signal back into od
     lstMs = np.where(np.diff(tInc.values.astype(int)) == -1)[0]
@@ -443,3 +443,88 @@ def motion_correct_PCA_recurse(
         tInc.values = np.hstack([tInc.values[0], tInc.values[:-1]])
 
     return fNIRSdata_cleaned, svs, nSV_ret, tInc
+
+
+def TDDR(ts: cdt.NDTimeSeries):
+    """Implementation of the TDDR algorithm for motion correction.
+
+    Arguments:
+        ts: The time series to be corrected. Should have dims channel and wavelength
+
+    Returns:
+        The corrected time series.
+
+    References:
+        :cite:`Fishburn2019`
+    """
+    signal = ts.copy()
+    unit = signal.pint.units if signal.pint.units else 1
+    signal = signal.pint.dequantify()
+
+    if signal.channel.size != 1 or signal.wavelength.size != 1:
+        for ch in signal.channel.values:
+            for wl in signal.wavelength.values:
+                # Select single channel/wavelength
+                curr_signal = signal.loc[dict(channel=[ch], wavelength=[wl])]
+                # Process the single time series
+                corrected = TDDR(curr_signal)
+                # Assign back ensuring coordinate consistency
+                signal.loc[dict(channel=[ch], wavelength=[wl])] = corrected
+        return signal
+
+    # Preprocess: Separate high and low frequencies
+    signal_mean = np.mean(signal)
+    signal -= signal_mean
+    signal_low = signal.cd.freq_filter(0, 0.5, 3)
+    signal_high = signal - signal_low
+
+    # Initialize
+    tune = 4.685
+    D = np.sqrt(np.finfo(signal.dtype).eps)
+    mu = np.inf
+    iter = 0
+
+    # Step 1. Compute temporal derivative of the signal
+    deriv = np.diff(signal_low)
+
+    # Step 2. Initialize observation weights
+    w = np.ones(deriv.shape)
+
+    # Step 3. Iterative estimation of robust weights
+    while iter < 50:
+
+        iter = iter + 1
+        mu0 = mu
+
+        # Step 3a. Estimate weighted mean
+        mu = np.sum(w * deriv) / np.sum(w)
+
+        # Step 3b. Calculate absolute residuals of estimate
+        dev = np.abs(deriv - mu)
+
+        # Step 3c. Robust estimate of standard deviation of the residuals
+        sigma = 1.4826 * np.median(dev)
+
+        # Step 3d. Scale deviations by standard deviation and tuning parameter
+        r = dev / (sigma * tune)
+
+        # Step 3e. Calculate new weights according to Tukey's biweight function
+        w = ((1 - r**2) * (r < 1)) ** 2
+
+        # Step 3f. Terminate if new estimate is within machine-precision of old estimate
+        if abs(mu - mu0) < D * max(abs(mu), abs(mu0)):
+            break
+
+    # Step 4. Apply robust weights to centered derivative
+    new_deriv = w * (deriv - mu)
+
+    # Step 5. Integrate corrected derivative
+    signal_low_corrected = np.cumsum(np.insert(new_deriv, 0, 0.0))
+
+    # Postprocess: Center the corrected signal
+    signal_low_corrected = signal_low_corrected - np.mean(signal_low_corrected)
+
+    # Postprocess: Merge back with uncorrected high frequency component
+    signal_corrected = (signal_low_corrected + signal_high + signal_mean) * unit
+
+    return signal_corrected
