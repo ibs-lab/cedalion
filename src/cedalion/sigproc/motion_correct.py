@@ -247,7 +247,7 @@ def motion_correct_splineSG(
 def motion_correct_PCA(
     fNIRSdata: cdt.NDTimeSeries, tInc: cdt.NDTimeSeries, nSV: Quantity = 0.97
 ):
-    """Apply motion correction using PCA filter idenitfied as motion artefact segments.
+    """Apply motion correction using PCA filter identified as motion artefact segments.
 
     Based on Homer3 [1] v1.80.2 "hmrR_MotionCorrectPCA.m"
     Boston University Neurophotonics Center
@@ -455,7 +455,8 @@ def TDDR(ts: cdt.NDTimeSeries):
         The corrected time series.
 
     References:
-        :cite:`Fishburn2019`
+        Paper: :cite:`Fishburn2019`
+        Code: :cite:`Fishburn2018`
     """
     signal = ts.copy()
     unit = signal.pint.units if signal.pint.units else 1
