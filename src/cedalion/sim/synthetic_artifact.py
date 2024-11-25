@@ -13,13 +13,16 @@ import cedalion.nirs as nirs
 # artifact with amplitude 1.
 ####################################################################################################
 
-def gen_spike(time: xr.DataArray, onset_time, duration):
-    """Generate a spike artifact.
+def gen_spike(time: xr.DataArray, onset_time: float, duration: float):
+    """Generate a basic spike artifact.
+
+    Shape is a Gaussian centered at onset_time with amplitude = 1 and standard deviation
+    = duration.
 
     Args:
-        time: Time series to which the spike is added.
-        onset_time: Time of the spike.
-        duration: Duration of the spike.
+        time: Time axis to which the spike will be added.
+        onset_time: Center of the spike.
+        duration: Standard deviation of the spike.
 
     Returns:
         DataFrame with event timing data (columns onset_time, duration, trial_type, value, channel).
@@ -27,12 +30,12 @@ def gen_spike(time: xr.DataArray, onset_time, duration):
     duration = 5 if duration > 5 else duration
     return xr.DataArray(np.exp(-0.5*((time-onset_time)/duration)**2), dims="time", coords={"time":time})
 
-def gen_bl_shift(time: xr.DataArray, onset_time, duration=0):
+def gen_bl_shift(time: xr.DataArray, onset_time: float, duration: float = 0):
     """Generate a baseline shift artifact.
 
     Args:
-        time: Time series to which the baseline shift is added.
-        onset_time: Time of the baseline shift.
+        time: Time axis to which the baseline shift will be added.
+        onset_time: Onset of the baseline shift.
         duration: Duration of the baseline shift (has no effect).
 
     Returns:
@@ -136,7 +139,8 @@ def random_events_perc(
         DataFrame with event timing data (columns onset_time, duration, trial_type, value, channel).
     """
     event_time = 0
-    while event_time < time[-1] * perc_events:
+    total_time = time[-1].item() - time[0].item()
+    while event_time < total_time * perc_events:
         onset_time = np.random.uniform(time[0], time[-1])
         duration = np.random.uniform(min_dur, max_dur)
         type = np.random.choice(types)
@@ -144,6 +148,7 @@ def random_events_perc(
             timing = add_event_timing([(onset_time, duration)], type, channels, timing)
             event_time += duration
     return timing
+
 
 def sliding_window(ts: cdt.NDTimeSeries, window_size, step_size):
     """Generates overlapping windows from the input timeseries.

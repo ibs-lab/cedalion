@@ -448,6 +448,11 @@ def motion_correct_PCA_recurse(
 def TDDR(ts: cdt.NDTimeSeries):
     """Implementation of the TDDR algorithm for motion correction.
 
+    Uses an iterative reweighting approach to reduce large fluctuations typically
+    associated with motion artifacts. Adapted for cedalion from the python
+    implementation at :cite:`Fishburn2018`, which is the reference implementation for
+    the algorithm described in :cite:`Fishburn2019`.
+
     Arguments:
         ts: The time series to be corrected. Should have dims channel and wavelength
 
