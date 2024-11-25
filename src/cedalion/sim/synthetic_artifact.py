@@ -74,7 +74,7 @@ def add_event_timing(
 
     return timing
 
-def sel_chans_by_opt(optodes, ts):
+def sel_chans_by_opt(optodes: List, ts: cdt.NDTimeSeries):
     """Returns list of channels involving selected optodes."""
     sel_chan = []
     for opt in optodes:
