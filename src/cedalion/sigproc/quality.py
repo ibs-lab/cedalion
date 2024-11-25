@@ -9,6 +9,8 @@ import pandas as pd
 import xarray as xr
 from numpy.typing import ArrayLike
 from scipy import signal
+from scipy.stats import gaussian_kde
+import matplotlib.pyplot as p
 
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
@@ -301,6 +303,8 @@ def gvtd(amplitudes: NDTimeSeries):
     fcut_min = 0.01
     fcut_max = 0.5
 
+    fs = freq.sampling_rate(amplitudes)
+
     od = nirs.int2od(amplitudes)
     od = xr.where(np.isinf(od), 0, od)
     od = xr.where(np.isnan(od), 0, od)
@@ -313,12 +317,189 @@ def gvtd(amplitudes: NDTimeSeries):
     # Step 2: Find the RMS across the channels for each time-point of dataDiff
     GVTD = np.sqrt((dataDiff[:, :-1] ** 2).mean(dim="channel"))
 
-    # Step 3: Add a zero in the beginning for GVTD to have the same number of
+    # Step 3: Scale to have units of OD/s
+    GVTD = GVTD * fs
+
+    # Step 4: Add a zero in the beginning for GVTD to have the same number of
     # time-points as your original dataMatrix
     GVTD = GVTD.squeeze()
     GVTD.values = np.hstack([0, GVTD.values[:-1]])
 
     return GVTD
+
+class gvtd_stat_type:
+    Default = "Default"
+    Histogram_Mode = "Histogram_Mode"
+    Kdensity_Mode = "Kdensity_Mode"
+    Parabolic_Mode = "Parabolic_Mode"
+    Mean = "Mean"
+    Median = "Median"
+    MAD = "MAD"
+
+def find_gvtd_thresh(gvtd_time_trace, stat_type=gvtd_stat_type.Default, n_std=10):
+    """Calculate GVTD threshold.
+
+    Code from:
+    https://github.com/sherafatia/GVTD
+    Sherafati, A., Snyder, A. Z., Eggebrecht, A. T., Bergonzi, K. M., Burns-Yocum,
+    T. M., Lugar, H. M., Ferradal, S. L., Robichaux-Viehoever, A., Smyser, C. D.,
+    Palanca, B. J., Hershey, T. & Culver, J. P. Global motion detection and censoring
+    in high-density diffuse optical tomography. Hum. Brain Mapp. 41, 4093–4112 (2020).
+    converted from matlab by chatGPT
+
+    Args:
+        gvtd_time_trace (array-like): GVTD time trace (1D array).
+        stat_type (str): Statistic type for threshold calculation (e.g., from 
+            gvtd_stat_type). Default is Default.
+        n_std (int or float): Number of standard deviations for threshold calculation. 
+            Default is 10.
+
+    Returns:
+        float: Calculated threshold value.
+    """
+
+    # Ensure gvtd_time_trace is a row vector
+    gvtd_time_trace = np.ravel(gvtd_time_trace)
+
+    if stat_type == gvtd_stat_type.Default:
+        # Default case
+        min_counts_each_bin = 5
+        n_bins = round(len(gvtd_time_trace) / min_counts_each_bin)
+        bin_width = np.max(gvtd_time_trace) / n_bins
+        hist, edges = np.histogram(gvtd_time_trace, bins=n_bins, range=(0, np.max(gvtd_time_trace)))
+        bin_centers = edges[:-1] + bin_width / 2
+        mode_bin = np.argmax(hist)
+        run_mode = bin_centers[mode_bin]
+        min_val_to_mode_dist = run_mode - np.min(gvtd_time_trace)
+        return run_mode + min_val_to_mode_dist
+
+    elif stat_type == gvtd_stat_type.Histogram_Mode:
+        # Histogram_Mode case
+        min_counts_each_bin = 5
+        n_bins = round(len(gvtd_time_trace) / min_counts_each_bin)
+        bin_width = np.max(gvtd_time_trace) / n_bins
+        hist, edges = np.histogram(gvtd_time_trace, bins=n_bins, range=(0, np.max(gvtd_time_trace)))
+        bin_centers = edges[:-1] + bin_width / 2
+        mode_bin = np.argmax(hist)
+        run_mode = bin_centers[mode_bin]
+        below_mode = gvtd_time_trace[gvtd_time_trace < run_mode]
+        left_std_run = np.std(below_mode)
+        return run_mode + n_std * left_std_run
+
+    elif stat_type == gvtd_stat_type.Kdensity_Mode:
+        # Kernel density estimation for mode
+        log_gvtd = np.log(gvtd_time_trace)
+        kde = gaussian_kde(log_gvtd)
+        xi = np.linspace(np.min(log_gvtd), np.max(log_gvtd), 1000)
+        pdf = kde(xi)
+        mode_index = np.argmax(pdf)
+        run_mode = np.exp(xi[mode_index])
+        below_mode = gvtd_time_trace[gvtd_time_trace < run_mode]
+        left_std_run = np.std(below_mode)
+        return run_mode + n_std * left_std_run
+
+    elif stat_type == gvtd_stat_type.Parabolic_Mode:
+        # Parabolic interpolation for mode
+        min_counts_each_bin = 5
+        n_bins = round(len(gvtd_time_trace) / min_counts_each_bin)
+        bin_width = np.max(gvtd_time_trace) / n_bins
+        hist, edges = np.histogram(gvtd_time_trace, bins=n_bins, range=(0, np.max(gvtd_time_trace)))
+        bin_centers = edges[:-1] + bin_width / 2
+        mode_bin = np.argmax(hist)
+        if 0 < mode_bin < len(bin_centers) - 1:
+            x1, y1 = bin_centers[mode_bin - 1], hist[mode_bin - 1]
+            x2, y2 = bin_centers[mode_bin], hist[mode_bin]
+            x3, y3 = bin_centers[mode_bin + 1], hist[mode_bin + 1]
+            numerator = (x2**2 - x1**2) * (y2 - y3) - (x2**2 - x3**2) * (y2 - y1)
+            denominator = (x2 - x1) * (y2 - y3) - (x2 - x3) * (y2 - y1)
+            run_mode = 0.5 * numerator / denominator
+        else:
+            run_mode = bin_centers[mode_bin]
+        below_mode = gvtd_time_trace[gvtd_time_trace < run_mode]
+        left_std_run = np.std(below_mode)
+        return run_mode + n_std * left_std_run
+
+    elif stat_type == gvtd_stat_type.Mean:
+        # Mean case
+        run_mean = np.mean(gvtd_time_trace)
+        below_mean = gvtd_time_trace[gvtd_time_trace < run_mean]
+        left_std_run = np.std(below_mean)
+        return run_mean + n_std * left_std_run
+
+    elif stat_type == gvtd_stat_type.Median:
+        # Median case
+        run_median = np.median(gvtd_time_trace)
+        below_median = gvtd_time_trace[gvtd_time_trace < run_median]
+        left_std_run = np.std(below_median)
+        return run_median + n_std * left_std_run
+
+    elif stat_type == gvtd_stat_type.MAD:
+        # MAD case
+        mad = np.median(np.abs(gvtd_time_trace - np.median(gvtd_time_trace)))
+        return n_std * mad
+
+    else:
+        raise ValueError(f"Unknown stat type: {stat_type}")
+
+def make_gvtd_hist(gvtd_time_trace, plot_thresh=True, stat_type=None, n_std=None, 
+                   bin_size=None):
+    """Generate a histogram of GVTD values and optionally overlay a threshold line.
+
+    Code from:
+    https://github.com/sherafatia/GVTD
+    Sherafati, A., Snyder, A. Z., Eggebrecht, A. T., Bergonzi, K. M., Burns-Yocum,
+    T. M., Lugar, H. M., Ferradal, S. L., Robichaux-Viehoever, A., Smyser, C. D.,
+    Palanca, B. J., Hershey, T. & Culver, J. P. Global motion detection and censoring
+    in high-density diffuse optical tomography. Hum. Brain Mapp. 41, 4093–4112 (2020).
+    converted from matlab by chatGPT
+
+    Args:
+        gvtd_time_trace (array-like): GVTD time trace (1D array).
+        plot_thresh (bool): Whether to plot the threshold on the histogram. Default is
+            True.
+        stat_type (str): Statistic type for threshold calculation (e.g., from StatType).
+            Default is Histogram_Mode.
+        n_std (int or float): Number of standard deviations for threshold calculation.
+            Default is 4.
+        bin_size (float): Size of histogram bins. If None, it's calculated based on
+            data.
+
+    Returns:
+        float: Calculated threshold value if `plot_thresh` is True; otherwise, None.
+    """
+    # Set default values
+    if stat_type is None:
+        stat_type = gvtd_stat_type.Histogram_Mode
+    if plot_thresh is None:
+        plot_thresh = True
+    if n_std is None and plot_thresh:
+        n_std = 4
+
+    # Calculate bin size if not provided
+    if bin_size is None:
+        min_counts_each_bin = 5
+        n_bins = round(len(gvtd_time_trace) / min_counts_each_bin)
+        bin_size = np.max(gvtd_time_trace) / n_bins
+
+    f, ax = p.subplots(1, 1, figsize=(7, 5))
+
+    # Create the histogram
+    bins = np.arange(0, np.max(gvtd_time_trace) + bin_size, bin_size)
+    ax.hist(gvtd_time_trace, bins=bins, edgecolor='black', alpha=0.75)
+    ax.set_title('GVTD Histogram')
+    ax.set_xlabel('GVTD')
+    ax.set_ylabel('Counts')
+
+    threshold = None
+    if plot_thresh:
+        # Calculate the threshold
+        threshold = find_gvtd_thresh(gvtd_time_trace, stat_type, n_std)
+
+        # Plot the threshold line
+        ax.axvline(threshold, color='red', linestyle='--', label=f'Threshold: {threshold:.4f}')
+        ax.legend()
+
+    return threshold
 
 @cdc.validate_schemas
 def sci(
@@ -984,7 +1165,7 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
 
         channel_snrs = np.asarray(channel_snrs)
 
-        if (channel_snrs < snr_thresh).all():
+        if 0: # (channel_snrs < snr_thresh).all():
             # if all wavelengths for this channel are below the snr threshold
             # mark all wavelengths as tainted.
             logger.debug(f"marking complete channel {ch} as TAINTED due to low SNR.")
