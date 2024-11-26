@@ -652,19 +652,19 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
 
 
 def run_vis(
-    snirfData: cdt.NDTimeSeries,
+    blockaverage: cdt.NDTimeSeries,
     geo2d: cdt.LabeledPointCloud,
     geo3d: cdt.LabeledPointCloud,
 ):
     """Opens the visualization GUI.
 
     Args:
-        snirfData: The HRF data.
+        blockaverage: The blockaveraged HRF data.
         geo2d: The 2d probe geometry data.
         geo3d: The 3d probe geometry data.
     """
 
     app = QtWidgets.QApplication(sys.argv)
-    main_gui = _MAIN_GUI(snirfData=snirfData, geo2d=geo2d, geo3d=geo3d)
+    main_gui = _MAIN_GUI(snirfData=blockaverage, geo2d=geo2d, geo3d=geo3d)
     main_gui.show()
     sys.exit(app.exec())
