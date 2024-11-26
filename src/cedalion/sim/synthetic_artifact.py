@@ -2,8 +2,10 @@ import xarray as xr
 import cedalion.typing as cdt
 import pandas as pd
 import numpy as np
-from typing import Callable
+from typing import Protocol
 import cedalion.nirs as nirs
+
+TIMING_COLUMNS = ["onset", "duration", "trial_type", "value", "channel"]
 
 ########################################################################################
 # Add artifact functions here
@@ -12,8 +14,14 @@ import cedalion.nirs as nirs
 # artifact with amplitude 1.
 ########################################################################################
 
+class ArtifactFunction(Protocol):
+    def __call__(
+        self, time: xr.DataArray, onset_time: float, duration: float
+    ) -> xr.DataArray:
+        pass
 
-def gen_spike(time: xr.DataArray, onset_time: float, duration: float):
+
+def gen_spike(time: xr.DataArray, onset_time: float, duration: float) -> xr.DataArray:
     """Generate a basic spike artifact.
 
     Shape is a Gaussian centered at onset_time with amplitude = 1 and standard deviation
@@ -37,7 +45,9 @@ def gen_spike(time: xr.DataArray, onset_time: float, duration: float):
     )
 
 
-def gen_bl_shift(time: xr.DataArray, onset_time: float, duration: float = 0):
+def gen_bl_shift(
+    time: xr.DataArray, onset_time: float, duration: float = 0
+) -> xr.DataArray:
     """Generate a baseline shift artifact.
 
     Args:
@@ -59,13 +69,11 @@ def gen_bl_shift(time: xr.DataArray, onset_time: float, duration: float = 0):
 
 
 def add_event_timing(
-    events: list[tuple[float,float]],
+    events: list[tuple[float, float]],
     type: str,
     channels: list[str] | None = None,
-    timing: pd.DataFrame = pd.DataFrame(
-        columns=["onset", "duration", "trial_type", "value", "channel"]
-    ),
-):
+    timing: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Add event data to the timing DataFrame, or creates a new one if not provided.
 
     Args:
@@ -85,6 +93,9 @@ def add_event_timing(
         new_rows["channel"] = [channels] * len(new_rows)
     else:
         new_rows["channel"] = None
+
+    if timing is None:
+        timing = pd.DataFrame(columns=TIMING_COLUMNS)
 
     timing = pd.concat([timing, new_rows], ignore_index=True)
 
@@ -124,9 +135,8 @@ def random_events_num(
         value, channel).
     """
 
-    timing = pd.DataFrame(
-        columns=["onset", "duration", "trial_type", "value", "channel"]
-    )
+    timing = pd.DataFrame(columns=TIMING_COLUMNS)
+
     for i in range(num_events):
         onset_time = np.random.uniform(time[0], time[-1])
         duration = np.random.uniform(0.1, time[-1] - onset_time)
@@ -143,9 +153,7 @@ def random_events_perc(
     channels: list[str] | None = None,
     min_dur: float = 0.1,
     max_dur: float = 0.4,
-    timing: pd.DataFrame = pd.DataFrame(
-        columns=["onset", "duration", "trial_type", "value", "channel"]
-    ),
+    timing: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Generates timing data for random events. Mainly intended for spike artifacts.
 
@@ -166,8 +174,12 @@ def random_events_perc(
         value, channel).
     """
 
+    if timing is None:
+        timing = pd.DataFrame(columns=TIMING_COLUMNS)
+
     event_time = 0
     total_time = time[-1].item() - time[0].item()
+
     while event_time < total_time * perc_events:
         onset_time = np.random.uniform(time[0], time[-1])
         duration = np.random.uniform(min_dur, max_dur)
@@ -201,10 +213,9 @@ def sliding_window(ts: cdt.NDTimeSeries, window_size, step_size):
 def calculate_amplitudes(windows):
     """Calculates the amplitude (max-min) for each window."""
 
-    amplitudes = [
-        np.max(window.pint.dequantify()) - np.min(window.pint.dequantify())
-        for window in windows
-    ]
+    windows = windows.pint.dequantify()
+
+    amplitudes = [np.max(window) - np.min(window) for window in windows]
     return np.array(amplitudes)
 
 
@@ -251,10 +262,10 @@ def add_artifact_direct(
 def add_artifacts(
     ts: cdt.NDTimeSeries,
     timing: pd.DataFrame,
-    artifacts : dict[str, Callable],
+    artifacts: dict[str, ArtifactFunction],
     mode: str = "auto",
-    scale: float = 1.0,
-):
+    scale: float = 1.0,  # FIXME combine with mode
+) -> cdt.NDTimeSeries:
     """Add scaled artifacts to timeseries data.
 
     Supports timeseries with channel and either wavelength or chromophore dimension.
@@ -283,7 +294,7 @@ def add_artifacts(
     time_end = ts_copy["time"][-1].item()
 
     # set parameters for compute_alpha
-    window_size = ts_copy.time.size // 100
+    window_size = ts_copy.time.size // 100 # FIXME window size depends on len(ts_copy)?
     step_size = window_size // 2
     channels = ts_copy.channel.values
 
@@ -335,6 +346,7 @@ def add_artifacts(
                     )
         else:
             print(f"Unknown artifact type {type}")
+
     return ts_copy
 
 
