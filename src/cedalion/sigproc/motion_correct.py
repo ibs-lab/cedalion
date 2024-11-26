@@ -28,6 +28,7 @@ def motion_correct_spline(
     Args:
         fNIRSdata: The fNIRS data to be motion corrected.
         tIncCh: The time series indicating the presence of motion artifacts.
+        p: smoothing factor
 
     Returns:
         dodSpline (cdt.NDTimeSeries): The motion-corrected fNIRS data.
@@ -71,7 +72,9 @@ def motion_correct_spline(
                     idx = np.arange(lstMs[ii], lstMf[ii])
 
                     if len(idx) > 3:
-                        splInterp_obj = UnivariateSpline(t[idx], channel[idx], s= p*len(t[idx]))
+                        splInterp_obj = UnivariateSpline(
+                            t[idx], channel[idx], s=p * len(t[idx])
+                        )
                         splInterp = splInterp_obj(t[idx])
 
                         dodSpline_chan[idx] = channel[idx] - splInterp
@@ -192,6 +195,7 @@ def motion_correct_splineSG(
         fNIRSdata (cdt.NDTimeSeries): The fNIRS data to be motion corrected.
         frame_size (Quantity): The size of the sliding window in seconds for the
             Savitzky-Golay filter. Default is 10 seconds.
+        p: smoothing factor
 
     Returns:
         dodSplineSG (cdt.NDTimeSeries): The motion-corrected fNIRS data after applying
@@ -445,7 +449,7 @@ def motion_correct_PCA_recurse(
     return fNIRSdata_cleaned, svs, nSV_ret, tInc
 
 
-def TDDR(ts: cdt.NDTimeSeries):
+def tddr(ts: cdt.NDTimeSeries):
     """Implementation of the TDDR algorithm for motion correction.
 
     Uses an iterative reweighting approach to reduce large fluctuations typically
@@ -473,7 +477,7 @@ def TDDR(ts: cdt.NDTimeSeries):
                 # Select single channel/wavelength
                 curr_signal = signal.loc[dict(channel=[ch], wavelength=[wl])]
                 # Process the single time series
-                corrected = TDDR(curr_signal)
+                corrected = tddr(curr_signal)
                 # Assign back ensuring coordinate consistency
                 signal.loc[dict(channel=[ch], wavelength=[wl])] = corrected
         return signal
