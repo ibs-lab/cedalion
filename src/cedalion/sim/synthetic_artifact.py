@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from typing import Protocol
 import cedalion.nirs as nirs
+import cedalion.xrutils as xrutils
 
 TIMING_COLUMNS = ["onset", "duration", "trial_type", "value", "channel"]
 
@@ -189,53 +190,6 @@ def random_events_perc(
             event_time += duration
     return timing
 
-
-def sliding_window(ts: cdt.NDTimeSeries, window_size, step_size):
-    """Generates overlapping windows from the input timeseries.
-
-    Args:
-        ts: fNIRS timeseries data (i.e. amp or OD).
-        window_size: Size of the window in s.
-        step_size: Step size in s.
-
-    Returns:
-        List of windows.
-    """
-
-    num_windows = int((ts["time"][-1].item() - window_size) // step_size + 1)
-    windows = [
-        ts.sel(time=slice(i * step_size, i * step_size + window_size))
-        for i in range(num_windows)
-    ]
-    return windows
-
-
-def calculate_amplitudes(windows):
-    """Calculates the amplitude (max-min) for each window."""
-
-    windows = windows.pint.dequantify()
-
-    amplitudes = [np.max(window) - np.min(window) for window in windows]
-    return np.array(amplitudes)
-
-
-def compute_alpha(ts: cdt.NDTimeSeries, window_size, step_size):
-    """Computes the Alpha parameter using the sliding window approach.
-
-    Args:
-        ts: fNIRS timeseries data (i.e. amp or OD).
-        window_size: Size of the window in s.
-        step_size: Step size in s.
-
-    Returns:
-        Median amplitude of the windows.
-    """
-
-    windows = sliding_window(ts, window_size, step_size)
-    amplitudes = calculate_amplitudes(windows)
-    return np.median(amplitudes)
-
-
 def add_artifact_direct(
     ts: cdt.NDTimeSeries, timing: tuple[float, float], artifact_func, scale: float = 1.0
 ):
@@ -264,7 +218,8 @@ def add_artifacts(
     timing: pd.DataFrame,
     artifacts: dict[str, ArtifactFunction],
     mode: str = "auto",
-    scale: float = 1.0,  # FIXME combine with mode
+    scale: float = 1.0,
+    window_size: float = 120
 ) -> cdt.NDTimeSeries:
     """Add scaled artifacts to timeseries data.
 
@@ -279,9 +234,10 @@ def add_artifacts(
             (time, onset_time, duration). Keys correspond to the trial_type in the
             timing DataFrame.
         mode: 'auto' or 'manual'. If 'auto', artifacts are scaled using the alpha
-            parameter (median of median of sliding windows). If 'manual', artifacts
-            are scaled only by the scale parameter.
+            parameter (median of median of sliding windows) AND the scale parameter. If 
+            'manual', artifacts are scaled only by the scale parameter.
         scale: scaling parameter for artifacts
+        window_size: size of sliding window for alpha computation
 
     Returns:
         Amplitude data with added artifacts.
@@ -293,19 +249,16 @@ def add_artifacts(
     time_start = ts_copy["time"][0].item()
     time_end = ts_copy["time"][-1].item()
 
-    # set parameters for compute_alpha
-    window_size = ts_copy.time.size // 100 # FIXME window size depends on len(ts_copy)?
-    step_size = window_size // 2
-    channels = ts_copy.channel.values
-
     # Detect dimension for chromophore or wavelength
-    if "wavelength" in ts_copy.dims:
-        dim_name = "wavelength"
-    elif "chromo" in ts_copy.dims:
-        dim_name = "chromo"
-    else:
+    try:
+        dim_name = xrutils.other_dim(ts_copy, "time", "channel")
+    except ValueError:
         raise ValueError("No wavelength or chromophore dimension found.")
     dim_values = ts_copy[dim_name].values
+
+    # set parameters for computing alpha
+    step_size = window_size // 2
+    channels = ts_copy.channel.values
 
     # generate alpha for each channel/wavelength or channel/chromo
     if mode == "auto":
@@ -318,7 +271,7 @@ def add_artifacts(
         alphas = amplitudes.median(dim="time").pint.dequantify()
     elif mode == "manual":
         alphas = {
-            (channel, dim_value): scale
+            (channel, dim_value): 1
             for dim_value in dim_values
             for channel in channels
         }
@@ -331,6 +284,7 @@ def add_artifacts(
         & (timing["onset"] + timing["duration"] <= time_end)
     ]
 
+    # add artifacts to timeseries
     for index, row in valid_events.iterrows():
         onset_time = row["onset"]
         duration = row["duration"]
@@ -345,7 +299,7 @@ def add_artifacts(
                         artifact * alpha * scale * unit
                     )
         else:
-            print(f"Unknown artifact type {type}")
+            raise ValueError(f"Unknown artifact type {type}")
 
     return ts_copy
 
@@ -357,9 +311,11 @@ def add_chromo_artifacts_2_od(
     geo3d,
     dpf,
     scale: float = 1.0,
+    window_size: float = 120,
 ):
     """Scale artifacts by chromo amplitudes and add to OD data."""
 
     conc = nirs.od2conc(od, geo3d, dpf)
-    conc = add_artifacts(conc, timing, artifacts, mode="auto", scale=scale)
+    conc = add_artifacts(conc, timing, artifacts, mode="auto", scale=scale,
+                         window_size=window_size)
     return nirs.conc2od(conc, geo3d, dpf)

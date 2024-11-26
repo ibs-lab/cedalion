@@ -492,7 +492,7 @@ def tddr(ts: cdt.NDTimeSeries):
     tune = 4.685
     D = np.sqrt(np.finfo(signal.dtype).eps)
     mu = np.inf
-    iter = 0
+    n_iter = 0
 
     # Step 1. Compute temporal derivative of the signal
     deriv = np.diff(signal_low)
@@ -501,9 +501,8 @@ def tddr(ts: cdt.NDTimeSeries):
     w = np.ones(deriv.shape)
 
     # Step 3. Iterative estimation of robust weights
-    while iter < 50:
+    for n_iter in range(50):
 
-        iter = iter + 1
         mu0 = mu
 
         # Step 3a. Estimate weighted mean
@@ -524,6 +523,10 @@ def tddr(ts: cdt.NDTimeSeries):
         # Step 3f. Terminate if new estimate is within machine-precision of old estimate
         if abs(mu - mu0) < D * max(abs(mu), abs(mu0)):
             break
+
+    else:
+        # Warn if the maximum number of iterations was reached without convergence
+        print("Warning: Robust estimation did not converge within 50 iterations.")
 
     # Step 4. Apply robust weights to centered derivative
     new_deriv = w * (deriv - mu)
