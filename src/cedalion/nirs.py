@@ -186,13 +186,14 @@ def conc2od(
     conc = conc.pint.to("molar")
 
     # Get the extinction coefficients for the chosen spectrum
-    E = cedalion.nirs.get_extinction_coefficients(spectrum, [760.0, 850.0])
+    wavelengths = dpf.wavelength.values.astype(float)
+    E = cedalion.nirs.get_extinction_coefficients(spectrum, wavelengths)
 
     # Calculate distances between optodes for each channel
     dists = cedalion.nirs.channel_distances(conc, geo3d)
     dists = dists.pint.to("mm")
 
-    od = xr.dot(E, conc, dims=["chromo"]) * (dists * dpf)
+    od = xr.dot(E, conc, dim=["chromo"]) * (dists * dpf)
 
     od = od.rename("optical_density")
 
