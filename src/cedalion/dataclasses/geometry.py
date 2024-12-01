@@ -36,6 +36,58 @@ class PointType(Enum):
 
 
 @dataclass
+class Voxels():
+    voxels: np.ndarray
+    crs: str
+    units: pint.Unit
+    
+    @property
+    def vertices(self) -> cdt.LabeledPointCloud:
+        result = xr.DataArray(
+            self.voxels,
+            dims=["label", self.crs],
+            coords={"label": np.arange(len(self.voxels))},
+            attrs={"units": self.units},
+        )
+        result = result.pint.quantify()
+
+        return result
+
+    @property
+    def nvertices(self) -> int:
+        return len(self.voxels)
+    
+    def apply_transform(self, transform: cdt.AffineTransform) -> "Voxels":
+        # convert to homogeneous coordinates
+        num, dim = self.voxels.shape
+        hom = np.ones((num,dim+1))
+        hom[:,:3] = self.voxels
+        # apply transformation
+        hom = (transform.pint.dequantify().values.dot(hom.T)).T  
+        # backtransformation
+        transformed = np.array([hom[i,:3] / hom[i,3] for i in range(hom.shape[0])])
+
+        new_units = self.units * transform.pint.units
+        new_crs = transform.dims[0]
+
+        return Voxels(transformed, new_crs, new_units)
+
+
+    def _build_kdtree(self):
+        self._kdtree = KDTree(self.voxels)
+
+    def __post_init__(self):
+        self._kdtree = None
+
+    @property
+    def kdtree(self):
+        if self._kdtree is None:
+            self._build_kdtree()
+
+        return self._kdtree
+
+
+@dataclass
 class Surface(ABC):
     """Abstract base class for surfaces."""
     mesh: Any
@@ -251,9 +303,18 @@ class TrimeshSurface(Surface):
         flip = np.where(projected_normals < 0, -1.0, 1.0)[:, None]
         flipped_normals = mesh.vertex_normals * flip
 
-        mesh = trimesh.Trimesh(
-            mesh.vertices, mesh.faces, vertex_normals=flipped_normals
-        )
+        mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, vertex_normals=flipped_normals)
+        vertex_normals = mesh.vertex_normals.copy()
+        # fix wrong normals (mostly due to unsmoothed surfaces) by taking the average of the neighbors
+        false_normals = np.argwhere(np.linalg.norm(mesh.vertex_normals, axis=1).round() != 1.0)
+        for idx in false_normals:
+            neighbors = {v for face in mesh.faces if idx[0] in face for v in face}
+            normal = np.mean([vertex_normals[n] for n in neighbors], axis=0)
+            if np.linalg.norm(normal) > 0.99:
+                vertex_normals[idx] = normal / np.linalg.norm(normal)
+            
+
+        mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, vertex_normals=vertex_normals)
         return TrimeshSurface(mesh, self.crs, self.units)
 
     @classmethod
