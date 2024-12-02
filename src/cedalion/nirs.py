@@ -119,6 +119,23 @@ def int2od(amplitudes: xr.DataArray):
     od = -np.log(amplitudes / amplitudes.mean("time"))
     return od
 
+def od2int(od: xr.DataArray):
+    """Calculate intensity amplitude from  optical density data.
+
+    Args:
+        od (xr.DataArray, (time, channel, *)): od data.
+
+    Returns:
+        amplitudes: (xr.DataArray, (time, channel,*): "raw" intensity data.
+    """
+
+    # conversion to optical density
+    amplitudes  = np.abs(np.exp(-od)*100)
+    
+    return amplitudes 
+
+
+
 
 def od2conc(
     od: xr.DataArray,
@@ -162,6 +179,56 @@ def od2conc(
     conc = conc.rename("concentration")
 
     return conc
+
+
+def conc2od(
+    conc: xr.DataArray,
+    geo3d: xr.DataArray,
+    dpf: xr.DataArray,
+    spectrum: str = "prahl",
+):
+    """Calculate concentration changes from optical density data.
+
+    Args:
+        conc (xr.DataArray, (channel, *)): A data array containing
+            concentration changes by channel.
+        
+        geo3d (xr.DataArray): The 3D coordinates of the optodes.
+        dpf (xr.DataArray, (wavelength, *)): The differential pathlength factor data
+        spectrum (str, optional): The type of spectrum to use for calculating extinction
+            coefficients. Defaults to "prahl".
+
+    Returns:
+        od (xr.DataArray, (channel, wavelength, *)): The optical density data array
+    """
+
+    validators.has_channel(conc)
+    validators.has_wavelengths(dpf)
+    validators.has_positions(geo3d, npos=3)
+
+    conc = conc.pint.to("molar")
+    conc = conc.pint.dequantify()
+
+    E = get_extinction_coefficients(spectrum, dpf.wavelength)
+
+    #Einv = xrutils.pinv(E)
+
+    dists = channel_distances(conc, geo3d)
+    dists = dists.pint.to("mm")
+
+    # conc = Einv @ (optical_density / ( dists * dpf))
+    # od = E @ conc @ (dist * dpf)
+    if dpf[0] != 1:
+        od = xr.dot(E, conc * (dists * dpf), dims=["chromo"])
+    else:
+        od = xr.dot(E, conc * (dpf * 1*units.mm), dims=["chromo"])
+
+    od.data = od.pint.dequantify()
+    od = od.pint.quantify({"time": conc.time.attrs["units"]})  # got lost in xr.dot
+    od = od.rename("optical density")
+
+    return od
+
 
 
 def beer_lambert(

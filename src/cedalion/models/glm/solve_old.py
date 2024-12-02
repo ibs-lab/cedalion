@@ -2,19 +2,10 @@ from collections import defaultdict
 
 import numpy as np
 import xarray as xr
-#from nilearn.glm.first_level import run_glm as nilearn_run_glm
+from nilearn.glm.first_level import run_glm as nilearn_run_glm
 
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-import cedalion.dataclasses.statistics
-import statsmodels.regression
-import statsmodels.api
-import pandas as pd
-from scipy.linalg import toeplitz
-
-from pqdm.processes import pqdm
-from tqdm import tqdm
-import cedalion.math.ar_irls
 
 def _hash_channel_wise_regressor(regressor: xr.DataArray) -> list[int]:
     """Hashes each channel slice of the regressor array.
@@ -32,37 +23,14 @@ def _hash_channel_wise_regressor(regressor: xr.DataArray) -> list[int]:
     return [hash(tmp.isel(channel=i).values.data.tobytes()) for i in range(n_channel)]
 
 
-def _channel_fit(y,x,noise_model='ols',ar_order=30):
-    if noise_model=='ols':
-        ss=statsmodels.api.OLS(y,x).fit()
-    elif noise_model=='rls':
-        ss=statsmodels.api.RecursiveLS(y,x).fit()
-    elif noise_model=='wls':
-        ss=statsmodels.api.WLS(y,x).fit()
-    elif noise_model=='ar_irls':
-        ss=cedalion.math.ar_irls.ar_irls_GLM(y,x,pmax=ar_order)
-    elif noise_model=='gls':
-        ols_resid=statsmodels.api.OLS(y,x).fit().resid
-        resid_fit=statsmodels.api.OLS(
-            np.asarray(ols_resid[1:]),statsmodels.api.add_constant(np.asarray(ols_resid)[:-1])
-            ).fit()
-        rho=resid_fit.params[1]
-        order=toeplitz(range(len(ols_resid)))
-        ss=statsmodels.api.GLS(y,x,sigma=rho**order).fit()
-    elif noise_model=='glsar':
-        ss=statsmodels.api.GLSAR(y,x,ar_order).iterative_fit(4)
 
-    else:
-        NotImplemented
-
-    return ss
 
 
 def fit(
     ts: cdt.NDTimeSeries,
     design_matrix: xr.DataArray,
     channel_wise_regressors: list[xr.DataArray] | None = None,
-    noise_model="ols",ar_order=30,max_jobs=3,verbose=False
+    noise_model="ols",
 ):
     """Fit design matrix to data.
 
@@ -77,8 +45,8 @@ def fit(
         thetas as a DataArray
 
     """
-    #if noise_model != "ols":
-    #    raise NotImplementedError("support for other noise models is missing")
+    if noise_model != "ols":
+        raise NotImplementedError("support for other noise models is missing")
 
     # FIXME: unit handling?
     # shoud the design matrix be dimensionless? -> thetas will have units
@@ -87,64 +55,40 @@ def fit(
 
     dim3_name = xrutils.other_dim(design_matrix, "time", "regressor")
 
-    df = pd.DataFrame()
+    thetas = defaultdict(list)
 
-    resid = [] 
+    for dim3, group_channels, group_design_matrix in iter_design_matrix(
+        ts, design_matrix, channel_wise_regressors
+    ):
+        group_y = ts.sel({"channel": group_channels, dim3_name: dim3}).transpose(
+            "time", "channel"
+        )
 
-    for dim3, group_channels, group_design_matrix in iter_design_matrix(ts, design_matrix, channel_wise_regressors):
-        group_y = ts.sel({"channel": group_channels, dim3_name: dim3}).transpose("time", "channel")
-            
-        x=pd.DataFrame(group_design_matrix.values)
-        x.columns=group_design_matrix.regressor
+        _, glm_est = nilearn_run_glm(
+            group_y.values, group_design_matrix.values, noise_model=noise_model
+        )
+        assert len(glm_est) == 1  # FIXME, holds only for OLS
+        glm_est = next(iter(glm_est.values()))
 
-        y=pd.DataFrame(group_y.values)
-        y.columns=group_y.channel
+        thetas[dim3].append(
+            xr.DataArray(
+                glm_est.theta[:, :, None],
+                dims=("regressor", "channel", dim3_name),
+                coords={
+                    "regressor": group_design_matrix.regressor,
+                    "channel": group_y.channel,
+                    dim3_name: [dim3],
+                },
+            )
+        )
 
-        stats=[]
+    # concatenate channels
+    thetas = [xr.concat(v, dim="channel") for v in thetas.values()]
 
-        if(max_jobs==1):
-            if(verbose):
-                for chan in tqdm(group_y.channel.values):
-                    ss=_channel_fit(y[chan],x,noise_model,ar_order)
-                    stats.append(ss)
-                    resid.append(ss.resid.to_numpy())
-            else:
-                for chan in group_y.channel.values:
-                    ss=_channel_fit(y[chan],x,noise_model,ar_order)
-                    stats.append(ss)
-                    resid.append(ss.resid.to_numpy())
-        else:
-            args_list=[]
-            for chan in group_y.channel.values:
-                args_list.append([y[chan],x,noise_model,ar_order])        
+    # concatenate dim3
+    thetas = xr.concat(thetas, dim=dim3_name)
 
-            results = pqdm(args_list, _channel_fit, n_jobs=max_jobs, argument_type="args")
-
-            for ss in results:
-                stats.append(ss)
-                resid.append(ss.resid.to_numpy())
-
-        df = pd.concat([df,pd.DataFrame({'channel':group_y.channel,'type':dim3,'models':stats})],
-                       ignore_index=True,axis=0)
-
-    coloring_matrix=np.linalg.cholesky(np.corrcoef(np.array(resid)))
-    coloring_matrix=xr.DataArray(data=coloring_matrix,dims=['channel','type'],coords={'channel':df.channel,'type':df.type})
-
-    stats = cedalion.dataclasses.statistics.Statistics()
-    
-    if noise_model=='ols':
-        stats.description='OLS model via statsmodels.regression'
-    elif noise_model=='rls':
-        stats.description='Recursive LS model via statsmodels.regression'
-    elif noise_model=='gls':
-        stats.description='Generalized LS model via statsmodels.regression'
-    elif noise_model=='glsar':
-        stats.description='Generalized LS AR-model via statsmodels.regression'
-
-    stats.models=df
-    stats.coloring_matrix=coloring_matrix
-   
-    return stats
+    return thetas
 
 
 def predict(
