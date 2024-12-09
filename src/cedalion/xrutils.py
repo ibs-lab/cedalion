@@ -186,3 +186,28 @@ def other_dim(data_array: xr.DataArray, *dims: str) -> str:
         raise ValueError("not all provided dimensions found in data_array")
 
     return (array_dims - dims).pop()
+
+
+def coords_from_other(
+    source: xr.DataArray, dims: list[str] = None, **aux_coords
+) -> dict[str, tuple[str, xr.DataArray]]:
+    """Create a dictionary of coordinates from source for matching dims in target.
+
+    Args:
+        source: the DataArray to copy the coordinates from.
+        dims: a list of dimensions names. If specified, copy only coords for those dims.
+        aux_coords: additional key-value pairs to add to the resulting coords dict.
+
+    Returns:
+        A dictionary that can be passed to DataArray.assign_coords.
+    """
+
+    for coord_name, coord_dataarray in source.coords.items():
+        assert len(coord_dataarray.dims) == 1
+        coord_dim = coord_dataarray.dims[0]
+        if dims and coord_dim not in dims:
+            continue
+
+        aux_coords[coord_name] = (coord_dim, coord_dataarray.values)
+
+    return aux_coords

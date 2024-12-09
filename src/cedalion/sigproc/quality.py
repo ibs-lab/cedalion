@@ -26,7 +26,7 @@ TAINTED = False
 
 @cdc.validate_schemas
 def prune_ch(
-    amplitudes: cdt.NDTimeSeries, masks: list[cdt.NDTimeSeries], operator: str
+    amplitudes: cdt.NDTimeSeries, masks: list[cdt.NDTimeSeries], operator: str, flag_drop: bool = True
 ):
     """Prune channels from the the input data array using quality masks.
 
@@ -39,6 +39,9 @@ def prune_ch(
 
             - "all": logical AND, keeps channel if it is good across all masks
             - "any": logical OR, keeps channel if it is good in any mask/metric
+
+        flag_drop: if True, channels are dropped from the data_array, otherwise they are
+            set to NaN (default: True)
 
     Returns:
         A tuple (amplitudes_pruned, prune_list), where amplitudes_pruned is
@@ -67,9 +70,14 @@ def prune_ch(
         raise ValueError(f"unsupported operator '{operator}'")
 
     # apply mask to drop channels
-    amplitudes, prune_list = xrutils.apply_mask(
-        amplitudes, mask, "drop", dim_collapse="channel"
-    )
+    if flag_drop:
+        amplitudes, prune_list = xrutils.apply_mask(
+            amplitudes, mask, "drop", dim_collapse="channel"
+        )
+    else:
+        amplitudes, prune_list = xrutils.apply_mask(
+            amplitudes, mask, "nan", dim_collapse="channel"
+        )
 
     return amplitudes, prune_list
 
@@ -673,6 +681,7 @@ def detect_outliers_std(
     ts: cdt.NDTimeSeries, t_window: Annotated[Quantity, "[time]"], iqr_threshold=2
 ):
     """Detect outliers in fNIRSdata based on standard deviation of signal.
+
     Args:
         ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
         t_window :class:`Quantity`: time window over which to calculate standard deviations
@@ -682,7 +691,7 @@ def detect_outliers_std(
     Returns:
         mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
         an outlier is detected based on the standard deviation
-    
+
     References:
         Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
     """
@@ -719,6 +728,7 @@ def detect_outliers_std(
 @cdc.validate_schemas
 def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
     """Detect outliers in fNIRSdata based on gradient of signal.
+
     Args:
         ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
         iqr_threshold: interquartile range threshold (detect outlier as any gradient outside 
@@ -727,7 +737,7 @@ def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
     Returns:
         mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
         an outlier is detected
-        
+
     References:
         Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
     """
@@ -774,6 +784,7 @@ def detect_outliers(
     iqr_threshold_grad : float =1.5,
 ):
     """Detect outliers in fNIRSdata based on standard deviation and gradient of signal.
+
     Args:
         ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
         t_window_std :class:`Quantity`: time window over which to calculate standard deviations
@@ -785,7 +796,7 @@ def detect_outliers(
     Returns:
         mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
         an outlier is detected
-    
+
     References:
         Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
     """
@@ -883,14 +894,15 @@ def _calculate_delta_threshold(ts, segments, threshold_samples):
 
 def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
     """Detect baselineshifts in fNIRSdata.
+
     Args:
         ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
         outlier_mask :class:`NDTimeSeries`: mask containing FALSE anytime an outlier is detected in signal
 
     Returns:
         mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
-        a baselineshift or outlier is detected 
-    
+        a baselineshift or outlier is detected
+
     References:
         Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
     """
