@@ -618,6 +618,21 @@ class ForwardModel:
 
         # Comppute the direction of the light beam from the surface normals
         self.optode_dir = -head_model.scalp.get_vertex_normals(self.optode_pos)
+        # Ensure unitarity of optode_dirs, otherwise pmcx fails
+        norms = np.linalg.norm(self.optode_dir.data, axis=1) 
+        self.optode_dir.data /= np.stack((norms, norms, norms)).T
+        norms = np.linalg.norm(self.optode_dir.data, axis=1) 
+        # If a optode_dir is still not unitary, point to mean cortex point
+        # (very unlikely, but e.g. if optodes are located at super unsmooth parts of scalp surface mesh)
+        if not (norms.round(4) == 1.0).all():
+            idx = np.argwhere(norms.round(4) != 1.0)
+            mean_cortex_pt = np.mean(self.head_model.brain.vertices, axis=0)   
+            vec_to_middle = np.array(mean_cortex_pt) - self.optode_pos.data[idx] 
+            vec_to_middle /= np.linalg.norm(vec_to_middle) 
+            self.optode_dir.data[idx] = vec_to_middle
+        norms = np.linalg.norm(self.optode_dir.data, axis=1) 
+        assert (norms.round(4) == 1.0).all()
+
         # Slightly realign the optode positions to the closest scalp voxel
         self.optode_pos = head_model.snap_to_scalp_voxels(self.optode_pos)
 
