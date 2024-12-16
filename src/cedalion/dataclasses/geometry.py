@@ -97,6 +97,63 @@ class Surface(ABC):
 
 
 @dataclass
+class Voxels():
+    """3D voxels represented by a np.array.
+
+    Attributes:
+        voxels (np.ndarray): The voxels.
+        crs (str): The coordinate reference system of the voxels.
+        units (pint.Unit): The units of the voxels.
+    """
+    voxels: np.ndarray
+    crs: str
+    units: pint.Unit
+
+    @property
+    def vertices(self) -> cdt.LabeledPointCloud:
+        result = xr.DataArray(
+            self.voxels,
+            dims=["label", self.crs],
+            coords={"label": np.arange(len(self.voxels))},
+            attrs={"units": self.units},
+        )
+        result = result.pint.quantify()
+
+        return result
+
+    @property
+    def nvertices(self) -> int:
+        return len(self.voxels)
+
+    def apply_transform(self, transform: cdt.AffineTransform) -> "Voxels":
+        # convert to homogeneous coordinates
+        num, dim = self.voxels.shape
+        hom = np.ones((num,dim+1))
+        hom[:,:3] = self.voxels
+        # apply transformation
+        hom = (transform.pint.dequantify().values.dot(hom.T)).T
+        # backtransformation
+        transformed = np.array([hom[i,:3] / hom[i,3] for i in range(hom.shape[0])])
+
+        new_units = self.units * transform.pint.units
+        new_crs = transform.dims[0]
+
+        return Voxels(transformed, new_crs, new_units)
+
+    def _build_kdtree(self):
+        self._kdtree = KDTree(self.voxels)
+
+    def __post_init__(self):
+        self._kdtree = None
+
+    @property
+    def kdtree(self):
+        if self._kdtree is None:
+            self._build_kdtree()
+        return self._kdtree
+
+
+@dataclass
 class TrimeshSurface(Surface):
     """A surface represented by a trimesh object.
 

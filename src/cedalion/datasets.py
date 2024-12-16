@@ -4,6 +4,7 @@ import os.path
 import pickle
 from gzip import GzipFile
 from pathlib import Path
+import pandas as pd
 from cedalion.imagereco.forward_model import TwoSurfaceHeadModel
 
 import pooch
@@ -19,20 +20,35 @@ DATASETS = pooch.create(
     env="CEDALION_DATA_DIR",
     registry={
         "mne_nirsport2_raw.snirf": "sha256:12e5fabe64ecc7ef4b83f6bcd77abb41f5480d5f17a2b1aae0e2ad0406670944",  # noqa: E501
-        "colin27_segmentation.zip": "sha256:a51700d53a00cc15e82696c40761c902b56543aa7ff41ae9c4b1281de13273b5",  # noqa: E501
+        "colin27_segmentation.zip": "sha256:ad02dbd9582033d3c6f712761c2a79228e4bf30c8539f23f3280b8c4c7f9ace1",  # noqa: E501
         "colin27_segmentation_downsampled_3x3x3.zip": "sha256:ab98b6bae3ef76be6110dc544917f4f2f7ef7233ac697d9cf8bb4a395e81b6cd",  # noqa: E501
         "fingertapping.zip": "sha256:f2253cca6eef8221d536da54b74d8556b28be93df9143ea53652fdc3bc011875",  # noqa: E501
         "fingertappingDOT.zip": "sha256:03e620479bd48aea8457050b7ce42e0c73ef5448296272448b54cee0e883853e",  # noqa: E501
         "multisubject-fingertapping.zip": "sha256:9949c46ed676e52c385b4c09e3a732f6e742bf745253f4b4208ba678f9a0709b",  # noqa: E501
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
-        "ICBM152(2020).zip": "sha256:a7bca3fbb3a05545ccbf19660a99e377165576590d93eac4fbb3ea28acc9f378", # noqa: E501
-        "fluence_fingertapping_colin27.h5" : "sha256:5db30eaaf0dbd614ecefff3734822864b8357841e6c93be78344574889e1d06d", #noqa:E501
-        "fluence_fingertapping_icbm152.h5" : "sha256:5b807253e2d0ca0dcc15ac18029cd73404cc9ee589937f2394ae0a2e57dcd98f", #noqa:E501
-        "fluence_fingertappingDOT_colin27.h5" : "sha256:f321190e9ab537e0f020cbcca40d9ef909f67ce9c33791be14033daf162acaf7", #noqa:E501
-        "fluence_fingertappingDOT_icbm152.h5" : "sha256:4e75e80d906f6c62802d9b39382f34e7546ca1cc7a737e30755666d767e1c697", #noqa:E501
+        "ICBM152_2020.zip": "sha256:8dda23aa1f4592d50ba8528bb4ef7124c6593872bddeb9cbd510e7b1891568f3",  # noqa: E501
+        "fluence_fingertapping_colin27.h5": "sha256:5db30eaaf0dbd614ecefff3734822864b8357841e6c93be78344574889e1d06d",  # noqa:E501
+        "fluence_fingertapping_icbm152.h5": "sha256:5b807253e2d0ca0dcc15ac18029cd73404cc9ee589937f2394ae0a2e57dcd98f",  # noqa:E501
+        "fluence_fingertappingDOT_colin27.h5": "sha256:f321190e9ab537e0f020cbcca40d9ef909f67ce9c33791be14033daf162acaf7",  # noqa:E501
+        "fluence_fingertappingDOT_icbm152.h5": "sha256:4e75e80d906f6c62802d9b39382f34e7546ca1cc7a737e30755666d767e1c697",  # noqa:E501
+        "nn22_resting_state.zip": "sha256:0394347af172d906fe33403e84303435af26d82fdcf1d36dad5c7b05beb82d88",  # noqa:E501
     },
 )
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+
+
+def get_ninja_cap_probe():
+    """Load the fullhead Ninja NIRS cap probe."""
+    probe_dir = os.path.join(DATA_DIR, 'ninja_cap_probe')
+    geo3d = cedalion.io.load_tsv(os.path.join(probe_dir,
+                                              'fullhead_56x144_System2_optodes.tsv'))
+    landmarks = cedalion.io.load_tsv(os.path.join(probe_dir,
+                                                  'fullhead_56x144_System2_landmarks.tsv'))
+    meas_list = pd.read_pickle(os.path.join(probe_dir, 
+                                            'fullhead_56x144_System2_measlist.pkl'))
+    return geo3d, landmarks, meas_list
 
 
 def get_snirf_test_data():
@@ -50,7 +66,7 @@ def get_colin27_segmentation(downsampled=False):
 
     else:
         fnames = DATASETS.fetch("colin27_segmentation.zip", processor=pooch.Unzip())
-        basedir = os.path.join(os.path.commonpath(fnames), "colin27_segmentation")
+        basedir = os.path.commonpath(fnames)
 
     mask_files = {
         "csf": "mask_csf.nii",
@@ -75,10 +91,9 @@ def get_colin27_headmodel():
 
 
 def get_icbm152_segmentation():
+    fnames = DATASETS.fetch("ICBM152_2020.zip", processor=pooch.Unzip())
 
-    fnames = DATASETS.fetch("ICBM152(2020).zip", processor=pooch.Unzip())
-
-    basedir = os.path.dirname(fnames[0]) # TODO: Upload compressed file without __macosx
+    basedir = os.path.dirname(fnames[0])
 
     mask_files = {
         "csf": "mask_csf.nii",
@@ -113,6 +128,7 @@ def get_fingertapping() -> cdc.Recording:
 
     return rec
 
+
 def get_fingertappingDOT() -> cdc.Recording:
     """Retrieves a finger tapping DOT example dataset from the IBS Lab."""
 
@@ -131,6 +147,7 @@ def get_fingertappingDOT() -> cdc.Recording:
     rec.set_timeseries("amp", amp, overwrite=True)
 
     return rec
+
 
 def get_fingertapping_snirf_path() -> Path:
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
@@ -188,3 +205,10 @@ def get_precomputed_fluence(
 
     return load_fluence(fname)
 
+
+def get_nn22_resting_state() -> cdc.Recording:
+    fnames = DATASETS.fetch("nn22_resting_state.zip", processor=pooch.Unzip())
+    fname = [Path(i) for i in fnames if i.endswith(".snirf")][0]
+    rec = cedalion.io.read_snirf(fname)[0]
+
+    return rec

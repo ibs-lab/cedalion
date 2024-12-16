@@ -26,7 +26,7 @@ TAINTED = False
 
 @cdc.validate_schemas
 def prune_ch(
-    amplitudes: cdt.NDTimeSeries, masks: list[cdt.NDTimeSeries], operator: str
+    amplitudes: cdt.NDTimeSeries, masks: list[cdt.NDTimeSeries], operator: str, flag_drop: bool = True
 ):
     """Prune channels from the the input data array using quality masks.
 
@@ -39,6 +39,9 @@ def prune_ch(
 
             - "all": logical AND, keeps channel if it is good across all masks
             - "any": logical OR, keeps channel if it is good in any mask/metric
+
+        flag_drop: if True, channels are dropped from the data_array, otherwise they are
+            set to NaN (default: True)
 
     Returns:
         A tuple (amplitudes_pruned, prune_list), where amplitudes_pruned is
@@ -67,40 +70,164 @@ def prune_ch(
         raise ValueError(f"unsupported operator '{operator}'")
 
     # apply mask to drop channels
-    amplitudes, prune_list = xrutils.apply_mask(
-        amplitudes, mask, "drop", dim_collapse="channel"
-    )
+    if flag_drop:
+        amplitudes, prune_list = xrutils.apply_mask(
+            amplitudes, mask, "drop", dim_collapse="channel"
+        )
+    else:
+        amplitudes, prune_list = xrutils.apply_mask(
+            amplitudes, mask, "nan", dim_collapse="channel"
+        )
 
     return amplitudes, prune_list
 
 
+# fails in unit test
 # PSP > threshold is CLEAN
+@cdc.validate_schemas
+def _psp_alternative(
+    amplitudes: NDTimeSeries,
+    window_length: Annotated[Quantity, "[time]"],
+    psp_thresh: float,
+    cardiac_fmin: Annotated[Quantity, "[frequency]"] = 0.5 * units.Hz,
+    cardiac_fmax: Annotated[Quantity, "[frequency]"] = 2.5 * units.Hz,
+):
+    """Calculate the peak spectral power.
+
+    The peak spectral power metric is based on :cite:t:`Pollonini2014` /
+    :cite:t:`Pollonini2016`.
+
+    Args:
+        amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
+            series
+        window_length (:class:`Quantity`, [time]): size of the computation window
+        psp_thresh: if the calculated PSP metric falls below this threshold then the
+            corresponding time window should be excluded.
+        cardiac_fmin : minimm frequency to extract cardiac component
+        cardiac_fmax : maximum frequency to extract cardiac component
+
+    Returns:
+        A tuple (psp, psp_mask), where psp is a DataArray with coords from the input
+        NDTimeseries containing the peak spectral power. psp_mask is a boolean mask
+        DataArray with coords from psp, true where psp_thresh is met.
+    """
+    amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
+
+    amp = (amp - amp.mean("time")) / amp.std("time")
+
+    # convert window_length to samples
+    nsamples = (window_length * sampling_rate(amp)).to_base_units()
+    nsamples = int(np.floor(nsamples))
+
+    # This creates a new DataArray with a new dimension "window", that is
+    # window_len_samples large. The time dimension will contain the time coordinate of
+    # the first sample in the window. Setting the stride size to the same value as the
+    # window length will result in non-overlapping windows.
+    num_windows = int(np.floor(amp.sizes['time'] / nsamples))
+
+    # Manually create windows
+    windowed_data = []
+    for i in range(num_windows):
+        start = i * nsamples
+        end = start + nsamples
+        windowed_data.append(amp.isel(time=slice(start, end)))
+
+
+    fs = amp.cd.sampling_rate
+
+    psp = np.zeros([len(amp["channel"]), len(windowed_data)])
+
+    # Vectorized signal extraction and correlation
+    # sig = windows.transpose("channel", "time", "wavelength", "window").values
+    lags = np.arange(-nsamples + 1, nsamples)
+
+    for w,sig_temp in enumerate(windowed_data): # loop over windows
+        # sig_temp = sig[:,w,:,:]
+        # FIXME assumes 2 wavelengths
+        corr = np.array(
+            [
+                signal.correlate(sig_temp[ch, 0, :], sig_temp[ch, 1, :], "full")
+                for ch in range(len(amp['channel']))
+            ]
+        )
+
+        # FIXME assumes 2 wavelengths
+        corr = corr /(nsamples - np.abs(lags))
+        corr_len = corr.shape[1]
+
+        # Update similarity
+        corr_norm = np.array(
+            [
+                (corr_len * corr[ch,:]) / np.sqrt(np.sum(np.abs(sig_temp[ch, 0, :]) ** 2) * np.sum(np.abs(sig_temp[ch, 1, :]) ** 2)).values
+                for ch in range(len(amp['channel']))
+                ]
+            )
+        
+        
+        # nperseg = corr.shape[1]
+        # window = np.hamming(nperseg)
+        # window_seg = corr * window
+        
+        # fft_out = np.fft.rfft(window_seg, axis=1)
+        # psd = (np.abs(fft_out) **2)/ (np.sum(window ** 2))
+        # freqs = np.fft.rfftfreq(nperseg, 1/fs)
+
+        for ch in range(len(amp['channel'])):
+            window = signal.windows.hamming(len(corr[ch,:]))
+            f, pxx = signal.welch(
+                corr_norm[ch, :],
+                window=window,
+                nfft=len(corr_norm[ch, :]),
+                fs=fs,
+                scaling="spectrum",
+            )
+
+            psp[ch, w] = np.max(pxx[f<cardiac_fmax.magnitude])
+
+    # keep dims channel and time
+    window_length = nsamples/fs
+    window_times = np.arange(0, num_windows*window_length, window_length)
+    psp_xr = xr.DataArray(psp, dims=["channel", "time"], coords={"channel" : amp.channel.values, "time" : window_times})
+    
+    # Apply threshold mask
+    psp_mask = xrutils.mask(psp_xr, CLEAN)
+    psp_mask = psp_mask.where(psp_xr > psp_thresh, other=TAINTED)
+
+    return psp_xr, psp_mask
+
+# alternative implementation
 @cdc.validate_schemas
 def psp(
     amplitudes: NDTimeSeries,
     window_length: Annotated[Quantity, "[time]"],
     psp_thresh: float,
+    cardiac_fmin: Annotated[Quantity, "[frequency]"] = 0.5 * units.Hz,
+    cardiac_fmax: Annotated[Quantity, "[frequency]"] = 2.5 * units.Hz,
 ):
-    """Calculate the phase slope index (PSP) metric.
+    """Calculate the peak spectral power.
+
+    The peak spectral power metric is based on :cite:t:`Pollonini2014` /
+    :cite:t:`Pollonini2016`.
 
     Args:
-        amplitudes (NDTimeSeries): input time
+        amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
             series
-        window_length (Quantity): size of the computation window
-        psp_thresh (float): if the calculated PSP metric falls below this threshold then the
+        window_length (:class:`Quantity`, [time]): size of the computation window
+        psp_thresh: if the calculated PSP metric falls below this threshold then the
             corresponding time window should be excluded.
+        cardiac_fmin : minimm frequency to extract cardiac component
+        cardiac_fmax : maximum frequency to extract cardiac component
 
     Returns:
         A tuple (psp, psp_mask), where psp is a DataArray with coords from the input
-        NDTimeseries containing the PSP metric. psp_mask is a boolean mask DataArray
-        with coords from psp, true where psp_thresh is met.
+        NDTimeseries containing the peak spectral power. psp_mask is a boolean mask
+        DataArray with coords from psp, true where psp_thresh is met.
     """
-    # FIXME make these configurable
-    cardiac_fmin = 0.5 * units.Hz
-    cardiac_fmax = 2.5 * units.Hz
 
-    amplitudes = amplitudes.pint.dequantify()
-    amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
+    amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
+
+    amp = amp.pint.dequantify()
+
     amp = (amp - amp.mean("time")) / amp.std("time")
 
     # convert window_length to samples
@@ -113,50 +240,40 @@ def psp(
     # window length will result in non-overlapping windows.
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
     windows = windows.fillna(1e-6)
-    fs = amp.cd.sampling_rate
-
-    psp = np.zeros([len(windows["channel"]), len(windows["time"])])
 
     # Vectorized signal extraction and correlation
     sig = windows.transpose("channel", "time", "wavelength", "window").values
-    psp = np.zeros((sig.shape[0], sig.shape[1]))
+    nchannel = windows.sizes["channel"]
+    ntime = windows.sizes["time"] # after rolling this is the number of windows
+
     lags = np.arange(-nsamples + 1, nsamples)
+    nlags = len(lags)
+    norm_unbiased = (nsamples - np.abs(lags)) # shape (nlags,)
 
-    for w in range(sig.shape[1]): # loop over windows
-        sig_temp = sig[:,w,:,:]
-        # FIXME assumes 2 wavelengths
-        corr = np.array(
-            [
-                signal.correlate(sig_temp[ch, 0, :], sig_temp[ch, 1, :], "full")
-                for ch in range(sig.shape[0])
-            ]
-        )
+    hamming_window = np.hamming(nlags)
+    hamming_window_norm = np.sum(hamming_window) ** 2
 
-        # FIXME assumes 2 wavelengths
-        corr = corr /(nsamples - np.abs(lags))
+    # nsample / (sigma(wl1)*sigma(wl2)) , shape(nchannel, ntime)
+    corr_coeff_denom = nsamples / np.sqrt(np.sum(np.power(sig, 2), axis=-1)).prod(-1) 
 
-        nperseg = corr.shape[1]
-        window = np.hamming(nperseg)
-        window_seg = corr * window
+    corr = np.zeros((ntime, nchannel, nlags))
+    for w in range(ntime): # loop over windows
+        for ch in range(nchannel):
+            corr[w, ch, :] = signal.correlate(
+                sig[ch, w, 0, :], sig[ch, w, 1, :], "full"
+            )
 
-        fft_out = np.fft.rfft(window_seg, axis=1)
-        psd = (np.abs(fft_out) ** 2) / (fs * np.sum(window ** 2))
-        #freqs = np.fft.rfftfreq(nperseg, 1/fs)
+    corr *= corr_coeff_denom.T[:, :, None]
+    norm_unbiased = nsamples - np.abs(lags)  # shape (nlags,)
+    corr /= norm_unbiased[None, None, :]
+    corr *= hamming_window[None, None, :]
 
-        # for ch in range(sig.shape[0]):
-        #     window = signal.windows.hamming(len(corr[ch,:]))
-        #     f, pxx = signal.welch(
-        #         corr[ch, :],
-        #         window=window,
-        #         nfft=len(corr[ch, :]),
-        #         fs=fs,
-        #         scaling="density",
-        #     )
+    fft_out = np.fft.rfft(corr, axis=-1) # shape (ntime, nchannel, nfreqs)
+    power = (np.abs(fft_out) ** 2) / hamming_window_norm
 
-        psp[:, w] = np.max(psd, 1)
+    psp = np.max(power, axis=2).T # shape(nchannel, ntime)
 
     # keep dims channel and time
-
     psp_xr = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
 
     # Apply threshold mask
@@ -164,6 +281,11 @@ def psp(
     psp_mask = psp_mask.where(psp_xr > psp_thresh, other=TAINTED)
 
     return psp_xr, psp_mask
+
+
+
+
+
 
 @cdc.validate_schemas
 def gvtd(amplitudes: NDTimeSeries):
@@ -198,9 +320,14 @@ def gvtd(amplitudes: NDTimeSeries):
 
     return GVTD
 
-
 @cdc.validate_schemas
-def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
+def sci(
+    amplitudes: NDTimeSeries,
+    window_length: Quantity,
+    sci_thresh: float,
+    cardiac_fmin: Annotated[Quantity, "[frequency]"] = 0.5 * units.Hz,
+    cardiac_fmax: Annotated[Quantity, "[frequency]"] = 2.5 * units.Hz,
+):
     """Calculate the scalp-coupling index.
 
     The scalp-coupling index metric is based on :cite:t:`Pollonini2014` /
@@ -212,6 +339,8 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
         window_length (:class:`Quantity`, [time]): size of the computation window
         sci_thresh: if the calculated SCI metric falls below this threshold then the
             corresponding time window should be excluded.
+        cardiac_fmin : minimm frequency to extract cardiac component
+        cardiac_fmax : maximum frequency to extract cardiac component
 
     Returns:
         A tuple (sci, sci_mask), where sci is a DataArray with coords from the input
@@ -221,11 +350,8 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
 
     assert "wavelength" in amplitudes.dims  # FIXME move to validate schema
 
-    # FIXME make these configurable
-    cardiac_fmin = 0.5 * units.Hz
-    cardiac_fmax = 2.5 * units.Hz
+    amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
 
-    amp = freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
     amp = (amp - amp.mean("time")) / amp.std("time")
 
     # convert window_length to samples
@@ -246,6 +372,24 @@ def sci(amplitudes: NDTimeSeries, window_length: Quantity, sci_thresh: float):
     sci_mask = sci_mask.where(sci > sci_thresh, TAINTED)
 
     return sci, sci_mask
+
+def _extract_cardiac(
+    amplitudes: NDTimeSeries,
+    cardiac_fmin: Annotated[Quantity, "[frequency]"],
+    cardiac_fmax: Annotated[Quantity, "[frequency]"],
+):
+    """ Apply a bandpass or highpass filter to extract the cardiac component."""
+
+    fs = sampling_rate(amplitudes)
+    fny =  fs / 2
+    if fny < cardiac_fmin:
+        raise ValueError("sampling rate is not sufficient to extract cardiac component")
+    elif fny > cardiac_fmax:
+        return freq_filter(amplitudes, cardiac_fmin, cardiac_fmax, butter_order=4)
+    else:  # fny in [cardiac_fmin, cardiac_fmax] -> highpass
+        return freq_filter(
+            amplitudes, fmin=cardiac_fmin, fmax=0 * units.Hz, butter_order=4
+        )
 
 
 @cdc.validate_schemas
@@ -397,9 +541,11 @@ def id_motion(
 
     # t_motion in samples rounded to the nearest sample
     t_motion_samples = t_motion / fNIRSdata.time.diff(dim="time").mean()
+    t_motion_samples = t_motion_samples.pint.dequantify()
     t_motion_samples = int(t_motion_samples.round())
     # t_mask in samples rounded to the nearest sample
     t_mask_samples = t_mask / fNIRSdata.time.diff(dim="time").mean()
+    t_mask_samples = t_mask_samples.pint.dequantify()
     t_mask_samples = int(t_mask_samples.round())
 
     # calculate the "std_diff", the standard deviation of the approx 1st derivative of
@@ -466,10 +612,6 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
         `pandas.DataFrame` that contains 1) channels with motion artifacts, 2) # of
         artifacts detected per channel and 3) fraction of artifacts/total time.
     """
-
-    # implementation expects artifacts to be marked as True
-    ma_mask = ma_mask == TAINTED
-
     # combine artifact masks (if multiple masks are provided).
     # Will result in a single mask containing all motion indicators
     mask = reduce(lambda x, y: x | y, ma_mask)
@@ -479,9 +621,9 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
         # find whether "wavelength" or "concentration" exists as a dimension in ma_mask
         # and collapse, otherwise assert an error
         if "wavelength" in ma_mask.dims:
-            ma_mask_new = ma_mask.any(dim="wavelength")
+            ma_mask_new = ma_mask.all(dim="wavelength")
         elif "concentration" in ma_mask.dims:
-            ma_mask_new = ma_mask.any(dim="concentration")
+            ma_mask_new = ma_mask.all(dim="concentration")
         else:
             raise ValueError(
                 "ma_mask must have either 'wavelength' "
@@ -490,16 +632,16 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
 
         ## --- extract motion artifact info --- ##
         # extract channels that had motion artifacts
-        ch_wma = ma_mask_new.any(dim="time")
-        ch_labels = ch_wma.where(ch_wma, drop=True).channel.values
+        ch_wma = ma_mask_new.all(dim="time")
+        ch_labels = ch_wma.where(ch_wma, drop=False).channel.values
         # for every channel in ch_label calculate the fraction of time points that are
         # true over the total number of time points
         ch_frac = (
-            ma_mask_new.sel(channel=ch_labels).sum(dim="time")
-            / ma_mask_new.sizes["time"]
+            1 - (ma_mask_new.sel(channel=ch_labels).sum(dim="time")
+            / ma_mask_new.sizes["time"])
         ).to_series()
         # Count number of motion artifacts (transitions in the mask) for each channel
-        transitions = ma_mask_new.astype(int).diff(dim="time") == 1
+        transitions = ma_mask_new.astype(int).diff(dim="time") == -1
         transitions_ct = transitions.sum(dim="time").to_series()
         # Store motion artifact info in a pandas dataframe
         ma_info = pd.DataFrame(
@@ -509,7 +651,7 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
     # collapse mask along all dimensions
     elif operator.lower() == "all":
         dims2collapse = [dim for dim in ma_mask.dims if dim != "time"]
-        ma_mask_new = ma_mask.any(dim=dims2collapse)
+        ma_mask_new = ma_mask.all(dim=dims2collapse)
 
         ## --- extract motion artifact info --- ##
         global_frac = (mask.sum(dim="time") / mask.sizes["time"]).values
@@ -529,7 +671,7 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
         raise ValueError(f"unsupported operator '{operator}'")
 
     # set time points marked as artifacts (True) again to TAINTED.
-    ma_mask_new = xr.where(ma_mask_new, TAINTED, CLEAN)
+    #ma_mask_new = xr.where(ma_mask_new, TAINTED, CLEAN)
 
     return ma_mask_new, ma_info
 
@@ -541,18 +683,22 @@ def detect_outliers_std(
     """Detect outliers in fNIRSdata based on standard deviation of signal.
 
     Args:
-        ts (NDTimeSeries): input time series
-        t_window (Quantity): window size for standard deviation
-        iqr_threshold: threshold for IQR based outlier detection. Default is 2.
+        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
+        t_window :class:`Quantity`: time window over which to calculate standard deviations
+        iqr_threshold: interquartile range threshold (detect outlier as any standard deviation outside 
+                                                      iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:
-        A DataArray with coords from the input NDTimeseries containing the outlier mask.
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
+        an outlier is detected based on the standard deviation
+
+    References:
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
     """
 
     ts = ts.pint.dequantify()
     fs = freq.sampling_rate(ts)
 
-    # window size in samples TODO t_window units
     window_size = int(np.round(fs * t_window))
 
     ts_lowpass = ts.cd.freq_filter(0, 0.5, butter_order=4)
@@ -584,11 +730,16 @@ def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
     """Detect outliers in fNIRSdata based on gradient of signal.
 
     Args:
-        ts (NDTimeSeries): input time series
-        iqr_threshold: threshold for IQR based outlier detection. Default is 1.5.
+        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
+        iqr_threshold: interquartile range threshold (detect outlier as any gradient outside 
+                                                      iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:
-        A DataArray with coords from the input NDTimeseries containing the outlier mask.
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
+        an outlier is detected
+
+    References:
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
     """
 
     ts = ts.pint.dequantify()
@@ -632,16 +783,22 @@ def detect_outliers(
     iqr_threshold_std : float =2,
     iqr_threshold_grad : float =1.5,
 ):
-    """Detect outliers based on standard deviation and gradient of signal.
+    """Detect outliers in fNIRSdata based on standard deviation and gradient of signal.
 
     Args:
-        ts (NDTimeSeries): input time series
-        t_window_std (Quantity): window size for standard deviation
-        iqr_threshold_std: threshold for IQR based outlier detection in standard deviation
-        iqr_threshold_grad: threshold for IQR based outlier detection in gradient
+        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
+        t_window_std :class:`Quantity`: time window over which to calculate standard deviations
+        iqr_threshold_grad: interquartile range threshold (detect outlier as any gradient outside 
+                                                      iqr_threshold * [25th percentile, 75th percentile])
+        iqr_threshold_std: interquartile range threshold (detect outlier as any standard deviation outside 
+                                                      iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:
-        A DataArray with coords from the input NDTimeseries containing the outlier mask.
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
+        an outlier is detected
+
+    References:
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
     """
     mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
     mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
@@ -736,15 +893,18 @@ def _calculate_delta_threshold(ts, segments, threshold_samples):
 
 
 def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
-    """Detect baseline shifts in fNIRS data.
+    """Detect baselineshifts in fNIRSdata.
 
     Args:
-        ts (NDTimeSeries): input time series
-        outlier_mask (NDTimeSeries): boolean mask indicating outliers
+        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
+        outlier_mask :class:`NDTimeSeries`: mask containing FALSE anytime an outlier is detected in signal
 
     Returns:
-        A DataArray with coords from the input NDTimeseries containing the baseline
-            shift mask.
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
+        a baselineshift or outlier is detected
+
+    References:
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
     """
     ts = ts.pint.dequantify()
 

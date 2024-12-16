@@ -1,6 +1,7 @@
 name: cedalion
 channels:
   - conda-forge
+  - defaults
 dependencies:
   - click=8.1
   - h5py=3.11
@@ -46,6 +47,9 @@ dependencies:
   - myst-parser
   - sphinx-autodoc-typehints
   - sphinx_rtd_theme=2.0.0
+
+  - PyQt
+  - ipympl
 
   - pip:
       - mne==1.7

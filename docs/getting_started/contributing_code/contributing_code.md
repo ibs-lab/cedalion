@@ -39,7 +39,6 @@ data = xr.Dataset(
 ## General Rules and Overview
 ### Style Guide for Python Code
 We follow the PEP 8 Style that is documented [here](https://peps.python.org/pep-0008/) - please try to follow it too. If you work with VS Code, you can use extensions to make your life easier:
-- [Black Formatter](https://marketplace.visualstudio.com/items?itemName=ms-python.black-formatter) that supports you in formatting your code
 - [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) is a fast Python linter that we recommend
 
 Some relevant conventions in a nutshell:
@@ -338,6 +337,9 @@ def prune(data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity,
 
     return data, drop_list
 ```
+
+### Creating example notebooks
+After adding a feature, it is a good idea to create a jupyter notebook showcasing the new functionality. Notebooks should be added to the appropriate subfolder in the examples folder. You can select the thumbnail that will appear in examples gallery by adding the tag "nbsphinx-thumbnail" to a cell that produces a plot or figure (the IBS logo is used by default if no tag is set).
 
 ## Concluding Remarks
 The example above uses Cedalion's most basic data structures. While the toolbox continues to grow, we will add containers and abstraction layers to simplify and unify usage and code contribution. Whenever possible and especially when you find that the existing environment does not (yet) provide a level of abstraction or a data structure bundling all the data that you need in one container, please develop **bottom up** and write simple functions with (multiple) simple input and output arguments. In the example, once a general container is specified that ties together timeseries data, optode information (such as the `geo3D`) or measurement lists, it is straightforward to refactor the code accordingly. The same is true for more complex processing pipelines tied together in jupyter notebooks. We are working on a mechanism to build pipelines that enables easier and more abstract use by incorporating the lower level functions. Translating a notebook to such a pipeline is then straightforward.
