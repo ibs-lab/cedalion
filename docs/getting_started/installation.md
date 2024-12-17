@@ -1,5 +1,8 @@
 # Installation
 
+Get the latest release of the cedalion toolbox from our public [github repository here](https://github.com/ibs-lab/cedalion).
+Clone/download it to a local folder of your choice. Move to the downloaded cedalion root folder in your Python IDE.
+
 ## Development
 
 To create a conda environment with the necessary dependendencies run:
