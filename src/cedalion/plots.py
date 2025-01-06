@@ -546,6 +546,7 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
                remove_short=0, flagFontSize=0, flagMarkerSize=8):
     """Creates a 2D montage of optodes with channels coloured according to a given metric.
 
+<<<<<<< HEAD
     First version created by Laura Carlton, BU, 2024
 
     Args:
@@ -571,6 +572,22 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
         - Laura Carlton | lcarlton@bu.edu | 2024
     """
 
+def scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, threshold_ind = None, threshold_col = None, saturation=None, vmin=0, vmax=1, savePath = None, remove_short=0, flagFontSize=0, flagMarkerSize=8):
+    '''
+    CREATE A 2D MONTAGE OF OPTODES WITH CHANNELS COLOURED ACCORDING TO A GIVEN METRIC
+    
+    Parameters:
+        geo3d -> probe information 
+        ax -> axis object to plot the montage
+        metric -> metric to plot onto the channels
+        
+        colormap -> colormap to use to color the channels (default = jet)
+        title -> title for the plot (default = SQE)
+        threshold -> metrics values below threshold will be plotted as dotted lines (default = 0)
+        vmin -> minimum value for the colorbar (default = 0)
+        vmax -> maximum value for the colorbar (default = 1)
+    '''
+    #TODO improve the docstring - make variable types clear
     def cart2sph(x, y, z):
         hxy = np.hypot(x, y)
         r = np.hypot(hxy, z)
