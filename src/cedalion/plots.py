@@ -12,7 +12,7 @@ from matplotlib.patches import Rectangle, Circle, Ellipse
 from vtk.util.numpy_support import numpy_to_vtk
 import itertools
 from numpy.typing import ArrayLike
-import cedalion.nirs
+import cedalion.nirs as nirs
 import cedalion.data
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
@@ -880,7 +880,7 @@ def scalp_plot(
 
 
     geo2d = registration.simple_scalp_projection(geo3d)
-    channel_dists = cedalion.nirs.channel_distances(ts, geo3d)
+    channel_dists = nirs.channel_distances(ts, geo3d)
 
 
     if not isinstance(metric, xr.DataArray):
@@ -936,10 +936,15 @@ def scalp_plot(
 
         if ch in metric_channels:
             v = metric.sel(channel=ch).item()
+            # if v is nan, then set color to grey
+            if np.isnan(v):
+                c = [0.8, 0.8, 0.8, 0]
+            else:
+                c = cmap(norm(v))
         else:
             v = np.nan
-
-        c = cmap(norm(v))
+            c = [0.8, 0.8, 0.8, 0]
+            
         line_fmt = {'c' : c, 'ls' : '-', 'lw' : channel_lw, 'alpha' : 1.0}
 
         if (min_metric is not None) and (v < min_metric):
@@ -974,7 +979,7 @@ def scalp_plot(
             s[:, 1],
             s=optode_size,
             marker="s",
-            ec="k",
+            # ec="k",
             fc=COLOR_SOURCE,
             zorder=100,
         )
@@ -983,7 +988,7 @@ def scalp_plot(
             d[:, 1],
             s=optode_size,
             marker="s",
-            ec="k",
+            # ec="k",
             fc=COLOR_DETECTOR,
             zorder=100,
         )
