@@ -16,7 +16,10 @@ import cedalion.dataclasses as cdc
 from cedalion.geometry.registration import register_trans_rot_isoscale
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-from cedalion.geometry.segmentation import surface_from_segmentation, voxels_from_segmentation
+from cedalion.geometry.segmentation import (
+    surface_from_segmentation,
+    voxels_from_segmentation,
+)
 from cedalion.imagereco.utils import map_segmentation_mask_to_surface
 
 from .tissue_properties import get_tissue_properties
@@ -220,7 +223,7 @@ class TwoSurfaceHeadModel:
         scalp_face_count: Optional[int] = 60000,
         fill_holes: bool = False,
     ) -> "TwoSurfaceHeadModel":
-        """Constructor from binary masks, brain and head surfaces as gained from MRI scans.
+        """Constructor from seg.masks, brain and head surfaces as gained from MRI scans.
 
         Args:
             segmentation_dir (str): Folder containing the segmentation masks in NIFTI
@@ -536,9 +539,9 @@ class TwoSurfaceHeadModel:
 
             if len(voxel_idx) > 0:
                 # Get voxel coordinates from voxel indices
-                try: 
+                try:
                     shape = self.segmentation_masks.shape[-3:]
-                except:
+                except AttributeError: # FIXME should not be handled here
                     shape = self.segmentation_masks.to_dataarray().shape[-3:]
                 voxels = np.array(np.unravel_index(voxel_idx, shape)).T
 
@@ -547,21 +550,24 @@ class TwoSurfaceHeadModel:
                 voxel_idx = np.argmin(dist)
 
             else:
-                # If no voxel maps to that scalp surface vertex, 
+                # If no voxel maps to that scalp surface vertex,
                 # simply choose the closest of all scalp voxels
-                voxels = voxels_from_segmentation(self.segmentation_masks, ["scalp"]).voxels
+
+                sm = self.segmentation_masks
+
+                voxels = voxels_from_segmentation(sm, ["scalp"]).voxels
                 if len(voxels) == 0:
                     try:
-                        scalp_mask = self.segmentation_masks.sel(segmentation_type="scalp").to_dataarray()
-                    except:
-                        scalp_mask = self.segmentation_masks.sel(segmentation_type="scalp")
+                        scalp_mask = sm.sel(segmentation_type="scalp").to_dataarray()
+                    except AttributeError: # FIXME same as above
+                        scalp_mask = sm.sel(segmentation_type="scalp")
                     voxels = np.argwhere(np.array(scalp_mask)[0] > 0.99)
 
                 kdtree = KDTree(voxels)
                 dist, voxel_idx = kdtree.query(self.scalp.mesh.vertices[idx[0,0]],
                                                workers=-1)
 
-            # Snap to closest scalp voxel 
+            # Snap to closest scalp voxel
             snapped[i] = voxels[voxel_idx]
 
         points.values = snapped
@@ -617,7 +623,12 @@ class ForwardModel:
         ]
 
         # Comppute the direction of the light beam from the surface normals
-        self.optode_dir = -head_model.scalp.get_vertex_normals(self.optode_pos)
+        # pmcx fails if directions are not normalized
+        self.optode_dir = -head_model.scalp.get_vertex_normals(
+            self.optode_pos,
+            normalized=True,
+        )
+
         # Slightly realign the optode positions to the closest scalp voxel
         self.optode_pos = head_model.snap_to_scalp_voxels(self.optode_pos)
 
@@ -804,14 +815,11 @@ class ForwardModel:
 
         return fluence_all, fluence_at_optodes
 
-
-    def compute_fluence_nirfaster(
-            self, meshingparam = None
-            ):
+    def compute_fluence_nirfaster(self, meshingparam=None):
         """Compute fluence for each channel and wavelength using NIRFASTer package.
 
         Args:
-            meshingparam (ff.utils.MeshingParam) Parameters to be used by the CGAL
+            meshingparam (ff.utils.MeshingParam): Parameters to be used by the CGAL
                 mesher. Note: they should all be double
 
         Returns:
