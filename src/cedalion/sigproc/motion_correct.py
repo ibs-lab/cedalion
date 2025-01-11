@@ -213,8 +213,8 @@ def motion_correct_splineSG(
     fNIRSdata = fNIRSdata.pint.dequantify()
     fNIRSdata_lpf2 = fNIRSdata.cd.freq_filter(0, 2, butter_order=4)
 
-    PADDING_TIME = 12 * units.s  # FIXME configurable?
-    extend = int(np.round(PADDING_TIME * fs))  # extension for padding
+    PADDING_TIME = 12 * units.s # FIXME configurable?
+    extend = int(np.round(PADDING_TIME  * fs))  # extension for padding
 
     # pad fNIRSdata and tIncCh for motion correction
     fNIRSdata_lpf2_pad = fNIRSdata_lpf2.pad(time=extend, mode="edge")
@@ -281,7 +281,8 @@ def motion_correct_PCA(
         .sortby("wavelength")
         .pint.dequantify()
     )
-    y_zscore = (y - y.mean("time")) / y.std("time")
+
+    y_zscore = ( y - y.mean('time') ) / y.std('time')
 
     fNIRSdata_stacked = (
         fNIRSdata.stack(measurement=["channel", "wavelength"])
@@ -312,7 +313,8 @@ def motion_correct_PCA(
     # remove top PCs
     yc = yo - np.dot(np.dot(yo, V), np.dot(ev, V.T))
 
-    yc = (yc * y.std("time")) + y.mean("time")
+    yc = (yc * y.std('time')) + y.mean('time')
+
     # insert cleaned signal back into od
     lstMs = np.where(np.diff(tInc.values.astype(int)) == -1)[0]
     lstMf = np.where(np.diff(tInc.values.astype(int)) == 1)[0]
@@ -503,6 +505,7 @@ def tddr(ts: cdt.NDTimeSeries):
 
     # Step 3. Iterative estimation of robust weights
     for n_iter in range(50):
+
         mu0 = mu
 
         # Step 3a. Estimate weighted mean
@@ -541,7 +544,6 @@ def tddr(ts: cdt.NDTimeSeries):
     signal_corrected = (signal_low_corrected + signal_high + signal_mean) * unit
 
     return signal_corrected
-
 
 def pad_to_power_2(signal):
     """Pad signal to next power of 2."""
