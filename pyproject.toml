@@ -2,37 +2,58 @@
 name = "cedalion"
 description = "A fNIRS analysis framework"
 readme = "README.md"
-authors = [
+maintainers = [
     {name = "Eike Middell", email = "middell@tu-berlin.de"}
 ]
-# license = TBD
 classifiers = [
     "Development Status :: 1 - Planning",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Human Machine Interfaces",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
 ]
 dynamic=["version"]
+requires-python = ">=3.11"
 
 [project.urls]
-Home = "https://github.com/ibs-lab/cedalion/"
+Home = "https://ibs-lab.com/cedalion/"
+Documentation = "https://doc.ibs.tu-berlin.de/cedalion/doc/dev/"
+"Source Code" = "https://github.com/ibs-lab/cedalion/"
 
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
-build-backend = "setuptools.build_meta"
+requires = ["hatch-vcs", "hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.hooks.vcs]
+version-file = "src/cedalion/_version.py"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.env]
+requires = [
+  "hatch-conda>=0.5.2",
+]
 
 
+[tool.hatch.envs.default]
+type = "conda"
+conda-forge = true
+environment-file = "environment_dev.yml"
+python="3.11"
 
-[tool.setuptools_scm]
-write_to = "src/cedalion/_version.py"
+[tool.hatch.envs.default.scripts]
+build_docs = "./scripts/build_docs.sh docs"
 
+
+[tool.hatch.envs.hatch-test]
+type = "conda"
+conda-forge = true
+environment-file = "environment_dev.yml"
+python="3.11"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "D"]
