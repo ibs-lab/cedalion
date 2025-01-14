@@ -2,15 +2,14 @@
 name = "cedalion"
 description = "A fNIRS analysis framework"
 readme = "README.md"
-maintainers = [
-    {name = "Eike Middell", email = "middell@tu-berlin.de"}
+authors = [
+    {name = "Eike Middell et al.}
 ]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
