@@ -1,5 +1,4 @@
-"""
-This script automates the conversion of an fNIRS dataset into a BIDS-compliant format.
+"""This script automates the conversion of an fNIRS dataset into a BIDS-compliant format.
 
 Main Functions:
 ---------------
@@ -21,9 +20,10 @@ Key Steps:
 ----------
 1. Create the `bids` directory within the specified dataset path if it does not exist.
 2. Parse and process existing `*_scans.tsv` files to merge acquisition times into the mapping.
-3. Generate standardized BIDS filenames for the SNIRF files using `create_bids_standard_filenames`.
-4. Rename and copy SNIRF files into the appropriate BIDS directory structure.
-5. Validate and recursively populate the BIDS structure using `snirf2bids`.
+3. Parse and process existing `*_sessions.tsv` files to merge session acquisition times into the mapping.
+4. Generate standardized BIDS filenames for the SNIRF files using `create_bids_standard_filenames`.
+5. Rename and copy SNIRF files into the appropriate BIDS directory structure.
+6. Validate and recursively populate the BIDS structure using `snirf2bids`.
 7. Add optional metadata from the `extra_meta_data` argument to the dataset description.
 
 Example Usage:
@@ -31,59 +31,71 @@ Example Usage:
 python create_bids.py mapping.csv dataset_directory --extra_meta_data extra_metadata.json
 """
 
-import os 
-import pandas as pd 
-from cedalion.io.bids import create_bids_standard_filenames, copy_rename_snirf, create_scan_files, find_files_with_pattern, create_data_description, check_coord_files
+import os
+import pandas as pd
+from cedalion.io import bids
 import snirf2bids as s2b
 import argparse
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description="Create BIDS dataset.")
 
-# Define expected arguments
 parser.add_argument("mapping_csv", type=str, help="The output of dataset parser")
 parser.add_argument("dataset_path", type=str, help="your dataset directory")
 parser.add_argument("--extra_meta_data", type=str, help="your extra metadata")
+
 # Parse the arguments
 args = parser.parse_args()
 
-snirf2bids_mapping_df_path = args.mapping_csv
-
+mapping_df_path = args.mapping_csv
 dataset_path = args.dataset_path
+extra_meta_data = args.extra_meta_data
 
-
+# Create a bids directory to copy and create files there
 bids_dir = os.path.join(dataset_path, "bids")
 if not os.path.exists(bids_dir):
     os.makedirs(bids_dir)
 
-snirf2bids_mapping_df = pd.read_csv(snirf2bids_mapping_df_path, dtype=str)
-snirf2bids_mapping_df["record_name"] = snirf2bids_mapping_df["current_name"].apply(lambda x: os.path.basename(x))
+# Read the mapping csv file
+mapping_df = pd.read_csv(mapping_df_path, dtype=str)
 
-scan_paths = find_files_with_pattern(dataset_path, "*_scans.tsv")
-scan_dfs = [pd.read_csv(file, sep='\t') for file in scan_paths]
-if len(scan_dfs) != 0:
-    scan_df = pd.concat(scan_dfs, ignore_index=True)
-    scan_df.drop_duplicates(subset="filename", inplace=True)
-    scan_df["filename"] = scan_df["filename"].apply(lambda x: str(os.path.basename(x)).replace(".snirf", ""))
-    scan_df = scan_df.rename(columns={'filename': 'record_name'})
+# extract the original snirf filenames and create a column
+mapping_df["filename_org"] = mapping_df["current_name"].apply(
+    lambda x: os.path.basename(x))
 
-    snirf2bids_mapping_df = pd.merge(snirf2bids_mapping_df, scan_df, on="record_name", how="left")
-else:
-    snirf2bids_mapping_df["acq_time"] = None
+# Search for all acq_time info that are available in scan files in
+# the original dataset directory
+scan_df = bids.search_for_acq_time(dataset_path)
+mapping_df = pd.merge(mapping_df, scan_df, on="filename_org", how="left")
 
-snirf2bids_mapping_df[["bids_name", "parent_path"]] = snirf2bids_mapping_df.apply(create_bids_standard_filenames, axis=1, result_type='expand')
+# Search for all sessions' acq_time info that are available in session files in
+# the original dataset directory
+session_df = bids.search_for_sessions_acq_time(dataset_path)
+mapping_df = pd.merge(mapping_df, session_df, on="sub", how="left")
 
-snirf2bids_mapping_df["status"] = snirf2bids_mapping_df.apply(copy_rename_snirf, axis=1, args=(dataset_path, bids_dir))
+# Create filenames that follow naming convention in bids structure
+mapping_df[["bids_name", "parent_path"]] = mapping_df.apply(
+    bids.create_bids_standard_filenames, axis=1, result_type='expand')
 
+# Copy and rename snirf files according to bids folder structure
+mapping_df.apply(bids.copy_rename_snirf, axis=1, args=(dataset_path, bids_dir))
+
+# Create json and tsv files using snirf2bids python package
 s2b.snirf2bids_recurse(bids_dir)
 
-scan_df = snirf2bids_mapping_df[snirf2bids_mapping_df['status'] != "removed"]
-scan_df = scan_df[["sub", "ses", "bids_name", "acq_time"]]
+# Create scan files
+scan_df = mapping_df[["sub", "ses", "bids_name", "acq_time"]]
 scan_df = scan_df.groupby(["sub", "ses"])
-scan_df.apply(lambda group: create_scan_files(group, bids_dir))
+scan_df.apply(lambda group: bids.create_scan_files(group, bids_dir))
 
-extra_meta_data = args.extra_meta_data
-create_data_description(dataset_path, bids_dir, extra_meta_data)
+# Create session files
+session_df = mapping_df[["sub", "ses", "ses_acq_time"]]
+session_df = session_df.groupby(["sub"])
+session_df.apply(lambda group: bids.create_session_files(group, bids_dir))
 
-check_coord_files(bids_dir)
+# Create dataset_description.json file
+bids.create_data_description(dataset_path, bids_dir, extra_meta_data)
+
+# Correct mistakes in Coord json files
+bids.check_coord_files(bids_dir)
 
