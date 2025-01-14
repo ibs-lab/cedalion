@@ -3,7 +3,7 @@ name = "cedalion"
 description = "A fNIRS analysis framework"
 readme = "README.md"
 authors = [
-    {name = "Eike Middell et al.}
+    {name = "Eike Middell et al."}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
