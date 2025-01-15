@@ -2,46 +2,54 @@ import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 from scipy.interpolate import interp1d
+from cedalion import units
 
+import cedalion
+import cedalion.typing as cdt
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
-from importlib import resources
+import cedalion.data
 
 
 def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
     """Provide a matrix of extinction coefficients from tabulated data.
 
     Args:
-        spectrum (str): The type of spectrum to use. Currently supported options are:
-            - "prahl": Extinction coefficients based on the Prahl absorption spectrum (Prahl1998).
-        wavelengths (ArrayLike): An array-like object containing the wavelengths at which
-            to calculate the extinction coefficients.
+        spectrum: The type of spectrum to use. Currently supported options are:
+            - "prahl": Extinction coefficients based on the Prahl absorption spectrum
+                       (Prahl1998).
+        wavelengths: An array-like object containing the wavelengths at which to
+            calculate the extinction coefficients.
 
     Returns:
         xr.DataArray: A matrix of extinction coefficients with dimensions "chromo"
-            (chromophore, e.g. HbO/HbR) and "wavelength" (e.g. 750, 850, ...) at which 
+            (chromophore, e.g. HbO/HbR) and "wavelength" (e.g. 750, 850, ...) at which
             the coefficients for each chromophore are given in units of "mm^-1 / M".
 
     References:
-        (Prahl 1998) - taken from Homer2/3, Copyright 2004 - 2006 - The General Hospital Corporation and President and Fellows of Harvard University.
-            "These values for the molar extinction coefficient e in [cm-1/(moles/liter)] 
+        (Prahl 1998) - taken from Homer2/3, Copyright 2004 - 2006 - The General Hospital
+            Corporation and President and Fellows of Harvard University.
+            "These values for the molar extinction coefficient e in [cm-1/(moles/liter)]
             were compiled by Scott Prahl (prahl@ece.ogi.edu) using data from
             W. B. Gratzer, Med. Res. Council Labs, Holly Hill, London
             N. Kollias, Wellman Laboratories, Harvard Medical School, Boston
-            To convert this data to absorbance A, multiply by the molar concentration and the pathlength. 
-            For example, if x is the number of grams per liter and a 1 cm cuvette is being used, then the absorbance is given by
+            To convert this data to absorbance A, multiply by the molar concentration
+            and the pathlength.
+            For example, if x is the number of grams per liter and a 1 cm cuvette is
+            being used, then the absorbance is given by
             (e) [(1/cm)/(moles/liter)] (x) [g/liter] (1) [cm]
             A =  ---------------------------------------------------
                         66,500 [g/mole]
             using 66,500 as the gram molecular weight of hemoglobin.
-            To convert this data to absorption coefficient in (cm-1), multiply by the molar concentration and 2.303,
+            To convert this data to absorption coefficient in (cm-1), multiply by the
+            molar concentration and 2.303,
             µa = (2.303) e (x g/liter)/(66,500 g Hb/mole)
-            where x is the number of grams per liter. A typical value of x for whole blood is x=150 g Hb/liter."
+            where x is the number of grams per liter. A typical value of x for whole
+            blood is x=150 g Hb/liter."
     """
     if spectrum == "prahl":
-        with resources.open_text(
-            "cedalion.data", "prahl_absorption_spectrum.tsv"
-        ) as fin:
+        path = cedalion.data.get("prahl_absorption_spectrum.tsv")
+        with path.open("r") as fin:
             coeffs = np.loadtxt(fin, comments="#")
 
         chromophores = ["HbO", "HbR"]
@@ -69,19 +77,22 @@ def channel_distances(amplitudes: xr.DataArray, geo3d: xr.DataArray):
     """Calculate distances between channels.
 
     Args:
-        amplitudes (xr.DataArray): A DataArray representing the amplitudes with dimensions (channel, *).
-        geo3d (xr.DataArray): A DataArray containing the 3D coordinates of the channels with dimensions (channel, pos).
+        amplitudes (xr.DataArray): A DataArray representing the amplitudes with
+            dimensions (channel, *).
+        geo3d (xr.DataArray): A DataArray containing the 3D coordinates of the channels
+            with dimensions (channel, pos).
 
     Returns:
-        dists (xr.DataArray): A DataArray containing the calculated distances between source and detector channels. 
-            The resulting DataArray has the dimension 'channel'.
+        dists (xr.DataArray): A DataArray containing the calculated distances between
+            source and detector channels. The resulting DataArray has the dimension
+            'channel'.
     """
     validators.has_channel(amplitudes)
     validators.has_positions(geo3d, npos=3)
     validators.is_quantified(geo3d)
 
     diff = geo3d.loc[amplitudes.source] - geo3d.loc[amplitudes.detector]
-    dists = xrutils.norm(diff, "pos")
+    dists = xrutils.norm(diff, geo3d.points.crs)
     dists = dists.rename("dists")
 
     return dists
@@ -96,7 +107,16 @@ def int2od(amplitudes: xr.DataArray):
     Returns:
         od: (xr.DataArray, (time, channel,*): The optical density data.
     """
-    od = - np.log( amplitudes / amplitudes.mean("time") )
+    # check negative values in amplitudes and issue an error if yes
+    if np.any(amplitudes < 0):
+        raise AssertionError(
+            "Error: DataArray contains negative values. Please fix, for example by "
+            "setting them to NaN with "
+            "'amplitudes = amplitudes.where(amplitudes >= 0, np.nan)'"
+        )
+
+    # conversion to optical density
+    od = -np.log(amplitudes / amplitudes.mean("time"))
     return od
 
 
@@ -116,8 +136,8 @@ def od2conc(
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing 
-            concentration changes with dimensions "channel" and "wavelength".
+        conc (xr.DataArray, (channel, *)): A data array containing
+            concentration changes by channel.
     """
     validators.has_channel(od)
     validators.has_wavelengths(od)
@@ -132,12 +152,55 @@ def od2conc(
     dists = dists.pint.to("mm")
 
     # conc = Einv @ (optical_density / ( dists * dpf))
-    conc = xr.dot(Einv, od / (dists * dpf), dims=["wavelength"])
+    if dpf[0] != 1:
+        conc = xr.dot(Einv, od / (dists * dpf), dim=["wavelength"])
+    else:
+        conc = xr.dot(Einv, od / (dpf * 1*units.mm), dim=["wavelength"])
+
     conc = conc.pint.to("micromolar")
+    conc = conc.pint.quantify({"time": od.time.attrs["units"]})  # got lost in xr.dot
     conc = conc.rename("concentration")
 
     return conc
 
+def conc2od(
+    conc: xr.DataArray,
+    geo3d: xr.DataArray,
+    dpf: xr.DataArray,
+    spectrum: str = "prahl",
+):
+    """Calculate optical density data from concentration changes.
+
+    Args:
+        conc (xr.DataArray, (channel, *)): The concentration changes by channel.
+        geo3d (xr.DataArray): The 3D coordinates of the optodes.
+        dpf (xr.DataArray, (wavelength, *)): The differential pathlength factor data.
+        spectrum (str, optional): The type of spectrum to use for calculating extinction
+            coefficients. Defaults to "prahl".
+
+    Returns:
+        od (xr.DataArray, (channel, wavelength, *)): A data array containing
+            optical density data.
+    """
+
+    conc = conc.pint.to("molar")
+
+    # Get the extinction coefficients for the chosen spectrum
+    wavelengths = dpf.wavelength.values.astype(float)
+    E = cedalion.nirs.get_extinction_coefficients(spectrum, wavelengths)
+
+    # Calculate distances between optodes for each channel
+    dists = cedalion.nirs.channel_distances(conc, geo3d)
+    dists = dists.pint.to("mm")
+
+    od = xr.dot(E, conc, dim=["chromo"]) * (dists * dpf)
+
+    od = od.rename("optical_density")
+
+    if "time" in od.dims:
+        od = od.pint.quantify({"time": "s"})
+
+    return od
 
 def beer_lambert(
     amplitudes: xr.DataArray,
@@ -145,18 +208,19 @@ def beer_lambert(
     dpf: xr.DataArray,
     spectrum: str = "prahl",
 ):
-    """Calculate concentration changes from amplitude data using the modified beer-lambert law.
+    """Calculate concentration changes from amplitude using the modified BL law.
 
     Args:
-        amplitudes (xr.DataArray, (channel, wavelength, *)): The input data array containing the raw intensities.
+        amplitudes (xr.DataArray, (channel, wavelength, *)): The input data array
+            containing the raw intensities.
         geo3d (xr.DataArray): The 3D coordinates of the optodes.
         dpf (xr.DataArray, (wavelength,*)): The differential pathlength factors
         spectrum (str, optional): The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, wavelength, *)): A data array containing concentration 
-            changes according to the mBLL
+        conc (xr.DataArray, (channel, *)): A data array containing
+            concentration changes according to the mBLL.
     """
     validators.has_channel(amplitudes)
     validators.has_wavelengths(amplitudes)
@@ -169,3 +233,30 @@ def beer_lambert(
     conc = od2conc(od, geo3d, dpf, spectrum)
 
     return conc
+
+
+def split_long_short_channels(
+    ts: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
+    distance_threshold: cedalion.Quantity = 1.5 * cedalion.units.cm,
+):
+    """Split a time series into two based on channel distances.
+
+    Args:
+        ts (cdt.NDTimeSeries) : Time series to split.
+        geo3d (cdt.LabeledPointCloud) : 3D coordinates of the channels.
+        distance_threshold (Quantity) : Distance threshold for splitting the channels.
+
+    Returns:
+        ts_long : time series with channel distances >= distance_threshold
+        ts_short : time series with channel distances < distance_threshold
+    """
+    dists = xrutils.norm(
+        geo3d.loc[ts.source] - geo3d.loc[ts.detector], dim=geo3d.points.crs
+    )
+
+    mask = dists < distance_threshold
+    ts_short = ts.sel(channel=mask)
+    ts_long = ts.sel(channel=~mask)
+
+    return ts_long, ts_short

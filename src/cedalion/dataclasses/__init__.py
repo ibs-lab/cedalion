@@ -9,9 +9,12 @@ from .geometry import (
     TrimeshSurface,
     VTKSurface,
     affine_transform_from_numpy,
+    Voxels,
 )
-from .xrschemas import (
+from .schemas import (
     build_labeled_points,
     build_timeseries,
     validate_schemas,
+    build_stim_dataframe,
 )
+from .recording import Recording

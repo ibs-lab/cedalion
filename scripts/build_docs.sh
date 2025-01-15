@@ -17,7 +17,7 @@ echo "Building html documentation"
 cd ..
 make clean
 
-sphinx-apidoc -o api ../src/cedalion
+sphinx-apidoc -f -o api ../src/cedalion
 
 make html
 

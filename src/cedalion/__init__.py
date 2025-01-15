@@ -1,10 +1,7 @@
-import pint_xarray
-import xarray
+from .physunits import Quantity, units
 
-import cedalion.dataclasses.accessors
 import cedalion.dataclasses
+import cedalion.dataclasses.accessors
 import cedalion.io
 import cedalion.nirs
-
-units = pint_xarray.unit_registry
-Quantity = units.Quantity
+import cedalion.tasks

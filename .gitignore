@@ -25,6 +25,7 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.DS_store
 MANIFEST
 
 # PyInstaller
@@ -166,6 +167,7 @@ src/cedalion/_version.py
 
 # rendered example notebooks
 docs/examples/*.ipynb
+docs/examples/*/*.ipynb
 
 # API documentation from sphinx-apidoc
 docs/api/*
@@ -174,3 +176,7 @@ docs/api/*
 .vscode/
 
 scratch/
+
+# plugins
+plugins/
+

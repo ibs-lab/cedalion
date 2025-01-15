@@ -10,13 +10,14 @@ def read_photogrammetry_einstar(fn):
     photogrammetry pipeline using an einstar device.
 
     Args:
-        fn: the filename of the einstar photogrammatry output file
+        fn (str): The filename of the einstar photogrammetry output file.
 
     Returns:
-        fiducials : cedalion.LabeledPoints
-            The fiducials as a cedalion LabeledPoints object.
-        optodes : cedalion.LabeledPoints
-            The optodes as a cedalion LabeledPoints object.
+        tuple: A tuple containing:
+            - fiducials (cedalion.LabeledPoints): The fiducials as a cedalion
+                LabeledPoints object.
+            - optodes (cedalion.LabeledPoints): The optodes as a cedalion LabeledPoints
+                object.
     """
 
     fiducials, optodes = read_einstar(fn)
@@ -28,13 +29,12 @@ def read_einstar(fn):
     """Read optodes and fiducials from einstar devices.
 
     Args:
-        fn: The filename of the einstar photogrammatry output file.
+        fn (str): The filename of the einstar photogrammetry output file.
 
     Returns:
-        fiducials : OrderedDict
-            The fiducials as an OrderedDict.
-        optodes : OrderedDict
-            The optodes as an OrderedDict.
+        tuple: A tuple containing:
+            - fiducials (OrderedDict): The fiducials as an OrderedDict.
+            - optodes (OrderedDict): The optodes as an OrderedDict.
     """
 
     with open(fn, "r") as f:
@@ -54,16 +54,15 @@ def opt_fid_to_xr(fiducials, optodes):
     """Convert OrderedDicts fiducials and optodes to cedalion LabeledPoints objects.
 
     Args:
-        fiducials : OrderedDict
-            The fiducials as an OrderedDict.
-        optodes : OrderedDict
-            The optodes as an OrderedDict.
+        fiducials (OrderedDict): The fiducials as an OrderedDict.
+        optodes (OrderedDict): The optodes as an OrderedDict.
 
     Returns:
-        fiducials : cedalion.LabeledPoints
-            The fiducials as a cedalion LabeledPoints object.
-        optodes : cedalion.LabeledPoints
-            The optodes as a cedalion LabeledPoints object.
+        tuple: A tuple containing:
+            - fiducials (cedalion.LabeledPoints): The fiducials as a cedalion
+                LabeledPoints object.
+            - optodes (cedalion.LabeledPoints): The optodes as a cedalion LabeledPoints
+                object.
     """
 
     # FIXME: this should get a different CRS

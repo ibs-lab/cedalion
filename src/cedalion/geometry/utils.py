@@ -68,6 +68,42 @@ def m_rot(angles: np.ndarray) -> np.ndarray:
     # fmt: off
     return np.stack( (ca*cb, ca*sb*sg - sa*cg, ca*sb*cg + sa*sg, 0.,
                       sa*cb, sa*sb*sg + ca*cg, sa*sb*cg - ca*sg, 0.,
-                         sb,            cb*sg,            cb*cg, 0.,
+                        -sb,            cb*sg,            cb*cg, 0.,
                           0.,              0.,               0., 1.)).reshape(4,4)
     # fmt: on
+
+
+def cart2sph(
+    x: np.ndarray, y: np.ndarray, z: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Convert 3D cartesian into spherical coordinates.
+
+    Args:
+        x: cartesian x coordinates
+        y: cartesian y coordinates
+        z: cartesian z coordinates
+
+    Returns:
+        The spherical coordinates azimuth, elevation and radius as np.ndarrays.
+    """
+    hxy = np.hypot(x, y)
+    r = np.hypot(hxy, z)
+    el = np.arctan2(z, hxy)
+    az = np.arctan2(y, x)
+    return az, el, r
+
+
+def pol2cart(theta : np.ndarray, rho : np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Convert 2D polar into 2D cartesian coordinates.
+
+    Args:
+        theta: polar theta/angle coordinates
+        rho: polar rho/radius coordinates
+
+    Returns:
+        The cartesian coordinates x and y as np.ndarrays.
+    """
+
+    x = rho * np.cos(theta)
+    y = rho * np.sin(theta)
+    return x, y

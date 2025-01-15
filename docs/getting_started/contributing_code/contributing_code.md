@@ -5,7 +5,7 @@ This document provides a brief getting started guide for users who would like to
 ## Where to get started?
 It is smart to make yourself aware of five resources and concepts that build the foundations for Cedalion:
 1) **Cedalion's documentation page**: For the moment the documentation can be found {{ '[here]({})'.format(docs_url) }}.
-2) **Example Notebooks**: Cedalion provides jupiter notebooks for example pipelines and to display how to apply its functionality. Here you can start to learn from examples by running, adapting and changing code until you feel more familiar. The notebooks are under /examples/ [here](https://github.com/ibs-lab/cedalion/tree/main/examples) and can be viewed in a rendered form on the documentation page [here](https://doc.ml.tu-berlin.de/cedalion/docs/examples/index.html)
+2) **Example Notebooks**: Cedalion provides jupiter notebooks for example pipelines and to display how to apply its functionality. Here you can start to learn from examples by running, adapting and changing code until you feel more familiar. The notebooks are under /examples/ [here](https://github.com/ibs-lab/cedalion/tree/main/examples) and can be viewed in a rendered form on the documentation page [here](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/examples/index.html)
 3) **Xarrays** are a package that makes work with labelled mult-dimensional arrays very simple. If you develop code for Cedalion, you will youse Xarrays. To get started, make yourself acquainted with one of two key data types: *xarray.DataArray* and *xarray.DataSet*. Most functions that you write should expect an xarray DataArray as main input for the data that you want to process, alongside arguments that pass variables for additional info. You can find the official [Xarray documentation here](https://docs.xarray.dev/en/stable/).
 4) **Units**: One of the charms of Xarrays that Cedalion is taking advantage of is that functions can implicitly consider units and thus avoid typical errors from (missing) unit conversion. For example, if you work with coordinates for fNIRS optodes or landmarks, as long as they have a proper unit like "m", "cm", "mm" assigned, you do not have to explicitly take care of conversions anymore. To make use of this feature, Cedalion's functions should expect input arguments that are "Quantities" with "units" wherever possible. To assign a unit to your variable, simply import `from cedalion import Quantity, units` and multiply your variable with the right unit. For instance: `sd_distance = 3*units.cm`. Cedalion's units are based on the **pint** package, which is [documented here](https://pint.readthedocs.io/en/stable/index.html).
 5) **Data Containers and Data Structures**: The main objects to pass along your functions and processing pipelines. We are currently working on defining and documenting these. In the meantime, please work with Xarray DataArrays and variables with units as in and outputs for your functions, and be aware that the main format for fNIRS/DOT data that we read and write is the [SNIRF format](https://github.com/fNIRS/snirf). To easily get started, you can:
@@ -39,7 +39,6 @@ data = xr.Dataset(
 ## General Rules and Overview
 ### Style Guide for Python Code
 We follow the PEP 8 Style that is documented [here](https://peps.python.org/pep-0008/) - please try to follow it too. If you work with VS Code, you can use extensions to make your life easier:
-- [Black Formatter](https://marketplace.visualstudio.com/items?itemName=ms-python.black-formatter) that supports you in formatting your code
 - [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) is a fast Python linter that we recommend
 
 Some relevant conventions in a nutshell:
@@ -338,6 +337,9 @@ def prune(data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity,
 
     return data, drop_list
 ```
+
+### Creating example notebooks
+After adding a feature, it is a good idea to create a jupyter notebook showcasing the new functionality. Notebooks should be added to the appropriate subfolder in the examples folder. You can select the thumbnail that will appear in examples gallery by adding the tag "nbsphinx-thumbnail" to a cell that produces a plot or figure (the IBS logo is used by default if no tag is set).
 
 ## Concluding Remarks
 The example above uses Cedalion's most basic data structures. While the toolbox continues to grow, we will add containers and abstraction layers to simplify and unify usage and code contribution. Whenever possible and especially when you find that the existing environment does not (yet) provide a level of abstraction or a data structure bundling all the data that you need in one container, please develop **bottom up** and write simple functions with (multiple) simple input and output arguments. In the example, once a general container is specified that ties together timeseries data, optode information (such as the `geo3D`) or measurement lists, it is straightforward to refactor the code accordingly. The same is true for more complex processing pipelines tied together in jupyter notebooks. We are working on a mechanism to build pipelines that enables easier and more abstract use by incorporating the lower level functions. Translating a notebook to such a pipeline is then straightforward.
