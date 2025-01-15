@@ -7,7 +7,7 @@ from typing import Optional
 import xarray as xr
 
 class SPoC():
-    """ Implements SPoC_lambda algorithm based on :cite:t:`BIBTEXLABEL`.
+    """ Implements the Source Power Co-modulation (SPoC_lambda) algorithm based on :cite:t:`BIBTEXLABEL`.
 
         Given a vector-valued time signal x(t) and a scalar target function z(t), 
         SPoC finds spatial filters W that maximize the covariance between
@@ -29,13 +29,15 @@ class SPoC():
     
     def __init__(self):
 
-        # Spatial filters (initialized after calling the fit function)
-        self.W = None
+        # Attributes will be initialized after calling the fit function
+        self.W = None  # Filters
+        self.scores = None  # Eigenvalues
+        self.Nx = None  # Number of channels
 
     def fit(self,
             x: cdt.NDTimeSeries,
-            z: xr.DataArray, 
-            only_max: bool = True) -> np.ndarray:
+            z: xr.DataArray,
+            n_comp: Optional[int] = None) -> np.ndarray:
         """ Fit the model on the (x, z) dataset.
 
         Solve the generalized eigenvalue problem and store the trained spatial filters W
@@ -45,23 +47,26 @@ class SPoC():
             x (:class:`NDTimeSeries`, (channel, time)): Temporal signal 
             of shape Nx x Nt.
             z (:class:`DataArray`, (time)): Target (scalar) function
-            of shape 1 x Ne, with Ne < Nt. 
-            only_max: If True, it returns only the filter corresponding to 
-                maximum eigenvalue/covariance. If False, it returns all Nx components.
+            of shape 1 x Ne, with Ne < Nt.
+            n_comp (int): Number of components the algorithm will find in decreasing 
+                order of scores/eigenvalue. n_comp=1 returns the component of the highest eigenvalue. 
+                If None, n_comp = Nx, the maximum possible number of components. 
         
         Returns:
             scores: Array of Nx eigenvalues. The latter also coincide with 
                 the corresponding covariances between P(W.T @ x) and z. 
-                If only_max = True, eig_values is a single element, corresponding 
-                to the maximum covariance. 
         """
         
+        # Store for transformation later
+        self.Nx = len(x.channel)
+
         # Catch incompatible lengths
         Ne = len(z.time)
         Nt = len(x.time)
-        Nx = len(x.channel)
         if Nt <= Ne:
             raise ValueError("x should have more time points than z")
+        if n_comp and n_comp > self.Nx:
+            raise ValueError(f"Number of components {n_comp} should be smaller than number of x channels {self.Nx}")
         
         # Standardize z
         z = standardize(z, dim='time')
@@ -72,21 +77,23 @@ class SPoC():
         Cxx = Cxxe.mean(axis=0)
         Cxxz = (Cxxe * z.values.reshape(-1, 1, 1)).mean(axis=0)
         
-        # Select only the maximum-covariance component if only_max
-        subset = [Nx - 1, Nx - 1] if only_max else None
-
+        # Restrict to number of components
+        subset = [self.Nx - 1 - n_comp, self.Nx - 1] if n_comp else None
         # Solve generalized eigenvalue problem
-        scores, W = eigh(Cxxz, Cxx, eigvals_only=False, subset_by_index=subset)
+        self.scores, W = eigh(Cxxz, Cxx, eigvals_only=False, subset_by_index=subset)
+        # Bring to decreasing order
+        self.scores = self.scores[::-1]
+        W = W[:, ::-1]
         # Update state
-        self.W = xr.DataArray(W, coords={'channel': x.channel, 
-                                         'component': [f'S{i}' 
-                                                       for i in range(len(scores))]})
+        self.W = xr.DataArray(W, 
+                              coords={'channel': x.channel, 
+                                      'component': [f'S{i}' for i in range(len(self.scores))]})
         
-        return scores
+        return self.scores
     
     def transform(self,
                   x: cdt.NDTimeSeries, 
-                  only_component: bool = False,
+                  get_bandpower: bool = True,
                   Ne: Optional[int] = None) -> xr.DataArray | tuple[xr.DataArray, 
                                                                     xr.DataArray]:
         """ Apply backward model to x to build reconstructed sources.
@@ -107,30 +114,42 @@ class SPoC():
             s_power: standardized epoch-wise bandpower of s (Var(W.T @ x)).
         """
         
-        # Build reconstructed sources from projection
-        s = self.W.T @ x
+        # Catch icompatible number of channels
+        if len(x.channel) != self.Nx:
+            raise ValueError(f"x should have {self.Nx} number of channels, but {len(x.channel)} was found!")
 
-        if only_component:
-            return s
+        # Build reconstructed sources from projection
+        s = standardize(self.W.T @ x, dim='time')
         
-        else:
+        if get_bandpower:
+            epochs = np.linspace(s.time[0], s.time[-1], Ne)
             # Split into epochs, estimate bandpower, and standardize
-            s_epochs = s.groupby_bins(group='time', bins=Ne)
-            s_power = standardize(s_epochs.var(), dim='time_bins')
+            s_power = s.groupby_bins(group='time', bins=Ne).var()
+            s_power = s_power.rename({'time_bins': 'time'}).assign_coords({'time': epochs})
+            s_power = standardize(s_power, dim='time')
 
             return s, s_power
-
+        
+        else:
+            return s 
 
 
 class mSPoC():
-    """ Implements mSPoC algorithm based on :cite:t:`BIBTEXLABEL`.
+    """ Implements the multimodal Source Power Co-modulation (mSPoC) algorithm based on :cite:t:`BIBTEXLABEL`.
 
-    TODO: Add extense description.
+    Given two vector-valued time series x(t), and y(t), mSPoC finds component pairs Sx = Wx.T @ x,
+    and Sy = Wy.T @, such that the covariance between the temporally-embedded bandpower of Sx and the time course of Sy
+    is maximized. The solution to that optimization problem is captured by the spatial (Wx, Wy), and temporal (Wt) filters.
+
+    Assumptions:
+        x(t) is of shape Nx x Nt, where Nx is the number of channels and Nt the 
+        number of time points, and it is band-pass filtered in the frequency band 
+        of interest. Bandpower of Sx is then approximated by its variance within epochs. 
+        y(t) is of shape Ny x Ne, and Ne < Nt. Both signals are mean-free and temporally aligned.    
     
     Args:
         n_lags (int): Number of time lags for temporal embedding.
-        n_components (int): Number of components/filter/eigenvalues 
-            the algorithm will find.
+        n_components (int): Number of components/filter/eigenvalues the algorithm will find.
     """
 
     def __init__(self, n_lags: int = 5, n_components: int = 1):
@@ -146,7 +165,6 @@ class mSPoC():
         self.wy = None
         self.wt = None
 
-    @cdc.validate_schemas
     def fit(self, 
             x: cdt.NDTimeSeries, 
             y: cdt.NDTimeSeries, 
