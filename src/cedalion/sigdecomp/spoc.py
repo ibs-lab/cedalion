@@ -211,7 +211,12 @@ class mSPoC():
         Nt = len(x.time)
         Ne = len(y.time)
         e_len = Nt//Ne
-        N_features_max = np.min([self.Nx, self.Ny]) 
+        N_features_max = np.min([self.Nx, self.Ny])
+        # Catch errors
+        if Nt < self.Nx:
+            raise ValueError(f"Number of x samples {Nt} should be bigger than number of x features {self.Nx}")
+        if Ne < self.Ny:
+            raise ValueError(f"Number of y samples {Ne} should be bigger than number of y features {self.Ny}")
         if self.n_comp and self.n_comp > N_features_max:
             raise ValueError(f"Number of components {self.n_comp} should be smaller than number of features {N_features_max}")
         if self.n_comp is None:
@@ -231,7 +236,6 @@ class mSPoC():
         y_wh = PCA(whiten=True).fit_transform(y.data.T).T
         # x = x.data
         # y = y.data
-    
         y = y_wh.copy()
         x = x_wh.copy()
 
@@ -239,7 +243,6 @@ class mSPoC():
 
             # Remove first epochs so its dimensions match bandpower Phi_x later
             y = y[:, self.n_lags - 1:]
-
             # Split signal into epochs
             x_epochs = self.split_epochs(x, Ne, e_len)
             
