@@ -1,3 +1,5 @@
+"""Solver for the image reconstruction problem."""
+
 import numpy as np
 import xarray as xr
 

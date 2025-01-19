@@ -1,10 +1,10 @@
-import os, tempfile
+import os
+import tempfile
 import numpy as np
 import xarray as xr
-from collections import OrderedDict
 import cedalion
 import cedalion.dataclasses as cdc
-from cedalion.io import read_photogrammetry_einstar, read_einstar, opt_fid_to_xr
+from cedalion.io import read_photogrammetry_einstar, opt_fid_to_xr
 from numpy.testing import assert_array_almost_equal
 
 

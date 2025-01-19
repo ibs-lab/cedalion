@@ -1,3 +1,5 @@
+"""Functions for preliminary processing of near-infrared spectroscopy (NIRS) data."""
+
 import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike

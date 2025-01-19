@@ -26,7 +26,10 @@ TAINTED = False
 
 @cdc.validate_schemas
 def prune_ch(
-    amplitudes: cdt.NDTimeSeries, masks: list[cdt.NDTimeSeries], operator: str, flag_drop: bool = True
+    amplitudes: cdt.NDTimeSeries,
+    masks: list[cdt.NDTimeSeries],
+    operator: str,
+    flag_drop: bool = True,
 ):
     """Prune channels from the the input data array using quality masks.
 
@@ -158,16 +161,16 @@ def _psp_alternative(
         # Update similarity
         corr_norm = np.array(
             [
-                (corr_len * corr[ch,:]) / np.sqrt(np.sum(np.abs(sig_temp[ch, 0, :]) ** 2) * np.sum(np.abs(sig_temp[ch, 1, :]) ** 2)).values
+                (corr_len * corr[ch,:]) / np.sqrt(np.sum(np.abs(sig_temp[ch, 0, :]) ** 2) * np.sum(np.abs(sig_temp[ch, 1, :]) ** 2)).values # noqa: E501
                 for ch in range(len(amp['channel']))
                 ]
             )
-        
-        
+
+
         # nperseg = corr.shape[1]
         # window = np.hamming(nperseg)
         # window_seg = corr * window
-        
+
         # fft_out = np.fft.rfft(window_seg, axis=1)
         # psd = (np.abs(fft_out) **2)/ (np.sum(window ** 2))
         # freqs = np.fft.rfftfreq(nperseg, 1/fs)
@@ -187,8 +190,12 @@ def _psp_alternative(
     # keep dims channel and time
     window_length = nsamples/fs
     window_times = np.arange(0, num_windows*window_length, window_length)
-    psp_xr = xr.DataArray(psp, dims=["channel", "time"], coords={"channel" : amp.channel.values, "time" : window_times})
-    
+    psp_xr = xr.DataArray(
+        psp,
+        dims=["channel", "time"],
+        coords={"channel": amp.channel.values, "time": window_times},
+    )
+
     # Apply threshold mask
     psp_mask = xrutils.mask(psp_xr, CLEAN)
     psp_mask = psp_mask.where(psp_xr > psp_thresh, other=TAINTED)
@@ -254,7 +261,7 @@ def psp(
     hamming_window_norm = np.sum(hamming_window) ** 2
 
     # nsample / (sigma(wl1)*sigma(wl2)) , shape(nchannel, ntime)
-    corr_coeff_denom = nsamples / np.sqrt(np.sum(np.power(sig, 2), axis=-1)).prod(-1) 
+    corr_coeff_denom = nsamples / np.sqrt(np.sum(np.power(sig, 2), axis=-1)).prod(-1)
 
     corr = np.zeros((ntime, nchannel, nlags))
     for w in range(ntime): # loop over windows
@@ -378,7 +385,7 @@ def _extract_cardiac(
     cardiac_fmin: Annotated[Quantity, "[frequency]"],
     cardiac_fmax: Annotated[Quantity, "[frequency]"],
 ):
-    """ Apply a bandpass or highpass filter to extract the cardiac component."""
+    """Apply a bandpass or highpass filter to extract the cardiac component."""
 
     fs = sampling_rate(amplitudes)
     fny =  fs / 2
@@ -684,16 +691,17 @@ def detect_outliers_std(
 
     Args:
         ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
-        t_window :class:`Quantity`: time window over which to calculate standard deviations
-        iqr_threshold: interquartile range threshold (detect outlier as any standard deviation outside 
-                                                      iqr_threshold * [25th percentile, 75th percentile])
+        t_window :class:`Quantity`: time window over which to calculate std. deviations
+        iqr_threshold: interquartile range threshold (detect outlier as any std.
+            deviation outside iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:
-        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
-        an outlier is detected based on the standard deviation
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE
+        anytime an outlier is detected based on the standard deviation
 
     References:
-        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+        (:cite:t:`Jahani2017`)
     """
 
     ts = ts.pint.dequantify()
@@ -731,15 +739,16 @@ def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold=1.5):
 
     Args:
         ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
-        iqr_threshold: interquartile range threshold (detect outlier as any gradient outside 
-                                                      iqr_threshold * [25th percentile, 75th percentile])
+        iqr_threshold: interquartile range threshold (detect outlier as any gradient
+            outside iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:
-        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
-        an outlier is detected
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE
+        anytime an outlier is detected
 
     References:
-        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+        (:cite:t:`Jahani2017`)
     """
 
     ts = ts.pint.dequantify()
@@ -787,18 +796,20 @@ def detect_outliers(
 
     Args:
         ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
-        t_window_std :class:`Quantity`: time window over which to calculate standard deviations
-        iqr_threshold_grad: interquartile range threshold (detect outlier as any gradient outside 
-                                                      iqr_threshold * [25th percentile, 75th percentile])
-        iqr_threshold_std: interquartile range threshold (detect outlier as any standard deviation outside 
-                                                      iqr_threshold * [25th percentile, 75th percentile])
+        t_window_std :class:`Quantity`: time window over which to calculate std.
+            deviations
+        iqr_threshold_grad: interquartile range threshold (detect outlier as any
+            gradient outside iqr_threshold * [25th percentile, 75th percentile])
+        iqr_threshold_std: interquartile range threshold (detect outlier as any standard
+            deviation outside iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:
-        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
-        an outlier is detected
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE
+        anytime an outlier is detected
 
     References:
-        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+        (:cite:t:`Jahani2017`)
     """
     mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
     mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
@@ -897,14 +908,16 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
 
     Args:
         ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
-        outlier_mask :class:`NDTimeSeries`: mask containing FALSE anytime an outlier is detected in signal
+        outlier_mask :class:`NDTimeSeries`: mask containing FALSE anytime an outlier is
+            detected in signal
 
     Returns:
-        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE anytime 
-        a baselineshift or outlier is detected
+        mask that is a DataArray containing TRUE anywhere the data is clean and FALSE
+        anytime a baselineshift or outlier is detected
 
     References:
-        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m" (:cite:t:`Jahani2017`)
+        Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+        (:cite:t:`Jahani2017`)
     """
     ts = ts.pint.dequantify()
 

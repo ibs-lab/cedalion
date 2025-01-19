@@ -1,3 +1,5 @@
+"""Functions for generating synthetic artifacts in fNIRS data."""
+
 import xarray as xr
 import cedalion.typing as cdt
 import pandas as pd
@@ -234,7 +236,7 @@ def add_artifacts(
             (time, onset_time, duration). Keys correspond to the trial_type in the
             timing DataFrame.
         mode: 'auto' or 'manual'. If 'auto', artifacts are scaled using the alpha
-            parameter (median of median of sliding windows) AND the scale parameter. If 
+            parameter (median of median of sliding windows) AND the scale parameter. If
             'manual', artifacts are scaled only by the scale parameter.
         scale: scaling parameter for artifacts
         window_size: size of sliding window for alpha computation

@@ -1,3 +1,5 @@
+"""Temporal basis functions for the GLM."""
+
 from abc import ABC, abstractmethod
 from typing import Annotated
 

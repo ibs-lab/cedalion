@@ -12,7 +12,9 @@ It is smart to make yourself aware of five resources and concepts that build the
     1. Check out the example notebook on [Using xarray-based data structures for calculating the Beer-Lambert transformation](https://github.com/ibs-lab/cedalion/blob/main/examples/pruning_and_motion_artifacts.ipynb)
     2. Check out the example notebook on [An example finger tapping analysis](https://github.com/ibs-lab/cedalion/blob/main/examples/new_conference_example2.ipynb)
     3. Use the following code snippet to load snirf data into Xarray DataArrays (amp, geo, od, conc, ml) and combine them into an Xarray DataSet.
-```# get example finger tapping dataset
+
+```python
+# get example finger tapping dataset
 import cedalion
 import cedalion.nirs
 import cedalion.datasets as datasets

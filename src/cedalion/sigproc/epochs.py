@@ -1,3 +1,5 @@
+"""Extract epochs from a time series based on stimulus events."""
+
 import logging
 from typing import Annotated
 

@@ -46,7 +46,7 @@ python="3.11"
 
 [tool.hatch.envs.default.scripts]
 build_docs = "./scripts/build_docs.sh docs"
-
+check = "pre-commit run"
 
 [tool.hatch.envs.hatch-test]
 type = "conda"

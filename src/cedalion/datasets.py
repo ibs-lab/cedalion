@@ -36,7 +36,9 @@ DATASETS = pooch.create(
     },
 )
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"
+)
 
 
 def get_ninja_cap_probe():
@@ -46,7 +48,7 @@ def get_ninja_cap_probe():
                                               'fullhead_56x144_System2_optodes.tsv'))
     landmarks = cedalion.io.load_tsv(os.path.join(probe_dir,
                                                   'fullhead_56x144_System2_landmarks.tsv'))
-    meas_list = pd.read_pickle(os.path.join(probe_dir, 
+    meas_list = pd.read_pickle(os.path.join(probe_dir,
                                             'fullhead_56x144_System2_measlist.pkl'))
     return geo3d, landmarks, meas_list
 
