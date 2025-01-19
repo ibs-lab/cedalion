@@ -1,3 +1,5 @@
+"""Plotting functions for visualization of montages, meshes, etc."""
+
 import math
 
 import matplotlib
@@ -53,7 +55,14 @@ def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
 
 
 def plot3d(
-    brain_mesh, scalp_mesh, geo3d, timeseries, poly_lines=[], brain_scalars=None, plotter = None):
+    brain_mesh,
+    scalp_mesh,
+    geo3d,
+    timeseries,
+    poly_lines=[],
+    brain_scalars=None,
+    plotter=None,
+):
     """Plots a 3D visualization of brain and scalp meshes.
 
     Args:
@@ -63,8 +72,8 @@ def plot3d(
         timeseries: Time series data array.
         poly_lines: List of lists of points to be plotted as polylines.
         brain_scalars: Scalars to be used for coloring the brain mesh.
-        plotter (pv.Plotter, optional): An existing PyVista plotter instance to use for plotting. If None, a new
-            PyVista plotter instance is created. Default is None.
+        plotter (pv.Plotter, optional): An existing PyVista plotter instance to use for
+            plotting. If None, a new PyVista plotter instance is created. Default: None.
 
     Initial Contributors:
         - Eike Middell | middell@tu-berlin.de | 2024
@@ -130,38 +139,33 @@ def plot3d(
         lines = pv.MultipleLines(points)
         plt.add_mesh(lines, color="m", smooth_shading=True)
 
-    #def callback(point):
-    #    mesh = pv.Sphere(radius=3, center=point)
-    #    plt.add_mesh(mesh, style='wireframe', color='r')
-    #    plt.add_point_labels(point, [f"{point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}"])
-
-    #if ppoints is not None:
-    #    plt.enable_surface_point_picking(callback=callback, show_point=False)
-
-    #plt.show()
 
 
 def plot_surface(
     plotter: pv.Plotter,
     surface: cdc.Surface,
-    color=None,
-    opacity=1.0,
-    pick_landmarks = False,
+    color: pv.ColorLike | None = None,
+    opacity : float =1.0,
+    pick_landmarks : bool = False,
     **kwargs,
 ):
     #used for picking landmarks in photogrammetry example
     """Plots a surface mesh with optional landmark picking in a PyVista plotter.
 
     Args:
-        plotter (pv.Plotter): A PyVista plotter instance used for rendering the surface.
-        surface (cdc.Surface): The surface object to be plotted.
-        color (str or tuple, optional): Color of the mesh.
-        opacity (float): Opacity of the mesh, ranging from 0 (transparent) to 1 (opaque). Default is 1.0.
-        pick_landmarks (bool): If True, enables interactive picking of landmarks on the surface. Default is False.
+        plotter: A PyVista plotter instance used for rendering the surface.
+        surface: The surface object to be plotted.
+        color: Color of the mesh.
+        opacity: Opacity of the mesh, ranging from 0 (transparent) to 1
+            (opaque). Default is 1.0.
+        pick_landmarks: If True, enables interactive picking of landmarks on the
+            surface. Default is False.
+        **kwargs: Additional keyword arguments are passed to pv.add_mesh.
 
     Returns:
-        function: If `pick_landmarks` is True, returns a function that when called, provides the current picked points
-        and their labels. This function prints warnings if some labels are missing or are repeated.
+        function: If `pick_landmarks` is True, returns a function that when called,
+        provides the current picked points and their labels. This function prints
+        warnings if some labels are missing or are repeated.
 
     Initial Contributors:
         - Eike Middell | middell@tu-berlin.de | 2024
@@ -202,7 +206,7 @@ def plot_surface(
 
     def place_landmark(point):
         nonlocal picked_points, point_actors, label_actors, mesh, labels, plotter
-        threshold_distance_squared = 25  # Using squared distance to avoid square root calculation
+        threshold_distance_squared = 25  # Using squared distance to avoid square root
 
         new_point = np.array(point)
 
@@ -226,7 +230,9 @@ def plot_surface(
 
                 labels[i] = next_label
                 plotter.remove_actor(label_actors[i])  # Remove previous label
-                label_actors[i] = plotter.add_point_labels(existing_point, [next_label], font_size=30)
+                label_actors[i] = plotter.add_point_labels(
+                    existing_point, [next_label], font_size=30
+                )
                 return
 
         # If no point is close enough, create a new point and assign a label
@@ -239,7 +245,9 @@ def plot_surface(
         point_actor = plotter.add_mesh(pv.Sphere(radius=3, center=new_point),
                                        color='green', smooth_shading=True)
         point_actors.append(point_actor)
-        label_actor = plotter.add_point_labels(new_point, [landmark_label], font_size=30)
+        label_actor = plotter.add_point_labels(
+            new_point, [landmark_label], font_size=30
+        )
         label_actors.append(label_actor)
         picked_points.append(new_point)
         labels.append(landmark_label)
@@ -256,31 +264,40 @@ def plot_surface(
                 print("Warning: Some labels are repeated!")
             return picked_points, labels
 
-        plotter.enable_surface_point_picking(callback=place_landmark, show_message = "Right click to place or change the landmark label", show_point=False, tolerance = 0.005)
+        plotter.enable_surface_point_picking(
+            callback=place_landmark,
+            show_message="Right click to place or change the landmark label",
+            show_point=False,
+            tolerance=0.005,
+        )
 
         return get_points_and_labels
 
 def plot_labeled_points(
     plotter: pv.Plotter,
     points: cdt.LabeledPointCloud,
-    color=None,
-    show_labels = False,
-    ppoints = None,
-    labels = None
+    color: pv.ColorLike = None,
+    show_labels: bool = False,
+    ppoints: bool = None,
+    labels: list[str] | None = None,
 ):
-    #used in selecting optode centers in Photogrammetry example. 
-    """Plots a labeled point cloud in a PyVista plotter with optional interaction for picking points.
+    #used in selecting optode centers in Photogrammetry example.
+    """Plots a labeled point cloud with optional interaction for picking points.
 
-        This function visualizes a point cloud where each point can have a label. Points can be interactively picked if enabled. Picked point is indicated by increased radius.
+        This function visualizes a point cloud where each point can have a label.
+        Points can be interactively picked if enabled. Picked point is indicated by
+        increased radius.
 
     Args:
-        plotter (pv.Plotter): A PyVista plotter instance used for rendering the points.
-        points (cdt.LabeledPointCloud): A labeled point cloud data structure containing points and optional labels.
-        color (str or tuple, optional): Override color for all points. If None, colors are assigned based on point types.
-        show_labels (bool): If True, labels are displayed next to the points. Default is False.
-        ppoints (list, optional): A list to store indices of picked points, enables picking if not None. Default is None.
-        labels (list of str, optional): List of labels to show if `show_labels` is True. If None and `show_labels` is True,
-            the labels from `points` are used.
+        plotter: A PyVista plotter instance used for rendering the points.
+        points: A labeled point cloud data structure containing points and optional
+            labels.
+        color: Override color for all points. If None, colors are assigned based on
+            point types.
+        show_labels: If True, labels are displayed next to the points.
+        ppoints: A list to store indices of picked points, enables picking if not None.
+        labels: List of labels to show if `show_labels` is True. If None and
+            `show_labels` is True, the labels from `points` are used.
 
     Initial Contributors:
         - Eike Middell | middell@tu-berlin.de | 2024
@@ -302,12 +319,13 @@ def plot_labeled_points(
 
 
     #labels = None
-    if labels == None and show_labels == True:
+    if labels is None and show_labels:
         labels = points.label.values
 
     def on_pick(picked_point):
         nonlocal ppoints
-        threshold_distance = 5  # Define how close points have to be to consider them "super close"
+        # Define how close points have to be to consider them "super close"
+        threshold_distance = 5
         new_point = np.array(picked_point)
 
         # Check if new point is super close to any existing sphere
@@ -327,7 +345,9 @@ def plot_labeled_points(
         point_type = point.coords['type'].item()
         # Create and add a sphere at the point's coordinates
         s = pv.Sphere(radius=default_point_sizes[point_type], center=point.values)
-        plotter.add_mesh(s, color=color or default_point_colors[point_type], smooth_shading=True)
+        plotter.add_mesh(
+            s, color=color or default_point_colors[point_type], smooth_shading=True
+        )
         # Add the label if required
         if show_labels and labels is not None:
             plotter.add_point_labels(point.values[np.newaxis], [str(labels[i_point])])
@@ -370,7 +390,6 @@ def plot_vector_field(
     ugrid.GetPointData().SetVectors(numpy_to_vtk(vectors.values))
 
     points = ugrid.GetPoints()
-    highlight_coords = points.GetPoint(0)
 
     hedgehog = vtk.vtkHedgeHog()
     hedgehog.SetInputData(ugrid)
@@ -386,21 +405,26 @@ def plot_vector_field(
 class OptodeSelector:
     """A class for visualizing point clouds with interactive features in PyVista.
 
-    This class provides functionality to visualize and interact with labeled point clouds using a PyVista plotter.
-    It allows points to be dynamically added or removed by picking them directly from the plot interface. 
+    This class provides functionality to visualize and interact with labeled point
+    clouds using a PyVista plotter. It allows points to be dynamically added or removed
+    by picking them directly from the plot interface.
 
     Attributes:
         surface (cdc.Surface): The surface of a head for normals.
-        points (cdt.LabeledPointCloud): The point cloud data containing point coordinates.
+        points (cdt.LabeledPointCloud): The point cloud data containing point
+            coordinates.
         normals (xr.DataArray): Normal vectors to the points.
         plotter (pv.Plotter): A PyVista plotter instance for rendering the point cloud.
-        labels (list of str, optional): Labels corresponding to the points, displayed if provided.
-        actors (list): List of PyVista actor objects representing the points in the visualization.
-        color (str or tuple, optional): Default color for points if not specified by point type.
+        labels (list of str, optional): Labels corresponding to the points, displayed
+            if provided.
+        actors (list): List of PyVista actor objects representing the points in the
+            visualization.
+        color (str or tuple, optional): Default color for points if not specified by
+            point type.
 
     Methods:
         plot(): Renders the point cloud using the current settings.
-        on_pick(picked_point): Callback function for picking points in the visualization.
+        on_pick(picked_point): Callback function for picking points in the visualization
         update_visualization(): Clears the existing plot and re-renders the point cloud.
         enable_picking(): Enables interactive picking of points on the plot.
 
@@ -441,18 +465,23 @@ class OptodeSelector:
 
                 s = pv.Sphere(radius=default_point_sizes[type], center=x[i_point])
                 if color is None:
-                    sphere_actor = plotter.add_mesh(s, color=default_point_colors[type], smooth_shading=True)
+                    sphere_actor = plotter.add_mesh(
+                        s, color=default_point_colors[type], smooth_shading=True
+                    )
                 else:
                     sphere_actor = plotter.add_mesh(s, color=color, smooth_shading=True)
                 self.actors.append(sphere_actor)
                 if self.labels is not None:
-                    plotter.add_point_labels(x[i_point].values, [str(self.labels[i_point])])
+                    plotter.add_point_labels(
+                        x[i_point].values, [str(self.labels[i_point])]
+                    )
 
 
     def on_pick(self, picked_point):
         plotter = self.plotter
         points = self.points
-        threshold_distance = 5  # Define how close points have to be to consider them "super close"
+        # Define how close points have to be to consider them "super close"
+        threshold_distance = 5
         new_point = np.array(picked_point)
 
         # Check if new point is super close to any existing sphere
@@ -472,39 +501,38 @@ class OptodeSelector:
 
         existing_labels = self.points.coords['label'].values
         # Generate a new unique label
-        new_label_number = max([int(label.split('-')[-1]) for label in existing_labels]) + 1
+        new_label_number = (
+            max([int(label.split("-")[-1]) for label in existing_labels]) + 1
+        )
         new_label = f'O-{new_label_number}'
         new_group = self.points.coords['group'].values[0]
         new_type = cdc.PointType.LANDMARK if new_group == 'O' else cdc.PointType.UNKNOWN
 
         # Create the new entry DataArray
-        new_center_coords = new_point 
-
-        new_entry = xr.DataArray(
-            [new_center_coords],  
-            dims=["label", "digitized"],  
-            coords={
-                "label": [new_label],              
-                "type": ("label", [new_type]),
-                "group": ("label", [new_group]),
-            }
-        ).pint.quantify(units="mm")
+        new_center_coords = new_point
 
         s = pv.Sphere(radius=2, center=new_point)
         sphere_actor = plotter.add_mesh(s, color='r', smooth_shading=True)
         self.actors.append(sphere_actor)
 
         new_normal = self.find_surface_normal(new_point)
-        self.points = self.points.points.add(new_label, new_center_coords, new_type, new_group)
+        self.points = self.points.points.add(
+            new_label, new_center_coords, new_type, new_group
+        )
         self.normals = self.update_normals(new_normal, new_label)
 
     def update_visualization(self):
         # Clear existing plot and re-plot with the updated self.points
         self.plotter.clear()
-        self.plot()  
+        self.plot()
 
     def enable_picking(self):
-        self.plotter.enable_surface_point_picking(callback=self.on_pick, show_message = "Right click to place or remove optode", show_point=False, tolerance = 0.005)
+        self.plotter.enable_surface_point_picking(
+            callback=self.on_pick,
+            show_message="Right click to place or remove optode",
+            show_point=False,
+            tolerance=0.005,
+        )
 
     def find_surface_normal(self, picked_point, radius=6):
         def pca(vertices: np.ndarray):
@@ -518,12 +546,17 @@ class OptodeSelector:
             return eigenvalues, eigenvecs
         # Calculate distances from picked point to all vertices in the mesh
         distances = np.linalg.norm(self.surface.mesh.vertices - picked_point, axis=1)
-        close_vertices = self.surface.mesh.vertices[distances < radius]  # Select vertices within the specified radius      
+
+        # Select vertices within the specified radius
+        close_vertices = self.surface.mesh.vertices[distances < radius]
+
+        # calculate normal from eigenvector
         eigenvalues, eigenvecs = pca(close_vertices)
         normal_vector = eigenvecs[:, 0]
-        # Optionally, verify the direction of the normal
+
+        # Verify the direction of the normal
         if np.dot(normal_vector, picked_point - np.mean(close_vertices, axis=0)) < 0:
-            normal_vector = -normal_vector  # Ensure the normal points outward 
+            normal_vector = -normal_vector  # Ensure the normal points outward
         return normal_vector
 
     def update_normals(self, normal_at_picked_point, label):
@@ -541,31 +574,55 @@ class OptodeSelector:
 
 
 # original implementation using a different and in principle superior projection method
-def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, threshold_ind = None,
-               threshold_col = None, saturation=None, vmin=0, vmax=1, savePath = None, 
-               remove_short=0, flagFontSize=0, flagMarkerSize=8):
-    """Creates a 2D montage of optodes with channels coloured according to a given metric.
+def _robust_scalp_plot(
+    recording,
+    metric,
+    ax,
+    colormap=p.cm.bwr,
+    title=None,
+    threshold_ind=None,
+    threshold_col=None,
+    saturation=None,
+    vmin=0,
+    vmax=1,
+    savePath=None,
+    remove_short=0,
+    flagFontSize=0,
+    flagMarkerSize=8,
+):
+    """Creates a 2D montage of optodes with channels coloured according to some metric.
 
     First version created by Laura Carlton, BU, 2024
 
     Args:
         REQUIRED:
-        recording (): recording object that contains the information of all the measurements
-        metric (numpy array or list): metric to plot with dimensions (num_channels) #FIXME this should probably changed to an xarray that contains a channel coordinate for each entry
+        recording: recording object that contains the information of all the
+            measurements
+        metric (numpy array or list): metric to plot with dimensions (num_channels)
+            #FIXME this should probably changed to an xarray that contains a channel
+            # coordinate for each entry
         ax (matplotlib.pyplot axes object): the axes object on which to create the plot
 
         OPTIONAL:
         colormap (matplotlib colormap): colormap (default is bwr)
-        title (string): if you want to automatically add a title to the plot (default is None)
-        threshold_ind (int): threshold index to include in the colorbar (default is None)
-        threshold_col (list): mask for for channels that are above or below a certain threshold (if 1 then alpha is set to 0.4 so channel is faded) (default is None)
-        saturation (list): mask for channels that are saturated (if 1 then color is grey) (default is None)
+        title (string): if you want to automatically add a title to the plot
+            (default is None)
+        threshold_ind (int): threshold index to include in the colorbar
+            (default is None)
+        threshold_col (list): mask for for channels that are above or below a certain
+            threshold (if 1 then alpha is set to 0.4 so channel is faded)
+            (default is None)
+        saturation (list): mask for channels that are saturated (if 1 then color is
+            grey) (default is None)
         vmin (int or float): minimum value in colorbar (default is 0)
         vmax (int or float): maximum value in colorbar (default is 1)
         savePath (string): path to save the figure (default is None)
-        remove_short (boolean): flag to not plot short separation channels (default is 0 so they do get plotted)
-        flagFontSize (boolean): change the size of the source/detector labels (default is 0 so no labels)
-        flagMarkerSize (boolean): change the size of the source/detector markers (default is 8)
+        remove_short (boolean): flag to not plot short separation channels
+            (default is 0 so they do get plotted)
+        flagFontSize (boolean): change the size of the source/detector labels
+            (default is 0 so no labels)
+        flagMarkerSize (boolean): change the size of the source/detector markers
+            (default is 8)
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
@@ -589,8 +646,10 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
         pos_sphere_norm = np.sqrt(np.sum(np.square(pos_sphere), axis=1))
         pos_sphere_norm= pos_sphere_norm.reshape(-1,1)
         pos_sphere = np.divide(pos_sphere,pos_sphere_norm)
-        azimuth, elevation, r = cart2sph(pos_sphere[:,0], pos_sphere[:,1], pos_sphere[:,2])
-        elevation = math.pi/2-elevation;
+        azimuth, elevation, r = cart2sph(
+            pos_sphere[:, 0], pos_sphere[:, 1], pos_sphere[:, 2]
+        )
+        elevation = math.pi/2-elevation
         x, y = pol2cart(azimuth,elevation)
         x = x/norm_factor
         y = y/norm_factor
@@ -599,7 +658,7 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
 
     path = cedalion.data.get("10-5-System_Mastoids_EGI129.tsv")
     with path.open("r") as fin:
-        channels_df = pd.read_csv(fin, sep='\t') 
+        channels_df = pd.read_csv(fin, sep='\t')
 
     probe_landmark_pos3D = []
     circular_landmark_pos3D = []
@@ -614,7 +673,13 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
     for u in range(len(landmarks)):
         idx_list = channels_df.index[channels_df['Label']==landmarks.label[u]].tolist()
         if idx_list:
-            circular_landmark_pos3D.append([channels_df['X'][idx_list[0]],channels_df['Y'][idx_list[0]], channels_df['Z'][idx_list[0]]])
+            circular_landmark_pos3D.append(
+                [
+                    channels_df["X"][idx_list[0]],
+                    channels_df["Y"][idx_list[0]],
+                    channels_df["Z"][idx_list[0]],
+                ]
+            )
             landmark_pos3D = landmarks[u,0:3].to_numpy().tolist()
             landmark_pos3D.extend([1])
             probe_landmark_pos3D.append(landmark_pos3D)
@@ -624,8 +689,12 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
     x,y = pol2cart(landmarks2D_theta, landmarks2D_phi)
 
     norm_factor = max(np.sqrt(np.add(np.square(x),np.square(y))))
-    temp = np.linalg.inv(np.matmul(np.transpose(probe_landmark_pos3D),probe_landmark_pos3D))
-    tranformation_matrix = np.matmul(temp,np.matmul(np.transpose(probe_landmark_pos3D),circular_landmark_pos3D))        
+    temp = np.linalg.inv(
+        np.matmul(np.transpose(probe_landmark_pos3D), probe_landmark_pos3D)
+    )
+    tranformation_matrix = np.matmul(
+        temp, np.matmul(np.transpose(probe_landmark_pos3D), circular_landmark_pos3D)
+    )
 
     skipped_channels = []
     skipped_detectors = []
@@ -633,7 +702,7 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
     data = recording["amp"] # .data[0]
     nMeas = len(data.channel)
 
-    if remove_short == 1: # then remove any channels that are less than 10mm 
+    if remove_short == 1: # then remove any channels that are less than 10mm
 
 
         for u in range(nMeas):
@@ -641,7 +710,9 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
             sourceIndex =  data.source[u]
             detectorIndex =  data.detector[u]
 
-            dist = xrutils.norm(geo3d.loc[data.source[u]] - geo3d.loc[data.detector[u]], dim="pos")
+            dist = xrutils.norm(
+                geo3d.loc[data.source[u]] - geo3d.loc[data.detector[u]], dim="pos"
+            )
 
 
             if dist < 10:
@@ -649,17 +720,22 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
                     skipped_detectors.append(detectorIndex)
                     skipped_metrics.append(u)
 
-    # if the metrics/threshold_col given include those for short channels, remove them from the array 
+    # if the metrics/threshold_col given include those for short channels,
+    # remove them from the array
     if len(metric) == nMeas//2:
         metric = np.delete(metric,skipped_metrics)
 
-    if type(threshold_col) == list:
+    if type(threshold_col) is list:
         if len(threshold_col) == nMeas//2:
             threshold_col = np.delete(threshold_col,skipped_metrics)
 
     #### scale indices #####
-    sourcePos2DX , sourcePos2DY = convert_optodePos3D_to_circular2D(sources, tranformation_matrix, norm_factor)
-    detectorPos2DX , detectorPos2DY = convert_optodePos3D_to_circular2D(detectors, tranformation_matrix, norm_factor)
+    sourcePos2DX, sourcePos2DY = convert_optodePos3D_to_circular2D(
+        sources, tranformation_matrix, norm_factor
+    )
+    detectorPos2DX, detectorPos2DY = convert_optodePos3D_to_circular2D(
+        detectors, tranformation_matrix, norm_factor
+    )
 
     scale = 1.3
     sourcePos2DX = sourcePos2DX*scale
@@ -676,15 +752,29 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
     #### plot the channels according to the metrics ####
     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = matplotlib.cm.ScalarMappable(cmap=colormap,norm=norm)
-    fontDict_src = dict(color='r', fontweight = 'bold', fontstretch= 'expanded',fontsize = flagFontSize, ha='center',va='center')
-    fontDict_det = dict(color='b', fontweight = 'bold', fontstretch= 'expanded',fontsize = flagFontSize, ha='center',va='center')
+    fontDict_src = dict(
+        color="r",
+        fontweight="bold",
+        fontstretch="expanded",
+        fontsize=flagFontSize,
+        ha="center",
+        va="center",
+    )
+    fontDict_det = dict(
+        color="b",
+        fontweight="bold",
+        fontstretch="expanded",
+        fontsize=flagFontSize,
+        ha="center",
+        va="center",
+    )
 
     i =0
     for u in range(nMeas):
         sourceIndex =  data.source[u]
         detectorIndex =  data.detector[u]
 
-        # skip the short_channels 
+        # skip the short_channels
         if [sourceIndex, detectorIndex] in skipped_channels:
             continue
 
@@ -696,9 +786,9 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
 
 
         try:
-            assert(threshold_col == None)
-        except:
-            if threshold_col[i] == 1: #metric[u] < threshold: 
+            assert(threshold_col is None)
+        except: # noqa: E722 FIXME
+            if threshold_col[i] == 1: #metric[u] < threshold:
                 linestyle = '-'
                 alpha = 0.4
             else:
@@ -709,8 +799,8 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
             alpha=1
 
         try:
-            assert(saturation == None)
-        except:
+            assert(saturation is None)
+        except: # noqa: E722 FIXME
             if saturation[i] == 1:
                 color = '0.7'
                 alpha = 1
@@ -721,22 +811,25 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
 
         ax.plot(x,y, color=color,linestyle=linestyle, linewidth = 2, alpha=alpha)
         if flagFontSize>0:
-            ax.text(x[0], y[0],str(iS),fontdict=fontDict_src) # bbox=dict(color = 'r',boxstyle = "round, pad=0.3", alpha=0.05))
-            ax.text(x[1], y[1], str(iD),fontdict=fontDict_det) # bbox=dict(color='b',boxstyle = "round, pad=0.3", alpha=0.05))
+            # bbox=dict(color = 'r',boxstyle = "round, pad=0.3", alpha=0.05))
+            ax.text(x[0], y[0], str(iS), fontdict=fontDict_src)
+            ax.text(x[1], y[1], str(iD), fontdict=fontDict_det)
         i+=1
 
     ax.plot(head_x,head_y,'k')
 
     if flagMarkerSize>0:
         for u in range(len(sourcePos2DX)):
-            ax.plot(sourcePos2DX[u] , sourcePos2DY[u], 'r.', markersize=flagMarkerSize)
+            ax.plot(sourcePos2DX[u], sourcePos2DY[u], "r.", markersize=flagMarkerSize)
 
         for u in range(len(detectorPos2DX)):
-            ax.plot(detectorPos2DX[u] , detectorPos2DY[u], 'b.',markersize=flagMarkerSize)
+            ax.plot(
+                detectorPos2DX[u], detectorPos2DY[u], "b.", markersize=flagMarkerSize
+            )
 
-    if threshold_ind != None:
+    if threshold_ind is not None:
         ticks = [vmin, (vmin+vmax)//2, threshold_ind, vmax]
-    else:   
+    else:
         ticks = [vmin, (vmin+vmax)//2, vmax]
 
     ax.plot(0, 1 , marker="^",markersize=16)
@@ -746,7 +839,7 @@ def _robust_scalp_plot(recording, metric, ax, colormap=p.cm.bwr, title=None, thr
     p.axis('equal')
     p.axis('off')
 
-    if savePath is not None: 
+    if savePath is not None:
         p.savefig(savePath, dpi=1200)
 
 
@@ -825,16 +918,16 @@ def scalp_plot(
     geo3d: cdt.LabeledPointCloud,
     metric: xr.DataArray | ArrayLike,
     ax,
-    title : str | None = None,
+    title: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
     cmap: str = "bwr",
-    min_dist : Quantity | None = None,
-    min_metric : float | None = None,
-    channel_lw : float = 2.,
-    optode_size : float = 36.,
-    optode_labels : bool = False,
-    cb_label : str | None = None
+    min_dist: Quantity | None = None,
+    min_metric: float | None = None,
+    channel_lw: float = 2.0,
+    optode_size: float = 36.0,
+    optode_labels: bool = False,
+    cb_label: str | None = None,
 ):
     """Creates a 2D plot of the head with channels coloured according to a given metric.
 
@@ -855,6 +948,7 @@ def scalp_plot(
         channel_lw: channel line width
         optode_size: optode marker size
         optode_labels: if True draw optode labels instead of markers
+        cb_label: colorbar label
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
@@ -888,8 +982,8 @@ def scalp_plot(
 
     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     cmap = p.cm.get_cmap(cmap)
-    
-    
+
+
     ax.set_aspect("equal", adjustable="datalim")
 
     # head and ears
@@ -902,7 +996,7 @@ def scalp_plot(
     r = [1., 1.1, 1.0]
     ax.plot( r * np.cos(angles), r * np.sin(angles), "k-")
 
-    
+
     # draw lines for channels
     used_sources = set()
     used_detectors = set()
@@ -934,7 +1028,7 @@ def scalp_plot(
     # /!\ isin with np strings and sets is tricky. probably because of the hash
     s = geo2d.sel(label=geo2d.label.isin(list(used_sources)))
     d = geo2d.sel(label=geo2d.label.isin(list(used_detectors)))
-    
+
     COLOR_SOURCE = "#e41a1c" # colorbrewer red
     COLOR_DETECTOR = "#377eb8" # colorbrewer blue
 

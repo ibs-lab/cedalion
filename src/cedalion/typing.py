@@ -1,3 +1,5 @@
+"""Type aliases for Cedalion dataclasses."""
+
 from __future__ import annotations
 from typing import Annotated, TypeAlias
 

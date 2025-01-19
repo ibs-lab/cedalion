@@ -1,3 +1,5 @@
+"""Recording class definition for timeseries data."""
+
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Optional

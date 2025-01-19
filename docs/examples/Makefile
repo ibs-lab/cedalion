@@ -16,9 +16,12 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
                     head_models/42_1010_system.ipynb \
                     head_models/43_crs_and_headmodel.ipynb
 
-.PHONY: notebooks
+.PHONY: notebooks clean
 
 notebooks: $(EXAMPLE_NOTEBOOKS)
+
+clean:
+	rm -f $(EXAMPLE_NOTEBOOKS)
 
 $(EXAMPLE_NOTEBOOKS): %.ipynb : ../../examples/%.ipynb
 	jupyter nbconvert --ExecutePreprocessor.store_widget_state=True --to notebook \

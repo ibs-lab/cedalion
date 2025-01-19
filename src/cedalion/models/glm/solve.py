@@ -1,3 +1,5 @@
+"""Solve the GLM model."""
+
 from collections import defaultdict
 
 import numpy as np

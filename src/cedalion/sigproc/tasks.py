@@ -70,7 +70,7 @@ def snr(
     """Calculate signal-to-noise ratio (SNR) of timeseries data.
 
     Args:
-        rec (cdc.Recording): The recording object containing the data.
+        rec (Recording): The recording object containing the data.
         snr_thresh (float): The SNR threshold.
         ts_input (str | None, optional): The input time series. Defaults to None.
         aux_obj_output (str, optional): The key for storing the SNR in the auxiliary
@@ -98,7 +98,7 @@ def sd_dist(
     """Calculate source-detector separations and mask channels outside a range.
 
     Args:
-        rec (cdc.Recording): The recording object containing the data.
+        rec (Recording): The recording object containing the data.
         sd_min (Annotated[Quantity, "[length]"]): The minimum source-detector separation.
         sd_max (Annotated[Quantity, "[length]"]): The maximum source-detector separation.
         ts_input (str | None, optional): The input time series. Defaults to None.

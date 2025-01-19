@@ -28,7 +28,10 @@ TAINTED = False
 
 @cdc.validate_schemas
 def prune_ch(
-    amplitudes: cdt.NDTimeSeries, masks: list[cdt.NDTimeSeries], operator: str, flag_drop: bool = True
+    amplitudes: cdt.NDTimeSeries,
+    masks: list[cdt.NDTimeSeries],
+    operator: str,
+    flag_drop: bool = True,
 ):
     """Prune channels from the the input data array using quality masks.
 
@@ -793,10 +796,9 @@ def detect_outliers_std(
     """Detect outliers in fNIRSdata based on standard deviation of signal.
 
     Args:
-        ts (:class:`NDTimeSeries`, (time, channel, *)): fNIRS timeseries data
-        t_window (:class:`Quantity`): time window over which to calculate standard
-            deviations
-        iqr_threshold: interquartile range threshold (detect outlier as any standard
+        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
+        t_window :class:`Quantity`: time window over which to calculate std. deviations
+        iqr_threshold: interquartile range threshold (detect outlier as any std.
             deviation outside iqr_threshold * [25th percentile, 75th percentile])
 
     Returns:

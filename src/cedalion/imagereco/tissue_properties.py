@@ -1,3 +1,5 @@
+"""Tissue properties for light transport simulation."""
+
 from enum import Enum, auto
 from typing import Dict
 

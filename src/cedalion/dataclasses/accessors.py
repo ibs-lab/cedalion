@@ -1,3 +1,5 @@
+"""Accessors for Cedalion data types."""
+
 from typing import Annotated, Dict, List, Union
 
 import numpy as np

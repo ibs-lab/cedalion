@@ -1,3 +1,5 @@
+"""Module for reading photogrammetry output file formats."""
+
 import cedalion.dataclasses as cdc
 import numpy as np
 from collections import OrderedDict

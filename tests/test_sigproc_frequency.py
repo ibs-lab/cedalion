@@ -117,5 +117,5 @@ def test_freq_filter_lowpass(timeseries):
 
     assert after_y1 == pytest.approx(before_y1, rel=0.005)  #  f1 remains intact
     assert after_y2 < (before_y2 / 100)  # f2 got filtered.
-    assert after_y12_1 == pytest.approx(before_y1, rel=0.005) 
+    assert after_y12_1 == pytest.approx(before_y1, rel=0.005)
     assert after_y12_2 < (before_y2 / 100)
