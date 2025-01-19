@@ -19,15 +19,23 @@ def test_sci(rec):
 def test_psp(rec):
     _, _ = quality.psp(rec["amp"], 2 * units.s, psp_thresh=0.1)
 
-#def test_psp_alternative(rec):
-#    _, _ = quality._psp_alternative(rec["amp"], 2 * units.s, psp_thresh=0.1)
-
-
 def test_snr(rec):
     _, _ = quality.snr(rec["amp"], snr_thresh=2.0)
 
-def test_gvtd(rec):
-    _ = quality.gvtd(rec["amp"])
+@pytest.mark.parametrize(
+    "stat_type",
+    [
+        "default",
+        "histogram_mode",
+        "kdensity_mode",
+        "parabolic_mode",
+        "median",
+        "mean",
+        "MAD",
+    ],
+)
+def test_gvtd(rec, stat_type):
+    _, _ = quality.gvtd(rec["amp"], stat_type=stat_type)
 
 
 def test_mean_amp(rec):
