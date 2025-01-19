@@ -201,6 +201,8 @@ def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
     od.time.attrs["units"] = units.s
     od_filtered = od.cd.freq_filter(fcut_min, fcut_max, 4)
 
+    od_filtered = od_filtered.pint.dequantify() # OD is dimensionless
+
     # Step 1: Find the matrix of the temporal derivatives
     dataDiff = od_filtered - od_filtered.shift(time=-1)
 
@@ -212,6 +214,9 @@ def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
     GVTD = GVTD.squeeze()
     GVTD.values = np.hstack([0, GVTD.values[:-1]])
     GVTD = GVTD.drop_vars("wavelength")
+
+    # Step 4: Scale to have units of OD/s
+    GVTD *= freq.sampling_rate(amplitudes)
 
     # Apply threshold mask
     thresh = _get_gvtd_threshold(GVTD, stat_type=stat_type, n_std=n_std)
@@ -254,6 +259,10 @@ def _get_gvtd_threshold(
     Returns:
         thresh (float): the threshold above which GVTD is considered motion.
     """
+
+    units = GVTD.pint.units
+    GVTD = GVTD.pint.dequantify()
+
     if stat_type == "default":
         min_counts_per_bin = 5
 
@@ -310,10 +319,9 @@ def _get_gvtd_threshold(
         thresh = run_mode + n_std * left_std_run
 
     elif stat_type == "kdensity_mode":
-        # Assuming gvtdTimeTrace is a numpy array
-        gvtd_log = np.log(GVTD)
-        gvtd_log = gvtd_log.fillna(1e-16)
-        gvtd_log = gvtd_log.where(~np.isinf(gvtd_log), 1e-16)
+        # consider only gvtd values that are finite and positive
+        mask = np.isfinite(GVTD) & (GVTD > 0)
+        gvtd_log = np.log(GVTD[mask])
 
         # Kernel density estimate for the log of gvtdTimeTrace
         kde = gaussian_kde(gvtd_log)
@@ -433,7 +441,7 @@ def _get_gvtd_threshold(
     else:
         raise ValueError(f"Unknown stat '{stat_type}'")
 
-    return thresh
+    return thresh * units
 
 
 @cdc.validate_schemas
