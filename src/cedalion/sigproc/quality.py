@@ -175,15 +175,15 @@ def psp(
 
 
 @cdc.validate_schemas
-def gvtd(amplitudes: NDTimeSeries, statType: str = "default", n_std: int = 10):
+def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
     """Calculate GVTD metric based on :cite:t:`Sherafati2020`.
 
     Args:
         amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
             series
 
-        statType (string): statistic of GVTD time trace to use to set the threshold
-            (see get_gvtd_threshold). Default = 'default'
+        stat_type (string): statistic of GVTD time trace to use to set the threshold
+            (see _get_gvtd_threshold). Default = 'default'
 
         n_std (int): number of standard deviations for consider above the statistic of
             interest.
@@ -214,7 +214,7 @@ def gvtd(amplitudes: NDTimeSeries, statType: str = "default", n_std: int = 10):
     GVTD = GVTD.drop_vars("wavelength")
 
     # Apply threshold mask
-    thresh = get_gvtd_threshold(GVTD, statType=statType, n_std=n_std)
+    thresh = _get_gvtd_threshold(GVTD, stat_type=stat_type, n_std=n_std)
 
     GVTD_mask = xrutils.mask(GVTD, CLEAN)
     GVTD_mask = GVTD_mask.where(GVTD > thresh, other=TAINTED)
@@ -222,20 +222,23 @@ def gvtd(amplitudes: NDTimeSeries, statType: str = "default", n_std: int = 10):
     return GVTD, GVTD_mask
 
 
-def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int = 10):
+def _get_gvtd_threshold(
+    GVTD: NDTimeSeries,
+    stat_type: str = "default",
+    n_std: int = 10,
+):
     """Calculate GVTD threshold based on :cite:t:`Sherafati2020`.
 
     Args:
         GVTD (:class:`NDTimeSeries`, (time,)): GVTD timetrace
 
-        statType (string): statistic of GVTD time trace to use to set the threshold
-            (see get_gvtd_threshold):
+        stat_type (string): statistic of GVTD time trace to use to set the threshold
 
             - *default*: threshold is the mode plus the distance between the smallest
               GVTD value and the mode.
             - *histogram_mode*: threshold is the mode plus the standard deviation of the
               points below the mode * n_std.
-            - *Kdensity_mode*: use kdensity estimation to find the mode the gvtd
+            - *kdensity_mode*: use kdensity estimation to find the mode the gvtd
               distribution. threshold is this mode pluts the standard deviation of
               points below the mode * n_std.
             - *parabolic_mode*: use parabolic interpolation to estimate the mode.
@@ -251,7 +254,7 @@ def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int
     Returns:
         thresh (float): the threshold above which GVTD is considered motion.
     """
-    if statType == "default":
+    if stat_type == "default":
         min_counts_per_bin = 5
 
         n_bins = int(np.round(GVTD.shape[0] / min_counts_per_bin))
@@ -275,7 +278,7 @@ def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int
         # deviation of the data-points below the mode
         thresh = run_mode + min_val_to_mode_dist
 
-    elif statType == "histogram_mode":
+    elif stat_type == "histogram_mode":
         min_counts_per_bin = 5
 
         n_bins = int(np.round(GVTD.shape[0] / min_counts_per_bin))
@@ -306,7 +309,7 @@ def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int
         # deviation of the data-points below the mode
         thresh = run_mode + n_std * left_std_run
 
-    elif statType == "Kdensity_mode":
+    elif stat_type == "kdensity_mode":
         # Assuming gvtdTimeTrace is a numpy array
         gvtd_log = np.log(GVTD)
         gvtd_log = gvtd_log.fillna(1e-16)
@@ -337,7 +340,7 @@ def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int
         # deviation of the data-points below the mode
         thresh = run_mode + n_std * left_std_run
 
-    elif statType == "parabolic_mode":
+    elif stat_type == "parabolic_mode":
         min_counts_per_bin = 5
 
         n_bins = int(np.round(GVTD.shape[0] / min_counts_per_bin))
@@ -380,7 +383,7 @@ def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int
         # deviation of the data-points below the mode
         thresh = run_mode + n_std * left_std_run
 
-    elif statType == "median":
+    elif stat_type == "median":
         # Assuming gvtdTimeTrace is a numpy array
         run_median = np.median(GVTD)
 
@@ -400,7 +403,7 @@ def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int
         # deviation of the data-points below the median
         thresh = run_median + n_std * left_std_run
 
-    elif statType == "mean":
+    elif stat_type == "mean":
         # Assuming gvtdTimeTrace is a numpy array
         run_mean = np.mean(GVTD)
 
@@ -420,7 +423,7 @@ def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int
         # deviation of the data-points below the mean
         thresh = run_mean + n_std * left_std_run
 
-    elif statType == "MAD":
+    elif stat_type == "MAD":
         # Calculate the MAD (median absolute deviation) with a scaling factor of 1
         run_mad = median_abs_deviation(GVTD, scale=1)
 
@@ -428,7 +431,7 @@ def get_gvtd_threshold(GVTD: NDTimeSeries, statType: str = "default", n_std: int
         thresh = n_std * run_mad
 
     else:
-        raise ValueError(f"Unknown stat '{statType}'")
+        raise ValueError(f"Unknown stat '{stat_type}'")
 
     return thresh
 

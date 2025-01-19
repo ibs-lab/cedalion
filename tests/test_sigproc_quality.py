@@ -27,7 +27,7 @@ def test_snr(rec):
     [
         "default",
         "histogram_mode",
-        "Kdensity_mode",
+        "kdensity_mode",
         "parabolic_mode",
         "median",
         "mean",
@@ -35,7 +35,7 @@ def test_snr(rec):
     ],
 )
 def test_gvtd(rec, stat_type):
-    _, _ = quality.gvtd(rec["amp"], statType=stat_type)
+    _, _ = quality.gvtd(rec["amp"], stat_type=stat_type)
 
 
 def test_mean_amp(rec):
