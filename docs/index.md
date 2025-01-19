@@ -6,17 +6,38 @@ A python-based framework for the data driven analysis of multimodal fNIRS and DO
 
 ```{toctree}
 :maxdepth: 1
-:caption: Contents
+:caption: General Info
 
 rationale.md
 getting_started/index.md
 data_structures/index.md
-examples
+
 community/index.md
-API <api/modules.rst>
-references.rst
 LICENSE.md
 ```
+
+```{toctree}
+:maxdepth: 1
+:caption: Package Features
+
+data_io/index
+sigproc/index
+machine_learning/index
+image_reco/index
+plot_vis/index
+synth/index
+```
+
+
+```{toctree}
+:maxdepth: 1
+:caption: Reference
+
+API reference <api/modules.rst>
+Bibliography <references.rst>
+All examples <examples>
+```
+
 
 ## Special Thanks
 We cordially thank our friends and long-term collaborators at the BOAS Lab for their contributions and support in starting this project.

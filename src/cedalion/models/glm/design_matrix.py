@@ -1,3 +1,5 @@
+"""Functions to create the design matrix for the GLM."""
+
 import numpy as np
 import pandas as pd
 import xarray as xr

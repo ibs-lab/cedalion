@@ -47,6 +47,10 @@ dependencies:
   - myst-parser
   - sphinx-autodoc-typehints
   - sphinx_rtd_theme=2.0.0
+  - sphinx-autoapi
+
+  - hatchling
+  - hatch-vcs
 
   - PyQt
   - ipympl
@@ -60,4 +64,5 @@ dependencies:
       - snirf==0.8
       - pmcx==0.3.3
       - sphinxcontrib-bibtex
+      - hatch-conda
       

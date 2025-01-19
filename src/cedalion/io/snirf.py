@@ -1,3 +1,5 @@
+"""Contains functionality for handling .snirf files."""
+
 import logging
 import re
 from collections import OrderedDict

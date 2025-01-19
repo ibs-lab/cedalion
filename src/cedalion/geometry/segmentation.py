@@ -47,7 +47,9 @@ def voxels_from_segmentation(
     )
 
     if fill_holes_in_mask:
-        combined_mask = binary_fill_holes(combined_mask).astype(combined_mask.dtype)
+        combined_mask = scipy.ndimage.binary_fill_holes(combined_mask).astype(
+            combined_mask.dtype
+        )
 
     voxels = np.argwhere(combined_mask)
 
@@ -81,7 +83,7 @@ def surface_from_segmentation(
         .values
     )
     """ Generate a surface from a segmentation mask.
-        
+
     Parameters
     ----------
     segmentation_mask : xr.DataArray
@@ -92,7 +94,7 @@ def surface_from_segmentation(
         Isovalue for marching cubes, by default 0.9.
     fill_holes_in_mask : bool, optional
         Fill holes in the mask, by default False.
-    
+
     Returns
     -------
     cdc.TrimeshSurface
@@ -100,7 +102,9 @@ def surface_from_segmentation(
 
     """
     if fill_holes_in_mask:
-        combined_mask = scipy.ndimage.binary_fill_holes(combined_mask).astype(combined_mask.dtype)
+        combined_mask = scipy.ndimage.binary_fill_holes(combined_mask).astype(
+            combined_mask.dtype
+        )
 
     vertices, faces, normals, values = marching_cubes(combined_mask, isovalue)
     mesh = trimesh.Trimesh(vertices, faces, vertex_normals=normals)
@@ -120,7 +124,7 @@ def cell_coordinates(volume, flat: bool = False):
     flat : bool, optional
         If True, return coordinates as a flat array, by default False.
 
-    Returns
+    Returns:
     -------
     xr.DataArray
         Cell coordinates in voxel space.
@@ -184,13 +188,13 @@ def segmentation_postprocessing(
     removeAir: bool = True,
     subtractTissues: bool = True
     ) -> dict:
-    """ Postprocessing of the segmented SPM12 MRI segmentation files. 
+    """Postprocessing of the segmented SPM12 MRI segmentation files.
 
     Parameters
     ----------
     segmentation_dir : str
         Directory where the segmented files are stored.
-    mask_files : dict[str, str], optional   
+    mask_files : dict[str, str], optional
         Dictionary containing the filenames of the segmented tissues.
     isSmooth : bool, optional
         Smooth the segmented tissues using Gaussian filter.
@@ -205,14 +209,14 @@ def segmentation_postprocessing(
     subtractTissues : bool, optional
         Subtract tissues from each others
 
-            
-    Returns
+
+    Returns:
     -------
     mask_files : dict
         Dictionary containing the filenames of the postprocessed masks.
 
-    
-    References
+
+    References:
     ----------
     This whole postprocessing is based on the following references:
     :cite:t:`Huang2013`
@@ -234,21 +238,25 @@ def segmentation_postprocessing(
     if isSmooth:
         smt_fil = scipy.ndimage.gaussian_filter
         filter_size = 5
-    
+
         for brain_tissue in ["gray", "whitegray", "cortex"]:
             if brain_tissue in tissues:
                 print("Smoothing %s ..." % brain_tissue)
                 sigma = 0.2
                 truncate = ((filter_size - 1) / 2 - 0.5) / sigma
                 for i in range(img[brain_tissue].shape[2]):
-                    img[brain_tissue][:, :, i] = smt_fil(img[brain_tissue][:, :, i], sigma=sigma, truncate=truncate)
+                    img[brain_tissue][:, :, i] = smt_fil(
+                        img[brain_tissue][:, :, i], sigma=sigma, truncate=truncate
+                    )
 
         if "white" in tissues:
             print("Smoothing WM ...")
             sigma = 0.1
             truncate = ((filter_size - 1) / 2 - 0.5) / sigma
             for i in range(img["white"].shape[2]):
-                img["white"][:, :, i] = smt_fil(img["white"][:, :, i], sigma=sigma, truncate=truncate)
+                img["white"][:, :, i] = smt_fil(
+                    img["white"][:, :, i], sigma=sigma, truncate=truncate
+                )
 
         for csf_tissue in ["csf", "brain"]:
             if csf_tissue in tissues:
@@ -256,29 +264,37 @@ def segmentation_postprocessing(
                 sigma = 0.1
                 truncate = ((filter_size - 1) / 2 - 0.5) / sigma
                 for i in range(img[csf_tissue].shape[2]):
-                    img[csf_tissue][:, :, i] = smt_fil(img[csf_tissue][:, :, i], sigma=sigma, truncate=truncate)
+                    img[csf_tissue][:, :, i] = smt_fil(
+                        img[csf_tissue][:, :, i], sigma=sigma, truncate=truncate
+                    )
 
         print("Smoothing bone ...")
         sigma = 0.4
         truncate = ((filter_size - 1) / 2 - 0.5) / sigma
         for i in range(img["bone"].shape[2]):
-            img["bone"][:, :, i] = smt_fil(img["bone"][:, :, i], sigma=sigma, truncate=truncate)
+            img["bone"][:, :, i] = smt_fil(
+                img["bone"][:, :, i], sigma=sigma, truncate=truncate
+            )
 
 
         print("Smoothing skin ...")
         sigma = 1
         truncate = ((filter_size - 1) / 2 - 0.5) / sigma
         for i in range(img["skin"].shape[2]):
-            img["skin"][:, :, i] = smt_fil(img["skin"][:, :, i], sigma=sigma, truncate=truncate)
+            img["skin"][:, :, i] = smt_fil(
+                img["skin"][:, :, i], sigma=sigma, truncate=truncate
+            )
 
         if "air" in tissues:
             print("Smoothing air ...")
             sigma = 1
             truncate = ((filter_size - 1) / 2 - 0.5) / sigma
             for i in range(img["air"].shape[2]):
-                img["air"][:, :, i] = smt_fil(img["air"][:, :, i], sigma=sigma, truncate=truncate)
+                img["air"][:, :, i] = smt_fil(
+                    img["air"][:, :, i], sigma=sigma, truncate=truncate
+                )
 
-   
+
     print('Creating binary masks...')
     mask = binaryMaskGenerator(np.stack([img[tissue] for tissue in tissues]))
     img["empt"] = mask[0].astype(bool)
@@ -286,7 +302,7 @@ def segmentation_postprocessing(
         img[tissue] = mask[i+1].astype(bool)
 
     # Fix CSF continuity
-    if fixCSF: 
+    if fixCSF:
         print('Fixing CSF continuity...')
         assert "csf" in tissues, "CSF mask is not available"
         se = np.ones((3, 3, 3))
@@ -307,7 +323,9 @@ def segmentation_postprocessing(
         contin = (img["empt"] & dcsf) | (dbone & img[brain_tissue])
         img["csf"] = img["csf"] | contin
 
-        mask = binaryMaskGenerator(np.stack((img["csf"], img["bone"], img[brain_tissue])))
+        mask = binaryMaskGenerator(
+            np.stack((img["csf"], img["bone"], img[brain_tissue]))
+        )
         img["csf"] = mask[1].astype(bool)
         img["bone"] = mask[2].astype(bool)
         img[brain_tissue] = mask[3].astype(bool)
@@ -319,7 +337,9 @@ def segmentation_postprocessing(
             if brain_tissue in tissues:
                 print('Removing disconnected voxels for %s...' % brain_tissue)
                 thres = 30
-                img[brain_tissue] = remove_small_objects(img[brain_tissue], min_size=thres)
+                img[brain_tissue] = remove_small_objects(
+                    img[brain_tissue], min_size=thres
+                )
 
         if "white" in tissues:
             print('Removing disconnected voxels for WM...')
@@ -332,7 +352,7 @@ def segmentation_postprocessing(
                 siz, _ = sizeOfObject(img[csf_tissue])
                 try:
                     thres = siz[3]+1
-                except:
+                except IndexError:
                     thres = 3
                 img[csf_tissue] = remove_small_objects(img[csf_tissue], min_size=thres)
 
@@ -344,7 +364,7 @@ def segmentation_postprocessing(
         siz, _ = sizeOfObject(img["skin"])
         try:
             thres = siz[1]+1
-        except:
+        except IndexError:
             thres = 3
         img["skin"] = remove_small_objects(img["skin"], min_size=thres)
 
@@ -362,7 +382,11 @@ def segmentation_postprocessing(
         # Generate unassigned voxels (empty voxels)
         # usually all empty voxels will be labelled in two loops
         for i in range(2):
-            img_fil = {tissue: img[tissue].astype(float)*255 for tissue in tissues if tissue != "empt"}
+            img_fil = {
+                tissue: img[tissue].astype(float) * 255
+                for tissue in tissues
+                if tissue != "empt"
+            }
             smt_fil = scipy.ndimage.gaussian_filter
             filter_size = 5
             sigma = 1
@@ -370,23 +394,29 @@ def segmentation_postprocessing(
 
             for tissue in tissues:
                 for i in range(img_fil[tissue].shape[2]):
-                    img_fil[tissue][:, :, i] = smt_fil(img_fil[tissue][:, :, i], sigma=sigma, truncate=truncate)
+                    img_fil[tissue][:, :, i] = smt_fil(
+                        img_fil[tissue][:, :, i], sigma=sigma, truncate=truncate
+                    )
 
-            
-            mask = binaryMaskGenerator(np.stack([img_fil[tissue] for tissue in tissues]))
-            img_fil = {tissue: mask[i+1].astype(bool) for i, tissue in enumerate(tissues)}
+
+            mask = binaryMaskGenerator(
+                np.stack([img_fil[tissue] for tissue in tissues])
+            )
+            img_fil = {
+                tissue: mask[i + 1].astype(bool) for i, tissue in enumerate(tissues)
+            }
 
             for tissue in tissues:
                 img[tissue] = (img["empt"] & img[tissue]) | img_fil[tissue]
-            
+
             empt_and_fil = [(img["empt"] & img_fil[tissue]) for tissue in tissues]
-            img["empt"] = np.logical_xor(img["empt"], 
+            img["empt"] = np.logical_xor(img["empt"],
                                          reduce(np.logical_or, empt_and_fil))
 
             # Relabel each empty voxel to its nearest tissue type
             # The Gaussian filter is used to calculate distances, and max operation
             # relabels each empty voxel based on the distances.
-    
+
     # remoe air cavities
     if removeAir:
         print('Removing outside air...')
@@ -407,7 +437,7 @@ def segmentation_postprocessing(
         temp = scipy.ndimage.binary_erosion(temp, structure=se_erode)
         img["air"] = np.logical_and(img["air"], temp)
 
-    # Subtract tissues from each others 
+    # Subtract tissues from each others
     if subtractTissues:
         print('Subtracting tissues from each others...')
         # from in to outside
@@ -430,7 +460,10 @@ def segmentation_postprocessing(
     # Save masks
     for tissue in tissues:
         img[tissue] = nib.Nifti1Image(img[tissue].astype(float), affine[tissue])
-        nib.save(img[tissue], os.path.join(segmentation_dir, ''.join(['mask_', tissue, '.nii'])))
+        nib.save(
+            img[tissue],
+            os.path.join(segmentation_dir, "".join(["mask_", tissue, ".nii"])),
+        )
 
 
     mask_files = {tissue: ''.join(['mask_', tissue, '.nii']) for tissue in tissues}

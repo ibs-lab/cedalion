@@ -1,3 +1,5 @@
+"""Module for reading and writing probe geometry files."""
+
 import numpy as np
 import xarray as xr
 import trimesh
@@ -18,8 +20,8 @@ def load_tsv(tsv_fname: str, crs: str='digitized', units: str='mm') -> xr.DataAr
     crs : str
         Coordinate reference system of the points.
     units : str
-        
-    Returns
+
+    Returns:
     -------
     xr.DataArray
         Optodes or landmarks as a Data
@@ -28,7 +30,7 @@ def load_tsv(tsv_fname: str, crs: str='digitized', units: str='mm') -> xr.DataAr
         lines = f.readlines()
     lines = [line.split() for line in lines]
 
-    data = OrderedDict([(line[0], np.array([float(line[1]), float(line[2]), 
+    data = OrderedDict([(line[0], np.array([float(line[1]), float(line[2]),
                                             float(line[3])])) for line in lines])
     # Check if tsv_type is optodes
     if all([k[0] in ['S', 'D'] for k in data.keys()]):
@@ -51,13 +53,14 @@ def load_tsv(tsv_fname: str, crs: str='digitized', units: str='mm') -> xr.DataAr
                                      types=types, units=units)
         return geo3d
     elif tsv_type == 'landmarks':
-        landmarks = xr.DataArray(np.array(list(data.values())),
-                                 dims=['label', crs],
-		                         coords={"label": ("label", list(data.keys())),
-					    				 "type": ("label", [PointType.LANDMARK] \
-                                                           * len(data))
-                                        }
-                                )
+        landmarks = xr.DataArray(
+            np.array(list(data.values())),
+            dims=["label", crs],
+            coords={
+                "label": ("label", list(data.keys())),
+                "type": ("label", [PointType.LANDMARK] * len(data)),
+            },
+        )
         return landmarks
     return data
 
@@ -72,7 +75,7 @@ def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
     crs : str
         Coordinate reference system of the landmarks.
 
-    Returns
+    Returns:
     -------
     xr.DataArray
         Landmarks as a DataArray.
@@ -116,7 +119,7 @@ def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
     return result
 
 
-def save_mrk_json(fame: str, landmarks: xr.DataArray, crs: str):
+def save_mrk_json(fname: str, landmarks: xr.DataArray, crs: str):
     """Save landmarks to a JSON file.
 
     Parameters
@@ -154,7 +157,7 @@ def read_digpts(fname: str, units: str="mm") -> xr.DataArray:
     units : str
         Units of the points.
 
-    Returns
+    Returns:
     -------
     xr.DataArray
         Digitized points as a DataArray.
@@ -190,7 +193,7 @@ def read_einstar_obj(fname: str) -> TrimeshSurface:
     fname : str
         Path to the file.
 
-    Returns
+    Returns:
     -------
     TrimeshSurface
         Triangle

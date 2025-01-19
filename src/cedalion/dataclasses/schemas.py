@@ -1,3 +1,5 @@
+"""Data array schemas and utilities to build labeled data arrays."""
+
 import functools
 import inspect
 import typing
@@ -148,7 +150,7 @@ def build_labeled_points(
     """Build a labeled point cloud data array.
 
     Args:
-        coordinates (ArrayLike, optional): The coordinates of the points. Defaults to None.
+        coordinates (ArrayLike, optional): The coordinates of the points. Default: None.
         crs (str, optional): The coordinate system. Defaults to "pos".
         units (Optional[pint.Unit | str], optional): The units of the coordinates.
             Defaults to "1".
