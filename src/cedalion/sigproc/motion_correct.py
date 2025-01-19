@@ -5,6 +5,8 @@ import xarray as xr
 from scipy.interpolate import UnivariateSpline
 from scipy.linalg import svd
 from scipy.signal import savgol_filter
+import pywt
+
 
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
@@ -12,11 +14,10 @@ import cedalion.xrutils as xrutils
 from cedalion.sigproc.frequency import sampling_rate
 from cedalion import units, Quantity
 
-from .quality import (detect_baselineshift, detect_outliers, id_motion,
-                      id_motion_refine)
+from .quality import detect_baselineshift, detect_outliers, id_motion, id_motion_refine
 
 
-#%% SPLINE
+# %% SPLINE
 @cdc.validate_schemas
 def motion_correct_spline(
     fNIRSdata: cdt.NDTimeSeries, tIncCh: cdt.NDTimeSeries, p: float
@@ -51,7 +52,7 @@ def motion_correct_spline(
             dodSpline_chan = channel.copy()
 
             # get list of start and finish of each motion artifact segment
-            lstMA = np.where(tInc_channel ==0)[0]
+            lstMA = np.where(tInc_channel == 0)[0]
             if len(lstMA) != 0:
                 temp = np.diff(tInc_channel.values.astype(int))
                 lstMs = np.where(temp == -1)[0]
@@ -157,7 +158,7 @@ def motion_correct_spline(
     return dodSpline
 
 
-#%% COMPUTE WINDOW
+# %% COMPUTE WINDOW
 def compute_window(
     SegLength: cdt.NDTimeSeries, dtShort: Quantity, dtLong: Quantity, fs: Quantity
 ):
@@ -183,8 +184,9 @@ def compute_window(
         wind = np.floor(SegLength / 10)
     return int(wind)
 
+
 # FIXME frame_size -> unit
-#%% SPLINESG
+# %% SPLINESG
 @cdc.validate_schemas
 def motion_correct_splineSG(
     fNIRSdata: cdt.NDTimeSeries,
@@ -226,11 +228,11 @@ def motion_correct_splineSG(
     # remove padding
     dodSpline = dodSpline.transpose("channel", "wavelength", "time")
     dodSpline = dodSpline[:, :, extend:-extend]
-    #dodSpline = (
+    # dodSpline = (
     #    dodSpline.stack(measurement=["channel", "wavelength"])
     #    .sortby("wavelength")
     #    .pint.dequantify()
-    #)
+    # )
 
     # apply SG filter
     K = 3
@@ -248,7 +250,7 @@ def motion_correct_splineSG(
 
 
 # FIXME nSV unit or simply float?
-#%% PCA
+# %% PCA
 # @cdc.validate_schemas
 def motion_correct_PCA(
     fNIRSdata: cdt.NDTimeSeries, tInc: cdt.NDTimeSeries, nSV: Quantity = 0.97
@@ -272,9 +274,8 @@ def motion_correct_PCA(
         nSV (Quantity): the number of principal components removed from the data.
     """
 
-
     # apply mask to get only points with motion
-    y, m = xrutils.apply_mask(fNIRSdata, ~tInc, 'drop', 'none')
+    y, m = xrutils.apply_mask(fNIRSdata, ~tInc, "drop", "none")
 
     # stack y and od
     y = (
@@ -282,6 +283,7 @@ def motion_correct_PCA(
         .sortby("wavelength")
         .pint.dequantify()
     )
+
     y_zscore = ( y - y.mean('time') ) / y.std('time')
 
     fNIRSdata_stacked = (
@@ -314,6 +316,7 @@ def motion_correct_PCA(
     yc = yo - np.dot(np.dot(yo, V), np.dot(ev, V.T))
 
     yc = (yc * y.std('time')) + y.mean('time')
+
     # insert cleaned signal back into od
     lstMs = np.where(np.diff(tInc.values.astype(int)) == -1)[0]
     lstMf = np.where(np.diff(tInc.values.astype(int)) == 1)[0]
@@ -321,11 +324,11 @@ def motion_correct_PCA(
     if len(lstMs) == 0:
         lstMs = np.asarray([0])
     if len(lstMf) == 0:
-        lstMf = np.asarray([len(tInc)-1])
+        lstMf = np.asarray([len(tInc) - 1])
     if lstMs[0] > lstMf[0]:
         lstMs = np.insert(lstMs, 0, 0)
     if lstMs[-1] > lstMf[-1]:
-        lstMf = np.append(lstMf, len(tInc)-1)
+        lstMf = np.append(lstMf, len(tInc) - 1)
 
     lstMb = lstMf - lstMs
 
@@ -387,7 +390,7 @@ def motion_correct_PCA(
     return fNIRSdata_cleaned, nSV, svs
 
 
-#%% PCA RECURSE
+# %% PCA RECURSE
 def motion_correct_PCA_recurse(
     fNIRSdata: cdt.NDTimeSeries,
     t_motion: Quantity = 0.5,
@@ -543,3 +546,161 @@ def tddr(ts: cdt.NDTimeSeries):
     signal_corrected = (signal_low_corrected + signal_high + signal_mean) * unit
 
     return signal_corrected
+
+def pad_to_power_2(signal):
+    """Pad signal to next power of 2."""
+    n = int(np.ceil(np.log2(len(signal))))
+    padded_length = 2**n
+    padded = np.zeros(padded_length)
+    padded[:len(signal)] = signal
+    return padded, len(signal)
+
+def process_coefficients(coeffs, iqr_factor, signal_length):
+    """Deletes outlier coefficients based on IQR."""
+    n = coeffs.shape[0]
+    n_levels = coeffs.shape[1] - 1
+
+    # Process each level
+    for j in range(n_levels):
+        curr_length = signal_length // (2**j) if j > 0 else signal_length
+        #n_blocks = min(2**j, 8)  # Limit number of blocks for speed
+        n_blocks = 2**j
+        block_length = n // n_blocks
+
+        for b in range(n_blocks):
+            start_idx = b * block_length
+            end_idx = start_idx + block_length
+            coeff_block = coeffs[start_idx:end_idx, j+1]
+
+            # Compute statistics on valid data length
+            valid_coeffs = coeff_block[:curr_length]
+            q25, q75 = np.percentile(valid_coeffs, [25, 75])
+            iqr_val = q75 - q25
+
+            # Set thresholds
+            upper = q75 + iqr_factor * iqr_val
+            lower = q25 - iqr_factor * iqr_val
+
+            # Zero out outliers
+            coeffs[start_idx:end_idx, j+1] = np.where(
+                (coeff_block > upper) | (coeff_block < lower),
+                0,
+                coeff_block
+            )
+
+    return coeffs
+
+def mad(x):
+    """Compute Median Absolute Deviation."""
+    median = np.median(x)
+    return np.median(np.abs(x - median))
+
+def normalize_signal(signal, wavelet='db2'):
+    """Normalize signal by its noise level using MAD of downsampled coefficients.
+
+    Implements Homer3's NormalizationNoise function.
+
+    Args:
+        signal: 1D numpy array containing the signal to normalize
+        wavelet: wavelet to use (default: 'db2')
+
+    Returns:
+        normalized_signal: normalized version of input signal
+        norm_coef: normalization coefficient (multiply by this to denormalize)
+
+    References:
+        :cite:`Huppert2009`
+    """
+    # Get quadrature mirror filter
+    wavelet = pywt.Wavelet(wavelet)
+    qmf = wavelet.dec_lo
+
+    # Circular convolution (equivalent to MATLAB's cconv)
+    c = np.convolve(signal, qmf, mode='full')
+    c = c[:len(signal)]  # Truncate to original length
+
+    # Downsample by 2
+    y_downsampled = signal[::2]
+
+    # Compute median absolute deviation
+    median_abs_dev = mad(y_downsampled)
+
+    if median_abs_dev != 0:
+        norm_coef = 1 / (1.4826 * median_abs_dev)
+        normalized_signal = signal * norm_coef
+    else:
+        norm_coef = 1
+        normalized_signal = signal
+
+    return normalized_signal, norm_coef
+
+def motion_correct_wavelet(od, iqr=1.5, wavelet='db2', level=4):
+    """Wavelet-based motion correction, specializing in spike correction.
+
+    Implements the wavelet-based motion correction algorithm described in
+    :cite:`Molavi2012`, closely following the MATLAB implementation found
+    in Homer3 (:cite:`Huppert2009`)
+
+    Arguments:
+        od: The time series to be corrected. Should have dims channel and wavelength
+        iqr: The interquartile range factor for outlier detection. Set to -1 to disable.
+            Increasing iqr will delete less coefficients.
+        wavelet: The wavelet to use for decomposition (default: 'db2')
+        level: The level of decomposition to use (default: 4)
+
+    Returns:
+        The corrected time series.
+
+    References:
+        Original paper: :cite:`Molavi2012`
+        Implementation based on Homer3 v1.80.2 "hmrR_MotionCorrectWavelet.m" and its
+        dependencies (:cite:`Huppert2009`).
+    """
+    if iqr < 0:
+        return od
+
+    corrected_data = od.copy()
+
+    for ch in od.channel.values:
+        for wl in od.wavelength.values:
+            signal = od.sel(channel=ch, wavelength=wl).pint.dequantify()
+
+            # Pad to power of 2
+            padded_signal, original_length = pad_to_power_2(signal)
+
+            # Remove mean
+            dc_val = np.mean(padded_signal)
+            padded_signal = padded_signal - dc_val
+
+            # Normalize signal
+            normalized_signal, norm_coef = normalize_signal(padded_signal, wavelet)
+
+            # Use SWT for initial decomposition
+            n = int(np.log2(len(normalized_signal)))
+            actual_level = min(level, n-1)
+            coeffs = pywt.swt(normalized_signal, wavelet, level=actual_level)
+
+            # Reshape coefficients for processing
+            coeffs_array = np.column_stack([c[1] for c in coeffs])  #Stack detail coeffs
+            coeffs_array = np.column_stack([coeffs[0][0], coeffs_array])  # Add approx.
+
+            # Process coefficients
+            coeffs_array = process_coefficients(coeffs_array, iqr, original_length)
+
+            # Reconstruct list of tuples for iswt
+            coeffs_list = [(coeffs_array[:, 0], coeffs_array[:, i])
+                          for i in range(1, coeffs_array.shape[1])]
+
+            # Reconstruct
+            corrected = pywt.iswt(coeffs_list, wavelet)
+
+            # Denormalize
+            corrected = corrected / norm_coef
+
+            # Add mean back and trim
+            corrected = corrected[:original_length] + dc_val
+
+            # Store result
+            corrected_data.loc[dict(channel=ch, wavelength=wl)] = corrected
+
+    return corrected_data

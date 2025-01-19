@@ -22,3 +22,6 @@ def test_motion_correct_splineSG_custom_param(rec):
 
 def test_motion_correct_tddr(rec):
     mc.tddr(rec["od"])
+
+def test_motion_correct_wavelets(rec):
+    mc.motion_correct_wavelet(rec["od"], iqr=1.5, wavelet='db2', level=4)
