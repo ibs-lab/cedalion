@@ -222,7 +222,7 @@ def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
     thresh = _get_gvtd_threshold(GVTD, stat_type=stat_type, n_std=n_std)
 
     GVTD_mask = xrutils.mask(GVTD, CLEAN)
-    GVTD_mask = GVTD_mask.where(GVTD > thresh, other=TAINTED)
+    GVTD_mask = GVTD_mask.where(GVTD < thresh, other=TAINTED)
 
     return GVTD, GVTD_mask
 
