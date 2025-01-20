@@ -1,5 +1,6 @@
 """Plotting functions for visualization of montages, meshes, etc."""
 
+from __future__ import annotations
 import math
 
 import matplotlib

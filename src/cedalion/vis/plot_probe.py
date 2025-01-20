@@ -8,6 +8,7 @@ Initial Contributors:
     - Sung Ahn | ahnsm@bu.edu | 2024
 """
 
+from __future__ import annotations
 import sys
 import time
 import warnings

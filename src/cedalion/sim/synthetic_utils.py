@@ -3,8 +3,8 @@ import numpy as np
 from typing import Optional, List
 import xarray as xr
 import random
-from typing import Annotated
-from cedalion import Quantity, units
+from cedalion import units
+import cedalion.typing as cdt
 
 TIMING_COLUMNS = ["onset", "duration", "trial_type", "value", "channel"]
 
@@ -54,9 +54,9 @@ def build_event_df(
     trial_types: List[str],
     num_events: Optional[int] = None,
     perc_events: Optional[float] = None,
-    min_dur: Annotated[Quantity, "[time]"] = 10 * units.seconds,
-    max_dur: Annotated[Quantity, "[time]"] = 10 * units.seconds,
-    min_interval: Annotated[Quantity, "[time]"] = None,
+    min_dur: cdt.QTime = 10 * units.seconds,
+    max_dur: cdt.QTime = 10 * units.seconds,
+    min_interval: cdt.QTime = None,
     min_value: float = 1.0,
     max_value: float = 1.0,
     order: str = "random",

@@ -1,5 +1,6 @@
 """Forward model for simulating light transport in the head."""
 
+from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from typing import Optional

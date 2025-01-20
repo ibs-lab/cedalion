@@ -1,5 +1,6 @@
 """Functions for generating synthetic hemodynamic response functions."""
 
+from __future__ import annotations
 import random
 
 import numpy as np

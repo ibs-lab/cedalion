@@ -1,7 +1,7 @@
 """Extract epochs from a time series based on stimulus events."""
 
+from __future__ import annotations
 import logging
-from typing import Annotated
 
 import numpy as np
 import pandas as pd
@@ -21,8 +21,8 @@ def to_epochs(
     ts: cdt.NDTimeSeries,
     df_stim: pd.DataFrame,
     trial_types: list[str],
-    before: Annotated[Quantity, "[time]"],
-    after: Annotated[Quantity, "[time]"],
+    before: cdt.QTime,
+    after: cdt.QTime,
 ):
     """Extract epochs from the time series based on stimulus events.
 

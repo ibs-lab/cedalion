@@ -1,7 +1,7 @@
 """Temporal basis functions for the GLM."""
 
+from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Annotated
 
 import numpy as np
 import pint
@@ -62,10 +62,10 @@ class GaussianKernelsWithTails(TemporalBasisFunction):
 
     def __init__(
         self,
-        t_pre: Annotated[Quantity, "[time]"],
-        t_post: Annotated[Quantity, "[time]"],
-        t_delta: Annotated[Quantity, "[time]"],
-        t_std: Annotated[Quantity, "[time]"],
+        t_pre: cdt.QTime,
+        t_post: cdt.QTime,
+        t_delta: cdt.QTime,
+        t_std: cdt.QTime,
     ):
         super().__init__(convolve_over_duration=False)
         self.t_pre = _to_unit(t_pre, units.s)
@@ -142,10 +142,10 @@ class GaussianKernels(TemporalBasisFunction):
 
     def __init__(
         self,
-        t_pre: Annotated[Quantity, "[time]"],
-        t_post: Annotated[Quantity, "[time]"],
-        t_delta: Annotated[Quantity, "[time]"],
-        t_std: Annotated[Quantity, "[time]"],
+        t_pre: cdt.QTime,
+        t_post: cdt.QTime,
+        t_delta: cdt.QTime,
+        t_std: cdt.QTime,
     ):
         super().__init__(convolve_over_duration=False)
         self.t_pre = _to_unit(t_pre, units.s)
@@ -210,9 +210,9 @@ class Gamma(TemporalBasisFunction):
 
     def __init__(
         self,
-        tau: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        sigma: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        T: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],  # noqa: N803
+        tau: cdt.QTime | dict[str, cdt.QTime],
+        sigma: cdt.QTime | dict[str, cdt.QTime],
+        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.tau = _to_unit(tau, units.s)
@@ -277,9 +277,9 @@ class GammaDeriv(TemporalBasisFunction):
 
     def __init__(
         self,
-        tau: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        sigma: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        T: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],  # noqa: N803
+        tau: cdt.QTime | dict[str, cdt.QTime],
+        sigma: cdt.QTime | dict[str, cdt.QTime],
+        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.tau = _to_unit(tau, units.s)
@@ -349,8 +349,8 @@ class AFNIGamma(TemporalBasisFunction):
     def __init__(
         self,
         p: float | dict[str, float],
-        q: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        T: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],  # noqa: N803
+        q: cdt.QTime | dict[str, cdt.QTime],
+        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.p = p

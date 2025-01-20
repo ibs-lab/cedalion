@@ -77,7 +77,23 @@ myst_substitutions = {
 
 # -- sphinx_autodoc_typehints -------------------------------------------------
 always_use_bars_union = True
+# specifiying a maximum line length will create line breaks in functions signatures
+# and make them easier to read
 maximum_signature_line_length = 88
+
+autodoc_type_aliases = {
+    "NDTimeSeries" : "cdt.NDTimeSeries",
+    "cdt.NDTimeSeries" : "cdt.NDTimeSeries",
+    "LabeledPointCloud" : "cdt.LabeledPointCloud",
+    "cdt.LabeledPointCloud" : "cdt.LabeledPointCloud",
+    "cedalion.Quantity" : "Quantity",
+    "pint.Quantity" : "Quantity",
+    "Quantity" : "Quantity",
+    "ArrayLike" : "ArrayLike",
+    "collections.OrderedDict" : "OrderedDict",
+}
+
+
 
 # -- sphinx_autoapi_-----------------------------------------------------------
 # using autosummary with customized templates as decribed in

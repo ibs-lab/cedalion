@@ -1,8 +1,8 @@
 """Signal quality metrics and channel pruning functionality."""
 
+from __future__ import annotations
 import logging
 from functools import reduce
-from typing import Annotated
 
 import numpy as np
 import pandas as pd
@@ -90,10 +90,10 @@ def prune_ch(
 @cdc.validate_schemas
 def psp(
     amplitudes: NDTimeSeries,
-    window_length: Annotated[Quantity, "[time]"],
+    window_length: cdt.QTime,
     psp_thresh: float,
-    cardiac_fmin: Annotated[Quantity, "[frequency]"] = 0.5 * units.Hz,
-    cardiac_fmax: Annotated[Quantity, "[frequency]"] = 2.5 * units.Hz,
+    cardiac_fmin: cdt.QFrequency = 0.5 * units.Hz,
+    cardiac_fmax: cdt.QFrequency = 2.5 * units.Hz,
 ):
     """Calculate the peak spectral power.
 
@@ -449,8 +449,8 @@ def sci(
     amplitudes: NDTimeSeries,
     window_length: Quantity,
     sci_thresh: float,
-    cardiac_fmin: Annotated[Quantity, "[frequency]"] = 0.5 * units.Hz,
-    cardiac_fmax: Annotated[Quantity, "[frequency]"] = 2.5 * units.Hz,
+    cardiac_fmin: cdt.QFrequency = 0.5 * units.Hz,
+    cardiac_fmax: cdt.QFrequency = 2.5 * units.Hz,
 ):
     """Calculate the scalp-coupling index.
 
@@ -499,8 +499,8 @@ def sci(
 
 def _extract_cardiac(
     amplitudes: NDTimeSeries,
-    cardiac_fmin: Annotated[Quantity, "[frequency]"],
-    cardiac_fmax: Annotated[Quantity, "[frequency]"],
+    cardiac_fmin: cdt.QFrequency,
+    cardiac_fmax: cdt.QFrequency,
 ):
     """Apply a bandpass or highpass filter to extract the cardiac component."""
 
@@ -802,7 +802,7 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
 
 @cdc.validate_schemas
 def detect_outliers_std(
-    ts: cdt.NDTimeSeries, t_window: Annotated[Quantity, "[time]"], iqr_threshold=2
+    ts: cdt.NDTimeSeries, t_window: cdt.QTime, iqr_threshold=2
 ):
     """Detect outliers in fNIRSdata based on standard deviation of signal.
 
@@ -905,7 +905,7 @@ def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold: float = 1.5):
 @cdc.validate_schemas
 def detect_outliers(
     ts: cdt.NDTimeSeries,
-    t_window_std: Annotated[Quantity, "[time]"],
+    t_window_std: cdt.QTime,
     iqr_threshold_std: float = 2,
     iqr_threshold_grad: float = 1.5,
 ):

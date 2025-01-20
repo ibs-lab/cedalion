@@ -1,5 +1,6 @@
 """Functions for generating synthetic artifacts in fNIRS data."""
 
+from __future__ import annotations
 import xarray as xr
 import cedalion.typing as cdt
 import pandas as pd
