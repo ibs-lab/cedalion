@@ -1,6 +1,7 @@
 """Solver for the image reconstruction problem."""
 
 import numpy as np
+import pint
 import xarray as xr
 import cedalion.xrutils as xrutils
 
@@ -15,6 +16,13 @@ def pseudo_inverse_stacked(Adot, alpha=0.01):
     Returns:
         xr.DataArray: Pseudo-inverse of the stacked matrix.
     """
+
+    if "units" in Adot.attrs:
+        units = pint.Unit(Adot.attrs["units"])
+        inv_units = (1/units).units
+    else:
+        inv_units = pint.Unit("1")
+
     AA = Adot.values @ Adot.values.T
     highest_eigenvalue = np.linalg.eig(AA)[0][0].real
 
@@ -29,6 +37,11 @@ def pseudo_inverse_stacked(Adot, alpha=0.01):
         if k in coords:
             del coords[k]
 
-    B = xr.DataArray(B, dims=("flat_vertex", "flat_channel"), coords=coords)
+    B = xr.DataArray(
+        B,
+        dims=("flat_vertex", "flat_channel"),
+        coords=coords,
+        attrs={"units": str(inv_units)},
+    )
 
     return B
