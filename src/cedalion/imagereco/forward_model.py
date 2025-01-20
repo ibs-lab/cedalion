@@ -4,10 +4,12 @@ from dataclasses import dataclass
 import logging
 from typing import Optional
 import os.path
+import warnings
 import sys
 
 import numpy as np
 import pandas as pd
+import pint
 import scipy.sparse
 from scipy.spatial import KDTree
 import trimesh
@@ -660,19 +662,21 @@ class ForwardModel:
         length = xrutils.norm(pts_ras[1] - pts_ras[0], pts_ras.points.crs)
         return length.pint.magnitude.item()
 
-    def _get_fluence_from_mcx(self, i_optode: int, nphoton: int):
+    def _get_fluence_from_mcx(self, i_optode: int, **kwargs) -> np.ndarray:
         """Run MCX simulation to get fluence for one optode.
 
         Args:
-            i_optode (int): Index of the optode.
-            nphoton  (int): Number of photons to simulate.
+            i_optode: Index of the optode.
+            **kwargs: Additional keywords are passed to MCX's configuration dict.
 
         Returns:
             np.ndarray: Fluence in each voxel.
         """
 
+        kwargs.setdefault("nphoton", 1e8)
+
         cfg = {
-            "nphoton": nphoton,
+            "nphoton": kwargs['nphoton'],
             "vol": self.volume,
             "tstart": 0,
             "tend": 5e-9,
@@ -682,17 +686,25 @@ class ForwardModel:
             "prop": self.tissue_properties,
             "issrcfrom0": 1,
             "isnormalized": 1,
-            "outputtype": "fluence",
-            "seed": int(np.floor(np.random.rand() * 1e7)),
-            "issavedet": 1,
+            "outputtype": "fluence", # units: 1/mm^2
+            "issavedet": 0,
             "unitinmm": self.unitinmm,
         }
 
-        import pmcx
-        result = pmcx.run(cfg)
+        # merging default cfg with additional positional arguments
+
+        cfg = { **cfg, **kwargs }
+
+        # if pmcx fails, try pmcxcl
+
+        if "cuda" in cfg and cfg["cuda"]:
+            import pmcx
+            result = pmcx.run(cfg)
+        else:
+            import pmcxcl
+            result = pmcxcl.run(cfg)
 
         fluence = result["flux"][:, :, :, 0]  # there is only one time bin
-        fluence = fluence * cfg["tstep"] / result["stat"]["normalizer"]
 
         return fluence
 
@@ -735,11 +747,13 @@ class ForwardModel:
 
         return result
 
-    def compute_fluence_mcx(self, nphoton: int = 1e8):
+    def compute_fluence_mcx(self, **kwargs):
         """Compute fluence for each channel and wavelength using MCX package.
 
         Args:
-            nphoton (int): Number of photons to simulate.
+            kwargs: key-value pairs are passed to MCX's configuration dict. For example
+                nphoton (int) to control the number of photons to simulate.
+                See https://pypi.org/project/pmcx for further options.
 
         Returns:
             xr.DataArray: Fluence in each voxel for each channel and wavelength.
@@ -776,9 +790,9 @@ class ForwardModel:
             label = self.optode_pos.label.values[i_opt]
             print(f"simulating fluence for {label}. {i_opt+1} / {n_optodes}")
 
-            # run MCX
+            # run MCX or MCXCL
             # shape: [i,j,k]
-            fluence = self._get_fluence_from_mcx(i_opt, nphoton=nphoton)
+            fluence = self._get_fluence_from_mcx(i_opt, **kwargs)
 
             # FIXME shortcut: currently tissue props are wavelength independent -> copy
             for i_wl in range(n_wavelength):
@@ -803,6 +817,7 @@ class ForwardModel:
                 "type": ("label", self.optode_pos.type.values),
                 "wavelength": ("wavelength", wavelengths),
             },
+            attrs={"units": "1 / millimeter ** 2"},
         )
 
         fluence_at_optodes = xr.DataArray(
@@ -813,6 +828,7 @@ class ForwardModel:
                 "optode2": self.optode_pos.label.values,
                 "wavelength": wavelengths,
             },
+            attrs={"units": "1 / millimeter ** 2"},
         )
 
         return fluence_all, fluence_at_optodes
@@ -929,6 +945,7 @@ class ForwardModel:
                 "type": ("label", self.optode_pos.type.values),
                 "wavelength": ("wavelength", wavelengths),
             },
+            attrs={"units": "1 / millimeter ** 2"},
         )
 
         fluence_at_optodes = xr.DataArray(
@@ -939,73 +956,10 @@ class ForwardModel:
                 "optode2": self.optode_pos.label.values,
                 "wavelength": wavelengths,
             },
+            attrs={"units": "1 / millimeter ** 2"},
         )
 
         return fluence_all, fluence_at_optodes
-
-
-    def compute_sensitivity_all(self, fluence_all, fluence_at_optodes):
-        """Compute sensitivity matrix from fluence.
-
-        Args:
-            fluence_all (xr.DataArray): Fluence in each voxel for each wavelength.
-            fluence_at_optodes (xr.DataArray): Fluence at all optode positions for each
-                wavelength.
-
-        Returns:
-            xr.DataArray: Sensitivity matrix for each channel, vertex and wavelength.
-        """
-
-        channels = self.measurement_list.channel.unique().tolist()
-        n_channel = len(channels)
-        wavelengths = self.measurement_list.wavelength.unique().tolist()
-        n_wavelength = len(wavelengths)
-
-        n_brain = self.head_model.brain.nvertices
-        n_scalp = self.head_model.scalp.nvertices
-        Adot_brain = np.zeros((n_channel, n_brain, n_wavelength))
-        Adot_scalp = np.zeros((n_channel, n_scalp, n_wavelength))
-        # Adot = np.zeros((n_channel, n_voxels, n_wavelength)) # FIXME?
-
-        for _, r in self.measurement_list.iterrows():
-            # using the adjoint monte carlo method
-            # see YaoIntesFang2018 and BoasDale2005
-
-            pertubation = (
-                fluence_all.loc[r.source, r.wavelength]
-                * fluence_all.loc[r.detector, r.wavelength]
-            )
-            pertubation = pertubation.values.flatten()
-            normfactor = (
-                fluence_at_optodes.loc[r.source, r.detector, r.wavelength].values
-                + fluence_at_optodes.loc[r.detector, r.source, r.wavelength].values
-            ) / 2
-
-            i_wl = wavelengths.index(r.wavelength)
-            i_ch = channels.index(r.channel)
-
-            Adot_brain[i_ch, :, i_wl] = (
-                pertubation @ self.head_model.voxel_to_vertex_brain / normfactor
-            )
-            Adot_scalp[i_ch, :, i_wl] = (
-                pertubation @ self.head_model.voxel_to_vertex_scalp / normfactor
-            )
-
-        is_brain = np.zeros((n_brain + n_scalp), dtype=bool)
-        is_brain[:n_brain] = True
-
-        # shape [nchannel, nvertices, nwavelength]
-        Adot = np.concatenate([Adot_brain, Adot_scalp], axis=1)
-
-        return xr.DataArray(
-            Adot,
-            dims=["channel", "vertex", "wavelength"],
-            coords={
-                "channel": ("channel", channels),
-                "wavelength": ("wavelength", wavelengths),
-                "is_brain": ("vertex", is_brain),
-            },
-        )
 
 
     def compute_sensitivity(self, fluence_all, fluence_at_optodes):
@@ -1060,6 +1014,18 @@ class ForwardModel:
         # shape [nchannel, nvertices, nwavelength]
         Adot = np.concatenate([Adot_brain, Adot_scalp], axis=1)
 
+        # Adot calculated from fluence has units 1/mm^2. Multiplied with
+        # the voxel volume (mm^3) and the change in absorption coefficient (1/mm)
+        # this yields optical density (1). For the standard head models with 1mm^3 voxel
+        # size, multiplying with the voxel volume is numerically inconsequential.
+        # However, this part of the computation and the fluence normalization in the
+        # different forward models need further testing. Hence, for the moment and for
+        # different voxel sizes a warning is issued.
+        Adot *= self._get_unitinmm()**3
+
+        if self._get_unitinmm() != 1:
+            warnings.warn("voxel size is not 1 mm^3. Check Adot normalization.")
+
         return xr.DataArray(
             Adot,
             dims=["channel", "vertex", "wavelength"],
@@ -1068,6 +1034,7 @@ class ForwardModel:
                 "wavelength": ("wavelength", wavelengths),
                 "is_brain": ("vertex", is_brain),
             },
+            attrs={"units": "mm"},
         )
 
     # FIXME: better name for Adot * ext. coeffs
@@ -1088,7 +1055,17 @@ class ForwardModel:
         wavelengths = sensitivity.wavelength.values
         assert len(wavelengths) == 2
 
+        if "units" in sensitivity.attrs:
+            units_sens = pint.Unit(sensitivity.attrs["units"])
+        else:
+            units_sens = pint.Unit("mm")
+
         ec = cedalion.nirs.get_extinction_coefficients("prahl", wavelengths)
+
+        units_ec = ec.pint.units
+        ec = ec.pint.dequantify()
+
+        units_A = units_sens * units_ec
 
         nchannel = sensitivity.sizes["channel"]
         nvertices = sensitivity.sizes["vertex"]
@@ -1102,6 +1079,60 @@ class ForwardModel:
         A[nchannel:, nvertices:] = ec.sel(chromo="HbR", wavelength=wl2).values * sensitivity.sel(wavelength=wl2) # noqa: E501
         # fmt: on
 
-        A = xr.DataArray(A, dims=("flat_channel", "flat_vertex"))
+        is_brain = np.hstack([sensitivity.is_brain, sensitivity.is_brain])
+        flat_chromo = ["HbO"] * nvertices + ["HbR"] * nvertices
+        flat_wavelength = [wl1] * nchannel + [wl2] * nchannel
+        vertex = np.hstack([np.arange(nvertices), np.arange(nvertices),])
+
+        A = xr.DataArray(
+            A,
+            dims=("flat_channel", "flat_vertex"),
+            coords={
+                "is_brain": ("flat_vertex", is_brain),
+                "chromo": ("flat_vertex", flat_chromo),
+                "vertex": ("flat_vertex", vertex),
+                "wavelength": ("flat_channel", flat_wavelength),
+            },
+            attrs={"units": str(units_A)},
+        )
 
         return A
+
+
+def apply_inv_sensitivity(
+    od: cdt.NDTimeSeries, inv_sens: xr.DataArray
+) -> tuple[xr.DataArray, xr.DataArray]:
+    """Apply the inverted sensitivity matrix to optical density data.
+
+    Args:
+        od: time series of optical density data
+        inv_sens: the inverted sensitivity matrix
+
+    Returns:
+        Two DataArrays for the brain and scalp with the reconcstructed time series per
+        vertex and chromophore.
+    """
+
+    units_str = inv_sens.attrs["units"]
+
+    od_stacked = od.stack({"flat_channel": ["wavelength", "channel"]})
+    od_stacked = od_stacked.pint.dequantify()
+
+    delta_conc = inv_sens @ od_stacked
+
+    # Construct a multiindex for dimension flat_vertex from chromo and vertex.
+    # Afterwards use this multiindex to unstack flat_vertex. The resulting array
+    # has again dimensions vertex and chromo.
+    delta_conc = delta_conc.set_xindex(["chromo", "vertex"])
+    delta_conc = delta_conc.unstack("flat_vertex")
+
+    # unstacking flat_vertex makes is_brain 2D. is_brain[0,:] == is_brain[1,:]
+    is_brain = delta_conc.is_brain[0, :].values
+
+    delta_conc_brain = delta_conc.sel(vertex=is_brain)
+    delta_conc_brain.attrs["units"] = units_str
+
+    delta_conc_scalp = delta_conc.sel(vertex=~is_brain)
+    delta_conc_scalp.attrs["units"] = units_str
+
+    return delta_conc_brain, delta_conc_scalp
