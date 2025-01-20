@@ -6,21 +6,23 @@ from enum import Enum
 from functools import total_ordering
 from typing import Any
 
+import mne
 import numpy as np
 import pint
+import pyvista as pv
 import trimesh
 import vtk
-import mne
 import xarray as xr
-from scipy.spatial import KDTree
 from scipy import sparse
+from scipy.spatial import KDTree
 from vtk.util.numpy_support import vtk_to_numpy
-import pyvista as pv
 
 import cedalion
 import cedalion.typing as cdt
-from cedalion.vtktutils import trimesh_to_vtk_polydata, pyvista_polydata_to_trimesh
 import cedalion.xrutils as xrutils
+from cedalion.errors import CRSMismatchError
+from cedalion.vtktutils import pyvista_polydata_to_trimesh, trimesh_to_vtk_polydata
+
 
 @total_ordering
 class PointType(Enum):
@@ -80,7 +82,9 @@ class Surface(ABC):
     def snap(self, points: cdt.LabeledPointCloud):
         """Snap points to the nearest vertices on the surface."""
         if self.crs != points.points.crs:
-            raise ValueError("CRS mismatch")
+            raise CRSMismatchError.unexpected_crs(
+                expected_crs=self.crs, found_crs=points.points.crs
+            )
 
         if self.units != points.pint.units:
             raise ValueError("units mismatch")

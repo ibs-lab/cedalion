@@ -12,7 +12,7 @@ import cedalion.typing as cdt
 from cedalion import Quantity, units
 from cedalion.sigproc.frequency import freq_filter
 from cedalion.sigproc.epochs import to_epochs
-
+from cedalion.errors import CRSMismatchError
 
 @xr.register_dataarray_accessor("cd")
 class CedalionAccessor:
@@ -136,17 +136,15 @@ class PointsAccessor:
     def _apply_xr_transform(self, transform: cdt.AffineTransform):
         obj = self._obj
 
+        points_crs = self.crs
         from_crs = transform.dims[1]
         to_crs = transform.dims[0]
         transform_units = transform.pint.units
 
         assert transform_units is not None
         assert transform.shape == (4, 4)  # FIXME assume 3D
-        assert from_crs in obj.dims, (
-            f"Coordinate systems of points "
-            f"({from_crs}) and transform "
-            f"({obj.dims}) do not match."
-        )
+        if from_crs not in obj.dims:
+            raise CRSMismatchError.wrong_transform(points_crs, transform.dims)
 
         transform = transform.pint.dequantify()
 
