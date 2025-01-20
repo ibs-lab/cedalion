@@ -1,5 +1,8 @@
 # Installation
 
+Get the latest release of the cedalion toolbox from our public 
+[github repository](https://github.com/ibs-lab/cedalion).
+
 Cedalion depends on many third-party python libraries. To uniformly provide environments 
 containing these dependencies across different platforms (Linux, Windows, MacOS) we rely 
 on the [conda](https://docs.anaconda.com/working-with-conda/packages/install-packages/) 
