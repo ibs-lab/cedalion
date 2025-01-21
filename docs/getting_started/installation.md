@@ -1,7 +1,8 @@
 # Installation
 
 Get the latest release of the cedalion toolbox from our public 
-[github repository](https://github.com/ibs-lab/cedalion).
+[github repository](https://github.com/ibs-lab/cedalion). Releases can be found in
+the `main` branch of the repository wheras development happens in the `dev` branch.
 
 Cedalion depends on many third-party python libraries. To uniformly provide environments 
 containing these dependencies across different platforms (Linux, Windows, MacOS) we rely 
@@ -19,7 +20,9 @@ Clone the git repository to a directory on your machine:
 $ git clone git@github.com:ibs-lab/cedalion.git
 ```
 
-This creates a directory `cedalion` in your current directory.
+This creates a new directory `cedalion` in your current folder. It checks out the latest 
+stable release from the `main` branch. If you intend to contribute to cedalion please 
+check out the `dev` branch.
 
 To create a conda environment named `cedalion` with the necessary dependendencies enter 
 this checked-out directory and run:
@@ -87,9 +90,8 @@ $ hatch run build_docs
 
 ## Production
 
-- TBD
-- currently, no fixed release. not on pypi.
-
+The same procedure as above applies. However, make sure to use a released version
+from the main branch.
 
 
 ## Container Environments
