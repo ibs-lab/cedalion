@@ -1,3 +1,6 @@
+"""Functions to create the design matrix for the GLM."""
+
+from __future__ import annotations
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -34,6 +37,7 @@ def make_design_matrix(
             Options:
                 'closest': Use the closest short channel
                 'max_corr': Use the short channel with the highest correlation
+                'mean': Use the average of all short channels.
 
     Returns:
         A tuple containing the global design_matrix and a list of channel-wise
@@ -46,16 +50,19 @@ def make_design_matrix(
         dm_drift = make_drift_regressors(ts_long, drift_order=drift_order)
         dm = xr.concat([dm, dm_drift], dim="regressor")
 
+
+    channel_wise_regressors = None
+
+    if (short_channel_method is not None) and (ts_short is None):
+        raise ValueError("ts_short may not be None.")
+
     if short_channel_method == "closest":
-        if ts_short is None:
-            raise ValueError("ts_short may not be None.")
         channel_wise_regressors = [closest_short_channel(ts_long, ts_short, geo3d)]
     elif short_channel_method == "max_corr":
-        if ts_short is None:
-            raise ValueError("ts_short may not be None.")
         channel_wise_regressors = [max_corr_short_channel(ts_long, ts_short)]
-    else:
-        channel_wise_regressors = None
+    elif short_channel_method == "mean":
+        dm_short = average_short_channel(ts_short)
+        dm = xr.concat([dm, dm_short], dim="regressor")
 
     return dm, channel_wise_regressors
 
@@ -354,3 +361,20 @@ def max_corr_short_channel(ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries
     )
 
     return regressors
+
+def average_short_channel(ts_short: cdt.NDTimeSeries):
+    """Create a regressor by averaging all short channels.
+
+    Args:
+        ts_short (NDTimeSeries): time series of short channels
+
+    Returns:
+        xr.DataArray: regressors
+    """
+
+    ts_short = ts_short.pint.dequantify()
+    regressor = ts_short.mean("channel").expand_dims("regressor")
+    regressor = regressor.assign_coords({"regressor": ["short"]})
+    regressor = regressor.transpose("time", "regressor", ...)
+
+    return regressor

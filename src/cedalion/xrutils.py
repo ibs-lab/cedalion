@@ -1,6 +1,9 @@
 """Utility functions for xarray objects."""
 
+import warnings
+
 import numpy as np
+import pint
 import xarray as xr
 
 
@@ -186,3 +189,38 @@ def other_dim(data_array: xr.DataArray, *dims: str) -> str:
         raise ValueError("not all provided dimensions found in data_array")
 
     return (array_dims - dims).pop()
+
+
+def coords_from_other(
+    source: xr.DataArray, dims: list[str] = None, **aux_coords
+) -> dict[str, tuple[str, xr.DataArray]]:
+    """Create a dictionary of coordinates from source for matching dims in target.
+
+    Args:
+        source: the DataArray to copy the coordinates from.
+        dims: a list of dimensions names. If specified, copy only coords for those dims.
+        aux_coords: additional key-value pairs to add to the resulting coords dict.
+
+    Returns:
+        A dictionary that can be passed to DataArray.assign_coords.
+    """
+
+    for coord_name, coord_dataarray in source.coords.items():
+        assert len(coord_dataarray.dims) == 1
+        coord_dim = coord_dataarray.dims[0]
+        if dims and coord_dim not in dims:
+            continue
+
+        aux_coords[coord_name] = (coord_dim, coord_dataarray.values)
+
+    return aux_coords
+
+
+def unit_stripping_is_error(is_error : bool = True):
+    if is_error:
+        warnings.simplefilter("error", pint.errors.UnitStrippedWarning)
+    else:
+        for i,f in enumerate(warnings.filters):
+            if f[0] =="error" and f[2] == pint.errors.UnitStrippedWarning:
+                del warnings.filters[i]
+                break

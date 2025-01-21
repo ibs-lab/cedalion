@@ -1,3 +1,5 @@
+"""Validators for common data structures."""
+
 from typing import List, Optional
 
 import pint

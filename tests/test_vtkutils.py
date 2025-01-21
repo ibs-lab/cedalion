@@ -22,7 +22,7 @@ def test_conversion():
     )
 
     vtk_surface = cdc.VTKSurface.from_trimeshsurface(trimesh_surface)
-    
+
     assert trimesh_surface.nfaces == vtk_surface.nfaces
     assert trimesh_surface.nvertices == vtk_surface.nvertices
     assert trimesh_surface.crs == vtk_surface.crs

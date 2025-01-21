@@ -167,9 +167,11 @@ src/cedalion/_version.py
 
 # rendered example notebooks
 docs/examples/*.ipynb
+docs/examples/*/*.ipynb
 
 # API documentation from sphinx-apidoc
 docs/api/*
+_autosummary*/
 
 # vscode settings
 .vscode/
