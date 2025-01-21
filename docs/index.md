@@ -40,6 +40,15 @@ Bibliography <references.rst>
 All examples <examples>
 ```
 
+```{toctree}
+:maxdepth: 1
+:caption: Project
+
+Source code <https://github.com/ibs-lab/cedalion>
+Issues <https://github.com/ibs-lab/cedalion/issues>
+Documentation <https://doc.ibs.tu-berlin.de/cedalion/doc/dev/>
+Changelog <CHANGELOG.md>
+```
 
 ## Special Thanks
 We cordially thank our friends and long-term collaborators at the BOAS Lab for their contributions and support in starting this project.
