@@ -17,6 +17,8 @@ echo "Building html documentation"
 cd ..
 make clean
 
+sphinx-apidoc -f -o api ../src/cedalion
+
 make html
 
 echo "Building tarball"
