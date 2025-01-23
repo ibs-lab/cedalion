@@ -413,6 +413,9 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         self._draw_timeseries()
 
     def _draw_timeseries(self):
+
+        xxlim = self._dataTimeSeries_ax.get_xlim()
+
         self._dataTimeSeries_ax.clear()
 
         if self.snirfData is None:
@@ -517,8 +520,9 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         # Plot lines of aux
         if len(self.aux_sel):
             self.auxplot = self._auxTimeSeries_ax.plot(
-                self.aux_sel.time, self.aux_sel, alpha=0.3, zorder=2
-            )
+                self.aux_sel.time, self.aux_sel, zorder=2, color="r", alpha=0.3, linewidth=0.5
+            )[0]
+#        self.auxplot.set_alpha(0.3)
 
         self._auxTimeSeries_ax.set_ylabel(self.aux_type, rotation=270, ha="right")
         self._auxTimeSeries_ax.yaxis.set_label_position("right")
@@ -647,6 +651,11 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
 
         self._dataTimeSeries_ax.set_ylabel(ylabel)
         self._dataTimeSeries_ax.grid("True", axis="y")
+
+        # set the xlim if desired
+        if xxlim[0] != 0 and xxlim[1] != 1:
+            self._dataTimeSeries_ax.set_xlim(xxlim)
+
         self._dataTimeSeries_ax.figure.canvas.draw()
 
         self.statbar.showMessage("Timeseries Drawn!")
