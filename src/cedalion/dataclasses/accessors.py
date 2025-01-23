@@ -23,7 +23,7 @@ class CedalionAccessor:
         """Initialize the CedalionAccessor.
 
         Args:
-            xarray_obj (xr.DataArray): The DataArray to which this accessor is attached.
+            xarray_obj: The DataArray to which this accessor is attached.
         """
         self._validate(xarray_obj)
         self._obj = xarray_obj
@@ -65,16 +65,16 @@ class CedalionAccessor:
 
         return to_epochs(self._obj, df_stim, trial_types, before, after)
 
-    def freq_filter(self, fmin, fmax, butter_order=4):
+    def freq_filter(self, fmin: float, fmax: float, butter_order: int =4) -> xr.DataArray:
         """Applys a Butterworth filter.
 
         Args:
-            fmin (float): The lower cutoff frequency.
-            fmax (float): The upper cutoff frequency.
-            butter_order (int): The order of the Butterworth filter.
+            fmin: The lower cutoff frequency.
+            fmax: The upper cutoff frequency.
+            butter_order: The order of the Butterworth filter.
 
         Returns:
-            result (xarray.DataArray): The filtered time series.
+            result: The filtered time series.
         """
         array = self._obj
 
@@ -292,11 +292,11 @@ class StimAccessor:
                     f"Stimulus DataFame must have column {column_name}."
                 )
 
-    def rename_events(self, rename_dict):
+    def rename_events(self, rename_dict: Dict[str, str]) -> None:
         """Renames trial types in the DataFrame based on the provided dictionary.
 
         Args:
-            rename_dict (dict): A dictionary with the old trial type as key and the new
+            rename_dict: A dictionary with the old trial type as key and the new
                 trial type as value.
         """
         stim = self._obj

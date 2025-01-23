@@ -70,7 +70,7 @@ class Recording:
         """Get a timeseries object by key.
 
         Args:
-            key (Optional[str]): The key of the timeseries to retrieve. If None, the
+            key: The key of the timeseries to retrieve. If None, the
                 last timeseries is returned.
 
         Returns:
@@ -104,7 +104,7 @@ class Recording:
         """Get a mask by key.
 
         Args:
-            key (Optional[str]): The key of the mask to retrieve. If None, the last
+            key: The key of the mask to retrieve. If None, the last
                 mask is returned.
 
         Returns:
@@ -124,9 +124,9 @@ class Recording:
         """Set a mask.
 
         Args:
-            key (str): The key of the mask to set.
-            value (xr.DataArray): The mask to set.
-            overwrite (bool): Whether to overwrite an existing mask with the same key.
+            key: The key of the mask to set.
+            value: The mask to set.
+            overwrite: Whether to overwrite an existing mask with the same key.
                 Defaults to False.
         """
         if (overwrite is False) and (key in self.masks):
@@ -138,7 +138,7 @@ class Recording:
         """Get the type of a timeseries.
 
         Args:
-            key (str): The key of the timeseries.
+            key: The key of the timeseries.
 
         Returns:
             str: The type of the timeseries.

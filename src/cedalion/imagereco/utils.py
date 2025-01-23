@@ -1,5 +1,6 @@
 """Utility functions for image reconstruction."""
 
+from __future__ import annotations
 import xarray as xr
 import numpy as np
 import cedalion
@@ -18,19 +19,16 @@ def map_segmentation_mask_to_surface(
     segmentation_mask: xr.DataArray,
     transform_vox2ras: cdt.AffineTransform,  # FIXME
     surface: cdc.Surface,
-):
+) -> coo_array:
     """Find for each voxel the closest vertex on the surface.
 
     Args:
-        segmentation_mask (xr.DataArray): A binary mask of shape (segmentation_type, i,
-            j, k).
-        transform_vox2ras (xr.DataArray): The affine transformation from voxel to RAS
-            space.
-        surface (cedalion.dataclasses.Surface): The surface to map the voxels to.
+        segmentation_mask: A binary mask of shape (segmentation_type, i, j, k).
+        transform_vox2ras: The affine transformation from voxel to RAS space.
+        surface: The surface to map the voxels to.
 
     Returns:
-        coo_array: A sparse matrix of shape (ncells, nvertices) that maps voxels to
-            cells.
+        A sparse matrix of shape (ncells, nvertices) that maps voxels to cells.
     """
 
     assert surface.crs == transform_vox2ras.dims[0]
@@ -61,17 +59,17 @@ def map_segmentation_mask_to_surface(
     return map_voxel_to_vertex
 
 
-def normal_hrf(t, t_peak, t_std, vmax):
-    """Create a normal hrf.
+def normal_hrf(t: np.ndarray, t_peak: float, t_std: float, vmax: float) -> np.ndarray:
+    """Create a normal HRF.
 
     Args:
-        t (np.ndarray): The time points.
-        t_peak (float): The peak time.
-        t_std (float): The standard deviation.
-        vmax (float): The maximum value of the HRF.
+        t: The time points.
+        t_peak: The peak time.
+        t_std: The standard deviation.
+        vmax: The maximum value of the HRF.
 
     Returns:
-        np.ndarray: The HRF.
+        The HRF.
     """
     hrf = scipy.stats.norm.pdf(t, loc=t_peak, scale=t_std)
     hrf *= vmax / hrf.max()
@@ -85,20 +83,19 @@ def create_mock_activation_below_point(
     sampling_rate: units.Quantity,
     spatial_size: units.Quantity,
     vmax: units.Quantity,
-):
+) -> xr.DataArray:
     """Create a mock activation below a point.
 
     Args:
-        head_model (cedalion.imagereco.forward_model.TwoSurfaceHeadModel): The head
-            model.
-        point (cdt.LabeledPointCloud): The point below which to create the activation.
-        time_length (units.Quantity): The length of the activation.
-        sampling_rate (units.Quantity): The sampling rate.
-        spatial_size (units.Quantity): The spatial size of the activation.
-        vmax (units.Quantity): The maximum value of the activation.
+        head_model: The head model.
+        point: The point below which to create the activation.
+        time_length: The length of the activation.
+        sampling_rate: The sampling rate.
+        spatial_size: The spatial size of the activation.
+        vmax: The maximum value of the activation.
 
     Returns:
-        xr.DataArray: The activation.
+        The activation.
     """
     # assert head_model.crs == point.points.crs
 
