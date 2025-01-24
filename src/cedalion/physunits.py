@@ -1,3 +1,4 @@
+"""Builds on pint_xarray's unit registry."""
 import pint_xarray
 
 units = pint_xarray.unit_registry

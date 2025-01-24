@@ -7,7 +7,6 @@ import cedalion.typing as cdt
 from cedalion import Quantity, units
 from cedalion.validators import check_dimensionality
 import cedalion.dataclasses as cdc
-from typing import Annotated
 
 
 @cdc.validate_schemas
@@ -33,8 +32,8 @@ def sampling_rate(timeseries: cdt.NDTimeSeries) -> Quantity:
 @cdc.validate_schemas
 def freq_filter(
     timeseries: cdt.NDTimeSeries,
-    fmin: Annotated[Quantity, "[frequency]"],
-    fmax: Annotated[Quantity, "[frequency]"],
+    fmin: cdt.QFrequency,
+    fmax: cdt.QFrequency,
     butter_order: int = 4,
 ) -> cdt.NDTimeSeries:
     """Apply a Butterworth bandpass frequency filter.

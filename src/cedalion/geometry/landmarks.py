@@ -1,3 +1,5 @@
+"""Module for constructing the 10-10-system on the scalp surface."""
+
 import warnings
 from typing import List, Optional
 

@@ -12,7 +12,9 @@ It is smart to make yourself aware of five resources and concepts that build the
     1. Check out the example notebook on [Using xarray-based data structures for calculating the Beer-Lambert transformation](https://github.com/ibs-lab/cedalion/blob/main/examples/pruning_and_motion_artifacts.ipynb)
     2. Check out the example notebook on [An example finger tapping analysis](https://github.com/ibs-lab/cedalion/blob/main/examples/new_conference_example2.ipynb)
     3. Use the following code snippet to load snirf data into Xarray DataArrays (amp, geo, od, conc, ml) and combine them into an Xarray DataSet.
-```# get example finger tapping dataset
+
+```python
+# get example finger tapping dataset
 import cedalion
 import cedalion.nirs
 import cedalion.datasets as datasets
@@ -337,6 +339,9 @@ def prune(data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity,
 
     return data, drop_list
 ```
+
+### Creating example notebooks
+After adding a feature, it is a good idea to create a jupyter notebook showcasing the new functionality. Notebooks should be added to the appropriate subfolder in the examples folder. You can select the thumbnail that will appear in examples gallery by adding the tag "nbsphinx-thumbnail" to a cell that produces a plot or figure (the IBS logo is used by default if no tag is set).
 
 ## Concluding Remarks
 The example above uses Cedalion's most basic data structures. While the toolbox continues to grow, we will add containers and abstraction layers to simplify and unify usage and code contribution. Whenever possible and especially when you find that the existing environment does not (yet) provide a level of abstraction or a data structure bundling all the data that you need in one container, please develop **bottom up** and write simple functions with (multiple) simple input and output arguments. In the example, once a general container is specified that ties together timeseries data, optode information (such as the `geo3D`) or measurement lists, it is straightforward to refactor the code accordingly. The same is true for more complex processing pipelines tied together in jupyter notebooks. We are working on a mechanism to build pipelines that enables easier and more abstract use by incorporating the lower level functions. Translating a notebook to such a pipeline is then straightforward.
