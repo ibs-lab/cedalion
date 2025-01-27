@@ -3,8 +3,50 @@ import numpy as np
 from typing import Optional, List
 import xarray as xr
 import random
-from typing import Annotated
-from cedalion import Quantity, units
+from cedalion import units
+import cedalion.typing as cdt
+
+TIMING_COLUMNS = ["onset", "duration", "trial_type", "value", "channel"]
+
+def add_event_timing(
+    events: list[tuple[float, float]] | list[tuple[float, float, float]],
+    type: str,
+    channels: list[str] | None = None,
+    timing: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Add event data to the timing DataFrame, or creates a new one if not provided.
+
+    Args:
+        events: List of tuples in format (onset, duration) or (onset, duration, value).
+        type: Type of the event batch.
+        channels: List of channels to which the event batch applies.
+        timing: DataFrame of events.
+
+    Returns:
+        Updated timing DataFrame.
+    """
+
+    if len(events[0]) == 3:
+        new_rows = pd.DataFrame(events, columns=["onset", "duration", "value"])
+    elif len(events[0]) == 2:
+        new_rows = pd.DataFrame(events, columns=["onset", "duration"])
+        new_rows["value"] = 1
+    else:
+        raise ValueError("Events must be tuples of length 2 or 3.")
+
+    new_rows["trial_type"] = type
+
+    if channels:
+        new_rows["channel"] = [channels] * len(new_rows)
+    else:
+        new_rows["channel"] = None
+
+    if timing is None:
+        timing = pd.DataFrame(columns=TIMING_COLUMNS)
+
+    timing = pd.concat([timing, new_rows], ignore_index=True)
+
+    return timing
 
 
 def build_event_df(
@@ -12,9 +54,9 @@ def build_event_df(
     trial_types: List[str],
     num_events: Optional[int] = None,
     perc_events: Optional[float] = None,
-    min_dur: Annotated[Quantity, "[time]"] = 10 * units.seconds,
-    max_dur: Annotated[Quantity, "[time]"] = 10 * units.seconds,
-    min_interval: Annotated[Quantity, "[time]"] = None,
+    min_dur: cdt.QTime = 10 * units.seconds,
+    max_dur: cdt.QTime = 10 * units.seconds,
+    min_interval: cdt.QTime = None,
     min_value: float = 1.0,
     max_value: float = 1.0,
     order: str = "random",
@@ -78,7 +120,7 @@ def build_event_df(
     end_time = float(time_axis[-1].item())
     total_time = end_time - start_time
 
-    events = []
+    events = pd.DataFrame(columns=TIMING_COLUMNS)
     covered_time = 0.0
     attempt_count = 0
     event_count = 0
@@ -110,21 +152,16 @@ def build_event_df(
             continue
 
         # Event can be placed
-        events.append((onset, dur, val))
+        events = add_event_timing([(onset, dur, val)], "", channels, events)
         event_count += 1
         covered_time += dur + min_interval
 
     # sort events by onset
-    events = sorted(events, key=lambda x: x[0])
-    # Build DataFrame
-    df = pd.DataFrame(events, columns=["onset", "duration", "value"])
+    events = events.sort_values(by="onset")
     # add trial_types
-    df["trial_type"] = pick_trial_types(df, trial_types, order)
-    # add channels
-    if channels is not None:
-        df["channel"] = [channels] * len(df)
+    events["trial_type"] = pick_trial_types(events, trial_types, order)
 
-    return df
+    return events
 
 
 def overlaps(onset, dur, min_interval, existing_events):
