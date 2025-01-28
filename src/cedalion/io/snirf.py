@@ -1,3 +1,6 @@
+"""Contains functionality for handling .snirf files."""
+
+from __future__ import annotations
 import logging
 import re
 from collections import OrderedDict
@@ -186,7 +189,7 @@ def labels_and_positions(probe, dim: int = 3):
     """Extract 3D coordinates of optodes and landmarks from a nirs probe variable.
 
     Args:
-        probe: Nirs probe geometry variable, see snirf documentation (:cite:t:`Tucker2022`).
+        probe: Nirs probe geometry variable, see snirf docs (:cite:t:`Tucker2022`).
         dim (int): Must be either 2 or 3.
 
     Returns:
@@ -248,17 +251,19 @@ def labels_and_positions(probe, dim: int = 3):
         landmarkPos,
     )
 
-def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
+def geometry_from_probe(nirs_element: NirsElement, dim: int, crs : str):
     """Extract 3D coordinates of optodes and landmarks from probe information.
 
     Args:
         nirs_element (NirsElement): Nirs data element as specified in the snirf
             documentation (:cite:t:`Tucker2022`).
         dim (int): Must be either 2 or 3.
+        crs: the name of coordinate reference system
 
     Returns:
-        xr.DataArray: A DataArray containing the 3D coordinates of optodes and landmarks,
-            with dimensions 'label' and 'pos' and coordinates 'label' and 'type'.
+        xr.DataArray: A DataArray containing the 3D coordinates of optodes and
+            landmarks, with dimensions 'label' and 'pos' and coordinates 'label' and
+            'type'.
     """
     probe = nirs_element.probe
 
@@ -282,7 +287,7 @@ def geometry_from_probe(nirs_element: NirsElement, dim: int = 3):
     labels = np.hstack([sourceLabels, detectorLabels, landmarkLabels])
     positions = np.vstack([sourcePos, detectorPos, landmarkPos])
 
-    dims = ["label", "pos"]
+    dims = ["label", crs]
     attrs = {"units": length_unit}
 
     if len(positions) == 0:
@@ -369,8 +374,11 @@ def stim_to_dataframe(stim: Stim):
     if len(stim) == 0:
         return cdc.build_stim_dataframe()
 
-    for st in stim:
+    for i_st, st in enumerate(stim):
         if st.data is None:
+            tmp = cdc.build_stim_dataframe()
+        elif st.data.ndim != 2:
+            log.warning(f"unexpected shape of stim element {i_st}")
             tmp = cdc.build_stim_dataframe()
         else:
             columns = ["onset", "duration", "value"]
@@ -705,13 +713,14 @@ def read_nirs_element(nirs_element, opts):
             options are supported:
             - squeeze_aux (bool): If True, squeeze the aux data to remove
                 dimensions of size 1.
+            - crs (str): name of the geo?d's coordinate reference system.
 
     Returns:
         rec (Recording): Recording object containing the data from the nirs element.
     """
 
-    geo2d = geometry_from_probe(nirs_element, dim=2)
-    geo3d = geometry_from_probe(nirs_element, dim=3)
+    geo2d = geometry_from_probe(nirs_element, dim=2, crs=opts["crs"])
+    geo3d = geometry_from_probe(nirs_element, dim=3, crs=opts["crs"])
     stim = stim_to_dataframe(nirs_element.stim)
 
     timeseries = OrderedDict()
@@ -747,19 +756,21 @@ def read_nirs_element(nirs_element, opts):
     return rec
 
 
-def read_snirf(fname: Path | str, squeeze_aux=False) -> list[cdc.Recording]:
+def read_snirf(
+    fname: Path | str, crs: str = "pos", squeeze_aux: bool = False
+) -> list[cdc.Recording]:
     """Reads a .snirf file into a list of Recording objects.
 
     Args:
-        fname (Path | str): Path to .snirf file
-        squeeze_aux (Bool): If True, squeeze the aux data to remove
-            dimensions of size 1.
+        fname: Path to .snirf file
+        crs: the name of the geo3D's coordinate reference system
+        squeeze_aux: If True, squeeze the aux data to remove dimensions of size 1.
 
     Returns:
         list[Recording]: List of Recording objects containing the data from the nirs
         elements in the .snirf file.
     """
-    opts = {"squeeze_aux": squeeze_aux}
+    opts = {"squeeze_aux": squeeze_aux, "crs" : crs}
 
     if isinstance(fname, Path):
         fname = str(fname)

@@ -1,3 +1,6 @@
+"""Functions for generating synthetic hemodynamic response functions."""
+
+from __future__ import annotations
 import random
 
 import numpy as np
@@ -40,7 +43,7 @@ def generate_hrf(
     Returns:
         xarray.DataArray: A DataArray object with dimensions "time" and "chromo",
             containing the HRF basis functions for each chromophore.
-        
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -125,7 +128,7 @@ def build_blob(
 
     Returns:
         xr.DataArray: Blob image with activation values for each vertex.
-    
+
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
 
@@ -164,7 +167,7 @@ def hrfs_from_image_reco(
 
     Returns:
         cdt.NDTimeseries: HRFs in channel space.
-        
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -215,7 +218,7 @@ def add_hrf_to_vertices(
     Returns:
         xr.DataArray: Combined image of HbO and HbR responses across all vertices for
             all time points.
-        
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -279,7 +282,7 @@ def build_stim_df(
 
     Returns:
         pd.DataFrame: DataFrame containing stimulus metadata.
-    
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -350,7 +353,7 @@ def add_hrf_to_od(od: cdt.NDTimeSeries, hrfs: cdt.NDTimeSeries, stim_df: pd.Data
 
     Returns:
         cdt.NDTimeSeries: OD data with HRFs added based on the stimulus dataframe.
-    
+
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -415,7 +418,7 @@ def hrf_to_long_channels(
     Returns:
         xr.DataArray: HRFs in channel space with dimensions
             ["channel", "time", "wavelength"].
-        
+
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
 
@@ -499,7 +502,7 @@ def plot_blob(
 
     Returns:
         None
-    
+
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
 

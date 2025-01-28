@@ -1,3 +1,5 @@
+"""Functions for reading and processing anatomical data."""
+
 import nibabel
 import xarray as xr
 import os
@@ -59,8 +61,10 @@ def read_segmentation_masks(
 
     Returns:
         Tuple[xr.DataArray, np.ndarray]:
-            - masks (xr.DataArray): Concatenated segmentation masks with a new dimension `segmentation_type`.
-            - affine (np.ndarray): Affine transformation matrix associated with the NIFTI files.
+            - masks (xr.DataArray): Concatenated segmentation masks with a new
+              dimension `segmentation_type`.
+            - affine (np.ndarray): Affine transformation matrix associated with the
+              NIFTI files.
     """
     mask_ids = {seg_type: i + 1 for i, seg_type in enumerate(mask_files.keys())}
     masks = []

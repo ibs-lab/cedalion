@@ -1,5 +1,7 @@
+"""Temporal basis functions for the GLM."""
+
+from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Annotated
 
 import numpy as np
 import pint
@@ -9,6 +11,7 @@ import cedalion.typing as cdt
 from cedalion import Quantity, units
 from cedalion.sigproc.frequency import sampling_rate
 import cedalion.xrutils as xrutils
+
 
 class TemporalBasisFunction(ABC):
     def __init__(self, convolve_over_duration: bool):
@@ -32,7 +35,7 @@ class TemporalBasisFunction(ABC):
         raise NotImplementedError()
 
 
-class GaussianKernels(TemporalBasisFunction):
+class GaussianKernelsWithTails(TemporalBasisFunction):
     r"""A consecutive sequence of gaussian functions.
 
     The basis functions have the form:
@@ -59,10 +62,10 @@ class GaussianKernels(TemporalBasisFunction):
 
     def __init__(
         self,
-        t_pre: Annotated[Quantity, "[time]"],
-        t_post: Annotated[Quantity, "[time]"],
-        t_delta: Annotated[Quantity, "[time]"],
-        t_std: Annotated[Quantity, "[time]"],
+        t_pre: cdt.QTime,
+        t_post: cdt.QTime,
+        t_delta: cdt.QTime,
+        t_std: cdt.QTime,
     ):
         super().__init__(convolve_over_duration=False)
         self.t_pre = _to_unit(t_pre, units.s)
@@ -111,6 +114,84 @@ class GaussianKernels(TemporalBasisFunction):
         )
 
 
+class GaussianKernels(TemporalBasisFunction):
+    r"""A consecutive sequence of gaussian functions.
+
+    The basis functions have the form:
+
+    .. math::
+        f(t) = \exp( -(t-\mu)^2/t_{std}^2)
+
+    The user specifies a time interval around the stimuls onset via the parameters
+    t_pre and t_post. Over this time interval a series of gaussian basis functions is
+    distributed:
+        - between the gaussian centers there is  time gap of t_delta
+        - the width of the each gaussian is specified by t_std
+        - the first gaussian is centered at trial onset - t_pre.
+        - the model function extends strictly from -t_pre to t_post with a hard cutoff.
+
+    The number of gaussians is derived automatically from these constraints.
+
+    Args:
+        t_pre (:class:`Quantity`, [time]): time before trial onset
+        t_post (:class:`Quantity`, [time]): time after trial onset
+        t_delta (:class:`Quantity`, [time]): the temporal spacing between consecutive
+            gaussians
+        t_std (:class:`Quantity`, [time]): time width of the gaussians
+    """
+
+    def __init__(
+        self,
+        t_pre: cdt.QTime,
+        t_post: cdt.QTime,
+        t_delta: cdt.QTime,
+        t_std: cdt.QTime,
+    ):
+        super().__init__(convolve_over_duration=False)
+        self.t_pre = _to_unit(t_pre, units.s)
+        self.t_post = _to_unit(t_post, units.s)
+        self.t_delta = _to_unit(t_delta, units.s)
+        self.t_std = _to_unit(t_std, units.s)
+
+    def __call__(
+        self,
+        ts: cdt.NDTimeSeries,
+    ) -> xr.DataArray:
+        fs = sampling_rate(ts).to(units.Hz)
+
+        # create time-axis
+        smpl_pre = int(np.ceil(self.t_pre * fs)) + 1
+        smpl_post = int(np.ceil(self.t_post * fs)) + 1
+        t_hrf = np.arange(-smpl_pre, smpl_post) / fs
+        t_hrf = t_hrf.to("s")
+
+        duration = t_hrf[-1] - t_hrf[0]
+
+        # determine number of gaussians
+        n_components = int(np.floor(duration / self.t_delta))
+
+        # place gaussians spaced by t_delta and starting at -t_pre.
+        mu = t_hrf[0] + np.arange(n_components) * self.t_delta
+
+        # build regressors. shape: (n_times, n_regressors)
+        regressors = np.exp(
+            -((t_hrf[:, None] - mu[None, :]) ** 2) / (2 * self.t_std) ** 2
+        )
+        regressors /= regressors.max(axis=0)  # normalize gaussian peaks to 1
+        regressors = regressors.to_base_units().magnitude
+
+        component_names = _generate_component_names(n_components)
+
+        return xr.DataArray(
+            regressors,
+            dims=["time", "component"],
+            coords={
+                "time": xr.DataArray(t_hrf, dims=["time"]).pint.dequantify(),
+                "component": component_names,
+            },
+        )
+
+
 class Gamma(TemporalBasisFunction):
     r"""Modified gamma function, optionally convolved with a square-wave.
 
@@ -129,9 +210,9 @@ class Gamma(TemporalBasisFunction):
 
     def __init__(
         self,
-        tau: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        sigma: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        T: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],  # noqa: N803
+        tau: cdt.QTime | dict[str, cdt.QTime],
+        sigma: cdt.QTime | dict[str, cdt.QTime],
+        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.tau = _to_unit(tau, units.s)
@@ -196,9 +277,9 @@ class GammaDeriv(TemporalBasisFunction):
 
     def __init__(
         self,
-        tau: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        sigma: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        T: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],  # noqa: N803
+        tau: cdt.QTime | dict[str, cdt.QTime],
+        sigma: cdt.QTime | dict[str, cdt.QTime],
+        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.tau = _to_unit(tau, units.s)
@@ -209,7 +290,6 @@ class GammaDeriv(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-
         other_dim = xrutils.other_dim(ts, "time", "channel")
         other_dim_values = ts[other_dim].values
 
@@ -229,7 +309,7 @@ class GammaDeriv(TemporalBasisFunction):
 
         for i_other, other in enumerate(other_dim_values):
             x = (t_hrf - tau[other]) / sigma[other]
-            x2 = x.magnitude ** 2
+            x2 = x.magnitude**2
             r = x2 * np.exp(-x2)
             dr = (2 * x * (1 - x2)) * np.exp(-x2)
             dr = dr.magnitude
@@ -269,8 +349,8 @@ class AFNIGamma(TemporalBasisFunction):
     def __init__(
         self,
         p: float | dict[str, float],
-        q: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        T: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],  # noqa: N803
+        q: cdt.QTime | dict[str, cdt.QTime],
+        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.p = p
@@ -289,7 +369,7 @@ class AFNIGamma(TemporalBasisFunction):
         T = _to_dict(self.T, other_dim_values)  # noqa: N806
 
         fs = sampling_rate(ts).to(units.Hz)
-        duration =  4.1 * max(q.values()) + max(T.values())
+        duration = 4.1 * max(q.values()) + max(T.values())
         duration = (duration.to(units.s).magnitude + max(p.values())) * units.s
         # add p to duration. but p has not unit and duration is in seconds.
         # so we need to convert p to seconds.
@@ -303,9 +383,7 @@ class AFNIGamma(TemporalBasisFunction):
 
         for i_other, other in enumerate(other_dim_values):
             bas = t_hrf / (p[other] * q[other])
-            r = np.power(bas.magnitude, p[other]) * np.exp(
-                p[other] - t_hrf / q[other]
-            )
+            r = np.power(bas.magnitude, p[other]) * np.exp(p[other] - t_hrf / q[other])
             r[t_hrf < 0] = 0.0
             r = r.magnitude
 
@@ -330,7 +408,7 @@ class AFNIGamma(TemporalBasisFunction):
 # FIXME: instead of defining IndividualBasis we may want to make make_hrf_regressor
 # accept xr.DataArrays directly?
 
-#class IndividualBasis(TemporalBasisFunction):
+# class IndividualBasis(TemporalBasisFunction):
 #    """Uses individual basis functions for each channel.
 #
 #    Args:

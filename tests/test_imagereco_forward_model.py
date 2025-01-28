@@ -68,7 +68,7 @@ def test_TwoSurfaceHeadModel():
         mask_files=mask_files,
         landmarks_ras_file=landmarks_file,
         # disable mesh smoothing and decimation to speed up runtime
-        smoothing=0, 
+        smoothing=0,
         brain_face_count=None,
         scalp_face_count=None
     )

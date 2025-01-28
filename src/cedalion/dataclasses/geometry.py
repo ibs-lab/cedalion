@@ -1,23 +1,27 @@
+"""Dataclasses for representing geometric objects."""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from functools import total_ordering
 from typing import Any
 
+import mne
 import numpy as np
 import pint
+import pyvista as pv
 import trimesh
 import vtk
-import mne
 import xarray as xr
-from scipy.spatial import KDTree
 from scipy import sparse
+from scipy.spatial import KDTree
 from vtk.util.numpy_support import vtk_to_numpy
-import pyvista as pv
 
 import cedalion
 import cedalion.typing as cdt
-from cedalion.vtktutils import trimesh_to_vtk_polydata, pyvista_polydata_to_trimesh
+import cedalion.xrutils as xrutils
+from cedalion.errors import CRSMismatchError
+from cedalion.vtktutils import pyvista_polydata_to_trimesh, trimesh_to_vtk_polydata
 
 
 @total_ordering
@@ -130,7 +134,9 @@ class Surface(ABC):
     def snap(self, points: cdt.LabeledPointCloud):
         """Snap points to the nearest vertices on the surface."""
         if self.crs != points.points.crs:
-            raise ValueError("CRS mismatch")
+            raise CRSMismatchError.unexpected_crs(
+                expected_crs=self.crs, found_crs=points.points.crs
+            )
 
         if self.units != points.pint.units:
             raise ValueError("units mismatch")
@@ -280,7 +286,7 @@ class TrimeshSurface(Surface):
         smoothed = trimesh.smoothing.filter_taubin(self.mesh, lamb=lamb)
         return TrimeshSurface(smoothed, self.crs, self.units)
 
-    def get_vertex_normals(self, points: cdt.LabeledPointCloud):
+    def get_vertex_normals(self, points: cdt.LabeledPointCloud, normalized=True):
         """Get normals of vertices closest to the provided points."""
 
         assert points.points.crs == self.crs
@@ -289,11 +295,21 @@ class TrimeshSurface(Surface):
 
         _, vertex_indices = self.kdtree.query(points.values, workers=-1)
 
-        return xr.DataArray(
+        normals = xr.DataArray(
             self.mesh.vertex_normals[vertex_indices],
             dims=["label", self.crs],
             coords={"label": points.label},
         )
+
+        if normalized:
+            norms = xrutils.norm(normals, dim=normals.points.crs)
+
+            if not (norms > 0).all():
+                raise ValueError("Cannot normalize normals with zero length.")
+
+            normals /= norms
+
+        return normals
 
     def fix_vertex_normals(self):
         mesh = self.mesh
@@ -445,7 +461,7 @@ class PycortexSurface(Surface):
     def decimate(self, face_count: int) -> "PycortexSurface":
         raise NotImplementedError("Decimation not implemented for PycortexSurface")
 
-    def get_vertex_normals(self, points: cdt.LabeledPointCloud):
+    def get_vertex_normals(self, points: cdt.LabeledPointCloud, normalized=True):
         assert points.points.crs == self.crs
         assert points.pint.units == self.units
         points = points.pint.dequantify()
@@ -462,7 +478,9 @@ class PycortexSurface(Surface):
         for i, poly in enumerate(self.mesh.polys):
             for j in poly:
                 vertex_normals[j] += face_normals[i]
-        vertex_normals /= np.linalg.norm(vertex_normals, axis=1)[:, np.newaxis]
+
+        if normalized:
+            vertex_normals /= np.linalg.norm(vertex_normals, axis=1)[:, np.newaxis]
 
         return xr.DataArray(
             vertex_normals[vertex_indices],

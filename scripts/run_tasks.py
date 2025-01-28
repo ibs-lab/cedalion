@@ -38,10 +38,10 @@ def main(config, src, dst):
     for task in config["tasks"]:
         if isinstance(task, str):
             print(f"task '{task}' without parameters")
-            
+
             if (task := cedalion.tasks.task_registry.get(task, None)) is None:
                 raise ValueError(f"unknown task {task}")
-            
+
             task(rec)
         elif isinstance(task, dict):
             assert len(task) == 1
@@ -100,7 +100,7 @@ def main(config, src, dst):
                 parsed_params[param_name] = q
 
                 # if isinstance(v, typing._AnnotatedAlias):
-            
+
             task(rec, **parsed_params)
         else:
             raise ValueError("unexpected task spec.")
