@@ -82,10 +82,9 @@ LabeledPointCloudSchema = DataArraySchema(
 
 
 NDTimeSeriesSchema = DataArraySchema(
-    dims=("channel", "time"),
+    dims=("time",),
     coords=(
         ("time", ("time", "samples")),
-        ("channel", ("channel",)),
     ),
 )
 
