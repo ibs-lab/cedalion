@@ -44,7 +44,7 @@ FOLDER_NAME=$(basename "$ZIP_FILE" .zip)
 mv "${FOLDER_NAME}" "${FOLDER_NAME%-main}"
 
 
-SOURCE_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v0.9.6/"
+SOURCE_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v1.0.0/"
 
 if [ $1 = 'CPU' ]; then
     curl -sL "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
