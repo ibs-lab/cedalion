@@ -34,7 +34,7 @@ fi
 
 cd "$DIR_NAME"
 
-ZIP_URL="https://github.com/milabuob/nirfaster-uFF/archive/refs/heads/main.zip" 
+ZIP_URL="https://codeload.github.com/milabuob/nirfaster-uFF/zip/refs/tags/v1.0.0" 
 ZIP_FILE="nirfaster-uFF-main.zip"
 
 
@@ -58,6 +58,10 @@ fi
 
 if [ "$OS_NAME" = 'mac' ]; then
     xattr -c "${FOLDER_NAME%-main}/nirfasteruff/nirfasteruff_cpu.cpython-311-darwin.so"
+fi
+
+if [ "$OS_NAME" = 'linux' ]; then
+    chmod +x "${FOLDER_NAME%-main}/nirfasteruff/cgalmesherLINUX"
 fi
 
 echo "NIRFASTer installed successfully."
