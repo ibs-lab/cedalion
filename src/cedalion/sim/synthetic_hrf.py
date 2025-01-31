@@ -65,7 +65,7 @@ def generate_hrf(
             "cut off."
         )
 
-    tHRF_gamma = time_axis[time_axis <= stim_dur]
+    tHRF_gamma = time_axis #[time_axis <= stim_du]
     boxcar = xr.DataArray(
         np.zeros(len(tHRF_gamma)), dims=["time"], coords={"time": tHRF_gamma}
     )
@@ -73,6 +73,7 @@ def generate_hrf(
     boxcar.loc[boxcar["time"] < 0] = 0
 
     stimulus = np.zeros((len(time_axis), n_conc))
+
 
     for iConc in range(n_conc):
         tau = params_basis[iConc * 2]
