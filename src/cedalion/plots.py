@@ -28,8 +28,8 @@ def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
     """Plots a 3D visualization of a montage.
 
     Args:
-        amp (xr.DataArray): Time series data array.
-        geo3d (xr.DataArray): Landmark coordinates.
+        amp: Time series data array.
+        geo3d: Landmark coordinates.
     """
     geo3d = geo3d.pint.dequantify()
 
@@ -56,25 +56,25 @@ def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
 
 
 def plot3d(
-    brain_mesh,
-    scalp_mesh,
-    geo3d,
-    timeseries,
-    poly_lines=[],
+    brain_mesh: cdc.TrimeshSurface,
+    scalp_mesh: cdc.TrimeshSurface,
+    geo3d: xr.Dataset,
+    timeseries: xr.DataArray,
+    poly_lines: list[list] = [],
     brain_scalars=None,
-    plotter=None,
+    plotter: pv.Plotter = None,
 ):
     """Plots a 3D visualization of brain and scalp meshes.
 
     Args:
-        brain_mesh (TrimeshSurface): The brain mesh as a TrimeshSurface object.
-        scalp_mesh (TrimeshSurface): The scalp mesh as a TrimeshSurface object.
-        geo3d (xarray.Dataset): Dataset containing 3-dimentional point centers.
+        brain_mesh: The brain mesh as a TrimeshSurface object.
+        scalp_mesh: The scalp mesh as a TrimeshSurface object.
+        geo3d: Dataset containing 3-dimensional point centers.
         timeseries: Time series data array.
         poly_lines: List of lists of points to be plotted as polylines.
         brain_scalars: Scalars to be used for coloring the brain mesh.
-        plotter (pv.Plotter, optional): An existing PyVista plotter instance to use for
-            plotting. If None, a new PyVista plotter instance is created. Default: None.
+        plotter: An existing PyVista plotter instance to use for plotting. If None, a
+            new PyVista plotter instance is created. Default: None.
 
     Initial Contributors:
         - Eike Middell | middell@tu-berlin.de | 2024
@@ -367,12 +367,12 @@ def plot_vector_field(
     """Plots a vector field on a PyVista plotter.
 
     Args:
-        plotter (pv.Plotter): A PyVista plotter instance used for rendering the vector
-            field.
-        points (cdt.LabeledPointCloud): A labeled point cloud data structure containing
-            point coordinates.
-        vectors (xr.DataArray): A data array containing the vector field.
-        ppoints (list, optional): A list to store indices of picked points, enables
+        plotter: A PyVista plotter instance used for rendering the vector field.
+        points: A labeled point cloud data structure containing point coordinates.
+        vectors: A data array containing the vector field.
+        ppoints: A list to store indices of picked points, enables picking if not None.
+        vectors: A data array containing the vector field.
+        ppoints: A list to store indices of picked points, enables
             picking if not None. Default is None.
     """
     assert len(points) == len(vectors)
@@ -935,10 +935,10 @@ def scalp_plot(
     Args:
         ts: a NDTimeSeries to provide channel definitions
         geo3d: a LabeledPointCloud to provide the probe geometry
-        metric ((:class:`DataArray`, (channel,) | ArrayLike)): the scalar metric to be
-            plotted for each channel. If provided as a DataArray it needs a channel
-            dimension. If provided as a plain array or list it must have the same
-            length as ts.channel and the matching is done by position.
+        metric: the scalar metric to be plotted for each channel. If provided as a
+            DataArray it needs a channel dimension. If provided as a plain array or list
+            it must have the same length as ts.channel and the matching is done by
+            position.
         ax: the matplotlib.Axes object into which to draw
         title: the axes title
         vmin: the minimum value of the metric

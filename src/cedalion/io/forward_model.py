@@ -2,6 +2,7 @@
 
 import h5py
 import xarray as xr
+from typing import Tuple
 
 import cedalion.dataclasses as cdc
 
@@ -10,8 +11,8 @@ def save_Adot(fn: str, Adot: xr.DataArray):
     """Save Adot to a netCDF file.
 
     Args:
-        fn (str): File name to save the data to.
-        Adot (xr.DataArray): Data to save.
+        fn: File name to save the data to.
+        Adot: Data to save.
 
     Returns:
         None
@@ -20,14 +21,14 @@ def save_Adot(fn: str, Adot: xr.DataArray):
     Adot.to_netcdf(fn)
     return
 
-def load_Adot(fn: str):
+def load_Adot(fn: str) -> xr.DataArray:
     """Load Adot from a netCDF file.
 
     Args:
-        fn (str): File name to load the data from.
+        fn: File name to load the data from.
 
     Returns:
-        xr.DataArray: Data loaded from the file.
+        Data loaded from the file.
     """
 
     Adot = xr.open_dataset(fn)
@@ -83,14 +84,14 @@ def save_fluence(fn : str, fluence_all, fluence_at_optodes):
         f.flush()
 
 
-def load_fluence(fn : str):
+def load_fluence(fn : str) -> Tuple[xr.DataArray, xr.DataArray]:
     """Load forward model computation results.
 
     Args:
-        fn (str): File name to load the data from.
+        fn: File name to load the data from.
 
     Returns:
-        Tuple[xr.DataArray, xr.DataArray]: Fluence data loaded from the file.
+        Fluence data loaded from the file.
     """
 
     with h5py.File(fn, "r") as f:

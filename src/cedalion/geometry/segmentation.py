@@ -21,24 +21,19 @@ import cedalion.dataclasses as cdc
 def voxels_from_segmentation(
     segmentation_mask: xr.DataArray,
     segmentation_types: List[str],
-    isovalue=0.9,
+    isovalue: float = 0.9,
     fill_holes_in_mask=False,
 ) -> cdc.Voxels:
     """Generate voxels from a segmentation mask.
 
     Args:
-        segmentation_mask : xr.DataArray
-            Segmentation mask.
-        segmentation_types : List[str]
-            List of segmentation types.
-        isovalue : float, optional
-            Isovalue for marching cubes, by default 0.9.
-        fill_holes_in_mask : bool, optional
-            Fill holes in the mask, by default False.
+        segmentation_mask: Segmentation mask.
+        segmentation_types: List of segmentation types.
+        isovalue: Isovalue for marching cubes, by default 0.9.
+        fill_holes_in_mask: Fill holes in the mask, by default False.
 
     Returns:
-        cdc.Voxels
-            Voxels in voxel space.
+        Voxels in voxel space.
     """
     combined_mask = (
         segmentation_mask.sel(segmentation_type=segmentation_types)
@@ -65,16 +60,16 @@ def surface_from_segmentation(
     """Create a surface from a segmentation mask.
 
     Args:
-        segmentation_mask (xr.DataArray): Segmentation mask with dimensions segmentation
+        segmentation_mask: Segmentation mask with dimensions segmentation
             type, i, j, k.
-        segmentation_types (List[str]): A list of segmentation types to include in the
+        segmentation_types: A list of segmentation types to include in the
             surface.
-        isovalue (Float): The isovalue to use for the marching cubes algorithm.
-        fill_holes_in_mask (Bool): Whether to fill holes in the mask before creating the
+        isovalue: The isovalue to use for the marching cubes algorithm.
+        fill_holes_in_mask: Whether to fill holes in the mask before creating the
             surface.
 
     Returns:
-        A cedalion.Surface object.
+        Surface in voxel space
     """
 
     combined_mask = (
@@ -82,25 +77,7 @@ def surface_from_segmentation(
         .any("segmentation_type")
         .values
     )
-    """ Generate a surface from a segmentation mask.
 
-    Parameters
-    ----------
-    segmentation_mask : xr.DataArray
-        Segmentation mask.
-    segmentation_types : List[str]
-        List of segmentation types.
-    isovalue : float, optional
-        Isovalue for marching cubes, by default 0.9.
-    fill_holes_in_mask : bool, optional
-        Fill holes in the mask, by default False.
-
-    Returns
-    -------
-    cdc.TrimeshSurface
-        Surface in voxel space.
-
-    """
     if fill_holes_in_mask:
         combined_mask = scipy.ndimage.binary_fill_holes(combined_mask).astype(
             combined_mask.dtype
@@ -114,19 +91,14 @@ def surface_from_segmentation(
     return cdc.TrimeshSurface(mesh, "ijk", cedalion.units.Unit("1"))
 
 
-def cell_coordinates(volume, flat: bool = False):
+def cell_coordinates(volume: np.ndarray, flat: bool = False) -> xr.DataArray:
     """Generate cell coordinates from a 3D volume.
 
-    Parameters
-    ----------
-    volume : np.ndarray
-        3D volume.
-    flat : bool, optional
-        If True, return coordinates as a flat array, by default False.
+    Args:
+        volume: 3D volume.
+        flat : If True, return coordinates as a flat array, by default False.
 
     Returns:
-    -------
-    xr.DataArray
         Cell coordinates in voxel space.
     """
 
@@ -190,37 +162,23 @@ def segmentation_postprocessing(
     ) -> dict:
     """Postprocessing of the segmented SPM12 MRI segmentation files.
 
-    Parameters
-    ----------
-    segmentation_dir : str
-        Directory where the segmented files are stored.
-    mask_files : dict[str, str], optional
-        Dictionary containing the filenames of the segmented tissues.
-    isSmooth : bool, optional
-        Smooth the segmented tissues using Gaussian filter.
-    fixCSF : bool, optional
-        Fix the CSF continuity.
-    removeDisconnected : bool, optional
-        Remove disconnected voxels.
-    labelUnassigned : bool, optional
-        Label empty voxels to the nearest tissue type.
-    removeAir : bool, optional
-        Remove air cavities.
-    subtractTissues : bool, optional
-        Subtract tissues from each others
-
+    Args:
+        segmentation_dir: Directory where the segmented files are stored.
+        mask_files: Dictionary containing the filenames of the segmented tissues.
+        isSmooth: Smooth the segmented tissues using Gaussian filter.
+        fixCSF: Fix the CSF continuity.
+        removeDisconnected: Remove disconnected voxels.
+        labelUnassigned: Label empty voxels to the nearest tissue type.
+        removeAir: Remove air cavities.
+        subtractTissues: Subtract tissues from each others.
 
     Returns:
-    -------
-    mask_files : dict
         Dictionary containing the filenames of the postprocessed masks.
 
-
     References:
-    ----------
-    This whole postprocessing is based on the following references:
-    :cite:t:`Huang2013`
-    :cite:t:`Harmening2022`
+        This whole postprocessing is based on the following references:
+        :cite:t:`Huang2013`
+        :cite:t:`Harmening2022`
     """
 
     # Load segmented spm output files

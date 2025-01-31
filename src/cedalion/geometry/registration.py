@@ -1,10 +1,12 @@
 """Registrating optodes to scalp surfaces."""
 
+from __future__ import annotations
 import numpy as np
 from numpy.linalg import pinv
 from scipy.optimize import linear_sum_assignment, minimize
 from scipy.spatial import KDTree
 import xarray as xr
+from typing import Tuple
 
 import cedalion
 import cedalion.dataclasses as cdc
@@ -38,8 +40,8 @@ def register_trans_rot(
     between the two point clouds.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target: Target point cloud.
+        coords_trafo: Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -133,8 +135,8 @@ def register_trans_rot_isoscale(
     between the two point clouds.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target: Target point cloud.
+        coords_trafo: Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -195,9 +197,9 @@ def gen_xform_from_pts(p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
     """Calculate the affine transformation matrix T that transforms p1 to p2.
 
     Args:
-        p1 (np.ndarray): Source points (p x m) where p is the number of points and m is
+        p1: Source points (p x m) where p is the number of points and m is
             the number of dimensions.
-        p2 (np.ndarray): Target points (p x m) where p is the number of points and m is
+        p2: Target points (p x m) where p is the number of points and m is
             the number of dimensions.
 
     Returns:
@@ -237,21 +239,21 @@ def register_icp(
     surface: cdc.Surface,
     landmarks: cdt.LabeledPointCloud,
     geo3d: cdt.LabeledPointCloud,
-    niterations=1000,
-    random_sample_fraction=0.5,
-):
+    niterations: int =1000,
+    random_sample_fraction: float =0.5,
+) -> Tuple[np.ndarray, np.ndarray]:
     """Iterative Closest Point algorithm for registration.
 
     Args:
-        surface (Surface): Surface mesh to which to register the points.
-        landmarks (LabeledPointCloud): Landmarks to use for registration.
-        geo3d (LabeledPointCloud): Points to register to the surface.
-        niterations (int): Number of iterations for the ICP algorithm (default 1000).
-        random_sample_fraction (float): Fraction of points to use in each iteration
+        surface: Surface mesh to which to register the points.
+        landmarks: Landmarks to use for registration.
+        geo3d: Points to register to the surface.
+        niterations: Number of iterations for the ICP algorithm (default 1000).
+        random_sample_fraction: Fraction of points to use in each iteration
             (default 0.5).
 
     Returns:
-        Tuple[np.ndarray, np.ndarray]: Tuple containing the losses and transformations
+        Tuple containing the losses and transformations
     """
     units = "mm"
     landmarks_mm = landmarks.pint.to(units).points.to_homogeneous().pint.dequantify()
@@ -496,7 +498,7 @@ def simple_scalp_projection(geo3d: cdt.LabeledPointCloud) -> cdt.LabeledPointClo
     """Projects 3D coordinates onto a 2D plane using a simple scalp projection.
 
     Args:
-        geo3d (LabeledPointCloud): 3D coordinates of points to project. Requires the
+        geo3d: 3D coordinates of points to project. Requires the
             landmarks Nz, LPA, and RPA.
 
     Returns:

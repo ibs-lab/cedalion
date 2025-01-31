@@ -21,10 +21,10 @@ def _get_affine_from_niftii(image: nibabel.nifti1.Nifti1Image):
     """Get affine transformation matrix from NIFTI image.
 
     Args:
-        image (nibabel.nifti1.Nifti1Image): NIFTI image object
+        image: NIFTI image object
 
     Returns:
-        xr.DataArray: Affine transformation matrix
+        Affine transformation matrix
     """
     transform, code = image.get_sform(coded=True)
     if code != 0:
@@ -56,15 +56,14 @@ def read_segmentation_masks(
     """Read segmentation masks from NIFTI files.
 
     Args:
-        basedir (str): Directory containing the mask files
-        mask_files (Dict[str, str]): Dictionary mapping segmentation types to filenames
+        basedir: Directory containing the mask files
+        mask_files: Dictionary mapping segmentation types to filenames
 
     Returns:
-        Tuple[xr.DataArray, np.ndarray]:
-            - masks (xr.DataArray): Concatenated segmentation masks with a new
-              dimension `segmentation_type`.
-            - affine (np.ndarray): Affine transformation matrix associated with the
-              NIFTI files.
+        - masks (xr.DataArray): Concatenated segmentation masks with a new
+            dimension `segmentation_type`.
+        - affine (np.ndarray): Affine transformation matrix associated with the
+            NIFTI files.
     """
     mask_ids = {seg_type: i + 1 for i, seg_type in enumerate(mask_files.keys())}
     masks = []
@@ -118,16 +117,16 @@ def read_segmentation_masks(
     return masks, affine
 
 
-def cell_coordinates(mask, affine, units="mm"):
+def cell_coordinates(mask: xr.DataArray, affine: np.ndarray, units: str = "mm"):
     """Get the coordinates of each voxel in the transformed mask.
 
     Args:
-        mask (xr.DataArray): A binary mask of shape (i, j, k).
-        affine (np.ndarray): Affine transformation matrix.
-        units (str): Units of the output coordinates.
+        mask: A binary mask of shape (i, j, k).
+        affine: Affine transformation matrix.
+        units: Units of the output coordinates.
 
     Returns:
-        xr.DataArray: Coordinates of the center of each voxel in the mask.
+        Coordinates of the center of each voxel in the mask.
     """
     # coordinates in voxel space
     i = np.arange(mask.shape[0])

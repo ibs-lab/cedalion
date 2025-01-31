@@ -15,19 +15,22 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
     are used for entropy bound calculation
 
     Args:
-        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
+        X: the [N x T] input multivariate time series with dimensionality N
+            observations/channels and T time points
 
     Returns:
-        W (np.ndarray, (Channels, Channels)): the [N x N] demixing matrix with weights for  N channels/sources. 
-            To obtain the independent components, the demixed signals can be calculated as S = W @ X.
+        W: the [N x N] demixing matrix with weights for  N channels/sources.
+            To obtain the independent components, the demixed signals can be calculated
+            as S = W @ X.
 
     Initial Contributors:
         - Jacqueline Behrendt | jacqueline.behrendt@campus.tu-berlin.de | 2024
 
     References:
         This code is based on the matlab version by Xi-Lin Li (:cite:t:`Li2010A`)
-        Xi-Lin Li and Tulay Adali, "Independent component analysis by entropy bound minimization," 
-        IEEE Trans. Signal Processing, vol. 58, no. 10, pp. 5151-5164, Oct. 2010.
+        Xi-Lin Li and Tulay Adali, "Independent component analysis by entropy bound
+        minimization," IEEE Trans. Signal Processing, vol. 58, no. 10, pp. 5151-5164,
+        Oct. 2010.
         The original matlab version is available at https://mlsp.umbc.edu/resources.html
         under the name "Real-valued ICA by entropy rate bound minimization (ICA-ERBM)"
     """
@@ -850,14 +853,15 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
 
 def simplified_ppval(pp: dict, xs: float) -> float:
     """Helper function for ICA EBM: simplified version of ppval.
-        This function evaluates a piecewise polynomial at a specific point. 
-    
+
+    This function evaluates a piecewise polynomial at a specific point. 
+
     Args:
-        pp (dict): a dictionary containing the piecewise polynomial representation of a function
-        xs (float): the evaluation point
+        pp: A dictionary containing the piecewise polynomial representation of a function.
+        xs: The evaluation point.
 
     Returns:
-        v (float): the value of the function at xs   
+        The value of the function at xs.
     """
     b = pp['breaks'][0]
     c = pp['coefs']
@@ -895,12 +899,12 @@ def simplified_ppval(pp: dict, xs: float) -> float:
 
 def inv_sqrtmH(B: np.ndarray) -> np.ndarray:
     """Helper function for ICA EBM: computes the inverse square root of a matrix.
-    
+
     Args:
-        B (np.ndarray): a square matrix
-        
+        B: a square matrix
+
     Returns:
-        A (np.ndarray): the inverse square root of B 
+        The inverse square root of B.
     """
 
     D, V = np.linalg.eig(B)
@@ -912,14 +916,16 @@ def inv_sqrtmH(B: np.ndarray) -> np.ndarray:
     return A
 
 def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Helper function for ICA EBM: pre-processing (DC removal & spatial pre-whitening).
-    
+    """Helper function for ICA EBM pre-processing.
+
+    DC removal & spatial pre-whitening
+
     Args:
-        X (np.ndarray, (Channels, Time Points) ): the data matrix [N x T] 
-    
+        X: the data matrix [N channels x T timepoints]
+
     Returns:
-        X (np.ndarray, (Channels, Time Points)): the pre-processed data matrix  [N x T] 
-        P (np.ndarray, (Channels, Channels)): the pre-whitening matrix [N x N] 
+        X: the pre-processed data matrix  [N x T]
+        P: the pre-whitening matrix [N x N]
     """
 
     # pre-processing program
@@ -936,12 +942,12 @@ def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def symdecor(M: np.ndarray) -> np.ndarray:
     """Helper function for ICA EBM: fast symmetric orthogonalization.
-    
+
     Args:
-        M (np.ndarray, (Channels, Channels)): the matrix to be orthogonalized [N x N]
+        M: the matrix to be orthogonalized [N channels x N channels]
 
     Returns:
-        W (np.ndarray, (Channels, Channels)): the orthogonalized matrix [N x N]
+        W: the orthogonalized matrix [N x N]
     """
 
     D, V = np.linalg.eig(M.dot(M.T))

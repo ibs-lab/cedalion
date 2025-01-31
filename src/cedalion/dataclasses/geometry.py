@@ -1,10 +1,11 @@
 """Dataclasses for representing geometric objects."""
 
+from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from functools import total_ordering
-from typing import Any
+from typing import Any, List
 
 import mne
 import numpy as np
@@ -197,7 +198,7 @@ class TrimeshSurface(Surface):
         """Apply an affine transformation to this surface.
 
         Args:
-            transform (cdt.AffineTransform): The affine transformation to apply.
+            transform: The affine transformation to apply.
 
         Returns:
             TrimeshSurface: The transformed surface.
@@ -234,7 +235,11 @@ class TrimeshSurface(Surface):
         smoothed = trimesh.smoothing.filter_taubin(self.mesh, lamb=lamb)
         return TrimeshSurface(smoothed, self.crs, self.units)
 
-    def get_vertex_normals(self, points: cdt.LabeledPointCloud, normalized=True):
+    def get_vertex_normals(
+        self,
+        points: cdt.LabeledPointCloud,
+        normalized: bool = True
+    ):
         """Get normals of vertices closest to the provided points."""
 
         assert points.points.crs == self.crs
@@ -400,7 +405,11 @@ class PycortexSurface(Surface):
     def decimate(self, face_count: int) -> "PycortexSurface":
         raise NotImplementedError("Decimation not implemented for PycortexSurface")
 
-    def get_vertex_normals(self, points: cdt.LabeledPointCloud, normalized=True):
+    def get_vertex_normals(
+        self,
+        points: cdt.LabeledPointCloud,
+        normalized: bool = True
+    ):
         assert points.points.crs == self.crs
         assert points.pint.units == self.units
         points = points.pint.dequantify()
@@ -601,7 +610,11 @@ class PycortexSurface(Surface):
         return edgelens.mean()
 
 
-    def surface_gradient(self, scalars, at_verts=True):
+    def surface_gradient(
+        self,
+        scalars: np.ndarray,
+        at_verts: bool = True
+    ) -> np.ndarray:
         """Gradient of a function with values `scalars` at each vertex on the surface.
 
         If `at_verts`, returns values at each vertex. Otherwise, returns values at each
@@ -610,9 +623,8 @@ class PycortexSurface(Surface):
         Args:
             scalars : 1D ndarray, shape (total_verts,) a scalar-valued function across
                 the cortex.
-            at_verts : bool, optional
-                If True (default), values will be returned for each vertex. Otherwise,
-                values will be returned for each face.
+            at_verts : If True (default), values will be returned for each vertex.
+                Otherwise, values will be returned for each face.
 
         Returns:
             gradu : 2D ndarray, shape (total_verts,3) or (total_polys,3)
@@ -642,7 +654,7 @@ class PycortexSurface(Surface):
         return fe12, fe23, fe31
 
 
-    def geodesic_distance(self, verts, m=1.0, fem=False):
+    def geodesic_distance(self, verts, m: float = 1.0, fem: bool = False) -> np.ndarray:
         """Calcualte the inimum mesh geodesic distance (in mm).
 
         The geodesic distance is calculated from each vertex in surface to any vertex in
@@ -745,7 +757,13 @@ class PycortexSurface(Surface):
         return phi
 
 
-    def geodesic_path(self, a, b, max_len=1000, d=None, **kwargs):
+    def geodesic_path(
+        self, a: int,
+        b: int,
+        max_len: int = 1000,
+        d: np.ndarray = None,
+        **kwargs
+    ) -> List:
         """Finds the shortest path between two points `a` and `b`.
 
         This shortest path is based on geodesic distances across the surface.

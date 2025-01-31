@@ -1,5 +1,6 @@
 """Module for constructing the 10-10-system on the scalp surface."""
 
+from __future__ import annotations
 import warnings
 from typing import List, Optional
 
@@ -125,8 +126,8 @@ class LandmarksBuilder1010:
         """Initialize the LandmarksBuilder1010.
 
         Args:
-            scalp_surface (Surface): a triangle-mesh representing the scalp
-            landmarks (LabeledPointCloud): positions of "Nz", "Iz", "LPA", "RPA"
+            scalp_surface: a triangle-mesh representing the scalp
+            landmarks: positions of "Nz", "Iz", "LPA", "RPA"
         """
         if isinstance(scalp_surface, TrimeshSurface):
             scalp_surface = VTKSurface.from_trimeshsurface(scalp_surface)
@@ -197,9 +198,9 @@ class LandmarksBuilder1010:
         """Add landmarks along a line defined by three landmarks.
 
         Args:
-            triangle_labels (List[str]): Labels of the three landmarks defining the line
-            labels (List[str]): Labels for the new landmarks
-            dists (List[float]): Distances along the line where the new landmarks should
+            triangle_labels: Labels of the three landmarks defining the line
+            labels: Labels for the new landmarks
+            dists: Distances along the line where the new landmarks should
                 be placed.
         """
         assert len(triangle_labels) == 3
@@ -319,8 +320,8 @@ def order_ref_points_6(landmarks: xr.DataArray, twoPoints: str) -> xr.DataArray:
     """Reorder a set of six landmarks based on spatial relationships and give labels.
 
     Args:
-        landmarks (xr.DataArray): coordinates for six landmark points
-        twoPoints (str): two reference points ('Nz' or 'Iz') for orientation.
+        landmarks: coordinates for six landmark points
+        twoPoints: two reference points ('Nz' or 'Iz') for orientation.
 
     Returns:
         xr.DataArray: the landmarks ordered as "Nz", "Iz", "RPA", "LPA", "Cz"

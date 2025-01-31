@@ -33,25 +33,21 @@ def prune_ch(
     operator: str,
     flag_drop: bool = True,
 ):
-    """Prune channels from the the input data array using quality masks.
+    """Prune channels from the input data array using quality masks.
 
     Args:
-        amplitudes (:class:`NDTimeSeries`): input time series
-        masks (:class:`list[NDTimeSeries]`) : list of boolean masks with coordinates
-            comptabile to amplitudes
-
-        operator: operators for combination of masks before pruning data_array
-
-            - "all": logical AND, keeps channel if it is good across all masks
-            - "any": logical OR, keeps channel if it is good in any mask/metric
-
-        flag_drop: if True, channels are dropped from the data_array, otherwise they are
-            set to NaN (default: True)
+        amplitudes: Input time series.
+        masks: List of boolean masks with coordinates compatible with amplitudes.
+        operator: Operator for combination of masks before pruning data_array.
+            - "all": Logical AND, keeps channel if it is good across all masks.
+            - "any": Logical OR, keeps channel if it is good in any mask/metric.
+        flag_drop: If True, channels are dropped from the data_array, otherwise they are
+            set to NaN (default: True).
 
     Returns:
-        A tuple (amplitudes_pruned, prune_list), where amplitudes_pruned is
-        a the original time series channels pruned (dropped) according to quality masks.
-        A list of removed channels is returned in prune_list.
+        A tuple (amplitudes_pruned, prune_list), where amplitudes_pruned is the original
+        time series with channels pruned (dropped) according to quality masks. A list of
+        removed channels is returned in prune_list.
     """
 
     # check if all dimensions in the all the masks are also existing in data_array
@@ -101,9 +97,9 @@ def psp(
     :cite:t:`Pollonini2016`.
 
     Args:
-        amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
+        amplitudes: input time
             series
-        window_length (:class:`Quantity`, [time]): size of the computation window
+        window_length: size of the computation window
         psp_thresh: if the calculated PSP metric falls below this threshold then the
             corresponding time window should be excluded.
         cardiac_fmin : minimm frequency to extract cardiac component
@@ -179,13 +175,12 @@ def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
     """Calculate GVTD metric based on :cite:t:`Sherafati2020`.
 
     Args:
-        amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
-            series
+        amplitudes: input time series, coords (channel, wavelength, time)
 
-        stat_type (string): statistic of GVTD time trace to use to set the threshold
+        stat_type: statistic of GVTD time trace to use to set the threshold
             (see _get_gvtd_threshold). Default = 'default'
 
-        n_std (int): number of standard deviations for consider above the statistic of
+        n_std: number of standard deviations for consider above the statistic of
             interest.
 
     Returns:
@@ -231,13 +226,13 @@ def _get_gvtd_threshold(
     GVTD: NDTimeSeries,
     stat_type: str = "default",
     n_std: int = 10,
-):
+) -> float:
     """Calculate GVTD threshold based on :cite:t:`Sherafati2020`.
 
     Args:
-        GVTD (:class:`NDTimeSeries`, (time,)): GVTD timetrace
+        GVTD: GVTD timetrace, coords (time,)
 
-        stat_type (string): statistic of GVTD time trace to use to set the threshold
+        stat_type: statistic of GVTD time trace to use to set the threshold
 
             - *default*: threshold is the mode plus the distance between the smallest
               GVTD value and the mode.
@@ -253,11 +248,11 @@ def _get_gvtd_threshold(
             - *median*: same as histogram_mode but using the median instead of the mode.
             - *MAD*: same as histogram_mode but using the MAD instead of the mode.
 
-        n_std (int): number of standard deviations for consider above the statistic of
+        n_std: number of standard deviations for consider above the statistic of
             interest.
 
     Returns:
-        thresh (float): the threshold above which GVTD is considered motion.
+        thresh: the threshold above which GVTD is considered motion.
     """
 
     units = GVTD.pint.units
@@ -458,13 +453,13 @@ def sci(
     :cite:t:`Pollonini2016`.
 
     Args:
-        amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
+        amplitudes: input time, coords (channel, wavelength, time)
             series
-        window_length (:class:`Quantity`, [time]): size of the computation window
+        window_length: size of the computation window
         sci_thresh: if the calculated SCI metric falls below this threshold then the
             corresponding time window should be excluded.
-        cardiac_fmin : minimm frequency to extract cardiac component
-        cardiac_fmax : maximum frequency to extract cardiac component
+        cardiac_fmin: minimm frequency to extract cardiac component
+        cardiac_fmax: maximum frequency to extract cardiac component
 
     Returns:
         A tuple (sci, sci_mask), where sci is a DataArray with coords from the input
@@ -523,7 +518,7 @@ def snr(amplitudes: cdt.NDTimeSeries, snr_thresh: float = 2.0):
     SNR is the ratio of the average signal over time divided by its standard deviation.
 
     Args:
-        amplitudes (:class:`NDTimeSeries`, (time, *)): the input time series
+        amplitudes: the input time series, coords (time,*)
         snr_thresh:  threshold (unitless) below which a channel should be excluded.
 
     Returns:
@@ -550,7 +545,7 @@ def mean_amp(amplitudes: cdt.NDTimeSeries, amp_range: tuple[Quantity, Quantity])
     """Calculate mean amplitudes and mask channels outside amplitude range.
 
     Args:
-        amplitudes (:class:`NDTimeSeries`, (time, *)):  input time series
+        amplitudes:  input time series, coords (time, *)
         amp_range: if amplitudes.mean("time") < amp_threshs[0] or > amp_threshs[1]
             then it is excluded as an active channel in amp_mask
     Returns:
@@ -583,8 +578,8 @@ def sd_dist(
     """Calculate source-detector separations and mask channels outside a distance range.
 
     Args:
-        amplitudes (:class:`NDTimeSeries`, (channel, *)): input time series
-        geo3D (:class:`LabeledPointCloud`): 3D optode coordinates
+        amplitudes: input time series, coords (channel, *)
+        geo3D: 3D optode coordinates
         sd_range: if source-detector separation < sd_range[0] or > sd_range[1]
              then it is excluded as an active channelin sd_mask
 
@@ -627,24 +622,19 @@ def id_motion(
     as a motion artifact.
 
     Args:
-        fNIRSdata (:class:`NDTimeSeries`, (time, channel, *)): input time series
-
-        t_motion (:class:`Quantity`, [time]): time interval for motion artifact
+        fNIRSdata: input time series, coords (time, channel, *)
+        t_motion: time interval for motion artifact
             detection. Checks for signal change indicative of a motion artifact over
             time range t_motion.
-
-
-        t_mask (:class:`Quantity`, [time]): time range to mask around motion artifacts.
+        t_mask: time range to mask around motion artifacts.
             Mark data over +/- t_mask around the identified motion artifact as a
             motion artifact.
-
         stdev_thresh: threshold for std deviation of signal change. If the signal d for
             any given active channel changes by more than stdev_thresh * stdev(d) over
             the time interval tMotion, then this time point is marked as a motion
             artifact. The standard deviation is determined for each channel
             independently. Typical value ranges from 5 to 20. Use a value of 100 or
             greater if you wish for this condition to not find motion artifacts.
-
         amp_thresh: threshold for amplitude of signal change. If the signal d for any
             given active channel changes by more that amp_thresh over the time interval
             t_motion, then this time point is marked as a motion artifact. Typical value
@@ -718,8 +708,8 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
     """Refines motion artifact mask to simplify and quantify motion artifacts.
 
     Args:
-        ma_mask (:class:`NDTimeSeries`, (time, channel, *)): motion artifact mask as
-            generated by id_motion().
+        ma_mask: motion artifact mask as generated by id_motion(), coords
+            (time, channel, *).
 
         operator: operation to apply to the mask. Available operators:
 
@@ -807,8 +797,8 @@ def detect_outliers_std(
     """Detect outliers in fNIRSdata based on standard deviation of signal.
 
     Args:
-        ts :class:`NDTimeSeries`, (time, channel, *): fNIRS timeseries data
-        t_window :class:`Quantity`: time window over which to calculate std. deviations
+        ts: fNIRS timeseries data, coords (time, channel, *)
+        t_window: time window over which to calculate std. deviations
         iqr_threshold: interquartile range threshold (detect outlier as any std.
             deviation outside iqr_threshold * [25th percentile, 75th percentile])
 
@@ -855,7 +845,7 @@ def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold: float = 1.5):
     """Detect outliers in fNIRSdata based on gradient of signal.
 
     Args:
-        ts (:class:`NDTimeSeries`, (time, channel, *)): fNIRS timeseries data
+        ts: fNIRS timeseries data, coords (time, channel, *)
         iqr_threshold: interquartile range threshold (detect outlier as any gradient
             outside iqr_threshold * [25th percentile, 75th percentile])
 
@@ -912,8 +902,8 @@ def detect_outliers(
     """Detect outliers in fNIRSdata based on standard deviation and gradient of signal.
 
     Args:
-        ts (:class:`NDTimeSeries`, (time, channel, *)): fNIRS timeseries data
-        t_window_std (:class:`Quantity`): time window over which to calculate std. devs.
+        ts: fNIRS timeseries data, coords (time, channel, *)
+        t_window_std: time window over which to calculate std. devs.
         iqr_threshold_grad: interquartile range threshold (detect outlier as any
             gradient outside iqr_threshold * [25th percentile, 75th percentile])
         iqr_threshold_std: interquartile range threshold (detect outlier as any standard
@@ -937,7 +927,7 @@ def _mask1D_to_segments(mask: ArrayLike):
     """Find consecutive segments for a boolean mask.
 
     Args:
-        mask (ArrayLike): boolean mask
+        mask: boolean mask
 
     Returns:
         Given a boolean mask, this function returns an integer array `segments` of
@@ -961,16 +951,16 @@ def _mask1D_to_segments(mask: ArrayLike):
     return segments
 
 
-def _calculate_snr(ts, fs, segments):
+def _calculate_snr(ts: ArrayLike, fs: float, segments: ArrayLike):
     """Calculate signal to noise ratio for a time series.
 
     Args:
-        ts (ArrayLike): Time series
-        fs (float): Sampling rate
-        segments (ArrayLike): Segments of the time series
+        ts: Time series
+        fs: Sampling rate
+        segments: Segments of the time series
 
     Returns:
-        float: Signal to noise ratio
+        Signal to noise ratio
     """
     # Calculate signal to noise ratio by considering only longer segments.
     # Only segments longer than 3s are used. Segments may be clean or tainted.
@@ -989,16 +979,16 @@ def _calculate_snr(ts, fs, segments):
 
     return snr
 
-def _calculate_delta_threshold(ts, segments, threshold_samples):
+def _calculate_delta_threshold(ts: ArrayLike, segments: float, threshold_samples: int):
     """Calculate delta threshold for a time series.
 
     Args:
-        ts (ArrayLike): Time series
-        segments (ArrayLike): Segments of the time series
-        threshold_samples (int): Threshold samples
+        ts: Time series.
+        segments: Segments of the time series.
+        threshold_samples: Threshold samples.
 
     Returns:
-        float: Delta threshold
+        Delta threshold.
     """
     # for long segments (>threshold_samples (0.5s)) that are not marked as artifacts
     # calculate the absolute differences of samples that are threshold_samples away
@@ -1023,8 +1013,8 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
     """Detect baselineshifts in fNIRSdata.
 
     Args:
-        ts (:class:`NDTimeSeries`, (time, channel, *)): fNIRS timeseries data
-        outlier_mask (:class:`NDTimeSeries`): mask containing FALSE anytime an outlier
+        ts: fNIRS timeseries data, coords (time, channel, *)
+        outlier_mask: mask containing FALSE anytime an outlier
             is detected in signal
 
     Returns:

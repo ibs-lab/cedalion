@@ -35,7 +35,7 @@ def motion_correct_spline(
         p: smoothing factor
 
     Returns:
-        dodSpline (cdt.NDTimeSeries): The motion-corrected fNIRS data.
+        dodSpline: The motion-corrected fNIRS data.
     """
     dtShort = 0.3
     dtLong = 3
@@ -163,19 +163,19 @@ def motion_correct_spline(
 def compute_window(
     SegLength: cdt.NDTimeSeries, dtShort: Quantity, dtLong: Quantity, fs: Quantity
 ):
-    """Computes the window size.
+    """Compute the window size.
 
     Window size is based on the segment length, short time interval, long time interval,
     and sampling frequency.
 
     Args:
-        SegLength (cdt.NDTimeSeries): The length of the segment.
-        dtShort (Quantity): The short time interval.
-        dtLong (Quantity): The long time interval.
-        fs (Quantity): The sampling frequency.
+        SegLength: The length of the segment.
+        dtShort: The short time interval.
+        dtLong: The long time interval.
+        fs: The sampling frequency.
 
     Returns:
-        wind: The computed window size.
+        The computed window size.
     """
     if SegLength < dtShort * fs:
         wind = SegLength
@@ -197,14 +197,12 @@ def motion_correct_splineSG(
     """Apply motion correction using spline interpolation and Savitzky-Golay filter.
 
     Args:
-        fNIRSdata (cdt.NDTimeSeries): The fNIRS data to be motion corrected.
-        frame_size (Quantity): The size of the sliding window in seconds for the
-            Savitzky-Golay filter. Default is 10 seconds.
-        p: smoothing factor
+        fNIRSdata: The fNIRS data to be motion corrected.
+        p: Smoothing factor.
+        frame_size: The size of the sliding window in seconds for the Savitzky-Golay filter. Default is 10 seconds.
 
     Returns:
-        dodSplineSG (cdt.NDTimeSeries): The motion-corrected fNIRS data after applying
-        spline interpolation and Savitzky-Golay filter.
+        dodSplineSG: The motion-corrected fNIRS data after applying spline interpolation and Savitzky-Golay filter.
     """
 
     fs = sampling_rate(fNIRSdata)
@@ -262,17 +260,17 @@ def motion_correct_PCA(
     Boston University Neurophotonics Center
     https://github.com/BUNPC/Homer3
 
-    Inputs:
+    Args:
         fNIRSdata: The fNIRS data to be motion corrected.
         tInc: The time series indicating the presence of motion artifacts.
-        nSV (Quantity): Specifies the number of prinicpal components to remove from the
-            data. If nSV < 1 then the filter removes the first n components of the data
-            that removes a fraction of the variance up to nSV.
+        nSV: Specifies the number of principal components to remove from the data. 
+             If nSV < 1 then the filter removes the first n components of the data 
+             that removes a fraction of the variance up to nSV.
 
     Returns:
-        fNIRSdata_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
-        svs (np.array): the singular values of the PCA.
-        nSV (Quantity): the number of principal components removed from the data.
+        fNIRSdata_cleaned: The motion-corrected fNIRS data.
+        svs: The singular values of the PCA.
+        nSV: The number of principal components removed from the data.
     """
 
     # apply mask to get only points with motion
@@ -400,7 +398,7 @@ def motion_correct_PCA_recurse(
     amp_thresh: Quantity = 5,
     nSV: Quantity = 0.97,
     maxIter: Quantity = 5,
-):
+) -> tuple[cdt.NDTimeSeries, np.array, int, cdt.NDTimeSeries]:
     """Identify motion artefacts in input fNIRSdata.
 
     If any active channel exhibits signal change greater than STDEVthresh or AMPthresh,
@@ -409,24 +407,26 @@ def motion_correct_PCA_recurse(
     until maxIter is reached or there are no motion artefacts identified.
 
     Args:
-        fNIRSdata (cdt.NDTimeSeries): The fNIRS data to be motion corrected.
-        t_motion: check for signal change indicative of a motion artefact over
-            time range tMotion. (units of seconds)
-        t_mask (Quantity): mark data +/- tMask seconds aroundthe identified motion
+        fNIRSdata: The fNIRS data to be motion corrected.
+        t_motion: Check for signal change indicative of a motion artefact over
+            time range tMotion (units of seconds).
+        t_mask: Mark data +/- tMask seconds around the identified motion
             artefact as a motion artefact.
-        stdev_thresh (Quantity): if the signal d for any given active channel changes by
+        stdev_thresh: If the signal d for any given active channel changes by
             more than stdev_thresh * stdev(d) over the time interval tMotion then this
             time point is marked as a motion artefact.
-        amp_thresh (Quantity): if the signal d for any given active channel changes
+        amp_thresh: If the signal d for any given active channel changes
             by more than amp_thresh over the time interval tMotion then this time point
             is marked as a motion artefact.
-        nSV: FIXME
-        maxIter: FIXME
+        nSV: Specifies the number of principal components to remove from the data.
+        maxIter: Maximum number of iterations for motion correction.
 
     Returns:
-        fNIRSdata_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
-        svs (np.array): the singular values of the PCA.
-        nSV (int): the number of principal components removed from the data.
+        Tuple with
+            fNIRSdata_cleaned: The motion-corrected fNIRS data.
+            svs: The singular values of the PCA.
+            nSV: The number of principal components removed from the data.
+            tInc: The time series indicating the presence of motion artifacts.
     """
 
     tIncCh = id_motion(

@@ -40,38 +40,22 @@ class TwoSurfaceHeadModel:
     surfaces.
 
     Attributes:
-        segmentation_masks : xr.DataArray
-            Segmentation masks of the head for each tissue type.
-        brain : cdc.Surface
-            Surface of the brain.
-        scalp : cdc.Surface
-            Surface of the scalp.
-        landmarks : cdt.LabeledPointCloud
-            Anatomical landmarks in RAS space.
-        t_ijk2ras : cdt.AffineTransform
-            Affine transformation from ijk to RAS space.
-        t_ras2ijk : cdt.AffineTransform
-            Affine transformation from RAS to ijk space.
-        voxel_to_vertex_brain : scipy.sparse.spmatrix
-            Mapping from voxel to brain vertices.
-        voxel_to_vertex_scalp : scipy.sparse.spmatrix
-            Mapping from voxel to scalp vertices.
-        crs : str
-            Coordinate reference system of the head model.
+        segmentation_masks: Segmentation masks of the head for each tissue type.
+        brain: Surface of the brain.
+        scalp: Surface of the scalp.
+        landmarks: Anatomical landmarks in RAS space.
+        t_ijk2ras: Affine transformation from ijk to RAS space.
+        t_ras2ijk: Affine transformation from RAS to ijk space.
+        voxel_to_vertex_brain: Mapping from voxel to brain vertices.
+        voxel_to_vertex_scalp: Mapping from voxel to scalp vertices.
+        crs: Coordinate reference system of the head model.
 
     Methods:
-        from_segmentation(cls, segmentation_dir, mask_files, landmarks_ras_file,
-            brain_seg_types, scalp_seg_types, smoothing, brain_face_count,
-            scalp_face_count): Construct instance from segmentation masks in NIfTI
-            format.
-        apply_transform(transform)
-            Apply a coordinate transformation to the head model.
-        save(foldername)
-            Save the head model to a folder.
-        load(foldername)
-            Load the head model from a folder.
-        align_and_snap_to_scalp(points)
-            Align and snap optodes or points to the scalp surface.
+        from_segmentation: Construct instance from segmentation masks in NIfTI format.
+        apply_transform: Apply a coordinate transformation to the head model.
+        save: Save the head model to a folder.
+        load: Load the head model from a folder.
+        align_and_snap_to_scalp: Align and snap optodes or points to the scalp surface.
     """
 
     segmentation_masks: xr.DataArray
@@ -107,19 +91,15 @@ class TwoSurfaceHeadModel:
         """Constructor from binary masks as gained from segmented MRI scans.
 
         Args:
-            segmentation_dir (str): Folder containing the segmentation masks in NIFTI
-                format.
-            mask_files (Dict[str, str]): Dictionary mapping segmentation types to NIFTI
-                filenames.
-            landmarks_ras_file (Optional[str]): Filename of the landmarks in RAS space.
-            brain_seg_types (list[str]): List of segmentation types to be included in
-                the brain surface.
-            scalp_seg_types (list[str]): List of segmentation types to be included in
-                the scalp surface.
-            smoothing(float): Smoothing factor for the brain and scalp surfaces.
-            brain_face_count (Optional[int]): Number of faces for the brain surface.
-            scalp_face_count (Optional[int]): Number of faces for the scalp surface.
-            fill_holes (bool): Whether to fill holes in the segmentation masks.
+            segmentation_dir: Folder containing the segmentation masks in NIFTI format.
+            mask_files: Dictionary mapping segmentation types to NIFTI filenames.
+            landmarks_ras_file: Filename of the landmarks in RAS space.
+            brain_seg_types: List of segmentation types to be included in the brain surface.
+            scalp_seg_types: List of segmentation types to be included in the scalp surface.
+            smoothing: Smoothing factor for the brain and scalp surfaces.
+            brain_face_count: Number of faces for the brain surface.
+            scalp_face_count: Number of faces for the scalp surface.
+            fill_holes: Whether to fill holes in the segmentation masks.
         """
 
         # load segmentation mask
@@ -231,24 +211,20 @@ class TwoSurfaceHeadModel:
         """Constructor from seg.masks, brain and head surfaces as gained from MRI scans.
 
         Args:
-            segmentation_dir (str): Folder containing the segmentation masks in NIFTI
-                format.
-            mask_files (dict[str, str]): Dictionary mapping segmentation types to NIFTI
-                filenames.
-            brain_surface_file (str): Path to the brain surface.
-            scalp_surface_file (str): Path to the scalp surface.
-            landmarks_ras_file (Optional[str]): Filename of the landmarks in RAS space.
-            brain_seg_types (list[str]): List of segmentation types to be included in
-                the brain surface.
-            scalp_seg_types (list[str]): List of segmentation types to be included in
-                the scalp surface.
-            smoothing (float): Smoothing factor for the brain and scalp surfaces.
-            brain_face_count (Optional[int]): Number of faces for the brain surface.
-            scalp_face_count (Optional[int]): Number of faces for the scalp surface.
-            fill_holes (bool): Whether to fill holes in the segmentation masks.
+            segmentation_dir: Folder containing the segmentation masks in NIFTI format.
+            mask_files: Dictionary mapping segmentation types to NIFTI filenames.
+            brain_surface_file: Path to the brain surface.
+            scalp_surface_file: Path to the scalp surface.
+            landmarks_ras_file: Filename of the landmarks in RAS space.
+            brain_seg_types: List of segmentation types to be included in the brain surface.
+            scalp_seg_types: List of segmentation types to be included in the scalp surface.
+            smoothing: Smoothing factor for the brain and scalp surfaces.
+            brain_face_count: Number of faces for the brain surface.
+            scalp_face_count: Number of faces for the scalp surface.
+            fill_holes: Whether to fill holes in the segmentation masks.
 
         Returns:
-            TwoSurfaceHeadModel: An instance of the TwoSurfaceHeadModel class.
+            An instance of the TwoSurfaceHeadModel class.
         """
 
         # load segmentation mask
@@ -382,7 +358,7 @@ class TwoSurfaceHeadModel:
         """Save the head model to a folder.
 
         Args:
-            foldername (str): Folder to save the head model into.
+            foldername: Folder to save the head model into.
 
         Returns:
             None
@@ -417,7 +393,7 @@ class TwoSurfaceHeadModel:
         """Load the head model from a folder.
 
         Args:
-            foldername (str): Folder to load the head model from.
+            foldername: Folder to load the head model from.
 
         Returns:
             TwoSurfaceHeadModel: Loaded head model.
@@ -486,11 +462,11 @@ class TwoSurfaceHeadModel:
         """Align and snap optodes or points to the scalp surface.
 
         Args:
-            points (cdt.LabeledPointCloud): Points to be aligned and snapped to the
+            points: Points to be aligned and snapped to the
                 scalp surface.
 
         Returns:
-            cdt.LabeledPointCloud: Points aligned and snapped to the scalp surface.
+            Points aligned and snapped to the scalp surface.
         """
 
         assert self.landmarks is not None, "Please add landmarks in RAS to head \
@@ -509,11 +485,11 @@ class TwoSurfaceHeadModel:
         """Snap optodes or points to the closest scalp voxel.
 
         Args:
-            points (cdt.LabeledPointCloud): Points to be snapped to the closest scalp
+            points: Points to be snapped to the closest scalp
                 voxel.
 
         Returns:
-            cdt.LabeledPointCloud: Points aligned and snapped to the closest scalp
+            Points aligned and snapped to the closest scalp
                 voxel.
         """
         # Align to scalp surface
@@ -611,11 +587,9 @@ class ForwardModel:
         """Constructor for the forward model.
 
         Args:
-            head_model (TwoSurfaceHeadModel): Head model containing voxel projections to
-                brain and scalp surfaces.
-            geo3d (cdt.LabeledPointCloud): Optode positions and directions.
-            measurement_list (pd.DataFrame): List of measurements of experiment with
-                source, detector, channel and wavelength.
+            head_model: Head model containing voxel projections to brain and scalp surfaces.
+            geo3d: Optode positions and directions.
+            measurement_list: List of measurements of experiment with source, detector, channel, and wavelength.
         """
 
         assert head_model.crs == "ijk"  # FIXME
@@ -713,11 +687,11 @@ class ForwardModel:
         """Fluence caused by one optode at the positions of all other optodes.
 
         Args:
-            fluence (np.ndarray): Fluence in each voxel.
-            emitting_opt (int): Index of the emitting optode.
+            fluence: Fluence in each voxel.
+            emitting_opt: Index of the emitting optode.
 
         Returns:
-            np.ndarray: Fluence at all optode positions.
+            Fluence at all optode positions.
         """
 
         n_optodes = len(self.optode_pos)
@@ -842,7 +816,7 @@ class ForwardModel:
                 mesher. Note: they should all be double
 
         Returns:
-        xr.DataArray: Fluence in each voxel for each channel and wavelength.
+            Fluence in each voxel for each channel and wavelength.
 
         References:
             (:cite:t:`Dehghani2009`) Dehghani, Hamid, et al. "Near infrared optical
@@ -963,16 +937,15 @@ class ForwardModel:
         return fluence_all, fluence_at_optodes
 
 
-    def compute_sensitivity(self, fluence_all, fluence_at_optodes):
+    def compute_sensitivity(self, fluence_all: xr.DataArray, fluence_at_optodes: xr.DataArray):
         """Compute sensitivity matrix from fluence.
 
         Args:
-            fluence_all (xr.DataArray): Fluence in each voxel for each wavelength.
-            fluence_at_optodes (xr.DataArray): Fluence at all optode positions for each
-                wavelength.
+            fluence_all: Fluence in each voxel for each wavelength.
+            fluence_at_optodes: Fluence at all optode positions for each wavelength.
 
         Returns:
-            xr.DataArray: Sensitivity matrix for each channel, vertex and wavelength.
+            Sensitivity matrix for each channel, vertex and wavelength.
         """
 
         channels = self.measurement_list.channel.unique().tolist()
@@ -1045,11 +1018,10 @@ class ForwardModel:
         """Compute stacked HbO and HbR sensitivity matrices from fluence.
 
         Args:
-            sensitivity (xr.DataArray): Sensitivity matrix for each vertex and
-                wavelength.
+            sensitivity: Sensitivity matrix for each vertex and wavelength.
 
         Returns:
-            xr.DataArray: Stacked sensitivity matrix for each channel and vertex.
+            Stacked sensitivity matrix for each channel and vertex.
         """
 
         assert "wavelength" in sensitivity.dims
