@@ -22,9 +22,12 @@ from cedalion.io.bids import check_for_bids_field
 column_names = ["current_name",
                 "sub",
                 "ses",
-                "task",
                 "run",
-                "acq" ]
+                "task",
+                "acq",
+                "cond",
+                "cond_match",
+                "duration"]
 
 
 snirf2bids_mapping_df = pd.DataFrame(columns=column_names)
@@ -80,7 +83,10 @@ for path_parts in file_list:
                  "ses": ses, 
                  "run": run, 
                  "task": task, 
-                 "acq": acq
+                 "acq": acq,
+                 "cond": None,
+                 "cond_match": None,
+                 "duration": None
                  }
     snirf2bids_mapping_df = pd.concat([snirf2bids_mapping_df, pd.DataFrame([bids_dict])], ignore_index=True)
 
