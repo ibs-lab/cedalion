@@ -13,7 +13,7 @@
   </div>
   <script>
     document.addEventListener("DOMContentLoaded", function() {
-  fetch("/versions.json")
+  fetch("/versions.json") // Load the versions.json file
     .then(response => response.json())
     .then(data => {
       const versionList = document.getElementById("version-list");
