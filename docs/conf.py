@@ -30,9 +30,6 @@ extensions = [
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
-html_context = {
-        'display_lower_left': True,
-}
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -40,6 +37,7 @@ html_context = {
 
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
+html_context = {'display_lower_left': True} # Enable versions dropdown
 
 # fix a margin problem with the rendering of xarray representations in notebooks when
 # using the RTD theme

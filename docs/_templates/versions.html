@@ -13,33 +13,39 @@
   </div>
   <script>
     document.addEventListener("DOMContentLoaded", function() {
-      fetch("versions.json")
-        .then(response => response.json())
-        .then(data => {
-          const versionList = document.getElementById("version-list");
-          const currentUrl = window.location.href;
-          
-          versionList.innerHTML = "<dt>Versions</dt>";
-          
-          data.forEach(({ label, url }) => {
-            const dd = document.createElement("dd");
-            const a = document.createElement("a");
-            a.href = url;
-            a.textContent = label;
-            
-            if (currentUrl.startsWith(url)) {
-              a.style.fontWeight = "bold";
-              document.getElementById("current-version").textContent = label;
-            }
-            
-            dd.appendChild(a);
-            versionList.appendChild(dd);
-          });
-        })
-        .catch(error => {
-          console.error("Error loading versions.json:", error);
-          document.getElementById("current-version").textContent = "Unknown";
-        });
+  fetch("/versions.json")
+    .then(response => response.json())
+    .then(data => {
+      const versionList = document.getElementById("version-list");
+      const currentVersionElement = document.getElementById("current-version");
+      const currentUrl = window.location.href;
+      let currentVersion = "Unknown"; // Default if no match
+
+      versionList.innerHTML = "<dt>Versions</dt>";
+
+      data.forEach(({ label, url }) => {
+        const dd = document.createElement("dd");
+        const a = document.createElement("a");
+        a.href = url;
+        a.textContent = label;
+
+        // Check if the current URL starts with the version URL
+        if (currentUrl.startsWith(url) || currentUrl.includes(url)) {
+          a.style.fontWeight = "bold";
+          currentVersion = label;
+        }
+
+        dd.appendChild(a);
+        versionList.appendChild(dd);
+      });
+
+      // Update the displayed current version name
+      currentVersionElement.textContent = currentVersion;
+    })
+    .catch(error => {
+      console.error("Error loading versions.json:", error);
+      document.getElementById("current-version").textContent = "Unknown";
     });
+});
   </script>
 {% endif %}
