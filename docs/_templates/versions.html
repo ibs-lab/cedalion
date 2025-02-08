@@ -1,0 +1,45 @@
+{% if READTHEDOCS or display_lower_left %}
+  <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+    <span class="rst-current-version" data-toggle="rst-current-version">
+      <span class="fa fa-book"> Version:</span>
+      <span id="current-version">Loading...</span>
+      <span class="fa fa-caret-down"></span>
+    </span>
+    <div class="rst-other-versions">
+      <dl id="version-list">
+        <dt>{{ _('Versions') }}</dt>
+      </dl>
+    </div>
+  </div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      fetch("/versions.json")
+        .then(response => response.json())
+        .then(data => {
+          const versionList = document.getElementById("version-list");
+          const currentUrl = window.location.href;
+          
+          versionList.innerHTML = "<dt>Versions</dt>";
+          
+          data.forEach(({ label, url }) => {
+            const dd = document.createElement("dd");
+            const a = document.createElement("a");
+            a.href = url;
+            a.textContent = label;
+            
+            if (currentUrl.startsWith(url)) {
+              a.style.fontWeight = "bold";
+              document.getElementById("current-version").textContent = label;
+            }
+            
+            dd.appendChild(a);
+            versionList.appendChild(dd);
+          });
+        })
+        .catch(error => {
+          console.error("Error loading versions.json:", error);
+          document.getElementById("current-version").textContent = "Unknown";
+        });
+    });
+  </script>
+{% endif %}
