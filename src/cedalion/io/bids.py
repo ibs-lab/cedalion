@@ -9,14 +9,92 @@ import pandas as pd
 
 
 def check_for_bids_field(path_parts: list, field: str):
+    """@author: lauracarlton."""
     field_parts = [part for part in path_parts if field in part]
     if len(field_parts) == 0:
         value = None
     else:
-        find_value = field_parts[-1].split("_")
+        find_value = field_parts[
+            -1
+        ].split(
+            "_"
+        )  # assume the lowest directory level supersedes any higher directory level ? not sure if we should assume this
         value = [vals for vals in find_value if field in vals][0]
         value = value.split("-")[1]
+
     return value
+
+
+def get_snirf2bids_mapping_csv(dataset_path):
+    """@author: lauracarlton."""
+    column_names = [
+        "current_name",
+        "sub",
+        "ses",
+        "run",
+        "task",
+        "acq",
+        "cond",
+        "cond_match",
+        "duration",
+    ]
+
+    snirf2bids_mapping_df = pd.DataFrame(columns=column_names)
+
+    # % IDENTIFY ALL SNIRF FILES IN THE DIRECTORY AND THEIR PATH
+
+    file_list = []
+    for dirpath, dirnames, filenames in os.walk(dataset_path):
+        for filename in filenames:
+            if filename.endswith(".snirf"):
+                # Get the full path of the file
+                relative_path = os.path.relpath(dirpath, dataset_path)
+
+                # get each part of the path
+                parent_folders = relative_path.split(os.sep)
+
+                # including the filename
+                filename_without_ext = os.path.splitext(filename)[0]
+                parent_folders.append(filename_without_ext)
+
+                # add to the list of file paths
+                file_list.append(parent_folders)
+
+    # % CHECK EACH FILE TO GATHER INFO TO POPULATE THE MAPPING_DF
+    for path_parts in file_list:
+        # need to check for sub
+        subject = check_for_bids_field(path_parts, "sub")
+
+        # check for session
+        ses = check_for_bids_field(path_parts, "ses")
+
+        # check for run
+        run = check_for_bids_field(path_parts, "run")
+
+        # check for task
+        task = check_for_bids_field(path_parts, "task")
+
+        # check for acq
+        acq = check_for_bids_field(path_parts, "acq")
+
+        bids_dict = {
+            "current_name": "/".join(path_parts),
+            "sub": subject,
+            "ses": ses,
+            "run": run,
+            "task": task,
+            "acq": acq,
+            "cond": None,
+            "cond_match": None,
+            "duration": None,
+        }
+        snirf2bids_mapping_df = pd.concat(
+            [snirf2bids_mapping_df, pd.DataFrame([bids_dict])], ignore_index=True
+        )
+
+    mapping_df_path = os.path.join(dataset_path, "snirf2BIDS_mapping.csv")
+    snirf2bids_mapping_df.to_csv(mapping_df_path, index=None)
+    return mapping_df_path
 
 
 def read_events_from_tsv(fname: str | Path) -> pd.DataFrame:
@@ -192,7 +270,7 @@ def search_for_sessions_acq_time(dataset_path: str) -> pd.DataFrame:
         session_df = pd.concat(session_dfs, ignore_index=True)
         session_df.drop_duplicates(inplace=True)
         session_df = session_df.rename(columns={"session_id": "ses"})
-        session_df['ses'] = session_df['ses'].apply(lambda x: x.replace("ses-", ""))
+        session_df["ses"] = session_df["ses"].apply(lambda x: x.replace("ses-", ""))
     else:
         session_df = pd.DataFrame(columns=["ses", "sub", "ses_acq_time"])
         session_df
@@ -260,8 +338,7 @@ def create_session_files(group_df: pd.DataFrame, bids_dir: str) -> None:
     sub = group_df.name
     tsv_df = group_df[["ses", "ses_acq_time"]]
     tsv_df["ses"] = "ses-" + tsv_df["ses"]
-    tsv_df = tsv_df.rename(columns={"ses_acq_time": "acq_time",
-                                    "ses": "session_id"})
+    tsv_df = tsv_df.rename(columns={"ses_acq_time": "acq_time", "ses": "session_id"})
     if not pd.isna(tsv_df["session_id"]).any():
         filename = "sub-" + str(sub) + "_sessions.tsv"
         path_to_save = os.path.join(bids_dir, "sub-" + str(sub), filename)
@@ -295,15 +372,25 @@ def create_data_description(
         This function does not return any value. It updates the `dataset_description.json` file in the BIDS directory.
     """
 
+    data_des = {
+        "Name": "Enter dataset name here",
+        "BIDSVersion": "1.8.0",
+        "License": "CC0",
+        "DatasetType": "raw",
+        "Authors": ["Enter author names here"],
+        "Acknowledgements": "Enter acknowledgements here (e.g., funding sources, institutions).",
+        "HowToAcknowledge": "Provide details on how to cite or acknowledge this dataset.",
+        "DatasetDOI": "Enter DOI here if available.",
+        "Funding": ["Enter funding details here, if applicable."],
+        "EthicsApprovals": ["Enter ethics approval details here, if applicable."],
+        "ReferencesAndLinks": [
+            "Enter references or related links here, if applicable."
+        ],
+    }
+
     result = find_files_with_pattern(dataset_path, "dataset_description.json")
-    data_description_keys = [
-        "Name",
-        "DatasetType",
-        "EthicsApprovals",
-        "ReferencesAndLinks",
-        "Funding",
-    ]
-    data_des = {}
+    data_description_keys = data_des.keys()
+    # data_des = {}
     if extra_meta_data is not None:
         with open(extra_meta_data, "r") as file:
             data = json.load(file)
@@ -325,7 +412,7 @@ def create_data_description(
     array_columns = ["Authors", "Funding", "EthicsApprovals", "ReferencesAndLinks"]
     for arr in array_columns:
         if arr in data_des:
-            if not isinstance(data_des[arr], list) and isinstance(data_des[arr],  str):  # noqa: E721
+            if not isinstance(data_des[arr], list) and isinstance(data_des[arr], str):  # noqa: E721
                 data_des[arr] = [data_des[arr]]
 
     with open(os.path.join(bids_dir, "dataset_description.json"), "w") as json_file:
@@ -382,7 +469,7 @@ def create_participants_tsv(dataset_path, bids_dir, mapping_df):
     participants_org = find_files_with_pattern(dataset_path, "participants.tsv")
     if participants_org:
         participants_org_df = pd.read_csv(participants_org[0], delimiter="\t")
-        participants_org_df.drop_duplicates(subset=['participant_id'], inplace=True)
+        participants_org_df.drop_duplicates(subset=["participant_id"], inplace=True)
         participants_df = pd.merge(
             participants_df, participants_org_df, on="participant_id", how="left"
         )
@@ -435,7 +522,9 @@ def create_participants_json(dataset_path: str, bids_dir: str) -> None:
     if len(result) != 0:
         with open(result[0], "r") as file:
             json_template.update(json.load(file))
-            json_template = {key: value for key, value in json_template.items() if value != ""}
+            json_template = {
+                key: value for key, value in json_template.items() if value != ""
+            }
 
     with open(os.path.join(bids_dir, "participants.json"), "w") as json_file:
         json.dump(json_template, json_file, indent=4)
@@ -444,7 +533,7 @@ def create_participants_json(dataset_path: str, bids_dir: str) -> None:
 def edit_events(row: pd.Series, bids_dir: str) -> None:
     """Edits an events.tsv file in a BIDS directory based on specified conditions.
 
-    This function modifies an events.tsv file corresponding to a specific row of mapping scv. 
+    This function modifies an events.tsv file corresponding to a specific row of mapping scv.
     It updates the "duration" and/or "trial_type" columns based on the values in the `row` parameter.
 
     Args:
@@ -460,19 +549,19 @@ def edit_events(row: pd.Series, bids_dir: str) -> None:
         None: The function modifies the events.tsv file in place and does not return a value.
     """
     if row["cond"] or row["cond_match"] or row["duration"]:
-        tsv_filename = row['bids_name'].replace("_nirs.snirf", "_events.tsv")
-        event_path = os.path.join(bids_dir, row['parent_path'], tsv_filename)
-        events_df = pd.read_csv(event_path, delimiter='\t')
+        tsv_filename = row["bids_name"].replace("_nirs.snirf", "_events.tsv")
+        event_path = os.path.join(bids_dir, row["parent_path"], tsv_filename)
+        events_df = pd.read_csv(event_path, delimiter="\t")
         if not pd.isna(row["duration"]):
-            events_df['duration'] = row["duration"]
+            events_df["duration"] = row["duration"]
         if not pd.isna(row["cond"]):
-            keys = re.sub(r'[\[\]]', '', row["cond"]).split(', ')
+            keys = re.sub(r"[\[\]]", "", row["cond"]).split(", ")
             keys = [item.strip() for item in keys]
-            values = re.sub(r'[\[\]]', '', row["cond_match"]).split(', ')
+            values = re.sub(r"[\[\]]", "", row["cond_match"]).split(", ")
             values = [item.strip() for item in values]
 
             map_dict = dict(zip(keys, values))
-            events_df["trial_type"] = events_df["trial_type"].astype(str).map(map_dict)  
+            events_df["trial_type"] = events_df["trial_type"].astype(str).map(map_dict)
 
         events_df.to_csv(event_path, sep="\t", index=False)
     return
@@ -488,4 +577,4 @@ def save_source(dataset_path: str, destination_path: str) -> None:
     destination_path : str
         The directory where the 'sourcedata' folder will be created and the dataset copied.
     """
-    shutil.copytree(dataset_path, os.path.join(destination_path, 'sourcedata'))
+    shutil.copytree(dataset_path, os.path.join(destination_path, "sourcedata"))
