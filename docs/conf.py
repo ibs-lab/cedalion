@@ -93,6 +93,8 @@ autodoc_type_aliases = {
     "collections.OrderedDict" : "OrderedDict",
 }
 
+modindex_common_prefix = ["cedalion."]
+
 
 
 # -- sphinx_autoapi_-----------------------------------------------------------
