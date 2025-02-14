@@ -35,7 +35,6 @@ synth/index
 :maxdepth: 1
 :caption: Reference
 
-API reference <api/modules.rst>
 Bibliography <references.rst>
 All examples <examples>
 ```

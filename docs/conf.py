@@ -24,7 +24,6 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinxcontrib.bibtex",
     "sphinx.ext.linkcode"
-    #"autoapi.extension"
 ]
 
 templates_path = ["_templates"]
@@ -95,25 +94,7 @@ autodoc_type_aliases = {
 
 modindex_common_prefix = ["cedalion."]
 
-
-
-# -- sphinx_autoapi_-----------------------------------------------------------
-# using autosummary with customized templates as decribed in
-# https://github.com/sphinx-doc/sphinx/issues/7912
-
-"""autoapi_dirs = ["../src"]
-
-autoapi_options = [
-    "members",
-    "undoc-members",
-    "show-inheritance",
-    "show-module-summary",
-    "special-members",
-    "inherited-members",
-    "no-signatures"
-]
-autoapi_add_toctree_entry = False"""
-
+# -- Options for autosummary ------------------------------------------------------
 autosummary_generate = True
 autodoc_default_options = {
     "members": True,
