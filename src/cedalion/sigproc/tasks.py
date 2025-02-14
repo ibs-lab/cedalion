@@ -13,13 +13,12 @@ def int2od(
     ts_input: str | None = None,
     ts_output: str = "od",
 ):
-    """Calculate optical density from intensity amplitude  data.
+    """Calculate optical density from intensity amplitude data.
 
     Args:
-        rec (Recording): container of timeseries data
-        ts_input (str): name of intensity timeseries. If None, this tasks operates on
-            the last timeseries in rec.timeseries.
-        ts_output (str): name of optical density timeseries.
+        rec: Container of timeseries data.
+        ts_input: Name of intensity timeseries. If None, this task operates on the last timeseries in rec.timeseries.
+        ts_output: Name of optical density timeseries.
     """
 
     ts = rec.get_timeseries(ts_input)
@@ -38,12 +37,11 @@ def od2conc(
     """Calculate hemoglobin concentrations from optical density data.
 
     Args:
-        rec (Recording): container of timeseries data
-        dpf (dict[float, float]): differential path length factors
-        spectrum (str): label of the extinction coefficients to use (default: "prahl")
-        ts_input (str | None): name of intensity timeseries. If None, this tasks operates
-            on the last timeseries in rec.timeseries.
-        ts_output (str): name of optical density timeseries (default: "conc").
+        rec: Container of timeseries data.
+        dpf: Differential path length factors.
+        spectrum: Label of the extinction coefficients to use (default: "prahl").
+        ts_input: Name of intensity timeseries. If None, this task operates on the last timeseries in rec.timeseries.
+        ts_output: Name of optical density timeseries (default: "conc").
     """
 
     ts = rec.get_timeseries(ts_input)
@@ -70,13 +68,11 @@ def snr(
     """Calculate signal-to-noise ratio (SNR) of timeseries data.
 
     Args:
-        rec (Recording): The recording object containing the data.
-        snr_thresh (float): The SNR threshold.
-        ts_input (str | None, optional): The input time series. Defaults to None.
-        aux_obj_output (str, optional): The key for storing the SNR in the auxiliary
-            object. Defaults to "snr".
-        mask_output (str, optional): The key for storing the mask in the recording
-            object. Defaults to "snr".
+        rec: The recording object containing the data.
+        snr_thresh: The SNR threshold.
+        ts_input: The input time series. Defaults to None.
+        aux_obj_output: The key for storing the SNR in the auxiliary object. Defaults to "snr".
+        mask_output: The key for storing the mask in the recording object. Defaults to "snr".
     """
     ts = rec.get_timeseries(ts_input)
 
@@ -98,14 +94,12 @@ def sd_dist(
     """Calculate source-detector separations and mask channels outside a range.
 
     Args:
-        rec (Recording): The recording object containing the data.
-        sd_min (Annotated[Quantity, "[length]"]): The minimum source-detector separation.
-        sd_max (Annotated[Quantity, "[length]"]): The maximum source-detector separation.
-        ts_input (str | None, optional): The input time series. Defaults to None.
-        aux_obj_output (str, optional): The key for storing the source-detector distances
-            in the auxiliary object. Defaults to "sd_dist".
-        mask_output (str, optional): The key for storing the mask in the recording object.
-            Defaults to "sd_dist".
+        rec: The recording object containing the data.
+        sd_min: The minimum source-detector separation.
+        sd_max: The maximum source-detector separation.
+        ts_input: The input time series. Defaults to None.
+        aux_obj_output: The key for storing the source-detector distances in the auxiliary object. Defaults to "sd_dist".
+        mask_output: The key for storing the mask in the recording object. Defaults to "sd_dist".
     """
     ts = rec.get_timeseries(ts_input)
 

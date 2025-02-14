@@ -1,5 +1,6 @@
 """Frequency-related signal processing methods."""
 
+from __future__ import annotations
 import numpy as np
 import scipy.signal
 import xarray as xr
@@ -17,7 +18,7 @@ def sampling_rate(timeseries: cdt.NDTimeSeries) -> Quantity:
         This functions assumes uniform sampling.
 
     Args:
-        timeseries (:class:`NDTimeSeries`, (time,*)): the input time series
+        timeseries: the input time series, coords (time,*).
 
     Returns:
         The sampling rate estimated by averaging time differences between samples.
@@ -39,9 +40,9 @@ def freq_filter(
     """Apply a Butterworth bandpass frequency filter.
 
     Args:
-        timeseries (:class:`NDTimeSeries`, (time,*)): the input time series
-        fmin (:class:`Quantity`, [frequency]): lower threshold of the pass band
-        fmax (:class:`Quantity`, [frequency]): higher threshold of the pass band
+        timeseries: the input time series, coords (time,*)
+        fmin: lower threshold of the pass band
+        fmax: higher threshold of the pass band
         butter_order: order of the filter
 
     Returns:

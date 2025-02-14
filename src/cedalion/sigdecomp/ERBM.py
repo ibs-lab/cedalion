@@ -292,17 +292,17 @@ def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
 
 
 def lfc(x: np.ndarray, p: int , choice, a0) -> tuple[np.ndarray, np.ndarray]:
-    """Helper function for ERBM ICA: computes the linear filtering coefficients (LFC) with length p for entropy rate estimation, and the estimated entropy rate.
+    """Compute the linear filtering coefficients (LFC) with length p for entropy rate estimation, and the estimated entropy rate.
 
     Args:
-        x (np.ndarray, (Time Points, 1)): the source estimate [T x 1]
-        p (int):  the filter length for the source model
-        choice :  can be 'sub', 'super' or 'unknown'; any other input is handled as 'unknown' 
-        a0 (np.ndarray or empty list): is the intial guess [p x 1] or an empty list []     
+        x: The source estimate [T x 1].
+        p: The filter length for the source model.
+        choice: Can be 'sub', 'super' or 'unknown'; any other input is handled as 'unknown'.
+        a0: The initial guess [p x 1] or an empty list [].
 
     Returns:
-        a (np.ndarray, (p, 1)): the filter coefficients [p x 1]
-        min_cost (np.ndarray, (1, 1)): the entropy rate estimation [1 x 1]
+        a: The filter coefficients [p x 1].
+        min_cost: The entropy rate estimation [1 x 1].
     """
 
     global nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8
@@ -489,14 +489,15 @@ def lfc(x: np.ndarray, p: int , choice, a0) -> tuple[np.ndarray, np.ndarray]:
 
 def simplified_ppval(pp: dict, xs: float) -> float:
     """Helper function for ERBM ICA: simplified version of ppval.
-        This function evaluates a piecewise polynomial at a specific point. 
-    
+
+    This function evaluates a piecewise polynomial at a specific point.
+
     Args:
-        pp (dict): a dictionary containing the piecewise polynomial representation of a function
-        xs (float): the evaluation point
+        pp: A dictionary containing the piecewise polynomial representation of a function.
+        xs: The evaluation point.
 
     Returns:
-        v (float): the value of the function at xs   
+        The value of the function at xs.
     """
 
     b = pp['breaks'][0]
@@ -535,13 +536,13 @@ def simplified_ppval(pp: dict, xs: float) -> float:
 
 def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Helper function for ERBM ICA: returns constraint direction used for calculating projected gradient and gain of filter a.
-    
+
     Args:
-        a (np.ndarray, (p, 1)): the filter coefficients [p x 1]
-    
+        a: The filter coefficients [p x 1].
+
     Returns:
-        b (np.ndarray, (p, 1)): the constraint direction [p x 1]
-        G (np.ndarray, (1,)): the gain of the filter a
+        b: The constraint direction [p x 1].
+        G: The gain of the filter a.
     """
 
     global cosmtx, sinmtx, Simpson_c
@@ -581,10 +582,10 @@ def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def calculate_cos_sin_mtx(p: int) -> None :
     """Helper function for ERBM ICA: calculates the cos and sin matrix for integral calculation in ERBM ICA.
-    
+
     Args:
-        p (int): the filter length for the invertible filter source model   
-    
+        p: the filter length for the invertible filter source model   
+
     Returns:
         None
     """
@@ -611,14 +612,16 @@ def calculate_cos_sin_mtx(p: int) -> None :
 
 
 def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Helper function for ERBM ICA: Preprocessing (removal of mean, patial pre-whitening, temporal pre-filtering)
-    
+    """Preprocessing for ERBM ICA.
+
+    Removal of mean, patial pre-whitening, temporal pre-filtering.
+
     Args:
-        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
-    
+        X: the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
+
     Returns:
-        X (np.ndarray, (Channels, Time Points)): the pre-processed input multivariate time series
-        P (np.ndarray, (Channels, Channels)): the pre-whitening matrix
+        X: the pre-processed input multivariate time series [N x T]
+        P: the pre-whitening matrix [N x N]
     """
     # pre-processing of the data
     N, T = X.shape
@@ -648,12 +651,12 @@ def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def inv_sqrtmH(B: np.ndarray) -> np.ndarray:
     """Helper function for ERBM ICA: computes the inverse square root of a matrix.
-    
+
     Args:
-        B (np.ndarray): a square matrix
-        
+        B: a square matrix
+
     Returns:
-        A (np.ndarray): the inverse square root of B 
+        A: the inverse square root of B
     """
     D, V = np.linalg.eig(B)
     order = np.argsort(D)

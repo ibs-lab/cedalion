@@ -23,7 +23,7 @@ def to_epochs(
     trial_types: list[str],
     before: cdt.QTime,
     after: cdt.QTime,
-):
+) -> xr.DataArray:
     """Extract epochs from the time series based on stimulus events.
 
     Args:
@@ -34,7 +34,7 @@ def to_epochs(
         after: Time after stimulus event to include in epoch.
 
     Returns:
-        xarray.DataArray: Array containing the extracted epochs.
+        Array containing the extracted epochs.
     """
 
     if not isinstance(before, Quantity):

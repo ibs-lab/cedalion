@@ -6,15 +6,15 @@ import xarray as xr
 import cedalion.xrutils as xrutils
 
 
-def pseudo_inverse_stacked(Adot, alpha=0.01):
+def pseudo_inverse_stacked(Adot: xr.DataArray, alpha: float = 0.01):
     """Pseudo-inverse of a stacked matrix.
 
     Args:
-        Adot (xr.DataArray): Stacked matrix.
-        alpha (float): Regularization parameter.
+        Adot: Stacked matrix.
+        alpha: Regularization parameter.
 
     Returns:
-        xr.DataArray: Pseudo-inverse of the stacked matrix.
+        Pseudo-inverse of the stacked matrix.
     """
 
     if "units" in Adot.attrs:
