@@ -1,9 +1,11 @@
-import scipy.io
 from pathlib import Path
-import numpy as np
-import xarray as xr
-import pandas as pd
 
+import numpy as np
+import pandas as pd
+import scipy.io
+import xarray as xr
+
+import cedalion
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.utils as utils
@@ -55,6 +57,8 @@ def _read_timeseries(
     t = file["t"].squeeze()
     d = file["d"]
 
+    time_units = cedalion.units.s
+
     ml = file[sd]["MeasList"][()]
     n_flatchannel = len(ml)
     assert d.shape == (len(t), n_flatchannel)
@@ -104,8 +108,31 @@ def _read_timeseries(
         attrs={"units": "dimensionless"},
     )
     ts = ts.pint.quantify()
+    ts = ts.pint.quantify({"time": time_units})
+    ts = ts.transpose("channel", "wavelength", "time")
 
-    return ts
+    # build measurement list dataframe
+    df_ml = pd.DataFrame(
+        ml[:, [0, 1, 3]] - 1,
+        columns=["sourceIndex", "detectorIndex", "wavelengthIndex"],
+    )
+
+    df_ml["wavelength"] = wavelengths[df_ml["wavelengthIndex"]]
+    df_ml["channel"] = [
+        f"{src_labels[r['sourceIndex']]}{det_labels[r['detectorIndex']]}"
+        for _, r in df_ml.iterrows()
+    ]
+    df_ml["source"] = [
+        src_labels[r['sourceIndex']]
+        for _, r in df_ml.iterrows()
+    ]
+    df_ml["detector"] = [
+        det_labels[r['detectorIndex']]
+        for _, r in df_ml.iterrows()
+    ]
+
+
+    return ts, df_ml
 
 
 def _read_stim(file: dict[str, np.ndarray]):
@@ -167,10 +194,10 @@ def read_nirs(fname: Path | str):
 
     if "SD3D" in file:
         geo3d = _read_geo3d(file["SD3D"])
-        ts = _read_timeseries(file, "SD3D", geo3d)
+        ts, df_ml = _read_timeseries(file, "SD3D", geo3d)
     else:
         geo3d = _read_geo3d(file["SD"])
-        ts = _read_timeseries(file, "SD", geo3d)
+        ts, df_ml = _read_timeseries(file, "SD", geo3d)
 
     df_stim = _read_stim(file)
     aux = _read_aux(file)
@@ -178,6 +205,7 @@ def read_nirs(fname: Path | str):
 
     rec = cdc.Recording()
     rec["amp"] = ts
+    rec._measurement_lists["amp"] = df_ml
     rec.geo3d = geo3d
     rec.stim = df_stim
 
