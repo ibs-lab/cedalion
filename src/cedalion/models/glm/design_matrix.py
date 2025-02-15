@@ -63,6 +63,8 @@ def make_design_matrix(
     elif short_channel_method == "mean":
         dm_short = average_short_channel(ts_short)
         dm = xr.concat([dm, dm_short], dim="regressor")
+    elif short_channel_method is None:
+        pass
     else:
         raise ValueError(
             f"unexpected value '{short_channel_method}' for argument"
