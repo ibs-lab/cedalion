@@ -1017,13 +1017,14 @@ def scalp_plot(
         else:
             v = np.nan
 
-        c = cmap(norm(v))
+        normed_v = norm(v)
+        c = cmap(normed_v)
         line_fmt = {'c' : c, 'ls' : '-', 'lw' : channel_lw, 'alpha' : 1.0}
 
         if (min_metric is not None) and (v < min_metric):
             line_fmt['alpha'] = 0.4
 
-        ax.plot([s[0], d[0]], [s[1], d[1]], **line_fmt)
+        ax.plot([s[0], d[0]], [s[1], d[1]], zorder=normed_v, **line_fmt)
 
     # draw markers or labels for sources and detectors
     # /!\ isin with np strings and sets is tricky. probably because of the hash
