@@ -22,33 +22,34 @@ class Recording:
     It maps to the NirsElement in the snirf format but it also holds additional
     attributes (masks, headmodel, aux_obj) for which there is no corresponding
     entity in the snirf format.
-
-    Attributes:
-        timeseries (OrderedDict[str, NDTimeSeries]): A dictionary of timeseries objects.
-            The keys are the names of the timeseries.
-        masks (OrderedDict[str, xr.DataArray]): A dictionary of masks. The keys are the
-            names of the masks.
-        geo3d (LabeledPointCloud): A labeled point cloud representing the 3D geometry of
-            the recording.
-        geo2d (LabeledPointCloud): A labeled point cloud representing the 2D geometry of
-            the recording.
-        stim (pd.DataFrame): A dataframe containing the stimulus information.
-        aux_ts (OrderedDict[str, NDTimeSeries]): A dictionary of auxiliary timeseries
-            objects.
-        aux_obj (OrderedDict[str, Any]): A dictionary of auxiliary objects.
-        head_model (Optional[Any]): A head model object.
-        meta_data (OrderedDict[str, Any]): A dictionary of meta data.
     """
 
     timeseries: OrderedDict[str, NDTimeSeries] = field(default_factory=OrderedDict)
+    """A dictionary of timeseries objects. The keys are the names of the timeseries."""
+
     masks: OrderedDict[str, xr.DataArray] = field(default_factory=OrderedDict)
+    """A dictionary of masks. The keys are the names of the masks."""
+
     geo3d: LabeledPointCloud = field(default_factory=cdc.build_labeled_points)
+    """A labeled point cloud representing the 3D geometry of the recording."""
+
     geo2d: LabeledPointCloud = field(default_factory=cdc.build_labeled_points)
+    """A labeled point cloud representing the 2D geometry of the recording."""
+
     stim: pd.DataFrame = field(default_factory=cdc.build_stim_dataframe)
+    """A dataframe containing the stimulus information."""
+
     aux_ts: OrderedDict[str, NDTimeSeries] = field(default_factory=OrderedDict)
+    """A dictionary of auxiliary timeseries objects."""
+
     aux_obj: OrderedDict[str, Any] = field(default_factory=OrderedDict)
+    """A dictionary of auxiliary objects."""
+
     head_model: Optional[Any] = None
+    """A head model object."""
+
     meta_data: OrderedDict[str, Any] = field(default_factory=OrderedDict)
+    """A dictionary of meta data."""
 
     # these are the loaded ML from the snirf file.
     _measurement_lists: OrderedDict[str, pd.DataFrame] = field(

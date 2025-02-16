@@ -90,6 +90,8 @@ autodoc_type_aliases = {
     "Quantity" : "Quantity",
     "ArrayLike" : "ArrayLike",
     "collections.OrderedDict" : "OrderedDict",
+    "Surface" : "cdc.Surface",
+    "cdc.Surface" : "cdc.Surface",
 }
 
 modindex_common_prefix = ["cedalion."]
@@ -100,8 +102,10 @@ autodoc_default_options = {
     "members": True,
     "undoc-members": True,
     "show-inheritance": True,
+    "inherited-members": True,
 }
 autodoc_member_order = "bysource"  # Keep member order as in the source code
+
 
 
 # -- Nbsphinx gallery ----------------------------------------------------------------

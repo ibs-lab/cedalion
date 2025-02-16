@@ -410,6 +410,9 @@ class OptodeSelector:
     clouds using a PyVista plotter. It allows points to be dynamically added or removed
     by picking them directly from the plot interface.
 
+    Initial Contributors:
+        - Masha Iudina | mashayudi@gmail.com | 2024
+
     Attributes:
         surface (cdc.Surface): The surface of a head for normals.
         points (cdt.LabeledPointCloud): The point cloud data containing point
@@ -422,15 +425,6 @@ class OptodeSelector:
             visualization.
         color (str or tuple, optional): Default color for points if not specified by
             point type.
-
-    Methods:
-        plot(): Renders the point cloud using the current settings.
-        on_pick(picked_point): Callback function for picking points in the visualization
-        update_visualization(): Clears the existing plot and re-renders the point cloud.
-        enable_picking(): Enables interactive picking of points on the plot.
-
-    Initial Contributors:
-        - Masha Iudina | mashayudi@gmail.com | 2024
     """
     def __init__(self, surface, points, normals=None, plotter=None, labels = None):
         self.points = points
@@ -442,6 +436,7 @@ class OptodeSelector:
         self.color = None
 
     def plot(self):
+        """Renders the point cloud using the current settings."""
         plotter = self.plotter
         points = self.points
         color = 'r'
@@ -479,6 +474,7 @@ class OptodeSelector:
 
 
     def on_pick(self, picked_point):
+        """Callback function for picking points in the visualization."""
         plotter = self.plotter
         points = self.points
         # Define how close points have to be to consider them "super close"
@@ -523,11 +519,12 @@ class OptodeSelector:
         self.normals = self.update_normals(new_normal, new_label)
 
     def update_visualization(self):
-        # Clear existing plot and re-plot with the updated self.points
+        """Clears the existing plot and re-renders the point cloud."""
         self.plotter.clear()
         self.plot()
 
     def enable_picking(self):
+        """Enables interactive picking of points on the plot."""
         self.plotter.enable_surface_point_picking(
             callback=self.on_pick,
             show_message="Right click to place or remove optode",

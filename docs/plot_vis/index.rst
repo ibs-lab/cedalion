@@ -6,7 +6,7 @@ analysis, including functions for visualizing scalp plots, sensitivity matrices,
 and optode montages.
 
 .. autosummary::
-   :toctree: _autosummary_models
+   :toctree: _autosummary_plot_vis
    :recursive:
 
     cedalion.plots

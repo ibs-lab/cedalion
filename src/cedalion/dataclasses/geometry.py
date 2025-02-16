@@ -43,9 +43,15 @@ class PointType(Enum):
 @dataclass
 class Surface(ABC):
     """Abstract base class for surfaces."""
+
     mesh: Any
+    """The mesh representing the surface."""
+
     crs: str
+    """The coordinate reference system of the surface."""
+
     units: pint.Unit
+    """The units of the surface."""
 
     @property
     @abstractmethod
@@ -105,16 +111,16 @@ class Surface(ABC):
 
 @dataclass
 class Voxels():
-    """3D voxels represented by a np.array.
+    """3D voxels represented by a np.array."""
 
-    Attributes:
-        voxels (np.ndarray): The voxels.
-        crs (str): The coordinate reference system of the voxels.
-        units (pint.Unit): The units of the voxels.
-    """
     voxels: np.ndarray
+    """The voxels."""
+
     crs: str
+    """The coordinate reference system of the voxels."""
+
     units: pint.Unit
+    """The units of the voxels."""
 
     @property
     def vertices(self) -> cdt.LabeledPointCloud:
@@ -162,14 +168,10 @@ class Voxels():
 
 @dataclass
 class TrimeshSurface(Surface):
-    """A surface represented by a trimesh object.
+    """A surface represented by a trimesh object."""
 
-    Attributes:
-        mesh (trimesh.Trimesh): The trimesh object representing the surface.
-        crs (str): The coordinate reference system of the surface.
-        units (pint.Unit): The units of the surface.
-    """
     mesh: trimesh.Trimesh
+    """The trimesh object representing the surface."""
 
     @property
     def vertices(self) -> cdt.LabeledPointCloud:

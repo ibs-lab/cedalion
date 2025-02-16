@@ -38,34 +38,31 @@ class TwoSurfaceHeadModel:
 
     Its main functions are reduced to work on voxel projections to scalp and cortex
     surfaces.
-
-    Attributes:
-        segmentation_masks: Segmentation masks of the head for each tissue type.
-        brain: Surface of the brain.
-        scalp: Surface of the scalp.
-        landmarks: Anatomical landmarks in RAS space.
-        t_ijk2ras: Affine transformation from ijk to RAS space.
-        t_ras2ijk: Affine transformation from RAS to ijk space.
-        voxel_to_vertex_brain: Mapping from voxel to brain vertices.
-        voxel_to_vertex_scalp: Mapping from voxel to scalp vertices.
-        crs: Coordinate reference system of the head model.
-
-    Methods:
-        from_segmentation: Construct instance from segmentation masks in NIfTI format.
-        apply_transform: Apply a coordinate transformation to the head model.
-        save: Save the head model to a folder.
-        load: Load the head model from a folder.
-        align_and_snap_to_scalp: Align and snap optodes or points to the scalp surface.
     """
 
     segmentation_masks: xr.DataArray
+    """Segmentation masks of the head for each tissue type."""
+
     brain: cdc.Surface
+    """Surface of the brain."""
+
     scalp: cdc.Surface
+    """Surface of the scalp."""
+
     landmarks: cdt.LabeledPointCloud
+    """Anatomical landmarks in RAS space."""
+
     t_ijk2ras: cdt.AffineTransform
+    """Affine transformation from ijk to RAS space."""
+
     t_ras2ijk: cdt.AffineTransform
+    """Affine transformation from RAS to ijk space."""
+
     voxel_to_vertex_brain: scipy.sparse.spmatrix
+    """Mapping from voxel to brain vertices."""
+
     voxel_to_vertex_scalp: scipy.sparse.spmatrix
+    """Mapping from voxel to scalp vertices."""
 
     # FIXME need to distinguish between ijk,  ijk+units == aligned == ras
 
@@ -94,8 +91,10 @@ class TwoSurfaceHeadModel:
             segmentation_dir: Folder containing the segmentation masks in NIFTI format.
             mask_files: Dictionary mapping segmentation types to NIFTI filenames.
             landmarks_ras_file: Filename of the landmarks in RAS space.
-            brain_seg_types: List of segmentation types to be included in the brain surface.
-            scalp_seg_types: List of segmentation types to be included in the scalp surface.
+            brain_seg_types:
+                List of segmentation types to be included in the brain surface.
+            scalp_seg_types:
+                List of segmentation types to be included in the scalp surface.
             smoothing: Smoothing factor for the brain and scalp surfaces.
             brain_face_count: Number of faces for the brain surface.
             scalp_face_count: Number of faces for the scalp surface.
@@ -216,8 +215,10 @@ class TwoSurfaceHeadModel:
             brain_surface_file: Path to the brain surface.
             scalp_surface_file: Path to the scalp surface.
             landmarks_ras_file: Filename of the landmarks in RAS space.
-            brain_seg_types: List of segmentation types to be included in the brain surface.
-            scalp_seg_types: List of segmentation types to be included in the scalp surface.
+            brain_seg_types:
+                List of segmentation types to be included in the brain surface.
+            scalp_seg_types:
+                List of segmentation types to be included in the scalp surface.
             smoothing: Smoothing factor for the brain and scalp surfaces.
             brain_face_count: Number of faces for the brain surface.
             scalp_face_count: Number of faces for the scalp surface.
@@ -561,21 +562,21 @@ class ForwardModel:
     ...
 
     Args:
-    head_model (TwoSurfaceHeadModel): Head model containing voxel projections to brain
-        and scalp surfaces.
-    optode_pos (cdt.LabeledPointCloud): Optode positions.
-    optode_dir (xr.DataArray): Optode orientations (directions of light beams).
-    tissue_properties (xr.DataArray): Tissue properties for each tissue type.
-    volume (xr.DataArray): Voxelated head volume from segmentation masks.
-    unitinmm (float): Unit of head model, optodes expressed in mm.
-    measurement_list (pd.DataFrame): List of measurements of experiment with source,
-        detector, channel, and wavelength.
-
-    Methods:
-        compute_fluence(nphoton):
-            Compute fluence for each channel and wavelength from photon simulation.
-        compute_sensitivity(fluence_all, fluence_at_optodes):
-            Compute sensitivity matrix from fluence.
+        head_model (TwoSurfaceHeadModel):
+            Head model containing voxel projections to brain and scalp surfaces.
+        optode_pos (cdt.LabeledPointCloud):
+            Optode positions.
+        optode_dir (xr.DataArray):
+            Optode orientations (directions of light beams).
+        tissue_properties (xr.DataArray):
+            Tissue properties for each tissue type.
+        volume (xr.DataArray):
+            Voxelated head volume from segmentation masks.
+        unitinmm (float):
+            Unit of head model, optodes expressed in mm.
+        measurement_list (pd.DataFrame):
+            List of measurements of experiment with source, detector, channel, and
+            wavelength.
     """
 
     def __init__(
@@ -587,9 +588,13 @@ class ForwardModel:
         """Constructor for the forward model.
 
         Args:
-            head_model: Head model containing voxel projections to brain and scalp surfaces.
-            geo3d: Optode positions and directions.
-            measurement_list: List of measurements of experiment with source, detector, channel, and wavelength.
+            head_model:
+                Head model containing voxel projections to brain and scalp surfaces.
+            geo3d:
+                Optode positions and directions.
+            measurement_list:
+                List of measurements of experiment with source, detector, channel, and
+                wavelength.
         """
 
         assert head_model.crs == "ijk"  # FIXME
@@ -937,7 +942,11 @@ class ForwardModel:
         return fluence_all, fluence_at_optodes
 
 
-    def compute_sensitivity(self, fluence_all: xr.DataArray, fluence_at_optodes: xr.DataArray):
+    def compute_sensitivity(
+            self,
+            fluence_all: xr.DataArray,
+            fluence_at_optodes: xr.DataArray
+        ):
         """Compute sensitivity matrix from fluence.
 
         Args:
