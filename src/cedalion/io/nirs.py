@@ -59,26 +59,26 @@ def _read_timeseries(
 
     time_units = cedalion.units.s
 
-    ml = file[sd]["MeasList"][()]
+    ml = file[sd]["MeasList"][()].astype(int)
     n_flatchannel = len(ml)
     assert d.shape == (len(t), n_flatchannel)
 
     # list for unique (src, det) tuples. 1-indexed.
     unique_channels = [
         tuple(r)
-        for _, r in pd.DataFrame(ml[:, :2].astype(int)).drop_duplicates().iterrows()
+        for _, r in pd.DataFrame(ml[:, :2]).drop_duplicates().iterrows()
     ]
 
     src_labels = geo3d[geo3d.type == cdc.PointType.SOURCE].label.values
     det_labels = geo3d[geo3d.type == cdc.PointType.DETECTOR].label.values
 
-    wavelengths = file[sd]["Lambda"][()]
+    wavelengths = file[sd]["Lambda"][()].astype(float)
 
     source = []
     detector = []
     channel = []
 
-    data = np.zeros((len(t), len(unique_channels), len(wavelengths)))
+    data = np.zeros((len(unique_channels), len(wavelengths), len(t)))
 
     for i_fch in range(n_flatchannel):
         i_src = int(ml[i_fch, 0])
@@ -88,7 +88,7 @@ def _read_timeseries(
         i_wl = int(ml[i_fch, 3] - 1)
         i_ch = unique_channels.index((i_src, i_det))
 
-        data[:, i_ch, i_wl] = d[:, i_fch]
+        data[i_ch, i_wl, :] = d[:, i_fch]
 
     source = [src_labels[i[0] - 1] for i in unique_channels]
     detector = [det_labels[i[1] - 1] for i in unique_channels]
@@ -96,7 +96,7 @@ def _read_timeseries(
 
     ts = xr.DataArray(
         data,
-        dims=["time", "channel", "wavelength"],
+        dims=["channel", "wavelength", "time"],
         coords={
             "time": ("time", t),
             "samples": ("time", np.arange(len(t))),
@@ -109,7 +109,6 @@ def _read_timeseries(
     )
     ts = ts.pint.quantify()
     ts = ts.pint.quantify({"time": time_units})
-    ts = ts.transpose("channel", "wavelength", "time")
 
     # build measurement list dataframe
     df_ml = pd.DataFrame(
@@ -119,16 +118,16 @@ def _read_timeseries(
 
     df_ml["wavelength"] = wavelengths[df_ml["wavelengthIndex"]]
     df_ml["channel"] = [
-        f"{src_labels[r['sourceIndex']]}{det_labels[r['detectorIndex']]}"
-        for _, r in df_ml.iterrows()
+        f"{src_labels[r.sourceIndex]}{det_labels[r.detectorIndex]}"
+        for r in df_ml.itertuples()
     ]
     df_ml["source"] = [
-        src_labels[r['sourceIndex']]
-        for _, r in df_ml.iterrows()
+        src_labels[r.sourceIndex]
+        for r in df_ml.itertuples()
     ]
     df_ml["detector"] = [
-        det_labels[r['detectorIndex']]
-        for _, r in df_ml.iterrows()
+        det_labels[r.detectorIndex]
+        for r in df_ml.itertuples()
     ]
 
 
