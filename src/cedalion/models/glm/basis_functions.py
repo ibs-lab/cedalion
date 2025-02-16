@@ -404,6 +404,38 @@ class AFNIGamma(TemporalBasisFunction):
             },
         )
 
+class DiracDelta(TemporalBasisFunction):
+    r"""Convoluted with the stim duration this basis function yields a square wave."""
+
+    def __init__(self):
+        super().__init__(convolve_over_duration=True)
+
+    def __call__(
+        self,
+        ts: cdt.NDTimeSeries,
+    ) -> xr.DataArray:
+        other_dim = xrutils.other_dim(ts, "time", "channel")
+        other_dim_values = ts[other_dim].values
+
+        n_samples = 2
+        n_components = 1
+        n_other_dim = ts.sizes[other_dim]
+
+        fs = sampling_rate(ts).to(units.Hz)
+        t = np.array([0,1]) / fs
+
+        regressors = np.zeros((n_samples, n_components, n_other_dim))
+        regressors[0,0,:] = 1.
+
+        return xr.DataArray(
+            regressors,
+            dims=["time", "component", other_dim],
+            coords={
+                "time": xr.DataArray(t, dims=["time"]).pint.dequantify(),
+                other_dim: other_dim_values,
+                "component": ["square"],
+            },
+        )
 
 # FIXME: instead of defining IndividualBasis we may want to make make_hrf_regressor
 # accept xr.DataArrays directly?
