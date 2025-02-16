@@ -929,6 +929,7 @@ def scalp_plot(
     optode_size: float = 36.0,
     optode_labels: bool = False,
     cb_label: str | None = None,
+    zorder : str | None = None,
 ):
     """Creates a 2D plot of the head with channels coloured according to a given metric.
 
@@ -950,6 +951,8 @@ def scalp_plot(
         optode_size: optode marker size
         optode_labels: if True draw optode labels instead of markers
         cb_label: colorbar label
+        zorder: 'ascending' or 'descending' or None. Controls whether channels
+            with high or low metric values are plotted on top.
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
@@ -1024,7 +1027,17 @@ def scalp_plot(
         if (min_metric is not None) and (v < min_metric):
             line_fmt['alpha'] = 0.4
 
-        ax.plot([s[0], d[0]], [s[1], d[1]], zorder=normed_v, **line_fmt)
+        if zorder is None:
+            zorder_line = 0
+        elif zorder == "ascending":
+            zorder_line = normed_v
+        elif zorder == "descending":
+            zorder_line = 1 - normed_v
+        else:
+            raise ValueError(f"unexpected value '{zorder}' for zorder.")
+
+
+        ax.plot([s[0], d[0]], [s[1], d[1]], zorder=zorder_line, **line_fmt)
 
     # draw markers or labels for sources and detectors
     # /!\ isin with np strings and sets is tricky. probably because of the hash
