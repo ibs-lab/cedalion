@@ -13,13 +13,19 @@ def check_for_bids_field(path_parts: list,
     
     field_parts = [part for part in path_parts if field in part]
     if len(field_parts) == 0:
-        value = None
+        value_id = None
     else:
         find_value = field_parts[-1].split('_') # assume the lowest directory level supersedes any higher directory level ? not sure if we should assume this 
         value = [vals for vals in find_value if field in vals][0]
-        value = value.split('-')[1]
+        value_id = value.split(field)[1]
+        try:
+            value_id = value_id.split('-')[1]
+        except:
+            value_id = value_id
+                
+            
         
-    return value
+    return value_id
 
 
 def get_snirf2bids_mapping_csv(dataset_path):
@@ -27,8 +33,8 @@ def get_snirf2bids_mapping_csv(dataset_path):
     column_names = ["current_name",
                     "sub",
                     "ses",
-                    "run",
                     "task",
+                    "run",
                     "acq",
                     "cond",
                     "cond_match",
@@ -95,4 +101,4 @@ def get_snirf2bids_mapping_csv(dataset_path):
     
     
     snirf2bids_mapping_df.to_csv(os.path.join(dataset_path, 'snirf2BIDS_mapping.csv'), index=None)
-        
+    return snirf2bids_mapping_df
