@@ -8,98 +8,100 @@ from typing import List, Tuple, Optional
 import pandas as pd
 
 
-def check_for_bids_field(path_parts: list, field: str):
+def read_events_from_tsv(fname: str | Path):
+    return pd.read_csv(fname, delimiter="\t")
+
+
+def check_for_bids_field(path_parts: list,
+                         field: str):
     """@author: lauracarlton."""
     field_parts = [part for part in path_parts if field in part]
     if len(field_parts) == 0:
-        value = None
+        value_id = None
     else:
-        find_value = field_parts[
-            -1
-        ].split(
-            "_"
-        )  # assume the lowest directory level supersedes any higher directory level ? not sure if we should assume this
+        find_value = field_parts[-1].split('_') # assume the lowest directory level supersedes any higher directory level ? not sure if we should assume this 
         value = [vals for vals in find_value if field in vals][0]
-        value = value.split("-")[1]
+        value_id = value.split(field)[1]
+        try:
+            value_id = value_id.split('-')[1]
+        except:
+            value_id = value_id
 
-    return value
+    return value_id
 
 
 def get_snirf2bids_mapping_csv(dataset_path):
-    """@author: lauracarlton."""
-    column_names = [
-        "current_name",
-        "sub",
-        "ses",
-        "run",
-        "task",
-        "acq",
-        "cond",
-        "cond_match",
-        "duration",
-    ]
-
+    """@author: lauracarlton."""    
+    column_names = ["current_name",
+                    "sub",
+                    "ses",
+                    "task",
+                    "run",
+                    "acq",
+                    "cond",
+                    "cond_match",
+                    "duration"]
+    
+    
     snirf2bids_mapping_df = pd.DataFrame(columns=column_names)
-
-    # % IDENTIFY ALL SNIRF FILES IN THE DIRECTORY AND THEIR PATH
-
+    
+    
+    #% IDENTIFY ALL SNIRF FILES IN THE DIRECTORY AND THEIR PATH 
+    
     file_list = []
     for dirpath, dirnames, filenames in os.walk(dataset_path):
+        
         for filename in filenames:
-            if filename.endswith(".snirf"):
+            
+           if filename.endswith('.snirf'):
                 # Get the full path of the file
                 relative_path = os.path.relpath(dirpath, dataset_path)
-
-                # get each part of the path
+                
+                # get each part of the path 
                 parent_folders = relative_path.split(os.sep)
-
+                
                 # including the filename
                 filename_without_ext = os.path.splitext(filename)[0]
                 parent_folders.append(filename_without_ext)
-
+                
                 # add to the list of file paths
                 file_list.append(parent_folders)
-
-    # % CHECK EACH FILE TO GATHER INFO TO POPULATE THE MAPPING_DF
+    
+    
+    #% CHECK EACH FILE TO GATHER INFO TO POPULATE THE MAPPING_DF
+    
+    
     for path_parts in file_list:
+        
         # need to check for sub
-        subject = check_for_bids_field(path_parts, "sub")
-
-        # check for session
-        ses = check_for_bids_field(path_parts, "ses")
-
-        # check for run
-        run = check_for_bids_field(path_parts, "run")
-
+        subject = check_for_bids_field(path_parts, 'sub')
+    
+        # check for session 
+        ses = check_for_bids_field(path_parts, 'ses')
+    
+        # check for run 
+        run = check_for_bids_field(path_parts, 'run')
+        
         # check for task
-        task = check_for_bids_field(path_parts, "task")
-
+        task = check_for_bids_field(path_parts, 'task')
+    
         # check for acq
-        acq = check_for_bids_field(path_parts, "acq")
+        acq = check_for_bids_field(path_parts, 'acq')
+        
+        bids_dict = {"current_name": "/".join(path_parts),
+                     "sub": subject,
+                     "ses": ses, 
+                     "run": run, 
+                     "task": task, 
+                     "acq": acq,
+                     "cond": None,
+                     "cond_match": None,
+                     "duration": None
+                     }
+        snirf2bids_mapping_df = pd.concat([snirf2bids_mapping_df, pd.DataFrame([bids_dict])], ignore_index=True)
 
-        bids_dict = {
-            "current_name": "/".join(path_parts),
-            "sub": subject,
-            "ses": ses,
-            "run": run,
-            "task": task,
-            "acq": acq,
-            "cond": None,
-            "cond_match": None,
-            "duration": None,
-        }
-        snirf2bids_mapping_df = pd.concat(
-            [snirf2bids_mapping_df, pd.DataFrame([bids_dict])], ignore_index=True
-        )
-
-    mapping_df_path = os.path.join(dataset_path, "snirf2BIDS_mapping.csv")
-    snirf2bids_mapping_df.to_csv(mapping_df_path, index=None)
-    return mapping_df_path
-
-
-def read_events_from_tsv(fname: str | Path) -> pd.DataFrame:
-    return pd.read_csv(fname, delimiter="\t")
-
+    snirf2bids_mapping_df.to_csv(os.path.join(dataset_path, 'snirf2BIDS_mapping.csv'), index=None)
+    return snirf2bids_mapping_df
 
 def find_files_with_pattern(start_dir: str | Path, pattern: str) -> List[str]:
     """Recursively finds all files in the specified directory (and subdirectories) that match the given pattern.
@@ -339,6 +341,7 @@ def create_session_files(group_df: pd.DataFrame, bids_dir: str) -> None:
     tsv_df = group_df[["ses", "ses_acq_time"]]
     tsv_df["ses"] = "ses-" + tsv_df["ses"]
     tsv_df = tsv_df.rename(columns={"ses_acq_time": "acq_time", "ses": "session_id"})
+    tsv_df.drop_duplicates(subset="session_id", inplace=True)
     if not pd.isna(tsv_df["session_id"]).any():
         filename = "sub-" + str(sub) + "_sessions.tsv"
         path_to_save = os.path.join(bids_dir, "sub-" + str(sub), filename)
@@ -555,9 +558,9 @@ def edit_events(row: pd.Series, bids_dir: str) -> None:
         if not pd.isna(row["duration"]):
             events_df["duration"] = row["duration"]
         if not pd.isna(row["cond"]):
-            keys = re.sub(r"[\[\]]", "", row["cond"]).split(", ")
+            keys = re.sub(r'[\[\]"]', "", row["cond"]).split(",")
             keys = [item.strip() for item in keys]
-            values = re.sub(r"[\[\]]", "", row["cond_match"]).split(", ")
+            values = re.sub(r'[\[\]"]', "", row["cond_match"]).split(",")
             values = [item.strip() for item in values]
 
             map_dict = dict(zip(keys, values))
