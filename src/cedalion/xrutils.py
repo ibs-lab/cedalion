@@ -102,8 +102,7 @@ def apply_mask(
 
     Returns:
         masked_data_array: Input data_array with applied mask
-        masked_elements: List of elements in data_array that were masked (e.g.
-            dropped or set to NaN)
+        masked_elements: List of elements in data_array that were masked.
     """
     flag_collapse = False
 
@@ -165,7 +164,7 @@ def convolve(data_array: xr.DataArray, kernel: np.ndarray, dim: str) -> xr.DataA
 
 
 def other_dim(data_array: xr.DataArray, *dims: str) -> str:
-    """Get the dimension name not listed in *dims.
+    """Get the dimension name not listed in dims.
 
     Checks that there is only one more dimension than given in dims  and returns
     its name.

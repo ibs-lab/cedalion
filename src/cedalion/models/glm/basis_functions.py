@@ -46,10 +46,10 @@ class GaussianKernelsWithTails(TemporalBasisFunction):
     The user specifies a time interval around the stimuls onset via the parameters
     t_pre and t_post. Over this time interval a series of gaussian basis functions is
     distributed:
-        - between the gaussian centers there is  time gap of t_delta
-        - the width of the each gaussian is specified by t_std
-        - the gaussians are centered in the time interval with a margin of 3 x t_std
-          left and right.
+    - between the gaussian centers there is  time gap of t_delta
+    - the width of the each gaussian is specified by t_std
+    - the gaussians are centered in the time interval with a margin of 3 x t_std
+    left and right.
     The number of gaussians is derived automatically from these constraints.
 
     Args:
@@ -125,10 +125,10 @@ class GaussianKernels(TemporalBasisFunction):
     The user specifies a time interval around the stimuls onset via the parameters
     t_pre and t_post. Over this time interval a series of gaussian basis functions is
     distributed:
-        - between the gaussian centers there is  time gap of t_delta
-        - the width of the each gaussian is specified by t_std
-        - the first gaussian is centered at trial onset - t_pre.
-        - the model function extends strictly from -t_pre to t_post with a hard cutoff.
+    - between the gaussian centers there is  time gap of t_delta
+    - the width of the each gaussian is specified by t_std
+    - the first gaussian is centered at trial onset - t_pre.
+    - the model function extends strictly from -t_pre to t_post with a hard cutoff.
 
     The number of gaussians is derived automatically from these constraints.
 

@@ -18,5 +18,4 @@ Examples
 
 .. nbgallery::
    :glob:
-
-   ../examples/augmentation/*
+   :caption: Coming soon

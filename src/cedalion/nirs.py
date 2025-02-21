@@ -18,43 +18,43 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike) -> xr.Dat
     """Provide a matrix of extinction coefficients from tabulated data.
 
     Args:
-        spectrum:
-            The type of spectrum to use. Currently supported options are:
-
+        spectrum: The type of spectrum to use. Currently supported options are:
             - "prahl": Extinction coefficients based on the Prahl absorption
-              spectrum (Prahl1998).
+            spectrum (Prahl1998).
 
         wavelengths: An array-like object containing the wavelengths at which to
             calculate the extinction coefficients.
 
     Returns:
         A matrix of extinction coefficients with dimensions "chromo"
-            (chromophore, e.g. HbO/HbR) and "wavelength" (e.g. 750, 850, ...) at which
-            the coefficients for each chromophore are given in units of "mm^-1 / M".
+        (chromophore, e.g. HbO/HbR) and "wavelength" (e.g. 750, 850, ...) at which
+        the coefficients for each chromophore are given in units of "mm^-1 / M".
 
     References:
         (Prahl 1998) - taken from Homer2/3, Copyright 2004 - 2006 - The General Hospital
         Corporation and President and Fellows of Harvard University.
 
-            "These values for the molar extinction coefficient e in [cm-1/(moles/liter)]
-            were compiled by Scott Prahl (prahl@ece.ogi.edu) using data from
-            W. B. Gratzer, Med. Res. Council Labs, Holly Hill, London
-            N. Kollias, Wellman Laboratories, Harvard Medical School, Boston
-            To convert this data to absorbance A, multiply by the molar concentration
-            and the pathlength.
-            For example, if x is the number of grams per liter and a 1 cm cuvette is
-            being used, then the absorbance is given by
+        "These values for the molar extinction coefficient e in [cm-1/(moles/liter)]
+        were compiled by Scott Prahl (prahl@ece.ogi.edu) using data from
+        W. B. Gratzer, Med. Res. Council Labs, Holly Hill, London
+        N. Kollias, Wellman Laboratories, Harvard Medical School, Boston
+        To convert this data to absorbance A, multiply by the molar concentration
+        and the pathlength.
+        For example, if x is the number of grams per liter and a 1 cm cuvette is
+        being used, then the absorbance is given by
 
-                  (e) [(1/cm)/(moles/liter)] (x) [g/liter] (1) [cm]
+        .. code-block:: none
+
+                    (e) [(1/cm)/(moles/liter)] (x) [g/liter] (1) [cm]
             A =  ---------------------------------------------------
                         66,500 [g/mole]
 
-            using 66,500 as the gram molecular weight of hemoglobin.
-            To convert this data to absorption coefficient in (cm-1), multiply by the
-            molar concentration and 2.303,
-            µa = (2.303) e (x g/liter)/(66,500 g Hb/mole)
-            where x is the number of grams per liter. A typical value of x for whole
-            blood is x=150 g Hb/liter."
+        using 66,500 as the gram molecular weight of hemoglobin.
+        To convert this data to absorption coefficient in (cm-1), multiply by the
+        molar concentration and 2.303,
+        µa = (2.303) e (x g/liter)/(66,500 g Hb/mole)
+        where x is the number of grams per liter. A typical value of x for whole
+        blood is x=150 g Hb/liter."
     """
     if spectrum == "prahl":
         path = cedalion.data.get("prahl_absorption_spectrum.tsv")
@@ -89,7 +89,7 @@ def channel_distances(
 
     Args:
         amplitudes: A DataArray representing the amplitudes with
-            dimensions (channel, *).
+            dimensions (channel, [...]).
         geo3d: A DataArray containing the 3D coordinates of the channels
             with dimensions (channel, pos).
 
@@ -113,10 +113,10 @@ def int2od(amplitudes: cdt.NDTimeSeries) -> cdt.NDTimeSeries:
     """Calculate optical density from intensity amplitude  data.
 
     Args:
-        amplitudes: amplitude data, dims (time, channel, *).
+        amplitudes: amplitude data, dims (time, channel, [...]).
 
     Returns:
-        od: The optical density data, dims (time, channel,*).
+        od: The optical density data, dims (time, channel, [...]).
     """
     # check negative values in amplitudes and issue an error if yes
     if np.any(amplitudes < 0):
@@ -140,15 +140,15 @@ def od2conc(
     """Calculate concentration changes from optical density data.
 
     Args:
-        od: The optical density data array, dims (time, channel, wavelength, *)
+        od: The optical density data array, dims (time, channel, wavelength, [...])
         geo3d: The 3D coordinates of the optodes.
-        dpf: The differential pathlength factor data, dims (wavelength, *)
+        dpf: The differential pathlength factor data, dims (wavelength, [...])
         spectrum: The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
 
     Returns:
         conc: A data array containing concentration changes by channel, dims
-            (channel, *)
+            (channel, [...])
     """
     validators.has_channel(od)
     validators.has_wavelengths(od)
@@ -183,14 +183,14 @@ def conc2od(
     """Calculate optical density data from concentration changes.
 
     Args:
-        conc: The concentration changes by channel, dims (channel, *)
+        conc: The concentration changes by channel, dims (channel, [...])
         geo3d: The 3D coordinates of the optodes.
-        dpf: The differential pathlength factor data, dims (wavelength, *)
+        dpf: The differential pathlength factor data, dims (wavelength, [...])
         spectrum: The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
 
     Returns:
-        od: A data array containing optical density data, dims (channel, wavelength, *)
+        od: A data array containing optical density data, dims (channel, wavelength, [...])
     """
 
     conc = conc.pint.to("molar")
@@ -222,15 +222,15 @@ def beer_lambert(
 
     Args:
         amplitudes: The input data array containing the raw intensities, dims dims
-            (channel, wavelength, *)
+            (channel, wavelength, [...])
         geo3d: The 3D coordinates of the optodes.
-        dpf: The differential pathlength factors, dims (wavelength,*)
+        dpf: The differential pathlength factors, dims (wavelength, [...])
         spectrum: The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
 
     Returns:
         conc: A data array containing concentration changes according to the mBLL, dims
-            (channel, *)
+            (channel, [...])
     """
     validators.has_channel(amplitudes)
     validators.has_wavelengths(amplitudes)

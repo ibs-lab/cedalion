@@ -51,7 +51,6 @@ Data Augmentation
    :caption: Coming soon
    :glob:
 
-   examples/data_augmentation/*
 
 Plots & Visualization
 -----------------------

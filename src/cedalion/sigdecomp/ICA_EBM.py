@@ -10,9 +10,8 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
     """Calculates the blind source separation demixing matrix corresponding to X.
 
     ICA-EBM: ICA by Entropy Bound Minimization (real-valued version)
-    Four nonlinearities
-    x^4,  |x|/(1+|x|),    x|x|/(10+|x|),  and     x/(1+x^2)
-    are used for entropy bound calculation
+    Four nonlinearities: ``x^4``, ``|x|/(1+|x|)``, ``x|x|/(10+|x|)``, and ``x/(1+x^2)``
+    are used for entropy bound calculation.
 
     Args:
         X: the [N x T] input multivariate time series with dimensionality N

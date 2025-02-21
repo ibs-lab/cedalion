@@ -34,9 +34,9 @@ def make_design_matrix(
         short_channel_method: Specifies the method to add short channel information to
             the design matrix.
             Options:
-                'closest': Use the closest short channel.
-                'max_corr': Use the short channel with the highest correlation.
-                'mean': Use the average of all short channels.
+            - 'closest': Use the closest short channel.
+            - 'max_corr': Use the short channel with the highest correlation.
+            - 'mean': Use the average of all short channels.
 
     Returns:
         A tuple containing the global design matrix and a list of channel-wise

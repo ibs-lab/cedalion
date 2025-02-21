@@ -410,7 +410,7 @@ def read_aux(
         opts: Options for reading the aux data. The following
             options are supported:
             - squeeze_aux (bool): If True, squeeze the aux data to remove
-                dimensions of size 1.
+            dimensions of size 1.
 
     Returns:
         Dictionary containing the aux data.
@@ -708,7 +708,7 @@ def read_nirs_element(nirs_element: NirsElement, opts: dict[str, Any]) -> cdc.Re
         nirs_element: Nirs data element as specified in the snirf documentation.
         opts: Options for reading the data element. The following options are supported:
             - squeeze_aux (bool): If True, squeeze the aux data to remove dimensions of
-                size 1.
+            size 1.
             - crs (str): Name of the geo3d's coordinate reference system.
 
     Returns:

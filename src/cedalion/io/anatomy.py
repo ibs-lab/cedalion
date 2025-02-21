@@ -60,9 +60,9 @@ def read_segmentation_masks(
         mask_files: Dictionary mapping segmentation types to filenames
 
     Returns:
-        - masks (xr.DataArray): Concatenated segmentation masks with a new
+        masks: Concatenated segmentation masks with a new
             dimension `segmentation_type`.
-        - affine (np.ndarray): Affine transformation matrix associated with the
+        affine: Affine transformation matrix associated with the
             NIFTI files.
     """
     mask_ids = {seg_type: i + 1 for i, seg_type in enumerate(mask_files.keys())}
