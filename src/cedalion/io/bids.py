@@ -100,8 +100,9 @@ def get_snirf2bids_mapping_csv(dataset_path):
                      }
         snirf2bids_mapping_df = pd.concat([snirf2bids_mapping_df, pd.DataFrame([bids_dict])], ignore_index=True)
 
-    snirf2bids_mapping_df.to_csv(os.path.join(dataset_path, 'snirf2BIDS_mapping.csv'), index=None)
-    return snirf2bids_mapping_df
+    mapping_df_path = os.path.join(dataset_path, "snirf2BIDS_mapping.csv")
+    snirf2bids_mapping_df.to_csv(mapping_df_path, index=None)
+    return mapping_df_path
 
 def find_files_with_pattern(start_dir: str | Path, pattern: str) -> List[str]:
     """Recursively finds all files in the specified directory (and subdirectories) that match the given pattern.
