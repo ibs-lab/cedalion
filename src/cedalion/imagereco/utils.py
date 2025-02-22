@@ -20,7 +20,7 @@ def reduce_and_map_brain_voxels(
     surface: cdc.Surface,
     volume: cdc.Voxels,
     max_dist: float=10,
-) -> tuple[scipy.sparse.coo_matrix, cdc.Voxels]:
+) -> tuple[scipy.sparse.coo_matrix, cdc.Voxels, nd.array]:
     """Find for each brain voxel the closest brain voxel in the volume that is
     closer than max_dist on the scalp surface.
 
@@ -56,20 +56,30 @@ def reduce_and_map_brain_voxels(
 
     ncells = cell_coords.sizes["label"]
     nvertices = len(surface.vertices)
+    nvoxels = len(volume.voxels)
 
     # find indices of cells that belong to the mask
     cell_indices = np.flatnonzero(segmentation_mask.values)
 
-    # for each cell query the closests vertex on the surface
-    dists, vertex_indices = surface.kdtree.query(
+    dists, vertex_indices = volume.kdtree.query(
         cell_coords.values[cell_indices, :], workers=-1
+    )
+    map_voxel_to_all_voxels = coo_array(     
+        (np.ones(len(cell_indices)), (cell_indices, vertex_indices)),   
+        shape=(ncells, nvoxels), 
+    )
+   
+    # for each cell query the closests vertex on the surface 
+    dists, vertex_indices = surface.kdtree.query( 
+        cell_coords.values[cell_indices, :], workers=-1    
     )
 
     volume_reduced = cdc.Voxels(volume.voxels[np.where(dists<max_dist)], volume.crs, volume.units)
     nvertices = len(volume_reduced.voxels)
-   
+  
     # for each reduced brain voxel query the closests voxel (i.e. the same) in
     # the reduced volume to get its index
+    brain_mask = dists<max_dist   
     map_voxels_to_reduced = np.argwhere(dists<max_dist)[:,0]
     cell_indices = cell_indices[map_voxels_to_reduced]
     dists, vertex_indices = volume_reduced.kdtree.query(
@@ -85,7 +95,7 @@ def reduce_and_map_brain_voxels(
         shape=(ncells, nvertices),
     )
 
-    return map_voxel_to_vertex, volume_reduced
+    return map_voxel_to_vertex, volume_reduced, brain_mask
 
 
 # FIXME right location?

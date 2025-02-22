@@ -63,6 +63,8 @@ class OneSurfaceFewVoxelsHeadModel:
         Mapping from voxel to brain voxels.
     voxel_to_vertex_scalp : scipy.sparse.spmatrix
         Mapping from voxel to scalp vertices.
+    brain_mask: np.ndarray 
+        Mask of brain voxels included in the head model compared to segmentations masks
     crs : str
         Coordinate reference system of the head model.
 
@@ -88,6 +90,7 @@ class OneSurfaceFewVoxelsHeadModel:
     t_ras2ijk: cdt.AffineTransform
     voxel_to_few_voxel_brain: scipy.sparse.spmatrix
     voxel_to_vertex_scalp: scipy.sparse.spmatrix
+    brain_mask: np.ndarray 
 
     # FIXME need to distinguish between ijk,  ijk+units == aligned == ras
 
@@ -206,6 +209,7 @@ class OneSurfaceFewVoxelsHeadModel:
             t_ras2ijk=t_ras2ijk,
             voxel_to_few_voxel_brain=voxel_to_few_voxel_brain,
             voxel_to_vertex_scalp=voxel_to_vertex_scalp,
+            brain_mask=brain_mask,
         )
 
     def reduce_voxels_to_probe(self, geo3d: xr.DataArray, max_dist: float = 50,
@@ -229,35 +233,50 @@ class OneSurfaceFewVoxelsHeadModel:
             Reduced head model.
         """
      
-        mask = np.zeros(self.brain.voxels.shape[0], dtype=bool)
+        mask_reduced = np.zeros(self.brain.voxels.shape[0], dtype=bool)
         for p in np.array(geo3d):
-            mask = mask | (np.linalg.norm(self.brain.voxels - p, axis=1) < max_dist)
-        
-        voxels = self.brain.voxels[mask]
+            mask_reduced = mask_reduced | (np.linalg.norm(self.brain.voxels - p, axis=1) < max_dist)
+       
+        voxels = self.brain.apply_transform(self.t_ijk2ras).voxels[mask_reduced]   
+
+        mask = np.logical_and(self.brain_mask, mask_reduced) 
 
         # new mapping needed
-        kdtree = KDTree(voxels)
+        volume_reduced = cdc.Voxels(voxels, self.brain.crs, self.brain.units) 
+        nvoxels = len(volume_reduced.voxels)
+        
         brain_mask = self.segmentation_masks.sel(segmentation_type=brain_seg_types).any("segmentation_type")
+        assert np.sum(brain_mask.values) == self.brain_mask.shape[0]  
+
         cell_coords = cell_coordinates(brain_mask, flat=True)
-        cell_coords = cell_coords.pint.dequantify().pint.quantify(self.t_ijk2ras.pint.units)  
+        cell_coords = cell_coords.points.apply_transform(self.t_ijk2ras)     
         cell_coords = cell_coords.pint.to(self.brain.units).pint.dequantify()  
         ncells = cell_coords.sizes["label"]
-        nvoxels = voxels.shape[0]
 
         # Find indices of cells that belong to the mask
-        cell_indices = np.flatnonzero(self.voxel_to_few_voxel_brain @ mask)
+        cell_indices = np.flatnonzero(brain_mask.values)
+        
+        map_voxels_to_reduced = np.argwhere(mask)[:,0]
+        assert map_voxels_to_reduced[-1] < mask.shape[0] 
+        
+        assert cell_indices.shape[0] == mask.shape[0]
+        cell_indices = cell_indices[map_voxels_to_reduced]  
 
-        dists, vertex_indices = kdtree.query(
+        dists, voxel_indices = volume_reduced.kdtree.query(
             cell_coords.values[cell_indices, :], workers=-1
         )
+        # ensure that the same voxel is mapped to itself    
+        assert (dists.round(9) == 0.0).all()       
        
         self.voxel_to_few_voxel_brain = coo_array((np.ones(len(cell_indices)), 
-                                                   (cell_indices, vertex_indices)), 
+                                                   (cell_indices, voxel_indices)), 
                                                   shape=(ncells, nvoxels))
         print('Reduced %d brain voxels to %d (ratio: %f).' %
               (self.brain.voxels.shape[0], voxels.shape[0],
                round(voxels.shape[0]/self.brain.voxels.shape[0], 2)))
-        self.brain.voxels = voxels
+        assert volume_reduced.voxels.shape[0] == np.sum(mask)
+        self.brain = volume_reduced.apply_transform(self.t_ras2ijk)
+        self.brain_mask = mask
 
         return self
 
@@ -285,32 +304,49 @@ class OneSurfaceFewVoxelsHeadModel:
         Adot_summed = np.sum(Adot_summed, axis=0)
         
         assert Adot_summed.shape[0] == self.brain.voxels.shape[0]
-        mask = (Adot_summed > sensitivity_threshold)
-        voxels = self.brain.voxels[mask]
+
+        # mask for brain voxels included in current head model
+        mask_reduced = (Adot_summed > sensitivity_threshold)
+        voxels = self.brain.voxels[mask_reduced]
+
+        mask = np.logical_and(self.brain_mask, mask_reduced)   
 
         # new mapping needed
-        kdtree = KDTree(voxels)
+        volume_reduced = cdc.Voxels(voxels, self.brain.crs, self.brain.units) 
+        nvoxels = len(volume_reduced.voxels)
+        
         brain_mask = self.segmentation_masks.sel(segmentation_type=brain_seg_types).any("segmentation_type")
+        assert np.sum(brain_mask.values) == self.brain_mask.shape[0]  
+
         cell_coords = cell_coordinates(brain_mask, flat=True)
-        cell_coords = cell_coords.pint.dequantify().pint.quantify(self.t_ijk2ras.pint.units)  
+        cell_coords = cell_coords.points.apply_transform(self.t_ijk2ras)     
         cell_coords = cell_coords.pint.to(self.brain.units).pint.dequantify()  
         ncells = cell_coords.sizes["label"]
-        nvoxels = voxels.shape[0]
 
         # Find indices of cells that belong to the mask
-        cell_indices = np.flatnonzero(self.voxel_to_few_voxel_brain @ mask)
+        cell_indices = np.flatnonzero(brain_mask.values)
+        
+        map_voxels_to_reduced = np.argwhere(mask)[:,0]
+        assert map_voxels_to_reduced[-1] < mask.shape[0] 
+        
+        assert cell_indices.shape[0] == mask.shape[0]
+        cell_indices = cell_indices[map_voxels_to_reduced]  
 
-        dists, vertex_indices = kdtree.query(
+        dists, voxel_indices = volume_reduced.kdtree.query(
             cell_coords.values[cell_indices, :], workers=-1
         )
+        # ensure that the same voxel is mapped to itself    
+        assert (dists.round(9) == 0.0).all()       
        
         self.voxel_to_few_voxel_brain = coo_array((np.ones(len(cell_indices)), 
-                                                   (cell_indices, vertex_indices)), 
+                                                   (cell_indices, voxel_indices)), 
                                                   shape=(ncells, nvoxels))
         print('Reduced %d brain voxels to %d (ratio: %f).' %
               (self.brain.voxels.shape[0], voxels.shape[0],
                round(voxels.shape[0]/self.brain.voxels.shape[0], 2)))
-        self.brain.voxels = voxels
+        assert volume_reduced.voxels.shape[0] == np.sum(mask)
+        self.brain = volume_reduced.apply_transform(self.t_ras2ijk)
+        self.brain_mask = mask
 
         return self
 
