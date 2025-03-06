@@ -26,6 +26,25 @@ logger = logging.getLogger("cedalion")
 CLEAN = True
 TAINTED = False
 
+
+def parcel_sensitivity_mask(Adot_brain, parcels, meas_list, chan_mask, sens_thresh):
+    # check if number of channels match everywhere
+    assert len(meas_list) == len(chan_mask) == Adot_brain.shape[0] * Adot_brain.shape[2] # num_chans*wavelengths
+    Adot_brain = np.vstack((Adot_brain[:,:,0], Adot_brain[:,:,1])) # flatten the wavelength dimension
+
+    Adot_brain = Adot_brain[chan_mask, :] # apply the channel mask
+
+    # check if number of brain voxels/vertices match
+    assert len(parcels) == np.sum(Adot_brain)
+
+    # get the parcel names
+    parcel_names = np.unique(parcels) 
+    # for each parcel compure if the summed sensitivity is above the threshold
+    parcel_mask = {roi: np.sum(Adot_brain[:, parcels==roi])>sens_thresh[roi] for roi in parcel_names}
+    
+    return parcel_mask
+
+
 @cdc.validate_schemas
 def prune_ch(
     amplitudes: cdt.NDTimeSeries,
