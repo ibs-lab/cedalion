@@ -4,8 +4,10 @@ import json
 import re
 from pathlib import Path
 from typing import List, Tuple, Optional
+from datetime import datetime
 
 import pandas as pd
+from snirf import Snirf
 
 
 def read_events_from_tsv(fname: str | Path):
@@ -198,7 +200,7 @@ def copy_rename_snirf(row: pd.Series, dataset_path: str, bids_dir: str):
     shutil.copy(source_file, destination_file)
 
 
-def search_for_acq_time(dataset_path: str) -> pd.DataFrame:
+def search_for_acq_time_in_scan_files(dataset_path: str) -> pd.DataFrame:
     """Searches for `_scans.tsv` files in the given dataset path, reads them into DataFrames, and processes them to extract the `filename` and `acq_time` columns.
 
     This function looks for all `_scans.tsv` files in the `dataset_path`, reads them into a DataFrame, and processes the `filename`
@@ -234,6 +236,37 @@ def search_for_acq_time(dataset_path: str) -> pd.DataFrame:
     else:
         scan_df = pd.DataFrame(columns=["filename_org", "acq_time"])
     return scan_df
+
+
+def search_for_acq_time_in_snirf_files(row: pd.Series, dataset_path: str) -> datetime:
+    """Extracts acquisition time from SNIRF files if missing in the `_scans.tsv` file.
+
+    This function checks if the acquisition time (`acq_time`) is missing (`NaN`) in the input row.
+    If missing, it loads the corresponding SNIRF file, extracts the acquisition date and time,
+    and returns it as a `datetime` object.
+
+    Parameters:
+    -----------
+    row : pd.Series
+        A row from the `mapping_df` DataFrame containing `current_name` and `acq_time` columns.
+    dataset_path : str
+        Path to the dataset where the SNIRF files are located.
+
+    Returns:
+    --------
+    datetime
+        The acquisition timestamp extracted from the SNIRF file, or the existing `acq_time` if not missing.
+    """
+    if pd.isna(row.acq_time):
+        snirf_file = os.path.join(dataset_path, row.current_name)
+        nirs_data = Snirf(snirf_file)
+        nirs_data = next(iter(nirs_data.nirs))
+
+        datetime_str = f"{nirs_data.metaDataTags.MeasurementDate} {nirs_data.metaDataTags.MeasurementTime}"
+        timestamp = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+        return timestamp
+    else:
+        return row.acq_time
 
 
 def search_for_sessions_acq_time(dataset_path: str) -> pd.DataFrame:
