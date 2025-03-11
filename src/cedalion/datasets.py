@@ -46,12 +46,20 @@ DATA_DIR = os.path.join(
 def get_ninja_cap_probe():
     """Load the fullhead Ninja NIRS cap probe."""
     probe_dir = os.path.join(DATA_DIR, 'ninja_cap_probe')
-    geo3d = cedalion.io.load_tsv(os.path.join(probe_dir,
-                                              'fullhead_56x144_System2_optodes.tsv'))
-    landmarks = cedalion.io.load_tsv(os.path.join(probe_dir,
-                                                  'fullhead_56x144_System2_landmarks.tsv'))
-    meas_list = pd.read_pickle(os.path.join(probe_dir,
-                                            'fullhead_56x144_System2_measlist.pkl'))
+    raw_fn = 'fullhead_56x144_System2_'
+    geo3d = cedalion.io.load_tsv(os.path.join(probe_dir, raw_fn+'optodes.tsv'))
+    landmarks = cedalion.io.load_tsv(os.path.join(probe_dir, raw_fn+'landmarks.tsv'))
+    meas_list = pd.read_pickle(os.path.join(probe_dir, raw_fn+'measlist.pkl'))
+    return geo3d, landmarks, meas_list
+
+
+def get_ninja_uhd_cap_probe():
+    """Load the fullhead Ninja NIRS ultra HD cap probe."""
+    probe_dir = os.path.join(DATA_DIR, 'ninja_uhd_cap_probe')
+    raw_fn = 'fullhead_164x496_'
+    geo3d = cedalion.io.load_tsv(os.path.join(probe_dir, raw_fn+'optodes.tsv'))
+    landmarks = cedalion.io.load_tsv(os.path.join(probe_dir, raw_fn+'landmarks.tsv'))
+    meas_list = pd.read_pickle(os.path.join(probe_dir, raw_fn+'measlist.pkl')) 
     return geo3d, landmarks, meas_list
 
 
