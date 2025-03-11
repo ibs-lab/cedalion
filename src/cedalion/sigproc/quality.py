@@ -47,15 +47,14 @@ def parcel_sensitivity_mask(Adot_brain: xr.DataArray,
 
     # check if number of channels match everywhere
     assert len(chan_mask) == Adot_brain.shape[0] * Adot_brain.shape[2] # num_chans*wavelengths
+    # check if number of brain voxels/vertices match
+    assert len(parcels) == Adot_brain.shape[1]
     
     # flatten the wavelength dimension
     Adot_brain = np.vstack((Adot_brain[:,:,0], Adot_brain[:,:,1])) 
 
     # apply the channel mask
     Adot_brain = Adot_brain[chan_mask, :] 
-
-    # check if number of brain voxels/vertices match
-    assert len(parcels) == np.sum(Adot_brain)
 
     # get the parcel names
     parcel_names = np.unique(parcels) 
