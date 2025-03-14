@@ -33,10 +33,14 @@ DATASETS = pooch.create(
         "fluence_fingertappingDOT_colin27.h5": "sha256:f321190e9ab537e0f020cbcca40d9ef909f67ce9c33791be14033daf162acaf7",  # noqa:E501
         "fluence_fingertappingDOT_icbm152.h5": "sha256:4e75e80d906f6c62802d9b39382f34e7546ca1cc7a737e30755666d767e1c697",  # noqa:E501
         "nn22_resting_state.zip": "sha256:0394347af172d906fe33403e84303435af26d82fdcf1d36dad5c7b05beb82d88",  # noqa:E501
+        "Adot_ninjanirs_colin27.nc" : "sha256:3382e6bfd62b5e1213332cc74c88cc8af04a4fd5cebe7001ebc111cf9e9b2d00", # noqa:E501
+        "fluence_ninjanirs_colin27.h5" : "sha256:89d82c4f5a985f79777fceeffab9ef90365056ccda8ea4e29bc71c4d24fb0e0a", # noqa: E501
     },
 )
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"
+)
 
 
 def get_ninja_cap_probe():
@@ -46,7 +50,7 @@ def get_ninja_cap_probe():
                                               'fullhead_56x144_System2_optodes.tsv'))
     landmarks = cedalion.io.load_tsv(os.path.join(probe_dir,
                                                   'fullhead_56x144_System2_landmarks.tsv'))
-    meas_list = pd.read_pickle(os.path.join(probe_dir, 
+    meas_list = pd.read_pickle(os.path.join(probe_dir,
                                             'fullhead_56x144_System2_measlist.pkl'))
     return geo3d, landmarks, meas_list
 
@@ -205,6 +209,14 @@ def get_precomputed_fluence(
 
     return load_fluence(fname)
 
+
+def get_ninjanirs_colin27_precomputed_fluence() -> tuple[xr.DataArray, xr.DataArray]:
+    fname = DATASETS.fetch("fluence_ninjanirs_colin27.h5")
+    return load_fluence(fname)
+
+def get_ninjanirs_colin27_precomputed_sensitivity() -> Path:
+    fname = DATASETS.fetch("Adot_ninjanirs_colin27.nc")
+    return xr.open_dataarray(fname)
 
 def get_nn22_resting_state() -> cdc.Recording:
     fnames = DATASETS.fetch("nn22_resting_state.zip", processor=pooch.Unzip())

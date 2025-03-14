@@ -1,9 +1,9 @@
-import os, tempfile
+import os
+import tempfile
 import numpy as np
 import xarray as xr
 from numpy.testing import assert_array_almost_equal
 
-import cedalion
 import cedalion.dataclasses as cdc
 from cedalion.io import load_tsv
 
