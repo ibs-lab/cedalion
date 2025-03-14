@@ -542,7 +542,7 @@ def create_participants_json(dataset_path: str, bids_dir: str) -> None:
         "species": {
             "Description": "species of the participant",
             "Levels": {
-                "homo sepians": "a binomial species name from the NCBI Taxonomy"
+                "homo sapiens": "a binomial species name from the NCBI Taxonomy"
             },
         },
         "age": {"Description": "age of the participant", "Units": "year"},
