@@ -923,6 +923,7 @@ def scalp_plot(
     vmin: float | None = None,
     vmax: float | None = None,
     cmap: str = "bwr",
+    bad_color: ArrayLike | [float, float, float] = [0.7, 0.7, 0.7],
     min_dist: Quantity | None = None,
     min_metric: float | None = None,
     channel_lw: float = 2.0,
@@ -986,6 +987,7 @@ def scalp_plot(
 
     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     cmap = p.cm.get_cmap(cmap)
+    cmap.set_bad(bad_color) 
 
 
     ax.set_aspect("equal", adjustable="datalim")
@@ -1066,7 +1068,6 @@ def scalp_plot(
             s[:, 1],
             s=optode_size,
             marker="s",
-            ec="k",
             fc=COLOR_SOURCE,
             zorder=100,
         )
@@ -1075,7 +1076,6 @@ def scalp_plot(
             d[:, 1],
             s=optode_size,
             marker="s",
-            ec="k",
             fc=COLOR_DETECTOR,
             zorder=100,
         )
