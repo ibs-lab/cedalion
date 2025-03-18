@@ -7,7 +7,6 @@ import cedalion.datasets
 from cedalion import units
 import cedalion.sim.synthetic_hrf as syn
 
-
 @pytest.fixture
 def head_model():
     return cedalion.datasets.get_colin27_headmodel()
@@ -56,6 +55,7 @@ def test_build_spatial_activation(head_model):
         sum_blob_big = blob_big.sum()
         assert sum_blob_small < sum_blob_big
         seed_pos = head_model.brain.vertices[seed]
+        seed_pos = seed_pos.pint.to("mm").pint.dequantify()
         # get all vertices that are within stdev mm of the seed_vertex
         close_vertices_small = head_model.brain.mesh.kdtree.query_ball_point(
             seed_pos, 10
