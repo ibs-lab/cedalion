@@ -6,7 +6,7 @@ import xarray as xr
 import cedalion.xrutils as xrutils
 
 
-def pseudo_inverse_stacked(Adot, alpha=0.01):
+def pseudo_inverse_stacked(Adot, alpha=0.01, Cmeas=None, alpha_spatial=None):
     """Pseudo-inverse of a stacked matrix.
 
     Args:
@@ -23,12 +23,38 @@ def pseudo_inverse_stacked(Adot, alpha=0.01):
     else:
         inv_units = pint.Unit("1")
 
-    AA = Adot.values @ Adot.values.T
-    highest_eigenvalue = np.linalg.eig(AA)[0][0].real
+    # do spatial regularization
+    if alpha_spatial is not None:
+        AAtdiag = np.sum((Adot ** 2), axis=0)
 
-    B = Adot.values.T @ np.linalg.pinv(
-        AA + alpha * highest_eigenvalue * np.eye(AA.shape[0])
-    )
+        b = AAtdiag.max()
+        lambda_spatial = alpha_spatial * b
+        
+        L = np.sqrt(AAtdiag + lambda_spatial)
+        Linv = 1/L
+        Linv = np.diag(Linv)
+        
+        A_hat = Adot @ Linv        
+        AAt = A_hat @ A_hat.T        
+        At = Linv**2 @ A_hat.T
+    else: # no spatial regularization
+        AAt = Adot @ Adot.T
+        At = Adot.T
+
+    highest_eigenvalue = np.linalg.eig(AAt)[0][0].real
+    lambda_meas = alpha * highest_eigenvalue
+    if Cmeas is None:
+        B = At.values @ np.linalg.pinv(
+            AAt + lambda_meas * np.eye(AAt.shape[0])
+        )
+    elif len(Cmeas.shape) == 2:
+        B = At.values @ np.linalg.inv(
+            AAt + lambda_meas * Cmeas
+        )
+    else:
+        B = At.values @ np.linalg.inv(
+            AAt + lambda_meas * np.diag(Cmeas)
+        )
 
     coords = xrutils.coords_from_other(Adot)
 
