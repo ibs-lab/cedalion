@@ -21,7 +21,8 @@ def pseudo_inverse_stacked(
         alpha: Thikonov regularization parameter
         Cmeas: Optional measurement regularization parameters. If specified this can
          be either a vector of size nchannel or a matrix of size nchannelxnchannel.
-        alpha_spatial: Optional spatial regularization parameter.
+        alpha_spatial: Optional spatial regularization parameter. 
+         Suggested default is 1e-3, or 1e-2 when spatial basis functions are used.
 
     Returns:
         xr.DataArray: Pseudo-inverse of the stacked matrix.
