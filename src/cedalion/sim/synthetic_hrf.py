@@ -1,6 +1,7 @@
 """Functions for generating synthetic hemodynamic response functions."""
 
 from __future__ import annotations
+
 import random
 
 import numpy as np
@@ -8,22 +9,22 @@ import pandas as pd
 import pyvista as pv
 import scipy.stats as stats
 import xarray as xr
-from typing import Annotated
+
 import cedalion.dataclasses as cdc
 import cedalion.dataclasses.geometry as cdg
 import cedalion.imagereco.forward_model as cfm
+import cedalion.models.glm as glm
 import cedalion.plots
 import cedalion.typing as cdt
-from cedalion import Quantity, units
-import cedalion.models.glm as glm
+from cedalion import units
 from cedalion.models.glm.basis_functions import TemporalBasisFunction
 
 
 def build_spatial_activation(
     head_model: cfm.TwoSurfaceHeadModel,
     seed_vertex: int,
-    spatial_scale: Quantity = 1 * units.cm,
-    intensity_scale: Quantity = 1 * units.micromolar,
+    spatial_scale: cdt.QLength = 1 * units.cm,
+    intensity_scale: cdt.QConcentration = 1 * units.micromolar,
     hbr_scale: float = None,
     m: float = 10.0,
 ):
@@ -117,13 +118,13 @@ def build_spatial_activation(
 
 
 def build_stim_df(
-    max_time: Annotated[Quantity, "[time]"],
-    max_num_stims: int = None,
+    max_time: cdt.QTime,
+    max_num_stims: int | None = None,
     trial_types: list[str] = ["Stim"],
-    min_stim_dur: Annotated[Quantity, "[time]"] = 10 * units.seconds,
-    max_stim_dur: Annotated[Quantity, "[time]"] = 10 * units.seconds,
-    min_interval: Annotated[Quantity, "[time]"] = 10 * units.seconds,
-    max_interval: Annotated[Quantity, "[time]"] = 30 * units.seconds,
+    min_stim_dur: cdt.QTime = 10 * units.seconds,
+    max_stim_dur: cdt.QTime = 10 * units.seconds,
+    min_interval: cdt.QTime = 10 * units.seconds,
+    max_interval: cdt.QTime = 30 * units.seconds,
     min_stim_value: float = 1.0,
     max_stim_value: float = 1.0,
     order: str = "alternating",
@@ -161,12 +162,12 @@ def build_stim_df(
             .magnitude
         )
 
-    # Convert all time-related quantities to their base units (seconds)
-    min_stim_dur = (min_stim_dur / units.seconds).to_base_units().magnitude
-    max_stim_dur = (max_stim_dur / units.seconds).to_base_units().magnitude
-    min_interval = (min_interval / units.seconds).to_base_units().magnitude
-    max_interval = (max_interval / units.seconds).to_base_units().magnitude
-    max_time = (max_time / units.seconds).to_base_units().magnitude
+    # Convert all time-related quantities to seconds
+    min_stim_dur = min_stim_dur.to("s").magnitude
+    max_stim_dur = max_stim_dur.to("s").magnitude
+    min_interval = min_interval.to("s").magnitude
+    max_interval = max_interval.to("s").magnitude
+    max_time = max_time.to("s").magnitude
 
     current_time = round(random.uniform(min_interval, max_interval), 2)
     onset_times = []
@@ -316,7 +317,7 @@ def get_colors(
 
 def plot_spatial_activation(
     spatial_img: xr.DataArray,
-    brain,
+    brain : cdg.TrimeshSurface,
     seed: int = None,
     title: str = "",
     log_scale: bool = False,

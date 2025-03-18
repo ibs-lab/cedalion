@@ -779,7 +779,9 @@ class PycortexSurface(Surface):
         if d is None:
             d = self.geodesic_distance([b], **kwargs)
         while path[-1] != b:
-            n = np.unique((self.mesh.polys[np.where(self.mesh.polys == path[-1])[0], :]))
+            n = np.unique(
+                (self.mesh.polys[np.where(self.mesh.polys == path[-1])[0], :])
+            )
             path.append(n[d[n].argmin()])
             if len(path) > max_len:
                 return path
@@ -821,13 +823,13 @@ class PycortexSurface(Surface):
 
         c1 = sparse.coo_matrix(
             (o, (self.mesh.polys[:, 0], range(npoly))), (npt, npoly)
-        ).tocsr()  # noqa: E501
+        ).tocsr()
         c2 = sparse.coo_matrix(
             (o, (self.mesh.polys[:, 1], range(npoly))), (npt, npoly)
-        ).tocsr()  # noqa: E501
+        ).tocsr()
         c3 = sparse.coo_matrix(
             (o, (self.mesh.polys[:, 2], range(npoly))), (npt, npoly)
-        ).tocsr()  # noqa: E501
+        ).tocsr()
 
         return c1, c2, c3
 
