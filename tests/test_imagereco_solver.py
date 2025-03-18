@@ -3,12 +3,27 @@ import cedalion.imagereco.forward_model as fw
 import cedalion.imagereco.solver as solver
 import cedalion.datasets
 import numpy as np
+import xarray as xr
 import pytest
 
 
 @pytest.fixture
 def Adot_stacked():
-    Adot = cedalion.datasets.get_ninjanirs_colin27_precomputed_sensitivity()
+    rng = np.random.default_rng(seed=42)
+
+    nchannel = 50
+    nvertex = 100
+    nwavelength = 2
+    Adot = xr.DataArray(
+        rng.uniform(0, 20.0, size=(nchannel, nvertex, nwavelength)),
+        dims=["channel", "vertex", "wavelength"],
+        coords={
+            "is_brain": ("vertex", [True] * 60 + [False] * 40),
+            "channel": [f"C{c:02d}" for c in range(1, nchannel + 1)],
+            "wavelength": [760.0, 850.0],
+        },
+    )
+
     Adot_stacked = fw.ForwardModel.compute_stacked_sensitivity(Adot)
 
     assert Adot_stacked.dims == ("flat_channel", "flat_vertex")
