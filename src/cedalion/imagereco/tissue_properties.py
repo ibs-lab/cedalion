@@ -2,6 +2,7 @@
 
 from enum import Enum, auto
 from typing import Dict
+from warnings import warn
 
 import numpy as np
 import xarray as xr
@@ -91,7 +92,7 @@ def get_tissue_properties(segmentation_masks: xr.DataArray) -> np.ndarray:
         m = segmentation_masks.sel(segmentation_type=st).values
         int_labels = np.unique(m[m > 0])
         if len(int_labels) == 0:
-            print("Warning: %s is empfy." % st)   
+            warn("Segmentation type %s is empty." % st)
             continue
         int_label = int_labels.item()
 
