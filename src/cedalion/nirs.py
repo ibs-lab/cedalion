@@ -14,7 +14,7 @@ import cedalion.xrutils as xrutils
 import cedalion.data
 
 
-def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
+def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike) -> xr.DataArray:
     """Provide a matrix of extinction coefficients from tabulated data.
 
     Args:
@@ -28,7 +28,7 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
             calculate the extinction coefficients.
 
     Returns:
-        xr.DataArray: A matrix of extinction coefficients with dimensions "chromo"
+        A matrix of extinction coefficients with dimensions "chromo"
             (chromophore, e.g. HbO/HbR) and "wavelength" (e.g. 750, 850, ...) at which
             the coefficients for each chromophore are given in units of "mm^-1 / M".
 
@@ -82,17 +82,19 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
         raise ValueError(f"unsupported spectrum '{spectrum}'")
 
 
-def channel_distances(amplitudes: cdt.NDTimeSeries, geo3d: cdt.LabeledPointCloud):
+def channel_distances(
+    amplitudes: cdt.NDTimeSeries, geo3d: cdt.LabeledPointCloud
+) -> xr.DataArray:
     """Calculate distances between channels.
 
     Args:
         amplitudes: A DataArray representing the amplitudes with
             dimensions (channel, *).
-        geo3d (xr.DataArray): A DataArray containing the 3D coordinates of the channels
+        geo3d: A DataArray containing the 3D coordinates of the channels
             with dimensions (channel, pos).
 
     Returns:
-        dists (xr.DataArray): A DataArray containing the calculated distances between
+        dists: A DataArray containing the calculated distances between
             source and detector channels. The resulting DataArray has the dimension
             'channel'.
     """
@@ -107,14 +109,14 @@ def channel_distances(amplitudes: cdt.NDTimeSeries, geo3d: cdt.LabeledPointCloud
     return dists
 
 
-def int2od(amplitudes: cdt.NDTimeSeries):
+def int2od(amplitudes: cdt.NDTimeSeries) -> cdt.NDTimeSeries:
     """Calculate optical density from intensity amplitude  data.
 
     Args:
-        amplitudes (xr.DataArray, (time, channel, *)): amplitude data.
+        amplitudes: amplitude data, dims (time, channel, *).
 
     Returns:
-        od: (xr.DataArray, (time, channel,*): The optical density data.
+        od: The optical density data, dims (time, channel,*).
     """
     # check negative values in amplitudes and issue an error if yes
     if np.any(amplitudes < 0):
@@ -134,19 +136,19 @@ def od2conc(
     geo3d: cdt.LabeledPointCloud,
     dpf: xr.DataArray,
     spectrum: str = "prahl",
-):
+) -> cdt.NDTimeSeries:
     """Calculate concentration changes from optical density data.
 
     Args:
-        od (xr.DataArray, (channel, wavelength, *)): The optical density data array
-        geo3d (xr.DataArray): The 3D coordinates of the optodes.
-        dpf (xr.DataArray, (wavelength, *)): The differential pathlength factor data
-        spectrum (str, optional): The type of spectrum to use for calculating extinction
+        od: The optical density data array, dims (time, channel, wavelength, *)
+        geo3d: The 3D coordinates of the optodes.
+        dpf: The differential pathlength factor data, dims (wavelength, *)
+        spectrum: The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, *)): A data array containing
-        concentration changes by channel.
+        conc: A data array containing concentration changes by channel, dims
+            (channel, *)
     """
     validators.has_channel(od)
     validators.has_wavelengths(od)
@@ -181,15 +183,14 @@ def conc2od(
     """Calculate optical density data from concentration changes.
 
     Args:
-        conc (xr.DataArray, (channel, *)): The concentration changes by channel.
-        geo3d (xr.DataArray): The 3D coordinates of the optodes.
-        dpf (xr.DataArray, (wavelength, *)): The differential pathlength factor data.
-        spectrum (str, optional): The type of spectrum to use for calculating extinction
+        conc: The concentration changes by channel, dims (channel, *)
+        geo3d: The 3D coordinates of the optodes.
+        dpf: The differential pathlength factor data, dims (wavelength, *)
+        spectrum: The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
 
     Returns:
-        od (xr.DataArray, (channel, wavelength, *)): A data array containing
-            optical density data.
+        od: A data array containing optical density data, dims (channel, wavelength, *)
     """
 
     conc = conc.pint.to("molar")
@@ -220,16 +221,16 @@ def beer_lambert(
     """Calculate concentration changes from amplitude using the modified BL law.
 
     Args:
-        amplitudes (xr.DataArray, (channel, wavelength, *)): The input data array
-            containing the raw intensities.
-        geo3d (xr.DataArray): The 3D coordinates of the optodes.
-        dpf (xr.DataArray, (wavelength,*)): The differential pathlength factors
-        spectrum (str, optional): The type of spectrum to use for calculating extinction
+        amplitudes: The input data array containing the raw intensities, dims dims
+            (channel, wavelength, *)
+        geo3d: The 3D coordinates of the optodes.
+        dpf: The differential pathlength factors, dims (wavelength,*)
+        spectrum: The type of spectrum to use for calculating extinction
             coefficients. Defaults to "prahl".
 
     Returns:
-        conc (xr.DataArray, (channel, *)): A data array containing
-            concentration changes according to the mBLL.
+        conc: A data array containing concentration changes according to the mBLL, dims
+            (channel, *)
     """
     validators.has_channel(amplitudes)
     validators.has_wavelengths(amplitudes)
@@ -248,17 +249,17 @@ def split_long_short_channels(
     ts: cdt.NDTimeSeries,
     geo3d: cdt.LabeledPointCloud,
     distance_threshold: cdt.QLength = 1.5 * cedalion.units.cm,
-):
+) -> tuple[cdt.NDTimeSeries, cdt.NDTimeSeries]:
     """Split a time series into two based on channel distances.
 
     Args:
-        ts (cdt.NDTimeSeries) : Time series to split.
-        geo3d (cdt.LabeledPointCloud) : 3D coordinates of the channels.
-        distance_threshold (Quantity) : Distance threshold for splitting the channels.
+        ts: Time series to split.
+        geo3d: 3D coordinates of the channels.
+        distance_threshold: Distance threshold for splitting the channels.
 
     Returns:
-        ts_long : time series with channel distances >= distance_threshold
-        ts_short : time series with channel distances < distance_threshold
+        ts_long: Time series with channel distances >= distance_threshold.
+        ts_short: Time series with channel distances < distance_threshold.
     """
     dists = xrutils.norm(
         geo3d.loc[ts.source] - geo3d.loc[ts.detector], dim=geo3d.points.crs

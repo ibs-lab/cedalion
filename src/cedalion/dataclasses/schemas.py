@@ -1,5 +1,6 @@
 """Data array schemas and utilities to build labeled data arrays."""
 
+from __future__ import annotations
 import functools
 import inspect
 import typing
@@ -98,20 +99,20 @@ def build_timeseries(
     value_units: str,
     time_units: str,
     other_coords: dict[str, ArrayLike] = {},
-):
+) -> xr.DataArray:
     """Build a labeled time series data array.
 
     Args:
-        data (ArrayLike): The data values.
-        dims (List[str]): The dimension names.
-        time (ArrayLike): The time values.
-        channel (List[str]): The channel names.
-        value_units (str): The units of the data values.
-        time_units (str): The units of the time values.
-        other_coords (dict[str, ArrayLike]): Additional coordinates.
+        data: The data values.
+        dims: The dimension names.
+        time: The time values.
+        channel: The channel names.
+        value_units: The units of the data values.
+        time_units: The units of the time values.
+        other_coords: Additional coordinates.
 
     Returns:
-        da (xr.DataArray): The labeled time series data array.
+        da: The labeled time series data array.
     """
     assert len(dims) == data.ndim
     assert "time" in dims

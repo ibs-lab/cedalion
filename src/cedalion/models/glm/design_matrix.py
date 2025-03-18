@@ -24,24 +24,23 @@ def make_design_matrix(
     """Generate the design matrix for the GLM.
 
     Args:
-        ts_long (cdt.NDTimeSeries): Time series of long distance channels.
-        ts_short (cdt.NDTimeSeries): Time series of short distance channels.
-        stim (DataFrame): Stimulus DataFrame
-        geo3d (cdt.LabeledPointCloud): Probe geometry
-        basis_function (TemporalBasisFunction): the temporal basis function(s) to model
-            the HRF.
-        drift_order (int): If not None specify the highest polynomial order of the drift
+        ts_long: Time series of long distance channels.
+        ts_short: Time series of short distance channels.
+        stim: Stimulus DataFrame.
+        geo3d: Probe geometry.
+        basis_function: The temporal basis function(s) to model the HRF.
+        drift_order: If not None, specify the highest polynomial order of the drift
             terms.
-        short_channel_method (str): Specifies the method to add short channel
-            information to the design matrix
+        short_channel_method: Specifies the method to add short channel information to
+            the design matrix.
             Options:
-                'closest': Use the closest short channel
-                'max_corr': Use the short channel with the highest correlation
+                'closest': Use the closest short channel.
+                'max_corr': Use the short channel with the highest correlation.
                 'mean': Use the average of all short channels.
 
     Returns:
-        A tuple containing the global design_matrix and a list of channel-wise
-        regressors.
+        A tuple containing the global design matrix and a list of channel-wise
+            regressors.
     """
 
     dm = make_hrf_regressors(ts_long, stim, basis_function)
@@ -74,15 +73,15 @@ def make_design_matrix(
     return dm, channel_wise_regressors
 
 
-def make_drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> xr.DataArray:
+def make_drift_regressors(ts: cdt.NDTimeSeries, drift_order: int) -> xr.DataArray:
     """Create drift regressors.
 
     Args:
-        ts (cdt.NDTimeSeries): Time series data.
-        drift_order (int): The highest polynomial order of the drift terms.
+        ts: Time series data.
+        drift_order: The highest polynomial order of the drift terms.
 
     Returns:
-        xr.DataArray: A DataArray containing the drift regressors.
+        A DataArray containing the drift regressors.
     """
     dim3 = xrutils.other_dim(ts, "channel", "time")
     ndim3 = ts.sizes[dim3]
@@ -165,16 +164,15 @@ def build_stim_array(
 def make_hrf_regressors(
     ts: cdt.NDTimeSeries, stim: pd.DataFrame, basis_function: TemporalBasisFunction
 ):
-    """Create regressors modelling the hemodynamic response to stimuli.
+    """Create regressors modeling the hemodynamic response to stimuli.
 
     Args:
-        ts (NDTimeSeries): Time series data.
-        stim (pd.DataFrame): Stimulus DataFrame.
-        basis_function (TemporalBasisFunction): TemporalBasisFunction object defining
-            the HRF.
+        ts: Time series data.
+        stim: Stimulus DataFrame.
+        basis_function: TemporalBasisFunction object defining the HRF.
 
     Returns:
-        regressors (xr.DataArray): A DataArray containing the regressors.
+        A DataArray containing the regressors.
     """
 
     # FIXME allow basis_function to be an xarray as returned by basis_function()
@@ -299,15 +297,15 @@ def _regressors_from_selected_short_channels(
 def closest_short_channel(
     ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries, geo3d: cdt.LabeledPointCloud
 ):
-    """Create channel-wise regressors use closest nearby short channel.
+    """Create channel-wise regressors using the closest nearby short channel.
 
     Args:
-        ts_long (NDTimeSeries): Time series of long channels
-        ts_short (NDTimeSeries): Time series of short channels
-        geo3d (LabeledPointCloud): Probe geometry
+        ts_long: Time series of long channels.
+        ts_short: Time series of short channels.
+        geo3d: Probe geometry.
 
     Returns:
-        regressors (xr.DataArray): Channel-wise regressor
+        Channel-wise regressors.
     """
     # calculate midpoints between channel optode pairs. dims: (channel, crs)
     long_channel_pos = (geo3d.loc[ts_long.source] + geo3d.loc[ts_long.detector]) / 2
@@ -334,15 +332,15 @@ def closest_short_channel(
 def max_corr_short_channel(ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries):
     """Create channel-wise regressors using the most correlated short channels.
 
-    For each long channel the short channel is selected that has the highest
-    correleation coefficient in any wavelength or chromophore.
+    For each long channel, the short channel is selected that has the highest
+    correlation coefficient in any wavelength or chromophore.
 
     Args:
-        ts_long (NDTimeSeries): time series of long channels
-        ts_short (NDTimeSeries): time series of short channels
+        ts_long: Time series of long channels.
+        ts_short: Time series of short channels.
 
     Returns:
-        xr.DataArray: channel-wise regressors
+        Channel-wise regressors.
     """
 
     dim3 = xrutils.other_dim(ts_long, "channel", "time")
@@ -377,10 +375,10 @@ def average_short_channel(ts_short: cdt.NDTimeSeries):
     """Create a regressor by averaging all short channels.
 
     Args:
-        ts_short (NDTimeSeries): time series of short channels
+        ts_short: Time series of short channels.
 
     Returns:
-        xr.DataArray: regressors
+        Regressors.
     """
 
     ts_short = ts_short.pint.dequantify()

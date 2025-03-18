@@ -22,8 +22,8 @@ from cedalion import Quantity, units
 def generate_hrf(
     time_axis: xr.DataArray,
     stim_dur: Quantity = 10 * units.seconds,
-    params_basis: list = [0.1000, 3.0000, 1.8000, 3.0000],
-    scale: list = [10 * units.micromolar, -4 * units.micromolar],
+    params_basis: list[float] = [0.1000, 3.0000, 1.8000, 3.0000],
+    scale: list[float] = [10 * units.micromolar, -4 * units.micromolar],
 ):
     """Generates HRF basis functions for different chromophores.
 
@@ -34,14 +34,14 @@ def generate_hrf(
     Args:
         time_axis: The time axis for the resulting HRF.
         stim_dur: Duration of the stimulus.
-        params_basis (list of float): Parameters for tau and sigma for the modified
+        params_basis: Parameters for tau and sigma for the modified
             gamma function for each chromophore. Expected to be a flat list where pairs
             represent [tau, sigma] for each chromophore.
-        scale (list of float): Scaling factors for each chromophore, typically
+        scale: Scaling factors for each chromophore, typically
             [HbO scale, HbR scale].
 
     Returns:
-        xarray.DataArray: A DataArray object with dimensions "time" and "chromo",
+        A DataArray object with dimensions "time" and "chromo",
             containing the HRF basis functions for each chromophore.
 
     Initial Contributors:
@@ -119,15 +119,15 @@ def build_blob(
     The blob is centered at the vertex closest to the seed landmark.
 
     Args:
-        head_model (cfm.TwoSurfaceHeadModel): Head model with brain and scalp surfaces.
-        landmark (str): Name of the seed landmark.
-        scale (Quantity): Scale of the blob.
-        m (float): Geodesic distance parameter. Larger values of m will smooth &
+        head_model: Head model with brain and scalp surfaces.
+        landmark: Name of the seed landmark.
+        scale: Scale of the blob.
+        m: Geodesic distance parameter. Larger values of m will smooth &
             regularize the distance computation. Smaller values of m will roughen and
             will usually increase error in the distance computation.
 
     Returns:
-        xr.DataArray: Blob image with activation values for each vertex.
+        Blob image with activation values for each vertex.
 
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
@@ -161,17 +161,16 @@ def hrfs_from_image_reco(
     """Maps an activation blob on the brain to HRFs in channel space.
 
     Args:
-        blob (xr.DataArray): Activation values for each vertex.
-        hrf_model (xr.DataArray): HRF model for HbO and HbR.
-        Adot (xr.DataArray): Sensitivity matrix for the forward model.
+        blob: Activation values for each vertex.
+        hrf_model: HRF model for HbO and HbR.
+        Adot: Sensitivity matrix for the forward model.
 
     Returns:
-        cdt.NDTimeseries: HRFs in channel space.
+        HRFs in channel space.
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-
     """
 
     hrf_model = hrf_model.pint.to(units.molar)
@@ -201,28 +200,20 @@ def hrfs_from_image_reco(
 
 def add_hrf_to_vertices(
     hrf_basis: xr.DataArray, num_vertices: int, scale: np.array = None
-):
+) -> xr.DataArray:
     """Adds hemodynamic response functions (HRF) for HbO and HbR to specified vertices.
 
-    This function applies temporal HRF profiles to vertices, optionally scaling the
-    response by a provided amplitude scale. It generates separate images for HbO and HbR
-    and then combines them.
-
     Args:
-        hrf_basis (xarray.DataArray): Dataset containing HRF time series for
-            HbO and HbR.
-        num_vertices (int): Total number of vertices in the image space.
-        scale (np.array, optional): Array of scale factors of shape (num_vertices) to
-            scale the amplitude of HRFs.
+        hrf_basis: Dataset containing HRF time series for HbO and HbR.
+        num_vertices: Total number of vertices in the image space.
+        scale: Array of scale factors of shape (num_vertices) to scale the amplitude of HRFs.
 
     Returns:
-        xr.DataArray: Combined image of HbO and HbR responses across all vertices for
-            all time points.
+        Combined image of HbO and HbR responses across all vertices for all time points.
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-
     """
 
     unit = hrf_basis.pint.units
@@ -266,22 +257,22 @@ def build_stim_df(
     min_interval: Quantity = 5 * units.seconds,
     max_interval: Quantity = 10 * units.seconds,
     order: str = "alternating",
-):
+) -> pd.DataFrame:
     """Generates a DataFrame for stimulus metadata based on provided parameters.
 
     Stimuli can be added in an 'alternating' or 'random' order, and the inter-stimulus
     interval (ISI) is chosen randomly between the minimum and maximum allowed intervals.
 
     Args:
-        num_stims (int): Number of stimuli to be added for each trial type.
-        stim_dur (int): Duration of the stimulus in seconds.
-        trial_types (list): List of trial types for the stimuli.
-        min_interval (int): Minimum inter-stimulus interval in seconds.
-        max_interval (int): Maximum inter-stimulus interval in seconds.
-        order (str): Order of adding Stims; 'alternating' or 'random'.
+        num_stims: Number of stimuli to be added for each trial type.
+        stim_dur: Duration of the stimulus.
+        trial_types: List of trial types for the stimuli.
+        min_interval: Minimum inter-stimulus interval.
+        max_interval: Maximum inter-stimulus interval.
+        order: Order of adding stimuli; 'alternating' or 'random'.
 
     Returns:
-        pd.DataFrame: DataFrame containing stimulus metadata.
+        DataFrame containing stimulus metadata.
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
@@ -339,20 +330,21 @@ def build_stim_df(
 
 
 @cdc.validate_schemas
-def add_hrf_to_od(od: cdt.NDTimeSeries, hrfs: cdt.NDTimeSeries, stim_df: pd.DataFrame):
+def add_hrf_to_od(
+    od: cdt.NDTimeSeries, hrfs: cdt.NDTimeSeries, stim_df: pd.DataFrame
+) -> cdt.NDTimeSeries:
     """Adds Hemodynamic Response Functions (HRFs) to optical density (OD) data.
 
     The timing of the HRFs is based on the provided stimulus dataframe (stim_df).
 
     Args:
-        od (cdt.NDTimeSeries): OD timeseries data with dimensions
-            ["channel", "wavelength", "time"].
-        hrfs (cdt.NDTimeSeries): HRFs in channel space with dimensions
-            ["channel", "wavelength", "time"] + maybe ["trial_type"].
-        stim_df (pd.DataFrame): DataFrame containing stimulus metadata.
+        od: OD timeseries data with dimensions ["channel", "wavelength", "time"].
+        hrfs: HRFs in channel space with dimensions ["channel", "wavelength", "time"] + 
+            maybe ["trial_type"].
+        stim_df: DataFrame containing stimulus metadata.
 
     Returns:
-        cdt.NDTimeSeries: OD data with HRFs added based on the stimulus dataframe.
+        OD data with HRFs added based on the stimulus dataframe.
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
@@ -402,26 +394,23 @@ def hrf_to_long_channels(
     y: cdt.NDTimeSeries,
     geo3d: xr.DataArray,
     ss_tresh: Quantity = 1.5 * units.cm,
-):
-    """Add HRFs to optical density (OD) data in channel space.
+) -> xr.DataArray:
+    """Adds HRFs to optical density (OD) data in channel space.
 
     Broadcasts the HRF model to long channels based on the source-detector distances.
-    Short channel hrfs are filled with zeros.
+    Short channel HRFs are filled with zeros.
 
     Args:
-        hrf_model (xr.DataArray): HRF model with dimensions ["time", "wavelength"].
-        y (cdt.NDTimeSeries): Raw amp / OD / Chromo timeseries data with dimensions
-            ["channel", "time"].
-        geo3d (xr.DataArray): 3D coordinates of sources and detectors.
-        ss_tresh (Quantity): Threshold for short/long channels.
+        hrf_model: HRF model with dimensions ["time", "wavelength"].
+        y: Raw amp / OD / Chromo timeseries data with dimensions ["channel", "time"].
+        geo3d: 3D coordinates of sources and detectors.
+        ss_tresh: Threshold for short/long channels.
 
     Returns:
-        xr.DataArray: HRFs in channel space with dimensions
-            ["channel", "time", "wavelength"].
+        HRFs in channel space with dimensions ["channel", "time", "wavelength"].
 
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-
     """
 
     # Calculate source-detector distances for each channel
@@ -450,17 +439,17 @@ def get_colors(
     vertex_colors: np.array,
     log_scale: bool = False,
     max_scale: float = None,
-):
+) -> np.array:
     """Maps activations to colors for visualization.
 
     Args:
-        activations (xr.DataArray): Activation values for each vertex.
-        vertex_colors (np.array): Vertex color array of the brain mesh.
-        log_scale (bool): Whether to map activations on a logarithmic scale.
-        max_scale (float): Maximum value to scale the activations.
+        activations: Activation values for each vertex.
+        vertex_colors: Vertex color array of the brain mesh.
+        log_scale: Whether to map activations on a logarithmic scale.
+        max_scale: Maximum value to scale the activations.
 
     Returns:
-        np.array: New vertex color array with same shape as `vertex_colors`.
+        New vertex color array with same shape as `vertex_colors`.
     """
 
     if not isinstance(activations, np.ndarray):

@@ -56,10 +56,10 @@ def pyvista_polydata_to_trimesh(polydata: pv.PolyData) -> trimesh.Trimesh:
     """Convert a PyVista PolyData object to a Trimesh object.
 
     Args:
-        polydata (pv.PolyData): The input PyVista PolyData object.
+        polydata: The input PyVista PolyData object.
 
     Returns:
-        trimesh.Trimesh: The converted Trimesh object.
+        The converted Trimesh object.
     """
     vertices = polydata.points
     faces = polydata.regular_faces

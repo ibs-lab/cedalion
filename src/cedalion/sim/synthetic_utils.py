@@ -69,25 +69,25 @@ def build_event_df(
     scenarios.
 
     Args:
-        time_axis (xr.DataArray): The time axis of the data.
-        trial_types (List[str]): List of trial types to draw from.
-        num_events (int, optional): Number of events to generate.
-        perc_events (float, optional): Percentage of total time to cover with events.
-        min_dur (Quantity): Minimum event duration.
-        max_dur (Quantity): Maximum event duration.
-        min_interval (Quantity): Minimum interval between events.
-        min_value (float): Minimum event amplitude.
-        max_value (float): Maximum event amplitude.
-        order (str): Order of types ('alternating', 'random', or 'random balanced').
+        time_axis: The time axis of the data.
+        trial_types: List of trial types to draw from.
+        num_events: Number of events to generate.
+        perc_events: Percentage of total time to cover with events.
+        min_dur: Minimum event duration.
+        max_dur: Maximum event duration.
+        min_interval: Minimum interval between events.
+        min_value: Minimum event amplitude.
+        max_value: Maximum event amplitude.
+        order: Order of types ('alternating', 'random', or 'random balanced').
             Alternating will cycle through trial types.
             Random will randomly assign trial types.
             Random balanced will randomly assign trial types, but each type will be
             assigned the same number of times (if possible).
-        channels (List[str], optional): List of channel names to add events to.
-        max_attempts (int): Maximum number of attempts to place events.
+        channels: List of channel names to add events to.
+        max_attempts: Maximum number of attempts to place events.
 
     Returns:
-        df (pd.DataFrame): DataFrame containing stimulus metadata. Columns are:
+        DataFrame containing stimulus metadata. Columns are:
             - onset: Event onset time.
             - duration: Event duration.
             - value: Event amplitude.

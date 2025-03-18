@@ -1,25 +1,24 @@
 """Module for reading photogrammetry output file formats."""
 
+from __future__ import annotations
 import cedalion.dataclasses as cdc
 import numpy as np
 from collections import OrderedDict
 
 
-def read_photogrammetry_einstar(fn):
+def read_photogrammetry_einstar(fn: str) -> tuple:
     """Read optodes and fiducials from photogrammetry pipeline.
 
     This method reads the output file as returned by the
     photogrammetry pipeline using an einstar device.
 
     Args:
-        fn (str): The filename of the einstar photogrammetry output file.
+        fn: The filename of the einstar photogrammetry output file.
 
     Returns:
-        tuple: A tuple containing:
-            - fiducials (cedalion.LabeledPoints): The fiducials as a cedalion
-                LabeledPoints object.
-            - optodes (cedalion.LabeledPoints): The optodes as a cedalion LabeledPoints
-                object.
+        A tuple containing:
+            - fiducials: The fiducials as a cedalion LabeledPoints object.
+            - optodes: The optodes as a cedalion LabeledPoints object.
     """
 
     fiducials, optodes = read_einstar(fn)
@@ -27,16 +26,16 @@ def read_photogrammetry_einstar(fn):
     return fiducials, optodes
 
 
-def read_einstar(fn):
+def read_einstar(fn: str) -> tuple:
     """Read optodes and fiducials from einstar devices.
 
     Args:
-        fn (str): The filename of the einstar photogrammetry output file.
+        fn: The filename of the einstar photogrammetry output file.
 
     Returns:
-        tuple: A tuple containing:
-            - fiducials (OrderedDict): The fiducials as an OrderedDict.
-            - optodes (OrderedDict): The optodes as an OrderedDict.
+        A tuple containing:
+            - fiducials: The fiducials as an OrderedDict.
+            - optodes: The optodes as an OrderedDict.
     """
 
     with open(fn, "r") as f:
@@ -52,19 +51,17 @@ def read_einstar(fn):
     return fiducials, optodes
 
 
-def opt_fid_to_xr(fiducials, optodes):
+def opt_fid_to_xr(fiducials: OrderedDict, optodes: OrderedDict) -> tuple:
     """Convert OrderedDicts fiducials and optodes to cedalion LabeledPoints objects.
 
     Args:
-        fiducials (OrderedDict): The fiducials as an OrderedDict.
-        optodes (OrderedDict): The optodes as an OrderedDict.
+        fiducials: The fiducials as an OrderedDict.
+        optodes: The optodes as an OrderedDict.
 
     Returns:
-        tuple: A tuple containing:
-            - fiducials (cedalion.LabeledPoints): The fiducials as a cedalion
-                LabeledPoints object.
-            - optodes (cedalion.LabeledPoints): The optodes as a cedalion LabeledPoints
-                object.
+        A tuple containing:
+            - fiducials: The fiducials as a cedalion LabeledPoints object.
+            - optodes: The optodes as a cedalion LabeledPoints object.
     """
 
     # FIXME: this should get a different CRS
