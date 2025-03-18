@@ -44,6 +44,9 @@ def motion_correct_spline(
     t = np.arange(0, len(fNIRSdata.time), 1 / fs)
     t = t[: len(fNIRSdata.time)]
 
+    units = fNIRSdata.pint.units
+    fNIRSdata = fNIRSdata.pint.dequantify()
+
     dodSpline = fNIRSdata.copy()
 
     for ch in fNIRSdata.channel.values:
@@ -155,6 +158,9 @@ def motion_correct_spline(
             dodSpline.loc[dict(channel=ch, wavelength=wl)] = dodSpline_chan
 
     # dodSpline = dodSpline.unstack('measurement').pint.quantify()
+
+    if units:
+        dodSpline = dodSpline.pint.quantify(units)
 
     return dodSpline
 

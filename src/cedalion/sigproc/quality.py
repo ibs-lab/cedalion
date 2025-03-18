@@ -1133,3 +1133,41 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
     shift_mask = shift_mask.isel(time=slice(pad_samples,-pad_samples))
 
     return shift_mask
+
+
+
+def stimulus_mask(df_stim : pd.DataFrame, mask : xr.DataArray) -> xr.DataArray:
+    """Create a mask which events overlap with periods flagged as tainted in mask.
+
+    Args:
+        df_stim: stimulus data frame
+        mask: signal quality mask. Must contain dimensions 'channel' and 'time'
+
+    Returns:
+        A boolean mask with dimensions "stim", "channel".
+        The stim dimension matches the stimulus dataframe. Stimuli are marked as
+        TAINTED when there is any TAINTED flag in the mask between onset and onset+
+        duration.
+    """
+    assert mask.ndim == 2
+    assert "channel" in mask.dims
+    assert "time" in mask.dims
+
+    result = np.zeros((len(df_stim), mask.sizes["channel"]), dtype=bool)
+
+    for i, r in df_stim.iterrows():
+        tmp = mask.sel(
+            time=(r["onset"] <= mask.time) & (mask.time < (r["onset"] + r["duration"]))
+        )
+        result[i,:] = (tmp == CLEAN).all("time")
+
+    return xr.DataArray(
+        result,
+        dims=["stim", "channel"],
+        coords=xrutils.coords_from_other(
+            mask,
+            dims=["channel"],
+            stim=("stim", df_stim.index),
+            trial_type=("stim", df_stim.trial_type),
+        ),
+    )

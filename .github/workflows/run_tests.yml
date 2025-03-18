@@ -5,6 +5,7 @@ on: [push, pull_request]
 jobs:
   run_pytest:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-13, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
