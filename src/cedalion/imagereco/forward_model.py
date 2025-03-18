@@ -1,4 +1,9 @@
-"""Forward model for simulating light transport in the head."""
+"""Forward model for simulating light transport in the head.
+NOTE: Cedalion currently supports two ways to compute fluence: 
+1) via monte-carlo simulation using the MonteCarloXtreme (MCX) package, and 
+2) via the finite element method (FEM) using the NIRFASTer package.
+While MCX is automatically installed using pip, NIRFASTER has to be manually installed 
+runnning <$ bash install_nirfaster.sh CPU # or GPU> from a within your cedalion root directory. """
 
 from __future__ import annotations
 from dataclasses import dataclass
