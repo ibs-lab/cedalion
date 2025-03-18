@@ -35,7 +35,7 @@ def pseudo_inverse_stacked(
 
     # do spatial regularization
     if alpha_spatial is not None:
-        AAtdiag = np.sum((Adot**2), axis=0)
+        AAtdiag = np.sum((Adot.values**2), axis=0)
 
         b = AAtdiag.max()
         lambda_spatial = alpha_spatial * b
@@ -44,21 +44,21 @@ def pseudo_inverse_stacked(
         Linv = 1 / L
         Linv = np.diag(Linv)
 
-        A_hat = Adot @ Linv
+        A_hat = Adot.values @ Linv
         AAt = A_hat @ A_hat.T
         At = Linv**2 @ A_hat.T
     else:  # no spatial regularization
-        AAt = Adot @ Adot.T
-        At = Adot.T
+        AAt = Adot.values @ Adot.values.T
+        At = Adot.values.T
 
     highest_eigenvalue = np.linalg.eig(AAt)[0][0].real
     lambda_meas = alpha * highest_eigenvalue
     if Cmeas is None:
-        B = At.values @ np.linalg.pinv(AAt + lambda_meas * np.eye(AAt.shape[0]))
+        B = At @ np.linalg.pinv(AAt + lambda_meas * np.eye(AAt.shape[0]))
     elif len(Cmeas.shape) == 2:
-        B = At.values @ np.linalg.inv(AAt + lambda_meas * Cmeas)
+        B = At @ np.linalg.inv(AAt + lambda_meas * Cmeas)
     else:
-        B = At.values @ np.linalg.inv(AAt + lambda_meas * np.diag(Cmeas))
+        B = At @ np.linalg.inv(AAt + lambda_meas * np.diag(Cmeas))
 
     coords = xrutils.coords_from_other(Adot)
 
