@@ -57,9 +57,12 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         self.plots.figure.tight_layout()
         self._optode_ax.axis('off')
         self._dataTimeSeries_ax.grid("True",axis="y")
-        pos = self._dataTimeSeries_ax.get_position()  # Get the current position
-        new_pos = [pos.x0 + 0.075, pos.y0, pos.width-0.075, pos.height]  # Adjust the left position
-        self._dataTimeSeries_ax.set_position(new_pos)  # Set the new position
+        # Get the current position
+        pos = self._dataTimeSeries_ax.get_position()
+        # Adjust the left position
+        new_pos = [pos.x0 + 0.075, pos.y0, pos.width - 0.075, pos.height]
+        # Set the new position
+        self._dataTimeSeries_ax.set_position(new_pos)
 
         window_layout.addWidget(NavigationToolbar(self.plots,self),stretch=1)
         window_layout.addWidget(self.plots, stretch=8)
@@ -520,7 +523,12 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         # Plot lines of aux
         if len(self.aux_sel):
             self.auxplot = self._auxTimeSeries_ax.plot(
-                self.aux_sel.time, self.aux_sel, zorder=2, color="r", alpha=0.3, linewidth=0.5
+                self.aux_sel.time,
+                self.aux_sel,
+                zorder=2,
+                color="r",
+                alpha=0.3,
+                linewidth=0.5,
             )[0]
 #        self.auxplot.set_alpha(0.3)
 

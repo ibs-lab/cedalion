@@ -1,6 +1,8 @@
 """Plotting functions for visualization of montages, meshes, etc."""
 
 from __future__ import annotations
+
+import itertools
 import math
 
 import matplotlib
@@ -11,18 +13,20 @@ import pandas as pd
 import pyvista as pv
 import vtk
 import xarray as xr
-from matplotlib.patches import Rectangle, Circle, Ellipse
-from vtk.util.numpy_support import numpy_to_vtk
-import itertools
+from matplotlib.patches import Circle, Ellipse, Rectangle
+from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
-import cedalion.nirs
+from vtk.util.numpy_support import numpy_to_vtk
+
 import cedalion.data
 import cedalion.dataclasses as cdc
+import cedalion.geometry.registration as registration
+import cedalion.nirs
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-from cedalion.dataclasses import PointType
-import cedalion.geometry.registration as registration
 from cedalion import Quantity
+from cedalion.dataclasses import PointType
+
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
     """Plots a 3D visualization of a montage.
@@ -923,7 +927,7 @@ def scalp_plot(
     vmin: float | None = None,
     vmax: float | None = None,
     cmap: str = "bwr",
-    bad_color: ArrayLike | [float, float, float] = [0.7, 0.7, 0.7],
+    bad_color: ColorType = [0.7, 0.7, 0.7],
     min_dist: Quantity | None = None,
     min_metric: float | None = None,
     channel_lw: float = 2.0,
@@ -946,6 +950,7 @@ def scalp_plot(
         vmin: the minimum value of the metric
         vmax: the maximum value of the metric
         cmap: the name of the colormap
+        bad_color: the color to use when the metric contains NaNs
         min_dist: if provided channels below this distance threshold are not drawn
         min_metric: if provided channels below this metric threshold are toned down
         channel_lw: channel line width
@@ -987,8 +992,7 @@ def scalp_plot(
 
     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     cmap = p.cm.get_cmap(cmap)
-    cmap.set_bad(bad_color) 
-
+    cmap.set_bad(bad_color)
 
     ax.set_aspect("equal", adjustable="datalim")
 
