@@ -530,9 +530,6 @@ def tddr(ts: cdt.NDTimeSeries):
         if abs(mu - mu0) < D * max(abs(mu), abs(mu0)):
             break
 
-    else:
-        # Warn if the maximum number of iterations was reached without convergence
-        # print("Warning: Robust estimation did not converge within 50 iterations.")
 
     # Step 4. Apply robust weights to centered derivative
     new_deriv = w * (deriv - mu)
