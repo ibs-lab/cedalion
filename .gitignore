@@ -181,3 +181,5 @@ scratch/
 # plugins
 plugins/
 
+src/cedalion/dataclasses/geometry.py
+examples/signal_quality/22_motion_artefacts_and_correction.ipynb

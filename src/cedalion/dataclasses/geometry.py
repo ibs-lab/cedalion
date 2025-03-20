@@ -170,17 +170,26 @@ class TrimeshSurface(Surface):
     """
     mesh: trimesh.Trimesh
 
+    _vertices: cdt.LabeledPointCloud = None  # Initialize a private attribute
+    
     @property
     def vertices(self) -> cdt.LabeledPointCloud:
-        result = xr.DataArray(
-            self.mesh.vertices,
-            dims=["label", self.crs],
-            coords={"label": np.arange(len(self.mesh.vertices))},
-            attrs={"units": self.units},
-        )
-        result = result.pint.quantify()
+        # If _vertices is None, initialize it from self.mesh.vertices
+        if self._vertices is None:
+            result = xr.DataArray(
+                self.mesh.vertices,
+                dims=["label", self.crs],
+                coords={"label": np.arange(len(self.mesh.vertices))},
+                attrs={"units": self.units},
+            )
+            self._vertices = result.pint.quantify()
+        return self._vertices
 
-        return result
+    @vertices.setter
+    def vertices(self, value: cdt.LabeledPointCloud):
+
+        # Optionally, perform any additional processing/checks here
+        self._vertices = value  # Update the private _vertices attribute
 
     @property
     def nvertices(self) -> int:

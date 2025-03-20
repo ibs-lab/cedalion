@@ -1172,3 +1172,47 @@ def stimulus_mask(df_stim : pd.DataFrame, mask : xr.DataArray) -> xr.DataArray:
             trial_type=("stim", df_stim.trial_type),
         ),
     )
+
+
+@cdc.validate_schemas
+def parcel_sensitivity(
+    Adot_brain: xr.DataArray,
+    chan_mask: xr.DataArray,
+    dOD_thresh: Quantity = 0.01,
+    dHbO: Quantity = 0.1 * units.mM,
+    dHbR: Quantity = 0.03 * units.mM,
+):
+    """Calculate a mask for parcels based on their effective sensitivity on the cortex.
+
+    Parcels are considered good, if a change in HbO and HbR [µMol] in the parcel leads
+     to an observable change of at least dOD in at least one wavelength of one channel.
+     Sensitivities of all vertices in the parcel are summed up in the sensitivity matrix Adot.
+     Bad channels in an actual measurement that are pruned can be considered by providing 
+     a boolean channel_mask, where False indicates bad channels that are dropped 
+     and not considered for parcel sensitivity. Requires headmodel with parcelation coordinates.
+
+    Args:
+        Adot (channel, vertex, wavelength)): Sensitivity matrix with parcel coordinate belonging to each vertex
+        chan_mask: boolean xarray DataArray channel mask, False for channels to be dropped
+        dOD_thresh: threshold for minimum dOD change in a channel that should be observed from a hemodynamic change in a parcel
+        dHbO: change in HbO concentration in the parcel [µMol] used to calculate dOD
+        dHbR: change in HbR concentration in the parcel [µMol] used to calculate dOD
+        
+    Returns:
+        A tuple (parcels, parcel_mask), where parcels is a list of parcels retained 
+        after thresholding, and parcel_mask is a boolean DataArray with vertex/parcel 
+         coords from Adot, true for vertices/parcels for which dOD_thresh is met.
+    """
+
+    assert "wavelength" in Adot_brain.dims  # FIXME move to validate schema
+
+    # check if number of channels in chan match everywhere
+    assert (
+        len(chan_mask) == Adot_brain.shape[0] * Adot_brain.shape[2]
+    )  # num_chans*wavelengths
+
+    # check if number of brain voxels/vertices match
+    assert len(parcels) == Adot_brain.shape[1]
+   
+
+    return parcels, parcel_mask
