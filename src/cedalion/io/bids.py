@@ -585,10 +585,10 @@ def edit_events(row: pd.Series, bids_dir: str) -> None:
     Returns:
         None: The function modifies the events.tsv file in place and does not return a value.
     """
+    tsv_filename = row["bids_name"].replace("_nirs.snirf", "_events.tsv")
+    event_path = os.path.join(bids_dir, row["parent_path"], tsv_filename)
+    events_df = pd.read_csv(event_path, delimiter="\t")
     if row["cond"] or row["cond_match"] or row["duration"]:
-        tsv_filename = row["bids_name"].replace("_nirs.snirf", "_events.tsv")
-        event_path = os.path.join(bids_dir, row["parent_path"], tsv_filename)
-        events_df = pd.read_csv(event_path, delimiter="\t")
         if not pd.isna(row["duration"]):
             events_df["duration"] = row["duration"]
         if not pd.isna(row["cond"]):
@@ -596,11 +596,12 @@ def edit_events(row: pd.Series, bids_dir: str) -> None:
             keys = [item.strip() for item in keys]
             values = re.sub(r'[\[\]"]', "", row["cond_match"]).split(",")
             values = [item.strip() for item in values]
-
             map_dict = dict(zip(keys, values))
-            events_df["trial_type"] = events_df["trial_type"].astype(str).map(map_dict)
+            events_df["trial_type"] = events_df["trial_type"].astype(str).replace(map_dict)
 
-        events_df.to_csv(event_path, sep="\t", index=False)
+        events_df.sort_values("onset").to_csv(event_path, sep="\t", index=False)
+    else:
+        events_df.sort_values("onset").to_csv(event_path, sep="\t", index=False)
     return
 
 
