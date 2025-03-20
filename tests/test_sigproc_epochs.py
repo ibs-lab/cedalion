@@ -302,3 +302,42 @@ def test_to_epochs_accessor(timeseries):
     )
 
     assert (epochs1 == epochs2).all()
+
+
+def test_to_epochs_dimension_independence():
+    """to_epochs should work for every timeseries that has a time domain."""
+
+    ts_channel_chromo = cdc.build_timeseries(
+        np.random.random((20, 100, 2)),
+        dims=["channel", "time", "chromo"],
+        time=np.arange(100),
+        channel=[f"C{i:04d}" for i in np.arange(20)],
+        value_units="uM",
+        time_units="s",
+    )
+
+    df_stim = pd.DataFrame(
+        {
+            "onset": [10.0, 20.0, 30.0],
+            "duration": [10.0, 10.0, 10.0],
+            "value": [1.0, 1.0, 1.0],
+            "trial_type": ["a", "a", "a"],
+        }
+    )
+
+    kwargs = {
+        "df_stim": df_stim,
+        "trial_types": ["a"],
+        "before": 5 * cedalion.units.s,
+        "after": 30 * cedalion.units.s,
+    }
+
+    to_epochs(ts_channel_chromo, **kwargs)
+
+    ts_vertex_chromo = ts_channel_chromo.rename({"channel": "vertex"})
+
+    to_epochs(ts_vertex_chromo, **kwargs)
+
+    ts_vertex = ts_vertex_chromo[:, :, 0]
+
+    to_epochs(ts_vertex, **kwargs)

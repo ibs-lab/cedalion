@@ -1,3 +1,5 @@
+"""Utility functions for geometric calculations."""
+
 import numpy as np
 
 

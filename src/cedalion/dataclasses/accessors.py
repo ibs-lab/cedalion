@@ -1,4 +1,7 @@
-from typing import Annotated, Dict, List, Union
+"""Accessors for Cedalion data types."""
+
+from __future__ import annotations
+from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
@@ -10,7 +13,7 @@ import cedalion.typing as cdt
 from cedalion import Quantity, units
 from cedalion.sigproc.frequency import freq_filter
 from cedalion.sigproc.epochs import to_epochs
-
+from cedalion.errors import CRSMismatchError
 
 @xr.register_dataarray_accessor("cd")
 class CedalionAccessor:
@@ -45,8 +48,8 @@ class CedalionAccessor:
         self,
         df_stim: pd.DataFrame,
         trial_types: list[str],
-        before: Annotated[Quantity, "[time]"],
-        after: Annotated[Quantity, "[time]"],
+        before: cdt.QTime,
+        after: cdt.QTime,
     ):
         """Extract epochs from the time series based on stimulus events.
 
@@ -134,17 +137,15 @@ class PointsAccessor:
     def _apply_xr_transform(self, transform: cdt.AffineTransform):
         obj = self._obj
 
+        points_crs = self.crs
         from_crs = transform.dims[1]
         to_crs = transform.dims[0]
         transform_units = transform.pint.units
 
         assert transform_units is not None
         assert transform.shape == (4, 4)  # FIXME assume 3D
-        assert from_crs in obj.dims, (
-            f"Coordinate systems of points "
-            f"({from_crs}) and transform "
-            f"({obj.dims}) do not match."
-        )
+        if from_crs not in obj.dims:
+            raise CRSMismatchError.wrong_transform(points_crs, transform.dims)
 
         transform = transform.pint.dequantify()
 

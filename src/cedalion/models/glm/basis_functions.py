@@ -1,5 +1,7 @@
+"""Temporal basis functions for the GLM."""
+
+from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Annotated
 
 import numpy as np
 import pint
@@ -60,10 +62,10 @@ class GaussianKernelsWithTails(TemporalBasisFunction):
 
     def __init__(
         self,
-        t_pre: Annotated[Quantity, "[time]"],
-        t_post: Annotated[Quantity, "[time]"],
-        t_delta: Annotated[Quantity, "[time]"],
-        t_std: Annotated[Quantity, "[time]"],
+        t_pre: cdt.QTime,
+        t_post: cdt.QTime,
+        t_delta: cdt.QTime,
+        t_std: cdt.QTime,
     ):
         super().__init__(convolve_over_duration=False)
         self.t_pre = _to_unit(t_pre, units.s)
@@ -140,10 +142,10 @@ class GaussianKernels(TemporalBasisFunction):
 
     def __init__(
         self,
-        t_pre: Annotated[Quantity, "[time]"],
-        t_post: Annotated[Quantity, "[time]"],
-        t_delta: Annotated[Quantity, "[time]"],
-        t_std: Annotated[Quantity, "[time]"],
+        t_pre: cdt.QTime,
+        t_post: cdt.QTime,
+        t_delta: cdt.QTime,
+        t_std: cdt.QTime,
     ):
         super().__init__(convolve_over_duration=False)
         self.t_pre = _to_unit(t_pre, units.s)
@@ -208,9 +210,9 @@ class Gamma(TemporalBasisFunction):
 
     def __init__(
         self,
-        tau: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        sigma: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        T: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],  # noqa: N803
+        tau: cdt.QTime | dict[str, cdt.QTime],
+        sigma: cdt.QTime | dict[str, cdt.QTime],
+        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.tau = _to_unit(tau, units.s)
@@ -275,9 +277,9 @@ class GammaDeriv(TemporalBasisFunction):
 
     def __init__(
         self,
-        tau: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        sigma: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        T: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],  # noqa: N803
+        tau: cdt.QTime | dict[str, cdt.QTime],
+        sigma: cdt.QTime | dict[str, cdt.QTime],
+        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.tau = _to_unit(tau, units.s)
@@ -347,8 +349,8 @@ class AFNIGamma(TemporalBasisFunction):
     def __init__(
         self,
         p: float | dict[str, float],
-        q: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],
-        T: Annotated[Quantity, "[time]"] | dict[str, Annotated[Quantity, "[time]"]],  # noqa: N803
+        q: cdt.QTime | dict[str, cdt.QTime],
+        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.p = p
@@ -402,6 +404,38 @@ class AFNIGamma(TemporalBasisFunction):
             },
         )
 
+class DiracDelta(TemporalBasisFunction):
+    r"""Convoluted with the stim duration this basis function yields a square wave."""
+
+    def __init__(self):
+        super().__init__(convolve_over_duration=True)
+
+    def __call__(
+        self,
+        ts: cdt.NDTimeSeries,
+    ) -> xr.DataArray:
+        other_dim = xrutils.other_dim(ts, "time", "channel")
+        other_dim_values = ts[other_dim].values
+
+        n_samples = 2
+        n_components = 1
+        n_other_dim = ts.sizes[other_dim]
+
+        fs = sampling_rate(ts).to(units.Hz)
+        t = np.array([0,1]) / fs
+
+        regressors = np.zeros((n_samples, n_components, n_other_dim))
+        regressors[0,0,:] = 1.
+
+        return xr.DataArray(
+            regressors,
+            dims=["time", "component", other_dim],
+            coords={
+                "time": xr.DataArray(t, dims=["time"]).pint.dequantify(),
+                other_dim: other_dim_values,
+                "component": ["square"],
+            },
+        )
 
 # FIXME: instead of defining IndividualBasis we may want to make make_hrf_regressor
 # accept xr.DataArrays directly?

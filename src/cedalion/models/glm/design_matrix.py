@@ -1,3 +1,6 @@
+"""Functions to create the design matrix for the GLM."""
+
+from __future__ import annotations
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -60,6 +63,13 @@ def make_design_matrix(
     elif short_channel_method == "mean":
         dm_short = average_short_channel(ts_short)
         dm = xr.concat([dm, dm_short], dim="regressor")
+    elif short_channel_method is None:
+        pass
+    else:
+        raise ValueError(
+            f"unexpected value '{short_channel_method}' for argument"
+            "short_channel_method"
+        )
 
     return dm, channel_wise_regressors
 
@@ -139,6 +149,10 @@ def build_stim_array(
         smpl_stop = smpl_start + 1
     else:
         smpl_stop = time.searchsorted(onsets + durations)
+        # when durations are provided make sure that a trial is at least one sample
+        # wide
+        too_short_mask = smpl_stop == smpl_start
+        smpl_stop[too_short_mask] = smpl_start[too_short_mask] + 1
 
     stim = np.zeros_like(time)
     for start, stop, value in zip(smpl_start, smpl_stop, values):
