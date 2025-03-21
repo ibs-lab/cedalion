@@ -7,7 +7,7 @@ from typing import Optional
 import xarray as xr
 
 class SPoC():
-    """Implements the Source Power Co-modulation (SPoC_lambda) algorithm based on :cite:t:`BIBTEXLABEL`.
+    """Implements the Source Power Co-modulation (SPoC_lambda) algorithm based on :cite:t:`Dahne2014`.
 
     Given a vector-valued time signal x(t) and a scalar target function z(t), 
     SPoC finds spatial filters W that maximize the covariance between

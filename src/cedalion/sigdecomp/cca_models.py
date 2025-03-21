@@ -273,7 +273,7 @@ class ElasticNetCCA(MultimodalSourceDecomposition):
 
     For the one-unit algorithm (sparse) SVD decomposition is performed on the whitened cross-covariance matrix 
     K = Cx^(-1/2) Cxy Cy^(-1/2) (reduced to K = Cxy for PLS), using the following standard alternating 
-    power method (based on :cite:t:`BIBTEXLABEL`):
+    power method (based on :cite:t:`parkhomenko_sparse_2009`):
 
     - Update u:
         1. u <- K * v
@@ -392,7 +392,7 @@ class StructuredSparseCCA(MultimodalSourceDecomposition):
 
     """Perform structured sparse Canonical Correlation Analysis (ssCCA) between two datasets X and Y.
          
-    The ssCCA algorithm is based on :cite:t:`BIBTEXLABEL` and it assumes the underlying X and Y features 
+    The ssCCA algorithm is based on :cite:t:`chen_structure-constrained_2013` and it assumes the underlying X and Y features 
     are linked through a graph structure. It finds sparse (L1) vectors Wx, and Wy as the solution to the 
     following constrained optimization problem:
 
@@ -410,7 +410,7 @@ class StructuredSparseCCA(MultimodalSourceDecomposition):
 
     For the one-unit algorithm, first Cx and Cy are shifted by Cx <- Cx + alpha_x Lx and Cy <- Cy + alpha_y Ly, and then
     SVD decomposition is performed on the whitened cross-covariance matrix K = Cx^(-1/2) Cxy Cy^(-1/2), 
-    using the following standard alternating power method (based on :cite:t:`BIBTEXLABEL`):
+    using the following standard alternating power method (based on :cite:t:`parkhomenko_sparse_2009`):
 
     - Update u:
         1. u <- K * v
@@ -578,7 +578,7 @@ class RidgeCCA(ElasticNetCCA):
 
 
 class SparseCCA(ElasticNetCCA):
-    """Perform Sparse CCA between two datasets X and Y with L1 regularization, a.k.a sparse CCA, based on :cite:t:`BIBTEXLABEL`.
+    """Perform Sparse CCA between two datasets X and Y with L1 regularization, a.k.a sparse CCA, based on :cite:t:`parkhomenko_sparse_2009`.
     
     This algorithm is a particular case of the one implemented in the ElasticNetCCA class. See there for 
     a detailed explanation of the algorithm.
@@ -672,7 +672,7 @@ class CCA(ElasticNetCCA):
 
 class SparsePLS(ElasticNetCCA):
     """Perform Partial Least Squares (PLS) between two datasets X and Y with L1 regularization, a.k.a sparse PLS, 
-    based on a combination from :cite:t:`BIBTEXLABEL` and :cite:t:`BIBTEXLABEL`.
+    based on a combination from :cite:t:`parkhomenko_sparse_2009` and :cite:t:`witten_penalized_2009`.
 
     In Witten's paper, the algorithm is presented as a particular case of their Penalized Matrix Decomposition (PMD) method, 
     called PMD(L1, L1) or Sparse CCA. However, the latter name is misleading since in this problem we use identity matrices 

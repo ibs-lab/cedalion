@@ -9,7 +9,7 @@ import xarray as xr
 from utils_multimodal_models import validate_dimension_labels, validate_time_shifts
 
 class mSPoC():
-    """Implements the multimodal Source Power Co-modulation (mSPoC) algorithm based on :cite:t:`BIBTEXLABEL`.
+    """Implements the multimodal Source Power Co-modulation (mSPoC) algorithm based on :cite:t:`Dahne2013`.
 
     Given two vector-valued time series X(t), and Y(t), mSPoC finds component pairs Sx = Wx.T @ X,
     and Sy = Wy.T @ Y, such that the covariance between the temporally-embedded bandpower of Sx and the time course of Sy
@@ -87,7 +87,7 @@ class mSPoC():
             featureY_name : str = 'channel'):
         """Train mSPoC model on the X, Y dataset
 
-        Implement the pseudo-code of Algorithm 1 of :cite:t:`BIBTEXLABEL` 
+        Implement the pseudo-code of Algorithm 1 of :cite:t:`Dahne2013` 
         for a single component pair. After training, the filter attributes
         Wx, Wy, and Wt are updated.
 
@@ -254,8 +254,6 @@ class mSPoC():
                 hsy = (sy.reshape(-1, 1, 1) * hCxxe).mean(axis=0)
                 # Solve generalized eigenvalue problem (SPoC)
                 subset = [Nx - 1, Nx - 1]  # Get most positive eigenvalue
-                # print(hsy.shape, Cxx.shape)
-                Cxx = Cxx + 0.8*np.eye(Nx)
                 _, wx = eigh(hsy, Cxx, eigvals_only=False, subset_by_index=subset)
                 # Epoch-wise bandpower with temporal embedding
                 phi_x = self.get_bandpower(wx, Cxxe)

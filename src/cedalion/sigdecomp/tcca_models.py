@@ -1,4 +1,4 @@
-"""Module for temporally embedded CCA-like models"""
+"""Module for temporally embedded CCA-like models. The temporally embedded technique is based on :cite:t:`biesmann_temporal_2010`"""
 
 import numpy as np
 import xarray as xr
@@ -170,7 +170,7 @@ class ElasticNetTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
 
     For the one-unit algorithm (sparse) SVD decomposition is performed on the whitened cross-covariance matrix 
     K = Cx^(-1/2) Cxy Cy^(-1/2) (reduced to K = Cxy for PLS), using the following standard alternating 
-    power method (based on :cite:t:`BIBTEXLABEL`):
+    power method (based on :cite:t:`parkhomenko_sparse_2009`):
 
     - Update u:
         1. u <- K * v
@@ -307,7 +307,7 @@ class StructuredSparseTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
 
     """Perform structured sparse Canonical Correlation Analysis (ssCCA) between two datasets X_emb and Y.
          
-    The sstCCA algorithm is a temporally embedded extension of :cite:t:`BIBTEXLABEL`, and it assumes the underlying 
+    The sstCCA algorithm is a temporally embedded extension of :cite:t:`chen_structure-constrained_2013`, and it assumes the underlying 
     X and Y features are linked through a graph structure. It finds sparse (L1) vectors Wx, and Wy as the solution to the 
     following constrained optimization problem:
 
@@ -328,7 +328,7 @@ class StructuredSparseTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
 
     For the one-unit algorithm, first Cx and Cy are shifted by Cx <- Cx + alpha_x Lx and Cy <- Cy + alpha_y Ly, and then
     SVD decomposition is performed on the whitened cross-covariance matrix K = Cx^(-1/2) Cxy Cy^(-1/2), 
-    using the following standard alternating power method (based on :cite:t:`BIBTEXLABEL`):
+    using the following standard alternating power method (based on :cite:t:`parkhomenko_sparse_2009`):
 
     - Update u:
         1. u <- K * v
