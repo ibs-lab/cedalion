@@ -1,23 +1,41 @@
 import pytest
-import cedalion.datasets
-import numpy as np
-from cedalion.imagereco.sensitivity import parcel_sensitivity_mask
+import cedalion_parcellation.datasets
+import cedalion_parcellation.imagereco.forward_model as fw
+from cedalion.sigproc.quality import parcel_sensitivity
 
+def test_parcel_sensitivity():
 
-def test_parcel_sensitivity_mask():
-    Adot = cedalion.datasets.get_ninjanirs_colin27_precomputed_sensitivity()
+    # load example dataset
+    rec = cedalion_parcellation.datasets.get_fingertappingDOT()
 
-    Adot = Adot[:,Adot.is_brain,:]
+    # load pathes to segmentation data for the icbm-152 atlas
+    SEG_DATADIR, mask_files, landmarks_file = cedalion_parcellation.datasets.get_icbm152_segmentation()
+    PARCEL_DIR = cedalion_parcellation.datasets.get_icbm152_parcel_file()
 
-    nchan, nvert, nwl = Adot.shape
+    # create forward model class for icbm152 atlas
+    head = fw.TwoSurfaceHeadModel.from_surfaces(
+        segmentation_dir=SEG_DATADIR,
+        mask_files = mask_files,
+        brain_surface_file= SEG_DATADIR+"mask_brain.obj",
+        scalp_surface_file= SEG_DATADIR+"mask_scalp.obj",
+        landmarks_ras_file=landmarks_file,
+        parcel_file=PARCEL_DIR,
+        brain_face_count=None,
+        scalp_face_count=None
+    )
 
-    # create channel mask: select all
-    channel_mask = np.ones(nchan * nwl, dtype=bool)
+    # snap probe to head and create forward model
+    geo3D_snapped = head.align_and_snap_to_scalp(rec.geo3d)
+    fwm = fw.ForwardModel(head, geo3D_snapped, rec._measurement_lists["amp"])
 
-    # create random parcel labels
-    rng = np.random.default_rng(seed=42)
-    parcels = rng.choice(["A", "B", "C"], size=nvert)
+    # load precomputed fluence for dataset and headmodel
+    fluence_all, fluence_at_optodes = cedalion_parcellation.datasets.get_precomputed_fluence("fingertappingDOT", "icbm152")
 
-    sensitivity_threshold = {"A": 0.01, "B": 0.01, "C": 0.01}
+    # calculate Adot sensitivity matrix
+    Adot = fwm.compute_sensitivity(fluence_all, fluence_at_optodes)
 
-    mask = parcel_sensitivity_mask(Adot, parcels, channel_mask, sensitivity_threshold)
+    # test parcel sensitivity function
+    parcel_dOD, parcel_mask = parcel_sensitivity(Adot, None, 0.01, 1, 10, -3)
+
+    sensitive_parcels = parcel_mask.where(parcel_mask, drop=True)["parcel"].values.tolist()
+    assert len(sensitive_parcels) > 10, "something is wrong with the parcel sensitivity calculation"

@@ -1188,7 +1188,7 @@ def parcel_sensitivity(
 ):
     """Calculate a mask for parcels based on their effective sensitivity on the cortex.
 
-    Parcels are considered good, if a change in HbO and HbR [µMol] in the parcel leads
+    Parcels are considered good, if a change in HbO and HbR [µM] in the parcel leads
      to an observable change of at least dOD in at least one wavelength of one channel.
      Sensitivities of all vertices in the parcel are summed up in the sensitivity matrix Adot.
      Bad channels in an actual measurement that are pruned can be considered by providing 
@@ -1201,8 +1201,8 @@ def parcel_sensitivity(
          (e.g. pruned channels due to bad signal quality)
         dOD_thresh: threshold for minimum dOD change in a channel that should be observed from a hemodynamic change in a parcel
         minCh: minimum number of channels per parcel that should see a change above dOD_thresh
-        dHbO: change in HbO concentration in the parcel in [µMol] used to calculate dOD
-        dHbR: change in HbR concentration in the parcel in [µMol] used to calculate dOD
+        dHbO: change in HbO concentration in the parcel in [µM] used to calculate dOD
+        dHbR: change in HbR concentration in the parcel in [µM] used to calculate dOD
 
     Returns:
         A tuple (parcel_dOD, parcel_mask), where parcel_dOD (channel, parcel) contains 
@@ -1244,9 +1244,10 @@ def parcel_sensitivity(
 
     # calculate the constant nu/D where nu = c/n the speed of light in biological tissue and D= 1/3(mu_a + mu_s') the photon diffusion coefficient
     # using constants from Wheelock et al 2019
-    D = 1.03 # cm²/ns
-    nu = 21.4 # cm/ns
-    const = nu/D /10 # convert to mm
+    D = 1.03*100 * units("mm²/ns") # 1.03 cm²/ns
+    nu = 21.4*10 * units("mm/ns" )# 21.4 cm/ns
+    const = nu/D #/10 # convert to mm
+    #const = 1
 
     # Calculate dOD = Adot * exctinciton_coefficients * deltaHb * const
     Adot_ec = xr.dot(Adot_bparcel, ec)
