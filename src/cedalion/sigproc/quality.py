@@ -61,19 +61,22 @@ def prune_ch(
             raise ValueError(
                 "mask dimensions must be a subset of data_array dimensions"
             )
+    # collapse masks if more than one mask was provided, otherwise ignore operator
+    if len(masks) > 1:
+        # combine quality masks according to operator instruction
+        if operator.lower() == "all":
+            # sets True where all masks (metrics) are true
+            # Combine the DataArrays using a boolean "AND" operation across elements
+            mask = reduce(lambda x, y: x & y, masks)
 
-    # combine quality masks according to operator instruction
-    if operator.lower() == "all":
-        # sets True where all masks (metrics) are true
-        # Combine the DataArrays using a boolean "AND" operation across elements
-        mask = reduce(lambda x, y: x & y, masks)
-
-    elif operator.lower() == "any":
-        # sets True where any mask (metric) is true
-        # Combine the DataArrays using a boolean "OR" operation across elements
-        mask = reduce(lambda x, y: x | y, masks)
+        elif operator.lower() == "any":
+            # sets True where any mask (metric) is true
+            # Combine the DataArrays using a boolean "OR" operation across elements
+            mask = reduce(lambda x, y: x | y, masks)
+        else:
+            raise ValueError(f"unsupported operator '{operator}'")
     else:
-        raise ValueError(f"unsupported operator '{operator}'")
+        mask = masks[0]
 
     # apply mask to drop channels
     if flag_drop:
@@ -1176,11 +1179,12 @@ def stimulus_mask(df_stim : pd.DataFrame, mask : xr.DataArray) -> xr.DataArray:
 
 @cdc.validate_schemas
 def parcel_sensitivity(
-    Adot_brain: xr.DataArray,
-    chan_mask: xr.DataArray,
+    Adot: xr.DataArray,
+    chan_droplist: list = None,
     dOD_thresh: Quantity = 0.01,
-    dHbO: Quantity = 0.1 * units.mM,
-    dHbR: Quantity = 0.03 * units.mM,
+    minCh: Quantity = 1,
+    dHbO: Quantity = 10,
+    dHbR: Quantity = -3,
 ):
     """Calculate a mask for parcels based on their effective sensitivity on the cortex.
 
@@ -1193,26 +1197,64 @@ def parcel_sensitivity(
 
     Args:
         Adot (channel, vertex, wavelength)): Sensitivity matrix with parcel coordinate belonging to each vertex
-        chan_mask: boolean xarray DataArray channel mask, False for channels to be dropped
+        chan_droplist: list of channel names to be dropped from consideration of sensitivity 
+         (e.g. pruned channels due to bad signal quality)
         dOD_thresh: threshold for minimum dOD change in a channel that should be observed from a hemodynamic change in a parcel
-        dHbO: change in HbO concentration in the parcel [µMol] used to calculate dOD
-        dHbR: change in HbR concentration in the parcel [µMol] used to calculate dOD
-        
+        minCh: minimum number of channels per parcel that should see a change above dOD_thresh
+        dHbO: change in HbO concentration in the parcel in [µMol] used to calculate dOD
+        dHbR: change in HbR concentration in the parcel in [µMol] used to calculate dOD
+
     Returns:
-        A tuple (parcels, parcel_mask), where parcels is a list of parcels retained 
-        after thresholding, and parcel_mask is a boolean DataArray with vertex/parcel 
-         coords from Adot, true for vertices/parcels for which dOD_thresh is met.
+        A tuple (parcel_dOD, parcel_mask), where parcel_dOD (channel, parcel) contains 
+         the delta OD observed in a channel given the assumed dHb change in a parcel, 
+         and parcel_mask is a boolean DataArray with parcel coords from Adot that is
+         true for parcels for which dOD_thresh is met.
+
+    Initial Contributors:
+        - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
     """
 
-    assert "wavelength" in Adot_brain.dims  # FIXME move to validate schema
+    # copies Adot and keeps only those vertices whose is_brain coordinate is true
+    Adot_brain = Adot.sel(vertex=Adot.coords['is_brain'])
 
-    # check if number of channels in chan match everywhere
-    assert (
-        len(chan_mask) == Adot_brain.shape[0] * Adot_brain.shape[2]
-    )  # num_chans*wavelengths
+    assert "wavelength" in Adot_brain.dims, "no wavelength dimension in Adot"  # FIXME move to validate schema
+    wavelengths = Adot_brain.wavelength.values
+    assert len(wavelengths) == 2, "expected two wavelengths in Adot" 
 
-    # check if number of brain voxels/vertices match
-    assert len(parcels) == Adot_brain.shape[1]
-   
+    if chan_droplist is not None:
+        assert all(ch in Adot.channel.values for ch in chan_droplist
+                   ), "not all channels to be dropped are contained in Adot"
+        # set all values in Adot for channels in chan_droplist to zero
+        Adot_brain = Adot_brain.where(~Adot_brain.channel.isin(chan_droplist), 0)
 
-    return parcels, parcel_mask
+   # get extinction coefficients
+    ec = nirs.get_extinction_coefficients("prahl", wavelengths)
+
+    # set up xarray with chromophore changes according to user input
+    dHb = xr.DataArray(
+        [dHbO*1e-6, dHbR*1e-6],
+        dims=["chromo"],
+        coords={"chromo": ["HbO", "HbR"]},
+        attrs={"units": "M"},
+        )
+    dHb = dHb.pint.quantify()
+
+    # sum in Adot over all vertices that belong to the same parcel, making Adot #ch x #parcels x #wavelength
+    Adot_bparcel = Adot_brain.groupby("parcel").sum("vertex")
+
+    # calculate the constant nu/D where nu = c/n the speed of light in biological tissue and D= 1/3(mu_a + mu_s') the photon diffusion coefficient
+    # using constants from Wheelock et al 2019
+    D = 1.03 # cm²/ns
+    nu = 21.4 # cm/ns
+    const = nu/D /10 # convert to mm
+
+    # Calculate dOD = Adot * exctinciton_coefficients * deltaHb * const
+    Adot_ec = xr.dot(Adot_bparcel, ec)
+    parcel_dOD = xr.dot(Adot_ec, dHb)*const
+
+    # for each parcel in dOD, see if at least "minCh" channels have a value greater than dOD_thresh
+    parcel_mask = xrutils.mask(parcel_dOD, True)
+    parcel_mask = parcel_mask.where(parcel_dOD.values >= dOD_thresh, other = False)
+    parcel_mask = parcel_mask.sum("channel") >= minCh
+
+    return parcel_dOD, parcel_mask
