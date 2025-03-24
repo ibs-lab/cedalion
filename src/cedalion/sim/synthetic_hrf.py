@@ -302,7 +302,7 @@ def get_colors(
     # map on a logarithmic scale to the range [0, 255]
     if log_scale:
         activations = np.log(activations + 1)
-        activations = (activations / max_scale) * 255
+        activations = (activations / np.log(max_scale)) * 255
     activations = activations.astype(np.uint8)
     colors = np.zeros((vertex_colors.shape), dtype=np.uint8)
     colors[:, 3] = 255
@@ -317,7 +317,7 @@ def get_colors(
 
 def plot_spatial_activation(
     spatial_img: xr.DataArray,
-    brain : cdg.TrimeshSurface,
+    brain: cdg.TrimeshSurface,
     seed: int = None,
     title: str = "",
     log_scale: bool = False,
@@ -343,7 +343,9 @@ def plot_spatial_activation(
         seed = spatial_img.argmax()
     vertices = brain.mesh.vertices
     center_brain = np.mean(vertices, axis=0)
-    colors_blob = get_colors(spatial_img, brain.mesh.visual.vertex_colors)
+    colors_blob = get_colors(
+        spatial_img, brain.mesh.visual.vertex_colors, log_scale=log_scale
+    )
     brain.mesh.visual.vertex_colors = colors_blob
     plt_pv = pv.Plotter()
     cedalion.plots.plot_surface(plt_pv, brain)
