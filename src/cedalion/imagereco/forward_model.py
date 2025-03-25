@@ -107,7 +107,7 @@ class TwoSurfaceHeadModel:
         smoothing: float = 0.5,
         brain_face_count: Optional[int] = 180000,
         scalp_face_count: Optional[int] = 60000,
-        fill_holes: bool = False,
+        fill_holes: bool = True,
     ) -> "TwoSurfaceHeadModel":
         """Constructor from binary masks as gained from segmented MRI scans.
 
