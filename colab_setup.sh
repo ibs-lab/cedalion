@@ -5,10 +5,6 @@ VENV_PATH="/content/drive/MyDrive/vir_env"
 PYTHON_BIN="$VENV_PATH/bin/python"
 SITE_PACKAGES_PATH="$VENV_PATH/lib/python3.11/site-packages"
 
-# Mount Google Drive
-echo "Mounting Google Drive..."
-python -c "from google.colab import drive; drive.mount('/content/drive', force_remount=True)"
-
 # Check if virtual environment exists
 if [ ! -d "$VENV_PATH" ]; then
     echo "Virtual environment not found. Creating one..."
