@@ -1175,6 +1175,8 @@ def stimulus_mask(df_stim : pd.DataFrame, mask : xr.DataArray) -> xr.DataArray:
 def amp_preproc(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
     """Replace nonpositive amp values and optionally fill NaNs.
 
+    Handling of sequential nonpositive values is not optimized.
+
     Args:
         amp: Amplitude data
         median_len: Window size for the median filter
@@ -1191,7 +1193,7 @@ def amp_preproc(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
         amp = amp.interpolate_na(dim="time", **kwargs)
         amp = amp.pint.quantify()
 
-    # Replace negative values with a small value
+    # Replace nonpositive values with a small value
     unit = amp.pint.units
     amp = amp.where(amp>0, 1e-18 * unit)
 
