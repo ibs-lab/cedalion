@@ -1173,7 +1173,7 @@ def stimulus_mask(df_stim : pd.DataFrame, mask : xr.DataArray) -> xr.DataArray:
     )
 
 def amp_preproc(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
-    """Replace negative amp values and optionally fill NaNs.
+    """Replace nonpositive amp values and optionally fill NaNs.
 
     Args:
         amp: Amplitude data
@@ -1187,19 +1187,24 @@ def amp_preproc(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
 
     # Fill NaNs
     if interp_nan:
+        amp = amp.pint.dequantify()
         amp = amp.interpolate_na(dim="time", **kwargs)
+        amp = amp.pint.quantify()
 
     # Replace negative values with a small value
-    amp = amp.where(amp>0, 1e-18)
+    unit = amp.pint.units
+    amp = amp.where(amp>0, 1e-18 * unit)
 
-    # Pad the data before applying the median filter
-    padded_amp = amp.pad(time=(pad_width, pad_width), mode="edge")
+    if median_len > 1:
+        # Pad the data before applying the median filter
+        padded_amp = amp.pad(time=(pad_width, pad_width), mode="edge")
 
-    # Apply median filter
-    filtered_padded_amp = (
-        padded_amp.rolling(time=median_len, center=True)
-        .reduce(np.median)
-    )
+        # Apply median filter
+        filtered_padded_amp = (
+            padded_amp.rolling(time=median_len, center=True)
+            .reduce(np.median)
+        )
+        # Trim the padding after applying the filter
+        return filtered_padded_amp.isel(time=slice(pad_width, -pad_width))
 
-    # Trim the padding after applying the filter
-    return filtered_padded_amp.isel(time=slice(pad_width, -pad_width))
+    return amp
