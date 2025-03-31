@@ -1,3 +1,6 @@
+"""Functions for preliminary processing of near-infrared spectroscopy (NIRS) data."""
+
+from __future__ import annotations
 import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
@@ -15,9 +18,12 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
     """Provide a matrix of extinction coefficients from tabulated data.
 
     Args:
-        spectrum: The type of spectrum to use. Currently supported options are:
-            - "prahl": Extinction coefficients based on the Prahl absorption spectrum
-                       (Prahl1998).
+        spectrum:
+            The type of spectrum to use. Currently supported options are:
+
+            - "prahl": Extinction coefficients based on the Prahl absorption
+              spectrum (Prahl1998).
+
         wavelengths: An array-like object containing the wavelengths at which to
             calculate the extinction coefficients.
 
@@ -28,7 +34,8 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
 
     References:
         (Prahl 1998) - taken from Homer2/3, Copyright 2004 - 2006 - The General Hospital
-            Corporation and President and Fellows of Harvard University.
+        Corporation and President and Fellows of Harvard University.
+
             "These values for the molar extinction coefficient e in [cm-1/(moles/liter)]
             were compiled by Scott Prahl (prahl@ece.ogi.edu) using data from
             W. B. Gratzer, Med. Res. Council Labs, Holly Hill, London
@@ -37,9 +44,11 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
             and the pathlength.
             For example, if x is the number of grams per liter and a 1 cm cuvette is
             being used, then the absorbance is given by
-            (e) [(1/cm)/(moles/liter)] (x) [g/liter] (1) [cm]
+
+                  (e) [(1/cm)/(moles/liter)] (x) [g/liter] (1) [cm]
             A =  ---------------------------------------------------
                         66,500 [g/mole]
+
             using 66,500 as the gram molecular weight of hemoglobin.
             To convert this data to absorption coefficient in (cm-1), multiply by the
             molar concentration and 2.303,
@@ -73,11 +82,11 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
         raise ValueError(f"unsupported spectrum '{spectrum}'")
 
 
-def channel_distances(amplitudes: xr.DataArray, geo3d: xr.DataArray):
+def channel_distances(amplitudes: cdt.NDTimeSeries, geo3d: cdt.LabeledPointCloud):
     """Calculate distances between channels.
 
     Args:
-        amplitudes (xr.DataArray): A DataArray representing the amplitudes with
+        amplitudes: A DataArray representing the amplitudes with
             dimensions (channel, *).
         geo3d (xr.DataArray): A DataArray containing the 3D coordinates of the channels
             with dimensions (channel, pos).
@@ -98,7 +107,7 @@ def channel_distances(amplitudes: xr.DataArray, geo3d: xr.DataArray):
     return dists
 
 
-def int2od(amplitudes: xr.DataArray):
+def int2od(amplitudes: cdt.NDTimeSeries):
     """Calculate optical density from intensity amplitude  data.
 
     Args:
@@ -121,8 +130,8 @@ def int2od(amplitudes: xr.DataArray):
 
 
 def od2conc(
-    od: xr.DataArray,
-    geo3d: xr.DataArray,
+    od: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
     dpf: xr.DataArray,
     spectrum: str = "prahl",
 ):
@@ -137,7 +146,7 @@ def od2conc(
 
     Returns:
         conc (xr.DataArray, (channel, *)): A data array containing
-            concentration changes by channel.
+        concentration changes by channel.
     """
     validators.has_channel(od)
     validators.has_wavelengths(od)
@@ -164,8 +173,8 @@ def od2conc(
     return conc
 
 def conc2od(
-    conc: xr.DataArray,
-    geo3d: xr.DataArray,
+    conc: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
     dpf: xr.DataArray,
     spectrum: str = "prahl",
 ):
@@ -203,8 +212,8 @@ def conc2od(
     return od
 
 def beer_lambert(
-    amplitudes: xr.DataArray,
-    geo3d: xr.DataArray,
+    amplitudes: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
     dpf: xr.DataArray,
     spectrum: str = "prahl",
 ):
@@ -238,7 +247,7 @@ def beer_lambert(
 def split_long_short_channels(
     ts: cdt.NDTimeSeries,
     geo3d: cdt.LabeledPointCloud,
-    distance_threshold: cedalion.Quantity = 1.5 * cedalion.units.cm,
+    distance_threshold: cdt.QLength = 1.5 * cedalion.units.cm,
 ):
     """Split a time series into two based on channel distances.
 

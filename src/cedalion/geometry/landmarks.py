@@ -1,3 +1,5 @@
+"""Module for constructing the 10-10-system on the scalp surface."""
+
 import warnings
 from typing import List, Optional
 
@@ -143,6 +145,8 @@ class LandmarksBuilder1010:
 
     def _estimate_cranial_vertex_by_height(self):
         """Find the highest point of the skull."""
+        # FIXME: this only works for coordinate systems with z-axis oriented 
+        # superior like in RAS or ALS coordinate systems!
 
         vertices = vnp.vtk_to_numpy(self.vtk_mesh.GetPoints().GetData())
         highest_vertices = vertices[vertices[:, 2] == vertices[:, 2].max()]
@@ -154,7 +158,7 @@ class LandmarksBuilder1010:
         """Estimate the cranial vertex by intersecting lines through the head."""
         if "Cz" in self.landmarks_mm.label:
             cz1 = self.landmarks_mm.loc["Cz"].values
-            # FIXME remove Cz from landmarks
+            self.landmarks_mm = self.landmarks_mm.drop_sel(label='Cz')
         else:
             cz1 = self._estimate_cranial_vertex_by_height()
 
@@ -224,6 +228,11 @@ class LandmarksBuilder1010:
             attrs={"units": "mm"},
         )
 
+        # Update Cz to match the whole 10-10 system and not stick with the old
+        # (potentially inaccurate) value
+        if 'Cz' in labels:
+            self.landmarks_mm = self.landmarks_mm.drop_sel(label='Cz')
+
         self.landmarks_mm = xr.concat((self.landmarks_mm, tmp), dim="label")
 
         self.lines.append(points)
@@ -235,14 +244,18 @@ class LandmarksBuilder1010:
         cz = self._estimate_cranial_vertex_from_lines()
 
         self.landmarks_mm = self.landmarks_mm.points.add("Cz", cz, PointType.LANDMARK)
+       
+        for _ in range(5): # converge usually after 2-4 iterations
+            self._add_landmarks_along_line(["LPA", "Cz", "RPA"], ["Cz"], [0.5])
+            self._add_landmarks_along_line(["Nz", "Cz", "Iz"], ["Cz"], [0.5])
+
+        self._add_landmarks_along_line(["LPA", "Cz", "RPA"], ["T7", "T8"], [0.1, 0.9])
 
         self._add_landmarks_along_line(
             ["Nz", "Cz", "Iz"],
             ["Fpz", "AFz", "Fz", "FCz", "CPz", "Pz", "POz", "Oz"],
             [0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9],
         )
-
-        self._add_landmarks_along_line(["LPA", "Cz", "RPA"], ["T7", "T8"], [0.1, 0.9])
 
         self._add_landmarks_along_line(
             ["Fpz", "T7", "Oz"],
