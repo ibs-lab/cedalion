@@ -30,13 +30,13 @@ else
     echo "Virtual environment already exists. Skipping creation."
 fi
 
-# Activate virtual environment
-echo "Activating virtual environment."
-source $VENV_PATH/bin/activate
-
 # Add site-packages path to Python path
 echo "Adding $SITE_PACKAGES_PATH to Python path..."
 python -c "import sys; sys.path.insert(0, '$SITE_PACKAGES_PATH'); print(f'Added {sys.path[0]} to sys.path')"
 
 # Install numpy
 pip install numpy==1.26.0
+
+# Activate virtual environment
+echo "Activating virtual environment."
+source $VENV_PATH/bin/activate
