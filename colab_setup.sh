@@ -49,15 +49,6 @@ else
     echo "Virtual environment already exists at $VENV_PATH."
 fi
 
-# Activate virtual environment
-echo "Activating virtual environment."
-if [ -f "$VENV_PATH/bin/activate" ]; then
-    source "$VENV_PATH/bin/activate"
-else
-    echo "ERROR: Activation script not found at $VENV_PATH/bin/activate"
-    exit 1
-fi
-
 # Add site-packages path to Python path
 echo "Adding $SITE_PACKAGES_PATH to Python path..."
 export PYTHONPATH="$SITE_PACKAGES_PATH:$PYTHONPATH"
