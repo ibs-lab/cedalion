@@ -51,73 +51,75 @@ else
     echo "Virtual environment already exists at $VENV_PATH."
 fi
 
-# Create a .pth file for the Colab environment to ensure it's always on the path
-echo "Creating .pth file to add site-packages to PYTHONPATH..."
-echo "$SITE_PACKAGES_PATH" > /usr/local/lib/python3.11/dist-packages/venv_site_packages.pth
+# Create a more radical approach - using symlinks to override system packages
+echo "Setting up package overrides..."
 
-# Create a Colab extension that modifies the path at runtime
-mkdir -p /usr/local/lib/python3.11/dist-packages/google/colab/
+# For numpy specifically, temporarily move the original and create a symlink to our version
+if [ -d "/usr/local/lib/python3.11/dist-packages/numpy" ] && [ -d "$SITE_PACKAGES_PATH/numpy" ]; then
+    echo "Redirecting numpy to use virtual environment version..."
+    
+    # Backup the original numpy if not already backed up
+    if [ ! -d "/usr/local/lib/python3.11/dist-packages/numpy_original" ]; then
+        mv /usr/local/lib/python3.11/dist-packages/numpy /usr/local/lib/python3.11/dist-packages/numpy_original
+    fi
+    
+    # Create symlink from system location to our venv version
+    ln -sf "$SITE_PACKAGES_PATH/numpy" /usr/local/lib/python3.11/dist-packages/numpy
+    
+    echo "Numpy has been redirected to virtual environment version."
+else
+    echo "WARNING: Either system numpy or virtual environment numpy not found."
+    echo "System numpy: $([[ -d /usr/local/lib/python3.11/dist-packages/numpy ]] && echo "Found" || echo "Not found")"
+    echo "Venv numpy: $([[ -d $SITE_PACKAGES_PATH/numpy ]] && echo "Found" || echo "Not found")"
+fi
 
-cat > /usr/local/lib/python3.11/dist-packages/google/colab/venv_path_modifier.py << EOF
-import os
+# Create a startup script to ensure proper package overrides
+cat > /content/ensure_venv_packages.py << EOF
 import sys
-import site
+import os
 import importlib.util
 
-# Add hook that runs on startup
-def _modify_path():
-    venv_site_packages = "$SITE_PACKAGES_PATH"
+def ensure_venv_packages():
+    venv_path = "$SITE_PACKAGES_PATH"
     
-    # Remove any existing instances of venv_site_packages from sys.path
-    sys.path = [p for p in sys.path if p != venv_site_packages]
+    # Add venv path to beginning of sys.path
+    if venv_path not in sys.path:
+        sys.path.insert(0, venv_path)
+        print(f"Added {venv_path} to sys.path")
+    else:
+        # Make sure it's at the beginning
+        sys.path.remove(venv_path)
+        sys.path.insert(0, venv_path)
     
-    # Insert at the beginning to prioritize these packages
-    sys.path.insert(0, venv_site_packages)
-    
-    # Force numpy to be imported from venv if present
-    numpy_path = os.path.join(venv_site_packages, "numpy")
-    if os.path.exists(numpy_path):
-        # Remove numpy from modules if already imported
-        if "numpy" in sys.modules:
-            del sys.modules["numpy"]
-        
-        # Ensure numpy is imported from venv
-        try:
-            spec = importlib.util.spec_from_file_location(
-                "numpy", 
-                os.path.join(numpy_path, "__init__.py")
-            )
-            if spec:
-                numpy_module = importlib.util.module_from_spec(spec)
-                sys.modules["numpy"] = numpy_module
-                spec.loader.exec_module(numpy_module)
-                print(f"Using numpy from {numpy_path}")
-        except Exception as e:
-            print(f"Warning: Could not force numpy import: {e}")
+    # Verify numpy version
+    try:
+        import numpy
+        print(f"Using numpy from: {numpy.__file__}")
+        print(f"Numpy version: {numpy.__version__}")
+    except ImportError as e:
+        print(f"Error importing numpy: {e}")
 
-# Run the path modification
-_modify_path()
+if __name__ == "__main__":
+    ensure_venv_packages()
 EOF
 
-# Create sitecustomize.py to ensure our path modifications happen automatically
-cat > /usr/local/lib/python3.11/dist-packages/sitecustomize.py << EOF
+# Create IPython startup file to run our script
+mkdir -p /root/.ipython/profile_default/startup/
+cat > /root/.ipython/profile_default/startup/01-venv-packages.py << EOF
+# This script runs automatically when IPython starts
 import sys
 import os
 
-# Import our path modifier
 try:
-    from google.colab import venv_path_modifier
-    print("Virtual environment path configured automatically")
-except ImportError as e:
-    print(f"Warning: Could not import path modifier: {e}")
-
-# Print verification info
-print(f"PYTHONPATH priority: {sys.path[:3]}")
+    exec(open('/content/ensure_venv_packages.py').read())
+except Exception as e:
+    print(f"Error ensuring venv packages: {e}")
 EOF
 
-# Make sure numpy works from the venv
+# Verify the setup
 echo "Verifying the environment setup..."
-python -c "import sys; import numpy; print(f'Using numpy from: {numpy.__file__}'); print(f'Python path priority: {sys.path[:3]}')"
+python /content/ensure_venv_packages.py
 
-echo "Setup complete. Your virtual environment packages should now be automatically available in all notebooks."
-echo "The virtual environment's numpy should now override Colab's default numpy."
+echo "Setup complete. Your virtual environment's packages should now override Colab's defaults."
+echo "To verify in your notebook, run:"
+echo "import numpy; print(numpy.__file__, numpy.__version__)"
