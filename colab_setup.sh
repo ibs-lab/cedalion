@@ -46,36 +46,78 @@ if [ ! -d "$VENV_PATH" ]; then
     
     # Install cedalion
     "$PYTHON_BIN" -m pip install git+https://github.com/ibs-lab/cedalion.git
-
     echo "Setup complete."
 else
     echo "Virtual environment already exists at $VENV_PATH."
 fi
 
-# Create a .pth file for the Colab environment
+# Create a .pth file for the Colab environment to ensure it's always on the path
 echo "Creating .pth file to add site-packages to PYTHONPATH..."
 echo "$SITE_PACKAGES_PATH" > /usr/local/lib/python3.11/dist-packages/venv_site_packages.pth
 
-# Create a helper script to activate the environment and install any missing packages
-cat > /content/activate_venv.py << EOF
+# Create a Colab extension that modifies the path at runtime
+mkdir -p /usr/local/lib/python3.11/dist-packages/google/colab/
+
+cat > /usr/local/lib/python3.11/dist-packages/google/colab/venv_path_modifier.py << EOF
+import os
 import sys
 import site
-import os
+import importlib.util
 
-# Add the site-packages to path
-site_packages = "$SITE_PACKAGES_PATH"
-if site_packages not in sys.path:
-    sys.path.insert(0, site_packages)
-    print(f"Added {site_packages} to sys.path")
+# Add hook that runs on startup
+def _modify_path():
+    venv_site_packages = "$SITE_PACKAGES_PATH"
+    
+    # Remove any existing instances of venv_site_packages from sys.path
+    sys.path = [p for p in sys.path if p != venv_site_packages]
+    
+    # Insert at the beginning to prioritize these packages
+    sys.path.insert(0, venv_site_packages)
+    
+    # Force numpy to be imported from venv if present
+    numpy_path = os.path.join(venv_site_packages, "numpy")
+    if os.path.exists(numpy_path):
+        # Remove numpy from modules if already imported
+        if "numpy" in sys.modules:
+            del sys.modules["numpy"]
+        
+        # Ensure numpy is imported from venv
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "numpy", 
+                os.path.join(numpy_path, "__init__.py")
+            )
+            if spec:
+                numpy_module = importlib.util.module_from_spec(spec)
+                sys.modules["numpy"] = numpy_module
+                spec.loader.exec_module(numpy_module)
+                print(f"Using numpy from {numpy_path}")
+        except Exception as e:
+            print(f"Warning: Could not force numpy import: {e}")
 
-# Try importing cedalion to verify
-try:
-    import cedalion
-    print(f"Successfully imported cedalion from {cedalion.__file__}")
-except ImportError as e:
-    print(f"Error importing cedalion: {e}")
-    print("Current sys.path:", sys.path)
+# Run the path modification
+_modify_path()
 EOF
 
-echo "Setup complete. To ensure cedalion is in your path, run the following line in your notebook:"
-echo "exec(open('/content/activate_venv.py').read())"
+# Create sitecustomize.py to ensure our path modifications happen automatically
+cat > /usr/local/lib/python3.11/dist-packages/sitecustomize.py << EOF
+import sys
+import os
+
+# Import our path modifier
+try:
+    from google.colab import venv_path_modifier
+    print("Virtual environment path configured automatically")
+except ImportError as e:
+    print(f"Warning: Could not import path modifier: {e}")
+
+# Print verification info
+print(f"PYTHONPATH priority: {sys.path[:3]}")
+EOF
+
+# Make sure numpy works from the venv
+echo "Verifying the environment setup..."
+python -c "import sys; import numpy; print(f'Using numpy from: {numpy.__file__}'); print(f'Python path priority: {sys.path[:3]}')"
+
+echo "Setup complete. Your virtual environment packages should now be automatically available in all notebooks."
+echo "The virtual environment's numpy should now override Colab's default numpy."
