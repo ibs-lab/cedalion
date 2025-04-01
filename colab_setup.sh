@@ -19,10 +19,7 @@ fi
 if [ ! -d "$VENV_PATH" ]; then
     echo "Virtual environment not found. Creating one..."
     pip install virtualenv
-    
-    # Create the directory structure first to ensure correct location
-    mkdir -p "$VENV_PATH"
-    
+        
     # Use absolute path for virtualenv
     virtualenv "$VENV_PATH"
     
