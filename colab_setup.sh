@@ -19,7 +19,10 @@ fi
 if [ ! -d "$VENV_PATH" ]; then
     echo "Virtual environment not found. Creating one..."
     pip install virtualenv
-        
+    
+    # Create the directory structure first to ensure correct location
+    mkdir -p "$VENV_PATH"
+    
     # Use absolute path for virtualenv
     virtualenv "$VENV_PATH"
     
@@ -49,14 +52,30 @@ else
     echo "Virtual environment already exists at $VENV_PATH."
 fi
 
-# Add site-packages path to Python path
-echo "Adding $SITE_PACKAGES_PATH to Python path..."
-export PYTHONPATH="$SITE_PACKAGES_PATH:$PYTHONPATH"
+# Create a .pth file for the Colab environment
+echo "Creating .pth file to add site-packages to PYTHONPATH..."
+echo "$SITE_PACKAGES_PATH" > /usr/local/lib/python3.11/dist-packages/venv_site_packages.pth
 
-# Install numpy
-pip install numpy==1.26.0
+# Create a helper script to activate the environment and install any missing packages
+cat > /content/activate_venv.py << EOF
+import sys
+import site
+import os
 
-# Verify environment is working
-echo "Verifying environment..."
-which python
-python -c "import sys; print(f'Python path: {sys.path}')"
+# Add the site-packages to path
+site_packages = "$SITE_PACKAGES_PATH"
+if site_packages not in sys.path:
+    sys.path.insert(0, site_packages)
+    print(f"Added {site_packages} to sys.path")
+
+# Try importing cedalion to verify
+try:
+    import cedalion
+    print(f"Successfully imported cedalion from {cedalion.__file__}")
+except ImportError as e:
+    print(f"Error importing cedalion: {e}")
+    print("Current sys.path:", sys.path)
+EOF
+
+echo "Setup complete. To ensure cedalion is in your path, run the following line in your notebook:"
+echo "exec(open('/content/activate_venv.py').read())"
