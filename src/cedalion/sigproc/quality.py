@@ -1172,7 +1172,7 @@ def stimulus_mask(df_stim : pd.DataFrame, mask : xr.DataArray) -> xr.DataArray:
         ),
     )
 
-def amp_preproc(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
+def repair_amp(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
     """Replace nonpositive amp values and optionally fill NaNs.
 
     TODO: Optimize handling of sequential nonpositive values.
