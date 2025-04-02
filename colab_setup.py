@@ -50,7 +50,7 @@ if not os.path.isdir(VENV_PATH):
 else:
     print(f"Virtual environment already exists at {VENV_PATH}.")
 
-# Update the notebook’s sys.path and PYTHONPATH so that the virtual environment packages take priority.
+# Update the notebook’s sys.path and PYTHONPATH.
 if SITE_PACKAGES_PATH not in sys.path:
     sys.path.insert(0, SITE_PACKAGES_PATH)
 os.environ["PYTHONPATH"] = SITE_PACKAGES_PATH + ":" + os.environ.get("PYTHONPATH", "")
@@ -61,3 +61,4 @@ subprocess.run([sys.executable, "-m", "pip", "install", "numpy==1.26.0"], check=
 # Verify that the correct numpy version is in use.
 import numpy
 print("Numpy version:", numpy.__version__)
+print("If numpy version != 1.26.0, please restart the runtime and re-run this cell.")
