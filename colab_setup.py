@@ -2,6 +2,7 @@
 import os
 import sys
 import subprocess
+import importlib
 
 # Define paths for the virtual environment and its site-packages directory.
 VENV_PATH = "/content/drive/MyDrive/vir_env"
@@ -55,9 +56,21 @@ if SITE_PACKAGES_PATH not in sys.path:
     sys.path.insert(0, SITE_PACKAGES_PATH)
 os.environ["PYTHONPATH"] = SITE_PACKAGES_PATH + ":" + os.environ.get("PYTHONPATH", "")
 
-# Force installation of the desired numpy version in the current process.
+# Force reinstall of the desired numpy version.
+print("Forcing correct numpy installation...")
+
+# Uninstall any existing numpy.
+subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "numpy"], check=True)
+
+# Install the specified numpy version.
 subprocess.run([sys.executable, "-m", "pip", "install", "numpy==1.26.0"], check=True)
 
-# Verify that the correct numpy version is in use.
+# If numpy was already loaded in the kernel, remove it from sys.modules.
+if "numpy" in sys.modules:
+    print("Removing numpy from sys.modules...")
+    del sys.modules["numpy"]
+
+# Import and reload numpy to ensure the new version is used.
 import numpy
+importlib.reload(numpy)
 print("Numpy version:", numpy.__version__)
