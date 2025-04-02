@@ -20,9 +20,6 @@ if [ ! -d "$VENV_PATH" ]; then
     echo "Virtual environment not found. Creating one..."
     pip install virtualenv
     
-    # Create the directory structure first to ensure correct location
-    mkdir -p "$VENV_PATH"
-    
     # Use absolute path for virtualenv
     virtualenv "$VENV_PATH"
     
@@ -46,80 +43,29 @@ if [ ! -d "$VENV_PATH" ]; then
     
     # Install cedalion
     "$PYTHON_BIN" -m pip install git+https://github.com/ibs-lab/cedalion.git
+
     echo "Setup complete."
 else
     echo "Virtual environment already exists at $VENV_PATH."
 fi
 
-# Create a more radical approach - using symlinks to override system packages
-echo "Setting up package overrides..."
-
-# For numpy specifically, temporarily move the original and create a symlink to our version
-if [ -d "/usr/local/lib/python3.11/dist-packages/numpy" ] && [ -d "$SITE_PACKAGES_PATH/numpy" ]; then
-    echo "Redirecting numpy to use virtual environment version..."
-    
-    # Backup the original numpy if not already backed up
-    if [ ! -d "/usr/local/lib/python3.11/dist-packages/numpy_original" ]; then
-        mv /usr/local/lib/python3.11/dist-packages/numpy /usr/local/lib/python3.11/dist-packages/numpy_original
-    fi
-    
-    # Create symlink from system location to our venv version
-    ln -sf "$SITE_PACKAGES_PATH/numpy" /usr/local/lib/python3.11/dist-packages/numpy
-    
-    echo "Numpy has been redirected to virtual environment version."
+# Activate virtual environment
+echo "Activating virtual environment."
+if [ -f "$VENV_PATH/bin/activate" ]; then
+    source "$VENV_PATH/bin/activate"
 else
-    echo "WARNING: Either system numpy or virtual environment numpy not found."
-    echo "System numpy: $([[ -d /usr/local/lib/python3.11/dist-packages/numpy ]] && echo "Found" || echo "Not found")"
-    echo "Venv numpy: $([[ -d $SITE_PACKAGES_PATH/numpy ]] && echo "Found" || echo "Not found")"
+    echo "ERROR: Activation script not found at $VENV_PATH/bin/activate"
+    exit 1
 fi
 
-# Create a startup script to ensure proper package overrides
-cat > /content/ensure_venv_packages.py << EOF
-import sys
-import os
-import importlib.util
+# Add site-packages path to Python path
+echo "Adding $SITE_PACKAGES_PATH to Python path..."
+export PYTHONPATH="$SITE_PACKAGES_PATH:$PYTHONPATH"
 
-def ensure_venv_packages():
-    venv_path = "$SITE_PACKAGES_PATH"
-    
-    # Add venv path to beginning of sys.path
-    if venv_path not in sys.path:
-        sys.path.insert(0, venv_path)
-        print(f"Added {venv_path} to sys.path")
-    else:
-        # Make sure it's at the beginning
-        sys.path.remove(venv_path)
-        sys.path.insert(0, venv_path)
-    
-    # Verify numpy version
-    try:
-        import numpy
-        print(f"Using numpy from: {numpy.__file__}")
-        print(f"Numpy version: {numpy.__version__}")
-    except ImportError as e:
-        print(f"Error importing numpy: {e}")
+# Install numpy
+pip install numpy==1.26.0
 
-if __name__ == "__main__":
-    ensure_venv_packages()
-EOF
-
-# Create IPython startup file to run our script
-mkdir -p /root/.ipython/profile_default/startup/
-cat > /root/.ipython/profile_default/startup/01-venv-packages.py << EOF
-# This script runs automatically when IPython starts
-import sys
-import os
-
-try:
-    exec(open('/content/ensure_venv_packages.py').read())
-except Exception as e:
-    print(f"Error ensuring venv packages: {e}")
-EOF
-
-# Verify the setup
-echo "Verifying the environment setup..."
-python /content/ensure_venv_packages.py
-
-echo "Setup complete. Your virtual environment's packages should now override Colab's defaults."
-echo "To verify in your notebook, run:"
-echo "import numpy; print(numpy.__file__, numpy.__version__)"
+# Verify environment is working
+echo "Verifying environment..."
+which python
+python -c "import sys; print(f'Python path: {sys.path}')"
