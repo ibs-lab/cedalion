@@ -54,3 +54,10 @@ else:
 if SITE_PACKAGES_PATH not in sys.path:
     sys.path.insert(0, SITE_PACKAGES_PATH)
 os.environ["PYTHONPATH"] = SITE_PACKAGES_PATH + ":" + os.environ.get("PYTHONPATH", "")
+
+# Force installation of the desired numpy version in the current process.
+subprocess.run([sys.executable, "-m", "pip", "install", "numpy==1.26.0"], check=True)
+
+# Verify that the correct numpy version is in use.
+import numpy
+print("Numpy version:", numpy.__version__)
