@@ -1,6 +1,8 @@
 """Plotting functions for visualization of montages, meshes, etc."""
 
 from __future__ import annotations
+
+import itertools
 import math
 
 import matplotlib
@@ -11,18 +13,20 @@ import pandas as pd
 import pyvista as pv
 import vtk
 import xarray as xr
-from matplotlib.patches import Rectangle, Circle, Ellipse
-from vtk.util.numpy_support import numpy_to_vtk
-import itertools
+from matplotlib.patches import Circle, Ellipse, Rectangle
+from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
-import cedalion.nirs
+from vtk.util.numpy_support import numpy_to_vtk
+
 import cedalion.data
 import cedalion.dataclasses as cdc
+import cedalion.geometry.registration as registration
+import cedalion.nirs
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-from cedalion.dataclasses import PointType
-import cedalion.geometry.registration as registration
 from cedalion import Quantity
+from cedalion.dataclasses import PointType
+
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):
     """Plots a 3D visualization of a montage.
@@ -923,12 +927,14 @@ def scalp_plot(
     vmin: float | None = None,
     vmax: float | None = None,
     cmap: str = "bwr",
+    bad_color: ColorType = [0.7, 0.7, 0.7],
     min_dist: Quantity | None = None,
     min_metric: float | None = None,
     channel_lw: float = 2.0,
     optode_size: float = 36.0,
     optode_labels: bool = False,
     cb_label: str | None = None,
+    zorder : str | None = None,
 ):
     """Creates a 2D plot of the head with channels coloured according to a given metric.
 
@@ -944,12 +950,15 @@ def scalp_plot(
         vmin: the minimum value of the metric
         vmax: the maximum value of the metric
         cmap: the name of the colormap
+        bad_color: the color to use when the metric contains NaNs
         min_dist: if provided channels below this distance threshold are not drawn
         min_metric: if provided channels below this metric threshold are toned down
         channel_lw: channel line width
         optode_size: optode marker size
         optode_labels: if True draw optode labels instead of markers
         cb_label: colorbar label
+        zorder: 'ascending' or 'descending' or None. Controls whether channels
+            with high or low metric values are plotted on top.
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
@@ -983,7 +992,7 @@ def scalp_plot(
 
     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     cmap = p.cm.get_cmap(cmap)
-
+    cmap.set_bad(bad_color)
 
     ax.set_aspect("equal", adjustable="datalim")
 
@@ -1017,13 +1026,24 @@ def scalp_plot(
         else:
             v = np.nan
 
-        c = cmap(norm(v))
+        normed_v = norm(v)
+        c = cmap(normed_v)
         line_fmt = {'c' : c, 'ls' : '-', 'lw' : channel_lw, 'alpha' : 1.0}
 
         if (min_metric is not None) and (v < min_metric):
             line_fmt['alpha'] = 0.4
 
-        ax.plot([s[0], d[0]], [s[1], d[1]], **line_fmt)
+        if zorder is None:
+            zorder_line = 0
+        elif zorder == "ascending":
+            zorder_line = normed_v
+        elif zorder == "descending":
+            zorder_line = 1 - normed_v
+        else:
+            raise ValueError(f"unexpected value '{zorder}' for zorder.")
+
+
+        ax.plot([s[0], d[0]], [s[1], d[1]], zorder=zorder_line, **line_fmt)
 
     # draw markers or labels for sources and detectors
     # /!\ isin with np strings and sets is tricky. probably because of the hash
@@ -1052,7 +1072,6 @@ def scalp_plot(
             s[:, 1],
             s=optode_size,
             marker="s",
-            ec="k",
             fc=COLOR_SOURCE,
             zorder=100,
         )
@@ -1061,7 +1080,6 @@ def scalp_plot(
             d[:, 1],
             s=optode_size,
             marker="s",
-            ec="k",
             fc=COLOR_DETECTOR,
             zorder=100,
         )

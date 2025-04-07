@@ -191,6 +191,86 @@ def register_trans_rot_isoscale(
     return trafo_opt
 
 
+@cdc.validate_schemas
+def register_trans_rot_scale(
+    coords_target: cdt.LabeledPointCloud,
+    coords_trafo: cdt.LabeledPointCloud,
+):
+    """Finds affine transformation between coords_target and coords_trafo.
+
+    Uses translation, rotation and scaling. Requires at least 3 common labels
+    between the two point clouds.
+
+    Args:
+        coords_target (LabeledPointCloud): Target point cloud.
+        coords_trafo (LabeledPointCloud): Source point cloud.
+
+    Returns:
+        cdt.AffineTransform: Affine transformation between the two point clouds.
+    """
+    common_labels = coords_target.points.common_labels(coords_trafo)
+
+    if len(common_labels) < 3:
+        raise ValueError("less than 3 common coordinates found")
+
+    from_crs = coords_trafo.points.crs
+    from_units = coords_trafo.pint.units
+    to_crs = coords_target.points.crs
+    to_units = coords_target.pint.units
+
+    # restrict to commmon labels and dequantify
+    coords_trafo = coords_trafo.sel(label=common_labels).pint.dequantify()
+    coords_target = coords_target.sel(label=common_labels).pint.dequantify()
+
+    std_trafo = _std_distance_to_cog(coords_trafo)
+    std_target = _std_distance_to_cog(coords_target)
+
+    scale0 = std_target / std_trafo
+
+    # calculate difference between centers of gravity. Use this as initial
+    # parameters for the translational component.
+    delta_cog = (
+        coords_target.mean("label").values - coords_trafo.mean("label").values * scale0
+    )
+
+    def trafo(params):
+        return m_rot(params[3:6]) @ m_trans(params[0:3]) @ m_scale3(params[6:9])
+
+    def loss(params, coords_target, coords_trafo):
+        M = trafo(params)
+        tmp = coords_trafo.points._apply_numpy_transform(M, to_crs)
+        return np.power(_subtract(coords_target, tmp), 2).sum()
+
+    result = minimize(
+        loss,
+        [
+            delta_cog[0],
+            delta_cog[1],
+            delta_cog[2],
+            0.0,
+            0.0,
+            0.0,
+            scale0,
+            scale0,
+            scale0,
+        ],
+        args=(coords_target, coords_trafo),
+    )
+
+    trafo_opt = trafo(result.x)
+
+    trafo_opt = cdc.affine_transform_from_numpy(
+        trafo_opt,
+        from_crs=from_crs,
+        to_crs=to_crs,
+        from_units=from_units,
+        to_units=to_units,
+    )
+
+    return trafo_opt
+
+
+
 def gen_xform_from_pts(p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
     """Calculate the affine transformation matrix T that transforms p1 to p2.
 

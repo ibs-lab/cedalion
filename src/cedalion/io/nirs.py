@@ -1,9 +1,11 @@
-import scipy.io
 from pathlib import Path
-import numpy as np
-import xarray as xr
-import pandas as pd
 
+import numpy as np
+import pandas as pd
+import scipy.io
+import xarray as xr
+
+import cedalion
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.utils as utils
@@ -55,26 +57,28 @@ def _read_timeseries(
     t = file["t"].squeeze()
     d = file["d"]
 
-    ml = file[sd]["MeasList"][()]
+    time_units = cedalion.units.s
+
+    ml = file[sd]["MeasList"][()].astype(int)
     n_flatchannel = len(ml)
     assert d.shape == (len(t), n_flatchannel)
 
     # list for unique (src, det) tuples. 1-indexed.
     unique_channels = [
         tuple(r)
-        for _, r in pd.DataFrame(ml[:, :2].astype(int)).drop_duplicates().iterrows()
+        for _, r in pd.DataFrame(ml[:, :2]).drop_duplicates().iterrows()
     ]
 
     src_labels = geo3d[geo3d.type == cdc.PointType.SOURCE].label.values
     det_labels = geo3d[geo3d.type == cdc.PointType.DETECTOR].label.values
 
-    wavelengths = file[sd]["Lambda"][()]
+    wavelengths = file[sd]["Lambda"][()].astype(float)
 
     source = []
     detector = []
     channel = []
 
-    data = np.zeros((len(t), len(unique_channels), len(wavelengths)))
+    data = np.zeros((len(unique_channels), len(wavelengths), len(t)))
 
     for i_fch in range(n_flatchannel):
         i_src = int(ml[i_fch, 0])
@@ -84,7 +88,7 @@ def _read_timeseries(
         i_wl = int(ml[i_fch, 3] - 1)
         i_ch = unique_channels.index((i_src, i_det))
 
-        data[:, i_ch, i_wl] = d[:, i_fch]
+        data[i_ch, i_wl, :] = d[:, i_fch]
 
     source = [src_labels[i[0] - 1] for i in unique_channels]
     detector = [det_labels[i[1] - 1] for i in unique_channels]
@@ -92,7 +96,7 @@ def _read_timeseries(
 
     ts = xr.DataArray(
         data,
-        dims=["time", "channel", "wavelength"],
+        dims=["channel", "wavelength", "time"],
         coords={
             "time": ("time", t),
             "samples": ("time", np.arange(len(t))),
@@ -104,8 +108,30 @@ def _read_timeseries(
         attrs={"units": "dimensionless"},
     )
     ts = ts.pint.quantify()
+    ts = ts.pint.quantify({"time": time_units})
 
-    return ts
+    # build measurement list dataframe
+    df_ml = pd.DataFrame(
+        ml[:, [0, 1, 3]] - 1,
+        columns=["sourceIndex", "detectorIndex", "wavelengthIndex"],
+    )
+
+    df_ml["wavelength"] = wavelengths[df_ml["wavelengthIndex"]]
+    df_ml["channel"] = [
+        f"{src_labels[r.sourceIndex]}{det_labels[r.detectorIndex]}"
+        for r in df_ml.itertuples()
+    ]
+    df_ml["source"] = [
+        src_labels[r.sourceIndex]
+        for r in df_ml.itertuples()
+    ]
+    df_ml["detector"] = [
+        det_labels[r.detectorIndex]
+        for r in df_ml.itertuples()
+    ]
+
+
+    return ts, df_ml
 
 
 def _read_stim(file: dict[str, np.ndarray]):
@@ -167,10 +193,10 @@ def read_nirs(fname: Path | str):
 
     if "SD3D" in file:
         geo3d = _read_geo3d(file["SD3D"])
-        ts = _read_timeseries(file, "SD3D", geo3d)
+        ts, df_ml = _read_timeseries(file, "SD3D", geo3d)
     else:
         geo3d = _read_geo3d(file["SD"])
-        ts = _read_timeseries(file, "SD", geo3d)
+        ts, df_ml = _read_timeseries(file, "SD", geo3d)
 
     df_stim = _read_stim(file)
     aux = _read_aux(file)
@@ -178,6 +204,7 @@ def read_nirs(fname: Path | str):
 
     rec = cdc.Recording()
     rec["amp"] = ts
+    rec._measurement_lists["amp"] = df_ml
     rec.geo3d = geo3d
     rec.stim = df_stim
 

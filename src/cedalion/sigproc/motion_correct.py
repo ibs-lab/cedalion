@@ -44,6 +44,9 @@ def motion_correct_spline(
     t = np.arange(0, len(fNIRSdata.time), 1 / fs)
     t = t[: len(fNIRSdata.time)]
 
+    units = fNIRSdata.pint.units
+    fNIRSdata = fNIRSdata.pint.dequantify()
+
     dodSpline = fNIRSdata.copy()
 
     for ch in fNIRSdata.channel.values:
@@ -155,6 +158,9 @@ def motion_correct_spline(
             dodSpline.loc[dict(channel=ch, wavelength=wl)] = dodSpline_chan
 
     # dodSpline = dodSpline.unstack('measurement').pint.quantify()
+
+    if units:
+        dodSpline = dodSpline.pint.quantify(units)
 
     return dodSpline
 
@@ -530,9 +536,6 @@ def tddr(ts: cdt.NDTimeSeries):
         if abs(mu - mu0) < D * max(abs(mu), abs(mu0)):
             break
 
-    else:
-        # Warn if the maximum number of iterations was reached without convergence
-        print("Warning: Robust estimation did not converge within 50 iterations.")
 
     # Step 4. Apply robust weights to centered derivative
     new_deriv = w * (deriv - mu)
