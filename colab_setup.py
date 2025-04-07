@@ -61,4 +61,7 @@ subprocess.run([sys.executable, "-m", "pip", "install", "numpy==1.26.0"], check=
 # Verify that the correct numpy version is in use.
 import numpy
 print("Numpy version:", numpy.__version__)
-print("If numpy version != 1.26.0, please restart the runtime and re-run this cell.")
+if numpy.__version__ != "1.26.0":
+    print("WARNING: Numpy version is not 1.26.0. Please restart the runtime (Ctrl-M .) and re-run this cell.")
+else:
+    print("Numpy version is correct. Ready to proceed with the notebook.")
