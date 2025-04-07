@@ -627,6 +627,7 @@ class ForwardModel:
         assert head_model.crs == geo3d.points.crs
 
         self.head_model = head_model
+        self.measurement_list = measurement_list
 
         self.optode_pos = geo3d[
             geo3d.type.isin([cdc.PointType.SOURCE, cdc.PointType.DETECTOR])
@@ -645,9 +646,10 @@ class ForwardModel:
 
         self.optode_pos = self.optode_pos.pint.dequantify()
         self.optode_dir = self.optode_dir.pint.dequantify()
-
+        
         self.tissue_properties = get_tissue_properties(
-            self.head_model.segmentation_masks
+            self.head_model.segmentation_masks,
+            self.measurement_list.wavelength.unique()
         )
 
         self.volume = self.head_model.segmentation_masks.sum("segmentation_type")
