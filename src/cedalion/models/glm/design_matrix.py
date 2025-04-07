@@ -373,7 +373,7 @@ def average_short_channel(ts_short: cdt.NDTimeSeries):
     """
 
     ts_short = ts_short.pint.dequantify()
-    regressor = ts_short.mean("channel").expand_dims("regressor")
+    regressor = ts_short.mean("channel", skipna=True).expand_dims("regressor")
     regressor = regressor.assign_coords({"regressor": ["short"]})
     regressor = regressor.transpose("time", "regressor", ...)
 
