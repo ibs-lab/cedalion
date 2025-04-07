@@ -37,7 +37,7 @@ def ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
     global nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8
     # table = np.load('measfunc_table.npy', allow_pickle= True)
 
-    file_path = cedalion.data.get("measfunc_table.npy")
+    file_path = data.get("measfunc_table.npy")
     table = np.load(file_path, allow_pickle=True)
 
     K = 8

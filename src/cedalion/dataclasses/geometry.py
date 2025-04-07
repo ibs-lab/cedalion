@@ -188,6 +188,7 @@ class TrimeshSurface(Surface):
 
      # Optionally, perform any additional processing/checks here
      self._vertices = value  # Update the private _vertices attribute
+     
     @property
     def nvertices(self) -> int:
         return len(self.mesh.vertices)
