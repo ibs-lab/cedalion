@@ -10,6 +10,13 @@ on the [conda](https://docs.anaconda.com/working-with-conda/packages/install-pac
 package manager and the [conda-forge](https://conda-forge.org/docs/) package
 repository.
 
+## Running Notebooks in Google Colab
+
+If you would like to test cedalion before going through the installation process on your local machine, you can run the example notebooks through Google Colab. This requires a Google account with approximately 50MB available storage space. To open a notebook using Google Colab, follow the steps below. The first time you open a notebook in Colab, setup can take 10-20 minutes. For subsequent notebooks the steps remain the same, but setup should be much faster.
+
+Click the link at the top of an example notebook to open it in Google Colab. Then, run the first cell to install the required dependencies in a virtual environment on your Google Drive. Follow the prompts to sign into your Google Drive account. At the end of the setup process you may also be prompted to run the cell a second time. Then you can proceed with the rest of the example notebook.
+
+
 ## Development
 
 Follow the installation instructions to install the [Miniconda](https://docs.anaconda.com/miniconda/install/) or [Anaconda](https://docs.anaconda.com/anaconda/install/) distribution.
