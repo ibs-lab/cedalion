@@ -1,34 +1,48 @@
 #!/usr/bin/env python3
 import os
 import sys
+import argparse
 import subprocess
 
-# Define paths for the virtual environment and its site-packages directory.
-VENV_PATH = "/content/drive/MyDrive/vir_env"
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description="Set up virtual environment for Cedalion on Google Colab.")
+parser.add_argument(
+    "--path",
+    default="/content/drive/MyDrive/cedalion_files",
+    help="Base path in Google Drive to install files (default: %(default)s)"
+)
+parser.add_argument(
+    "--branch",
+    default="dev",
+    help="Branch of Cedalion to install (default: %(default)s)"
+)
+args = parser.parse_args()
+
+# Define paths
+VENV_PATH = os.path.join(args.path, f"venv_{args.branch}")
 PYTHON_BIN = os.path.join(VENV_PATH, "bin", "python")
 SITE_PACKAGES_PATH = os.path.join(VENV_PATH, "lib", "python3.11", "site-packages")
 
 print(f"Using virtual environment path: {VENV_PATH}")
+print(f"Installing Cedalion from branch: {args.branch}")
 print("Current working directory:", os.getcwd())
 
-# Ensure we're in /content, which is the expected working directory in Colab.
+# Ensure working directory is /content in Colab
 if os.getcwd() != "/content":
     print("WARNING: Not in expected directory. Changing directory to /content.")
     os.chdir("/content")
 
-# If the virtual environment does not exist, create it and install dependencies.
+# Create the virtual environment if it doesn't exist
 if not os.path.isdir(VENV_PATH):
     print("Virtual environment not found. Creating one...")
     subprocess.run(["pip", "install", "virtualenv"], check=True)
     subprocess.run(["virtualenv", VENV_PATH], check=True)
 
-    # Confirm that the environment was created correctly.
     if not os.path.isfile(PYTHON_BIN):
         print(f"ERROR: Virtual environment not created correctly at {VENV_PATH}")
         sys.exit(1)
 
     print(f"Installing dependencies using {PYTHON_BIN}...")
-    # List packages to install. Adjust versions and packages as necessary.
     packages = (
         "click==8.1 h5py==3.11 ipython==8.13.2 ipywidgets==8.1.2 jupyter "
         "jupyter_client==7.4.9 matplotlib==3.9 nibabel==5.2 nilearn==0.10 notebook==6.5.4 "
@@ -43,22 +57,21 @@ if not os.path.isdir(VENV_PATH):
 
     subprocess.run([PYTHON_BIN, "-m", "pip", "install"] + packages, check=True)
 
-    # Install cedalion directly from the git repository.
-    subprocess.run([PYTHON_BIN, "-m", "pip", "install", "git+https://github.com/ibs-lab/cedalion.git"], check=True)
+    cedalion_repo = f"git+https://github.com/ibs-lab/cedalion.git@{args.branch}"
+    subprocess.run([PYTHON_BIN, "-m", "pip", "install", cedalion_repo], check=True)
 
     print("Setup complete.")
 else:
     print(f"Virtual environment already exists at {VENV_PATH}.")
 
-# Update the notebook’s sys.path and PYTHONPATH.
+# Update sys.path and PYTHONPATH for the notebook
 if SITE_PACKAGES_PATH not in sys.path:
     sys.path.insert(0, SITE_PACKAGES_PATH)
 os.environ["PYTHONPATH"] = SITE_PACKAGES_PATH + ":" + os.environ.get("PYTHONPATH", "")
 
-# Force installation of the desired numpy version in the current process.
+# Ensure numpy version consistency
 subprocess.run([sys.executable, "-m", "pip", "install", "numpy==1.26.0"], check=True)
 
-# Verify that the correct numpy version is in use.
 import numpy
 print("Numpy version:", numpy.__version__)
 if numpy.__version__ != "1.26.0":
