@@ -530,6 +530,8 @@ def tddr(ts: cdt.NDTimeSeries):
         if abs(mu - mu0) < D * max(abs(mu), abs(mu0)):
             break
 
+    if mu == np.inf: # on rare instances it seems that mu is not updated and this results in signal_corrected = NaN
+        return signal
 
     # Step 4. Apply robust weights to centered derivative
     new_deriv = w * (deriv - mu)
