@@ -926,7 +926,8 @@ def scalp_plot(
     title: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
-    cmap: str = "bwr",
+    cmap: str | matplotlib.colors.Colormap = "bwr",
+    norm: object | None = None,
     bad_color: ColorType = [0.7, 0.7, 0.7],
     min_dist: Quantity | None = None,
     min_metric: float | None = None,
@@ -934,6 +935,8 @@ def scalp_plot(
     optode_size: float = 36.0,
     optode_labels: bool = False,
     cb_label: str | None = None,
+    cb_ticks_labels: list[(float, str)] | None = None,
+    add_colorbar: bool = True,
     zorder : str | None = None,
 ):
     """Creates a 2D plot of the head with channels coloured according to a given metric.
@@ -990,9 +993,12 @@ def scalp_plot(
     if vmax is None:
         vmax = np.nanmax(metric)
 
-    norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
-    cmap = p.cm.get_cmap(cmap)
-    cmap.set_bad(bad_color)
+    if isinstance(cmap, str):
+        norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+        cmap = p.cm.get_cmap(cmap)
+        cmap.set_bad(bad_color)
+    else:
+        cmap.set_bad(bad_color)
 
     ax.set_aspect("equal", adjustable="datalim")
 
@@ -1090,12 +1096,16 @@ def scalp_plot(
     # ax.set_ylim(-1.1, 1.1)
 
     # colorbar
-    cb = p.colorbar(
-        matplotlib.cm.ScalarMappable(cmap=cmap,norm=norm),
-        ax=ax,
-        shrink=0.6
-    )
-    cb.set_label(cb_label)
+    if add_colorbar:
+        cb = p.colorbar(
+            matplotlib.cm.ScalarMappable(cmap=cmap,norm=norm),
+            ax=ax,
+            shrink=0.6
+        )
+        cb.set_label(cb_label)
+        if cb_ticks_labels is not None:
+            cb.set_ticks([tick for tick, _ in cb_ticks_labels])
+            cb.set_ticklabels([label for _, label in cb_ticks_labels])
 
     if title:
         ax.set_title(title)
