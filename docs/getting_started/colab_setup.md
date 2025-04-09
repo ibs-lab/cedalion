@@ -4,7 +4,7 @@ If you would like to test cedalion before going through the installation process
 
 1. Click the link at the top of an example notebook to open it in Google Colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]()
 2. Run the first cell to install the required dependencies in a virtual environment on your Google Drive.
-    - Optional: set options to specify the virtual environment directory and the branch of cedalion to use.
+    - Optional: set options to specify the virtual environment directory (--path) and the branch of cedalion to use (--branch).
     ![Colab Cell](../img/colab_cell.png)
 3. Follow the prompts to sign into your Google Drive account. 
     ![Google Drive Prompt](../img/gdrive_prompt.png)
