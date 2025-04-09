@@ -71,12 +71,10 @@ if SITE_PACKAGES_PATH not in sys.path:
     sys.path.insert(0, SITE_PACKAGES_PATH)
 os.environ["PYTHONPATH"] = SITE_PACKAGES_PATH + ":" + os.environ.get("PYTHONPATH", "")
 
-# Ensure numpy version consistency
-subprocess.run(["pip", "install", "numpy==1.26.0"], check=True)
-
-import numpy
-print("Numpy version:", numpy.__version__)
-if numpy.__version__ != "1.26.0":
-    print("WARNING: Numpy version is not 1.26.0. Please restart the runtime (Ctrl-M .) and re-run this cell.")
-else:
-    print("Numpy version is correct. Ready to proceed with the notebook.")
+# Add to colab_setup.py before 'import numpy'
+print("Ensuring correct numpy version globally...")
+# Force reinstall numpy globally (not in venv)
+subprocess.run(["pip", "uninstall", "-y", "numpy"], check=True)
+subprocess.run(["pip", "install", "--force-reinstall", "numpy==1.26.0"], check=True)
+# Verify with the global environment
+subprocess.run(["python", "-c", "import numpy; print(f'Global numpy version: {numpy.__version__}')"], check=True)
