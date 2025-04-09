@@ -72,7 +72,7 @@ if SITE_PACKAGES_PATH not in sys.path:
 os.environ["PYTHONPATH"] = SITE_PACKAGES_PATH + ":" + os.environ.get("PYTHONPATH", "")
 
 # Ensure numpy version consistency
-subprocess.run([sys.executable, "-m", "pip", "install", "numpy==1.26.0"], check=True)
+subprocess.run(["pip", "install", "numpy==1.26.0"], check=True)
 
 import numpy
 print("Numpy version:", numpy.__version__)
