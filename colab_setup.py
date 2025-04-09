@@ -3,9 +3,7 @@ import os
 import sys
 import argparse
 import subprocess
-import importlib.util
 from google.colab import drive
-
 drive.mount('/content/drive', force_remount=True)
 
 # Parse command-line arguments
@@ -73,16 +71,12 @@ if SITE_PACKAGES_PATH not in sys.path:
     sys.path.insert(0, SITE_PACKAGES_PATH)
 os.environ["PYTHONPATH"] = SITE_PACKAGES_PATH + ":" + os.environ.get("PYTHONPATH", "")
 
-# Reload numpy
-numpy_init = os.path.join(SITE_PACKAGES_PATH, "numpy", "__init__.py")
-if os.path.exists(numpy_init):
-    spec = importlib.util.spec_from_file_location("numpy", numpy_init)
-    numpy = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(numpy)
-    print("Reloaded numpy from virtualenv:", numpy.__version__)
-    if numpy.__version__ != "1.26.0":
-        print("WARNING: Numpy version is not 1.26.0. Please restart the runtime (Ctrl-M .) and re-run this cell.")
-    else:
-        print("Numpy version is correct.")
+# Ensure numpy version consistency
+subprocess.run([sys.executable, "-m", "pip", "install", "numpy==1.26.0"], check=True)
+
+import numpy
+print("Numpy version:", numpy.__version__)
+if numpy.__version__ != "1.26.0":
+    print("WARNING: Numpy version is not 1.26.0. Please restart the runtime (Ctrl-M .) and re-run this cell.")
 else:
-    print("ERROR: numpy not found.")
+    print("Numpy version is correct. Ready to proceed with the notebook.")
