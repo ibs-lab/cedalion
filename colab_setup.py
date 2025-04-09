@@ -3,6 +3,9 @@ import os
 import sys
 import argparse
 import subprocess
+from google.colab import drive
+
+drive.mount('/content/drive', force_remount=True)
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Set up virtual environment for Cedalion on Google Colab.")
