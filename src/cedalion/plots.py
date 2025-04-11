@@ -1353,7 +1353,7 @@ def image_recon_plot(
 
 
 
-def image_recon_multi_view(
+def image_recon_multi_view_old(
         X_ts: cdt.NDTimeSeries,
         head: TwoSurfaceHeadModel,
         clim=None,
@@ -1406,6 +1406,7 @@ def image_recon_multi_view(
 
     Initial Contributors:
     - David Boas | dboas@bu.edu | 2025
+    - Laura Carlton | lcarlton@bu.edu | 2025
     - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
     """
 
@@ -1428,15 +1429,6 @@ def image_recon_multi_view(
     p0,surf3,_ = image_recon_plot(foo_img, head, subplot_shape, (0,2), clim, view_type, 'right', p0)
     p0,surf4,_ = image_recon_plot(foo_img, head, subplot_shape, (1,0), clim, view_type, 'anterior', p0)
     p0,surf5,_ = image_recon_plot(foo_img, head, subplot_shape, (1,2), clim, view_type, 'posterior', p0)
-
-    # FIXME: this is not working. It shows the p0 window
-    # # update the text in surf0_label
-    # if surf0_label is not None:
-    #     if X_ts.ndim == 2:
-    #         surf0_label.set_text('lower_left', f'Frame {0}', off_screen=SAVE)
-    #     else:
-    #         surf0_label.set_text('lower_left', f'Time {float(X_ts.time[0].values):0.1f} sec', off_screen=SAVE)
-    # p0.render(off_screen=SAVE)
 
     if SAVE:
         if filename is None:
@@ -1480,3 +1472,360 @@ def image_recon_multi_view(
             p0.write_frame()
 
     p0.close()
+
+def image_recon(
+    X: cdt.NDTimeSeries,
+    head: TwoSurfaceHeadModel,
+    cmap: str | matplotlib.colors.Colormap = 'seismic',
+    clim=None,
+    view_type: str ='hbo_brain',
+    view_position: str ='superior',
+    p0=None,
+    title_str: str = None,
+    off_screen: bool =False,
+    plotshape=(1, 1),
+    iax=(0, 0),
+    show_scalar_bar: bool = False
+):
+    """Render a single frame of brain or scalp activity on a specified view.
+    
+    This function creates (or reuses) a PyVista plotter, applies a custom colormap,
+    sets the camera view according to the given view_position, adds the surface mesh
+    with the scalar data (extracted from X), and returns the plotter, the mesh, and a text label.
+    
+    Args:
+        X: cdt.NDTimeSeries (or similar)
+            Scalar data for the current frame. Expected to have a boolean attribute
+            `is_brain` indicating brain vs. non-brain vertices.
+        head: TwoSurfaceHeadModel
+            A head model containing attributes such as `head.brain` and `head.scalp`.
+        cmap: str or matplotlib.colors.Colormap, default 'seismic'
+            The colormap to use.
+        clim: tuple, optional
+            Color limits. If None, they are computed from the data.
+        flag_hbx: str, default 'hbo_brain'
+            Indicates whether to plot brain ('hbo_brain' or 'hbr_brain') or scalp
+            ('hbo_scalp' or 'hbr_scalp') data.
+        view_position: str, default 'superior'
+            The view direction, e.g. 'superior', 'left', etc.
+        p0: PyVista Plotter instance, optional
+            If provided the mesh is added to this plotter; else a new plotter is created.
+        title_str: str, optional
+            Title to use on the scalar bar.
+        off_screen: bool, default False
+            Whether to use off-screen rendering.
+        plotshape: tuple, default (1, 1)
+            The subplot grid shape.
+        iax: tuple, default (1, 1)
+            The target subplot index (row, col).
+        show_scalar_bar: bool, optional
+            Flag to control scalar bar visibility
+
+    Returns:
+        A tuple (p0, surf, surf_label) where:
+          - p0: the PyVista Plotter instance.
+          - surf: the wrapped surface mesh (a pyvista mesh).
+          - surf_label: a text actor (e.g., the scalar bar label).
+    """
+    # Create colormap and custom version
+    cmap_obj = p.get_cmap(cmap, 1024)
+    new_cmap_colors = np.vstack((cmap_obj(np.linspace(0, 1, 256))))
+    custom_cmap = ListedColormap(new_cmap_colors)
+
+    # Separate the scalar data (assume two channels per vertex)
+    X_hbo_brain = X.sel(chromo='HbO')[X.is_brain.values]
+    X_hbr_brain = X.sel(chromo='HbR')[X.is_brain.values]
+    X_hbo_scalp = X.sel(chromo='HbO')[~X.is_brain.values]
+    X_hbr_scalp = X.sel(chromo='HbR')[~X.is_brain.values]
+
+    # Define view directions
+    positions = {
+        'superior': [0, 0, 1],
+        'left': [-1, 0, 0],
+        'right': [1, 0, 0],
+        'anterior': [0, 1, 0],
+        'posterior': [0, -1, 0],
+        'scale_bar': [0, 0, 1]
+    }
+    camera_direction = positions.get(view_position, [0, 0, 1])
+
+    # Create a new plotter if none is provided
+    if p0 is None:
+        p0 = pv.Plotter(shape=(plotshape[0], plotshape[1]), window_size=[2000, 1500], off_screen=off_screen)
+    p0.subplot(iax[0], iax[1])
+
+    show_scalar_bar = False
+    smooth_shading = True
+
+    # Select the appropriate head surface based on flag_hbx
+    if view_type in ['hbo_brain', 'hbr_brain']:
+        surf = cdc.VTKSurface.from_trimeshsurface(head.brain)
+    elif view_type in ['hbo_scalp', 'hbr_scalp']:
+        surf = cdc.VTKSurface.from_trimeshsurface(head.scalp)
+    else:
+        raise ValueError(f"Invalid flag_hbx: {flag_hbx}")
+    surf = pv.wrap(surf.mesh)
+    centroid = np.mean(surf.points, axis=0)
+
+    # Set the scalar data on the mesh and compute clim if needed
+    if view_type == 'hbo_brain':
+        surf['brain'] = X_hbo_brain
+        if clim is None:
+            clim = (-X_hbo_brain.max(), X_hbo_brain.max())
+        p0.add_mesh(surf, scalars='brain', cmap=custom_cmap, clim=clim,
+                    show_scalar_bar=show_scalar_bar, nan_color=(0.9, 0.9, 0.9),
+                    smooth_shading=smooth_shading, interpolate_before_map=False)
+    elif view_type == 'hbr_brain':
+        surf['brain'] = X_hbr_brain
+        if clim is None:
+            clim = (-X_hbr_brain.max(), X_hbr_brain.max())
+        p0.add_mesh(surf, scalars=X_hbr_brain, cmap=custom_cmap, clim=clim,
+                    show_scalar_bar=show_scalar_bar, nan_color=(0.9, 0.9, 0.9),
+                    smooth_shading=smooth_shading)
+    elif view_type == 'hbo_scalp':
+        surf['brain'] = X_hbo_scalp
+        if clim is None:
+            clim = (-X_hbo_scalp.max(), X_hbo_scalp.max())
+        p0.add_mesh(surf, scalars=X_hbo_scalp, cmap=custom_cmap, clim=clim,
+                    show_scalar_bar=show_scalar_bar, nan_color=(0.9, 0.9, 0.9),
+                    smooth_shading=smooth_shading)
+    elif view_type == 'hbr_scalp':
+        surf['brain'] = X_hbr_scalp
+        if clim is None:
+            clim = (-X_hbr_scalp.max(), X_hbr_scalp.max())
+        p0.add_mesh(surf, scalars=X_hbr_scalp, cmap=custom_cmap, clim=clim,
+                    show_scalar_bar=show_scalar_bar, nan_color=(0.9, 0.9, 0.9),
+                    smooth_shading=smooth_shading)
+
+    # Set camera: adjust 'view_up' depending on the view position
+    view_up = [0, 1, 0] if view_position == 'superior' else [0, 0, 1]
+    p0.camera_position = [centroid + np.array(camera_direction) * 500, centroid, view_up]
+
+    # Add the scalar bar or view label
+    if iax == (1, 1):
+        p0.clear_actors()
+        p0.add_scalar_bar(title=title_str, vertical=False, position_x=0.1, position_y=0.5,
+                          height=0.1, width=0.8, fmt='%.1e', label_font_size=24, title_font_size=32)
+        surf_label = p0.add_text('', position='upper_left', font_size=10)
+    else:
+        surf_label = p0.add_text(view_position, position='lower_left', font_size=10)
+
+    return p0, surf, surf_label
+
+
+def image_recon_view(
+    X_ts: cdt.NDTimeSeries,
+    head: TwoSurfaceHeadModel,
+    cmap: str | matplotlib.colors.Colormap = 'seismic',
+    clim = None,
+    view_type: str ='hbo_brain',
+    view_position: str ='superior',
+    title_str: str = None,
+    filename: str =None,
+    SAVE: bool = False,
+    SAVE_GIF: bool = False,
+    frame_indices = None,
+    fps: int = 6,
+    geo3d_plot: cdt.LabeledPointCloud = None,
+):
+    """Generate a single-view visualization of head activity.
+
+    For static data (2D: vertex × channel) the function displays (or saves) a single frame.
+    For time series data (3D: vertex × channel × time) the function creates an animated
+    GIF by looping over the specified frame indices.
+
+    Args:
+        X_ts: xarray.DataArray or NDTimeSeries
+            Activity data. If 2D, a single static frame is plotted; if 3D, a time series is used.
+        head: TwoSurfaceHeadModel
+            The head mesh data.
+        view_position: str, default 'superior'
+            The view to render.
+        clim, cmap, flag_hbx, title_str: see image_recon.
+        filename: str, optional
+            The output filename (without extension) for saving the image/GIF.
+        SAVE: bool, default False
+            If True, a static image is saved.
+        SAVE_GIF: bool, default False
+            If True, an animated GIF is produced.
+        frame_indices: tuple, optional
+            If SAVE_GIF is True, provide (start, stop, step) for iteration.
+        fps: int, default 6
+            Frames per second for the GIF.
+    """
+    # Static image: no time dimension
+    if X_ts.ndim == 2:
+        p0, _, _ = image_recon(
+            X_ts, head, cmap=cmap, clim=clim, view_type=view_type,
+            view_position=view_position, title_str=title_str, off_screen=False, show_scalar_bar=True
+        )
+        # add labeled points if they were handed in
+        if geo3d_plot is not None:
+            plot_labeled_points(p0, geo3d_plot)
+
+        if SAVE and filename:
+            p0.screenshot(filename + '.png')
+        else:
+            p0.show()
+    else:
+        # Animated case: check for frame indices
+        if frame_indices is None:
+            print('No frame_indices provided. Please provide frame_indices=(start, stop, step).')
+            return
+
+        # Initialize with the first frame
+        init_frame = frame_indices[0]
+        X_frame = X_ts.isel(time=init_frame)
+        p0, surf, label = image_recon(
+            X_frame, head, cmap=cmap, clim=clim, view_type=view_type,
+            view_position=view_position, title_str=title_str, off_screen=True, show_scalar_bar=True
+        )
+
+        # add labeled points if they were handed in
+        if geo3d_plot is not None:
+            plot_labeled_points(p0, geo3d_plot)
+
+        p0.open_gif(filename + '.gif', fps=fps)
+
+        # Loop over frames, update the mesh's scalar data, and update the text label
+        for frame in range(frame_indices[0], frame_indices[1], frame_indices[2]):
+            X_frame = X_ts.isel(time=frame)
+            if view_type == 'hbo_brain':
+                new_data = X_frame[X_ts.is_brain.values, 0]
+            elif view_type == 'hbr_brain':
+                new_data = X_frame[X_ts.is_brain.values, 1]
+            elif view_type == 'hbo_scalp':
+                new_data = X_frame[~X_ts.is_brain.values, 0]
+            elif view_type == 'hbr_scalp':
+                new_data = X_frame[~X_ts.is_brain.values, 1]
+            else:
+                new_data = None
+
+            surf['brain'] = new_data
+            if label:
+                # Update the label text with the current time (assumes X_ts has a 'time' coordinate)
+                label.set_text('upper_left', f"Time = {float(X_ts.time[frame].values):0.1f} sec")
+            p0.write_frame()
+        p0.close()
+
+
+def image_recon_multi_view(
+    X_ts: cdt.NDTimeSeries,
+    head: TwoSurfaceHeadModel,
+    cmap: str | matplotlib.colors.Colormap = 'seismic',
+    clim = None,
+    view_type: str ='hbo_brain',
+    view_position: str ='superior',
+    title_str: str = None,
+    filename: str =None,
+    SAVE: bool = False,
+    SAVE_GIF: bool = False,
+    frame_indices = None,
+    fps: int = 6,
+    geo3d_plot: cdt.LabeledPointCloud = None,
+):
+    """Generate a multi-view (2×3 grid) visualization of head activity across different views.
+
+    For static data (2D), this function creates and shows or saves a single-frame image.
+    For time series data (3D), it creates an animated GIF where each frame updates all views.
+
+    Args:
+        X_ts: xarray.DataArray or NDTimeSeries
+            The activity data.
+        head: TwoSurfaceHeadModel
+            The head mesh object.
+        clim, cmap, title_str: see image_recon.
+        view_type: str, default 'hbo_brain'
+            Data type and surface to show.
+        filename: str, optional
+            Output filename (without extension) for saving.
+        SAVE: bool, default False
+            If True, save a static image.
+        SAVE_GIF: bool, default False
+            If True, generate an animated GIF.
+        frame_indices: tuple, optional
+            For GIF creation, a tuple (start, stop, step) defining the time frame range.
+        fps: int, default 6
+            Frames per second for the GIF.
+    """
+    subplot_shape = (2, 3)
+    # Define the subplot positions for each view
+    views_positions = {
+        'scale_bar': (1, 1),
+        'left': (0, 0),
+        'superior': (0, 1),
+        'right': (0, 2),
+        'anterior': (1, 0),
+        'posterior': (1, 2)
+    }
+
+    # --- Static case (2D) ---
+    if X_ts.ndim == 2:
+        p0 = None
+        subplots = {}
+        labels = {}
+        for view, iax in views_positions.items():
+            # For the central view (scale_bar) we pass the title_str
+            ts_title = title_str if view == 'scale_bar' else None
+            p0, surf, lab = image_recon(
+                X_ts, head, cmap=cmap, clim=clim, flag_hbx=view_type,
+                view_position=view, p0=p0, title_str=ts_title, off_screen=False,
+                plotshape=subplot_shape, iax=iax
+            )
+            subplots[view] = surf
+            labels[view] = lab
+            # add labeled points if they were handed in
+            if geo3d_plot is not None:
+                plot_labeled_points(p0, geo3d_plot)
+
+        if SAVE and filename:
+            p0.screenshot(filename + '.png')
+        else:
+            p0.show()
+
+    # --- Animated GIF case (3D) ---
+    else:
+        if frame_indices is None:
+            print('No frame_indices provided. Please provide frame_indices=(start, stop, step).')
+            return
+
+        # Initialize with the first frame
+        init_frame = frame_indices[0]
+        X_frame = X_ts.isel(time=init_frame)
+        p0 = None
+        subplots = {}
+        labels = {}
+        # Create all subviews
+        for view, iax in views_positions.items():
+            ts_title = title_str if view == 'scale_bar' else None
+            p0, surf, lab = image_recon(
+                X_frame, head, cmap=cmap, clim=clim, view_type=view_type,
+                view_position=view, p0=p0, title_str=ts_title, off_screen=True,
+                plotshape=subplot_shape, iax=iax, show_scalar_bar=False
+            )
+            subplots[view] = surf
+            labels[view] = lab
+            # add labeled points if they were handed in
+            if geo3d_plot is not None:
+                plot_labeled_points(p0, geo3d_plot)
+
+        p0.open_gif(filename + '.gif', fps=fps)
+
+        # Loop over frames and update every view with new data
+        for frame in range(frame_indices[0], frame_indices[1], frame_indices[2]):
+            X_frame = X_ts.isel(time=frame)
+            if view_type in ['hbo_brain', 'hbr_brain']:
+                new_data = X_frame[X_ts.is_brain.values, 0] if view_type == 'hbo_brain' else X_frame[X_ts.is_brain.values, 1]
+            elif view_type in ['hbo_scalp', 'hbr_scalp']:
+                new_data = X_frame[~X_ts.is_brain.values, 0] if view_type == 'hbo_scalp' else X_frame[~X_ts.is_brain.values, 1]
+            else:
+                new_data = None
+
+            for view, surf in subplots.items():
+                surf['brain'] = new_data
+
+            # Update the scalar bar text (for the central 'scale_bar' view)
+            if 'scale_bar' in labels:
+                labels['scale_bar'].set_text('upper_left', f"Time = {float(X_ts.time[frame].values):0.1f} sec")
+            p0.write_frame()
+        p0.close()
