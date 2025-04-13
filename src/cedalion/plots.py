@@ -1340,7 +1340,7 @@ def image_recon(
     if iax == (1, 1):
         p0.clear_actors()
         p0.add_scalar_bar(title=title_str, vertical=False, position_x=0.1, position_y=0.5,
-                          height=0.1, width=0.8, fmt='%.1e', label_font_size=24, title_font_size=32)
+                          height=0.1, width=0.8, fmt='%.1e', label_font_size=16, title_font_size=32)
         surf_label = p0.add_text('', position='upper_left', font_size=10)
     else:
         surf_label = p0.add_text(view_position, position='lower_left', font_size=10)
