@@ -1214,7 +1214,8 @@ def image_recon(
     off_screen: bool =False,
     plotshape=(1, 1),
     iax=(0, 0),
-    show_scalar_bar: bool = False
+    show_scalar_bar: bool = False,
+    wdw_size: tuple = (1024, 768)
 ):
     """Render a single frame of brain or scalp activity on a specified view.
 
@@ -1250,6 +1251,8 @@ def image_recon(
             The target subplot index (row, col).
         show_scalar_bar: bool, optional
             Flag to control scalar bar visibility
+        wdw_size: tuple, default (1024, 768)
+            The window size for the plotter (the plot resolution)
 
     Returns:
         A tuple (p0, surf, surf_label) where:
@@ -1286,7 +1289,7 @@ def image_recon(
 
     # Create a new plotter if none is provided
     if p0 is None:
-        p0 = pv.Plotter(shape=(plotshape[0], plotshape[1]), window_size=[2000, 1500], off_screen=off_screen)
+        p0 = pv.Plotter(shape=(plotshape[0], plotshape[1]), window_size=wdw_size, off_screen=off_screen)
     p0.subplot(iax[0], iax[1])
 
     # Select the appropriate head surface based on flag_hbx
@@ -1362,6 +1365,7 @@ def image_recon_view(
     time_range: tuple = None,
     fps: int = 6,
     geo3d_plot: cdt.LabeledPointCloud = None,
+    wdw_size: tuple = (1024, 768)
 ):
     """Generate a single-view visualization of head activity.
 
@@ -1400,6 +1404,8 @@ def image_recon_view(
             Frames per second for the GIF.
         geo3d_plot: cdt.LabeledPointCloud, optional
             A 3D point cloud for plotting labeled points (e.g. optodes) on the mesh.
+        wdw_size: tuple, default (1024, 768)
+            The window size for the plotter (the plot resolution)
 
     Returns: Nothing
 
@@ -1435,7 +1441,8 @@ def image_recon_view(
 
         p0, surf, label = image_recon(
             X_frame, head, cmap=cmap, clim=clim, view_type=view_type,
-            view_position=view_position, title_str=title_str, off_screen=True, show_scalar_bar=True
+            view_position=view_position, title_str=title_str, off_screen=True,
+            show_scalar_bar=True, wdw_size=wdw_size
         )
 
         # add labeled points if they were handed in
@@ -1474,7 +1481,8 @@ def image_recon_view(
     else:
         p0, _, _ = image_recon(
                 X_ts, head, cmap=cmap, clim=clim, view_type=view_type,
-                view_position=view_position, title_str=title_str, off_screen=False, show_scalar_bar=True
+                view_position=view_position, title_str=title_str, off_screen=False,
+                show_scalar_bar=True, wdw_size=wdw_size
             )
         # add labeled points if they were handed in
         if geo3d_plot is not None:
@@ -1499,6 +1507,7 @@ def image_recon_multi_view(
     time_range: tuple = None,
     fps: int = 6,
     geo3d_plot: cdt.LabeledPointCloud = None,
+    wdw_size: tuple = (1024, 768)
 ):
     """Generate a multi-view (2×3 grid) visualization of head activity across different views.
 
@@ -1534,6 +1543,8 @@ def image_recon_multi_view(
             Frames per second for the GIF.
         geo3d_plot: cdt.LabeledPointCloud, optional
             A 3D point cloud for plotting labeled points (e.g. optodes) on the mesh.
+        wdw_size: tuple, default (1024, 768)
+            The window size for the plotter (the plot resolution)
 
     Returns: Nothing
 
@@ -1586,7 +1597,8 @@ def image_recon_multi_view(
             p0, surf, lab = image_recon(
                 X_frame, head, cmap=cmap, clim=clim, view_type=view_type,
                 view_position=view, p0=p0, title_str=ts_title, off_screen=True,
-                plotshape=subplot_shape, iax=iax, show_scalar_bar=False
+                plotshape=subplot_shape, iax=iax, show_scalar_bar=False,
+                wdw_size=wdw_size
             )
             subplots[view] = surf
             labels[view] = lab
@@ -1632,7 +1644,7 @@ def image_recon_multi_view(
             p0, surf, lab = image_recon(
                 X_ts, head, cmap=cmap, clim=clim, flag_hbx=view_type,
                 view_position=view, p0=p0, title_str=ts_title, off_screen=False,
-                plotshape=subplot_shape, iax=iax
+                plotshape=subplot_shape, iax=iax, wdw_size=wdw_size
             )
             subplots[view] = surf
             labels[view] = lab
