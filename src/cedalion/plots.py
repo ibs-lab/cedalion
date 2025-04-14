@@ -1122,8 +1122,8 @@ def scalp_plot(
 def scalp_plot_gif(
         data_ts: cdt.NDTimeSeries,
         geo3d: cdt.LabeledPointCloud,
-        frame_range,
         filename: str,
+        time_range: tuple = None,
         cmap: str | matplotlib.colors.Colormap = 'seismic',
         scl=None,
         fps: int =10,
@@ -1139,10 +1139,10 @@ def scalp_plot_gif(
             for 'source' and 'detector' in the 'channel' dimension.
         geo3d : cedalion.core.LabeledPointCloud
             3D geometry object defining optode locations for projecting onto the scalp surface.
-        frame_range : tuple of (int, int, int)
-            A (start, stop, step) tuple specifying the time frame indices to include in the GIF.
         filename : str
             Full path to the output GIF file without file extension.
+        time_range: tuple, optional 
+           Provides (start_time, stop_time, step_time) in quantity 's' for generating animation.
         cmap : string, optional
             A matplotlib colormap name or a Colormap object. Default is 'seismic'.
         scl : tuple of (float, float), optional
@@ -1166,6 +1166,28 @@ def scalp_plot_gif(
     - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
     """
 
+    if (("time" in data_ts.dims and data_ts.sizes["time"] > 1) or 
+        ("reltime" in data_ts.dims and data_ts.sizes["reltime"] > 1)):
+
+        # If time_range is not provided, default to using the range in X_ts
+        if time_range is None:
+            start_time = float(data_ts.time.values[0])
+            end_time = float(data_ts.time.values[-1])
+            step_time = (end_time - start_time) / max((data_ts.sizes["time"] - 1), 1)
+        else:
+            # Convert each element from the time_range tuple to seconds
+            start_time = time_range[0].to('s').magnitude
+            end_time = time_range[1].to('s').magnitude
+            step_time = time_range[2].to('s').magnitude
+
+        # Create an array of time points to iterate over
+        time_points = np.arange(start_time, end_time + step_time, step_time)
+        # Select the subset of data within the given time range (using label-based slicing)
+        X_subset = data_ts.sel(time=slice(start_time, end_time))
+
+        # Initialize using the first time point (using nearest in case of slight mismatches)
+        X_frame = X_subset.sel(time=time_points[0], method="nearest")
+
     filename = filename+'.gif'
 
     if scl is None:
@@ -1178,20 +1200,23 @@ def scalp_plot_gif(
     ax1.figure.canvas.draw()
     frames = []
 
-    for idx_frame in range(frame_range[0], frame_range[1], frame_range[2]):
+    # Iterate over the time points
+    for current_time in time_points:
+        # Select the frame closest to the current time point
+        X_frame = X_subset.sel(time=current_time, method="nearest")
 
         ax1.cla()
         ax1.set_position([0.1, 0.1, 0.8, 0.8])  # reset position to avoid inset growth from colorbar
         scalp_plot(
             data_ts,
             geo3d,
-            data_ts.isel(time=idx_frame).values,
+            X_frame.values,
             ax1,
             cmap=cmap,
             vmin=scl[0],
             vmax=scl[1],
             optode_labels=optode_labels,
-            title=f"Time: {float(data_ts.time[idx_frame].values):0.1f}s\n{str_title}",
+            title=f"Time: {float(current_time):0.1f}s\n{str_title}",
             optode_size=optode_size,
             add_colorbar=False
         )
@@ -1416,7 +1441,8 @@ def image_recon_view(
     """
 
     # Animated case (time dimension exists with more than one element): check for frame indices
-    if ("time" in X_ts.dims) and (X_ts.sizes["time"] > 1):
+    if (("time" in X_ts.dims and X_ts.sizes["time"] > 1) or 
+        ("reltime" in X_ts.dims and X_ts.sizes["reltime"] > 1)):
         # If time_range is not provided, default to using the range in X_ts
         if time_range is None:
             start_time = float(X_ts.time.values[0])
@@ -1567,7 +1593,8 @@ def image_recon_multi_view(
     }
 
     # Animated case (time dimension exists with more than one element): check for frame indices
-    if ("time" in X_ts.dims) and (X_ts.sizes["time"] > 1):
+    if (("time" in X_ts.dims and X_ts.sizes["time"] > 1) or 
+        ("reltime" in X_ts.dims and X_ts.sizes["reltime"] > 1)):
 
         # If time_range is not provided, default to using the range in X_ts
         if time_range is None:
@@ -1642,7 +1669,7 @@ def image_recon_multi_view(
             # For the central view (scale_bar) we pass the title_str
             ts_title = title_str if view == 'scale_bar' else None
             p0, surf, lab = image_recon(
-                X_ts, head, cmap=cmap, clim=clim, flag_hbx=view_type,
+                X_ts, head, cmap=cmap, clim=clim, view_type=view_type,
                 view_position=view, p0=p0, title_str=ts_title, off_screen=False,
                 plotshape=subplot_shape, iax=iax, wdw_size=wdw_size
             )
