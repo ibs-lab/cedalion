@@ -78,6 +78,14 @@ os.environ["PYTHONPATH"] = SITE_PACKAGES_PATH + ":" + os.environ.get("PYTHONPATH
 subprocess.run(["pip", "uninstall", "-y", "numpy"], check=True)
 subprocess.run(["pip", "install", "--force-reinstall", "numpy==1.26.0"], check=True)
 
+# Start PyVista in headless mode for Colab
+try:
+    import pyvista
+    pyvista.start_xvfb()
+    print("PyVista XVFB headless rendering enabled.")
+except ImportError:
+    print("WARNING: PyVista not installed yet, could not start XVFB.")
+
 # Check numpy version
 import numpy
 print("Numpy version:", numpy.__version__)
