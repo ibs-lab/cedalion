@@ -66,6 +66,9 @@ if not os.path.isdir(VENV_PATH):
 else:
     print(f"Virtual environment already exists at {VENV_PATH}.")
 
+# Uninstall opt-einsum
+subprocess.run(["pip", "uninstall", "-y", "opt-einsum"] check=True)
+
 # Update sys.path and PYTHONPATH for the notebook
 if SITE_PACKAGES_PATH not in sys.path:
     sys.path.insert(0, SITE_PACKAGES_PATH)
