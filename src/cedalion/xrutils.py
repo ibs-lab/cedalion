@@ -119,7 +119,7 @@ def apply_mask(
             flag_collapse = True
             dims2collapse = [dim for dim in mask.dims if dim != dim_collapse]
             mask = mask.all(dim=dims2collapse)
-            #print(f"mask collapsed to {dim_collapse} dimension")
+            # print(f"mask collapsed to {dim_collapse} dimension")
 
     # apply the mask to data_array according to instructions from "operator" argument
     if operator.lower() == "nan":

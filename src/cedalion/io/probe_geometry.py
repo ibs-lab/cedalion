@@ -60,7 +60,9 @@ def load_tsv(tsv_fname: str, crs: str='digitized', units: str='mm') -> xr.DataAr
                 "label": ("label", list(data.keys())),
                 "type": ("label", [PointType.LANDMARK] * len(data)),
             },
+            attrs={"units": units},
         )
+        landmarks = landmarks.pint.quantify()
         return landmarks
     return data
 

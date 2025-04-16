@@ -784,7 +784,7 @@ class PycortexSurface(Surface):
         if d is None:
             d = self.geodesic_distance([b], **kwargs)
         while path[-1] != b:
-            n = np.array([v for v in self.graph.neighbors(path[-1])])
+            n = np.unique((self.mesh.polys[np.where(self.mesh.polys == path[-1])[0], :]))
             path.append(n[d[n].argmin()])
             if len(path) > max_len:
                 return path

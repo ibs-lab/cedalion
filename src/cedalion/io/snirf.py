@@ -500,7 +500,7 @@ def read_data_elements(
         list[tuple[str, NDTimeSeries]]: List of tuples containing the canonical name
             of the data element and the DataArray.
     """
-    time = data_element.time
+    time = data_element.time[:].squeeze()
 
     trial_types = stim["trial_type"].drop_duplicates().values
 
