@@ -39,10 +39,12 @@ subprocess.run(["pip", "install", cedalion_repo], check=True)
 subprocess.run(["pip", "uninstall", "-y", "opt-einsum"], check=True)
 
 # Start PyVista in headless mode for Colab
+print("Setting Pyvista options...")
 try:
-    import pyvista
-    pyvista.start_xvfb()
-    print("PyVista XVFB headless rendering enabled.")
+    import pyvista as pv
+    pv.global_theme.jupyter_backend = 'static'
+    pv.global_theme.notebook = True
+    pv.start_xvfb()
 except ImportError:
     print("WARNING: PyVista not installed yet, could not start XVFB.")
 
