@@ -19,7 +19,7 @@ args = parser.parse_args()
 print("Installing dependencies...")
 packages = (
     "click==8.1 h5py==3.11 ipython==8.13.2 ipywidgets==8.1.2 jupyter "
-    "jupyter_client==7.4.9 matplotlib==3.9 nibabel==5.2 nilearn==0.10 notebook==6.5.4 "
+    "jupyter_client==7.4.9 matplotlib==3.9.1 nibabel==5.2 nilearn==0.10 notebook==6.5.4 "
     "numpy==1.26 opencv-python pandas==2.2 pint-xarray==0.3 pip pooch==1.8 "
     "pybids==0.16 pytest pytest-cov pywavelets==1.6 ruff scikit-image==0.24 "
     "scikit-learn==1.5 scipy==1.14 seaborn==0.13 statsmodels==0.14 strenum==0.4 "
