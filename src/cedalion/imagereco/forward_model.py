@@ -980,7 +980,14 @@ class ForwardModel:
             xr.DataArray: Sensitivity matrix for each channel, vertex and wavelength.
         """
 
-        channels = self.measurement_list.channel.unique().tolist()
+        unique_channels = self.measurement_list[
+            ["channel", "source", "detector"]
+        ].drop_duplicates()
+
+        channels = unique_channels["channel"].tolist()
+        source = unique_channels["source"].tolist()
+        detector = unique_channels["detector"].tolist()
+
         n_channel = len(channels)
         wavelengths = self.measurement_list.wavelength.unique().tolist()
         n_wavelength = len(wavelengths)
@@ -1037,6 +1044,8 @@ class ForwardModel:
             dims=["channel", "vertex", "wavelength"],
             coords={
                 "channel": ("channel", channels),
+                "source" : ("channel", source),
+                "detector" : ("channel", detector),
                 "wavelength": ("wavelength", wavelengths),
                 "is_brain": ("vertex", is_brain),
             },
@@ -1088,6 +1097,12 @@ class ForwardModel:
         is_brain = np.hstack([sensitivity.is_brain, sensitivity.is_brain])
         flat_chromo = ["HbO"] * nvertices + ["HbR"] * nvertices
         flat_wavelength = [wl1] * nchannel + [wl2] * nchannel
+        channel = sensitivity.channel.values
+        source = sensitivity.source.values
+        detector = sensitivity.detector.values
+        flat_channel = np.hstack((channel, channel))
+        flat_source = np.hstack((source, source))
+        flat_detector = np.hstack((detector, detector))
         vertex = np.hstack([np.arange(nvertices), np.arange(nvertices),])
 
         A = xr.DataArray(
@@ -1098,6 +1113,9 @@ class ForwardModel:
                 "chromo": ("flat_vertex", flat_chromo),
                 "vertex": ("flat_vertex", vertex),
                 "wavelength": ("flat_channel", flat_wavelength),
+                "channel": ("flat_channel", flat_channel),
+                "source": ("flat_channel", flat_source),
+                "detector": ("flat_channel", flat_detector),
             },
             attrs={"units": str(units_A)},
         )
@@ -1119,7 +1137,7 @@ def apply_inv_sensitivity(
         vertex and chromophore.
     """
 
-    units_str = inv_sens.attrs["units"]
+    units_str = inv_sens.attrs.get("units", None)
 
     od_stacked = od.stack({"flat_channel": ["wavelength", "channel"]})
     od_stacked = od_stacked.pint.dequantify()
@@ -1136,9 +1154,73 @@ def apply_inv_sensitivity(
     is_brain = delta_conc.is_brain[0, :].values
 
     delta_conc_brain = delta_conc.sel(vertex=is_brain)
-    delta_conc_brain.attrs["units"] = units_str
-
     delta_conc_scalp = delta_conc.sel(vertex=~is_brain)
-    delta_conc_scalp.attrs["units"] = units_str
+
+    if units_str is not None:
+        delta_conc_brain.attrs["units"] = units_str
+        delta_conc_scalp.attrs["units"] = units_str
 
     return delta_conc_brain, delta_conc_scalp
+
+
+
+def stack_flat_vertex(array: xr.DataArray):
+    dims = ("chromo", "vertex")
+
+    for dim in dims:
+        if dim not in array.dims:
+            raise ValueError(f"cannot stack missing dimension {dim}")
+
+    return array.stack({"flat_vertex": dims})
+
+
+def unstack_flat_vertex(array: xr.DataArray):
+    if "flat_vertex" not in array.dims:
+        raise ValueError("array misses dimension 'flat_vertex'.")
+
+    coords = ("chromo", "vertex")
+    for coord in coords:
+        if coord not in array.coords:
+            raise ValueError(f"array misses coordinate '{coord}'.")
+
+    return array.set_xindex(coords).unstack("flat_vertex")
+
+
+def stack_flat_channel(array: xr.DataArray):
+    dims = ("wavelength", "channel")
+
+    for dim in dims:
+        if dim not in array.dims:
+            raise ValueError(f"cannot stack missing dimension {dim}")
+
+    return array.stack({"flat_channel": dims})
+
+
+def unstack_flat_channel(array: xr.DataArray):
+    if "flat_channel" not in array.dims:
+        raise ValueError("array misses dimension 'flat_channel'.")
+
+    coords = ("wavelength", "channel")
+    for coord in coords:
+        if coord not in array.coords:
+            raise ValueError(f"array misses coordinate '{coord}'.")
+
+    unstacked = array.set_xindex(coords).unstack("flat_channel")
+
+    # source and detector are unstacked into 2D arrays with dims channel and wavelength.
+    # Assert that these coordinates do not vary along the wavelength dimension and
+    # then reduce them to channel-only coordinates.
+
+    for coord_name in ["source", "detector"]:
+        c = unstacked.coords[coord_name]
+        c_wl0 = (
+            c[{"wavelength": 0}].copy().drop_vars(["wavelength", "source", "detector"])
+        )
+        if not (c_wl0 == c).all().item():
+            raise ValueError(
+                f"coord {coord_name} varies over wavelength after unstacking."
+            )
+        #unstacked = unstacked.drop_vars(coord_name)
+        unstacked = unstacked.assign_coords({coord_name: c_wl0})
+
+    return unstacked
