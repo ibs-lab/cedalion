@@ -5,8 +5,20 @@ If you would like to test cedalion before going through the installation process
 1. Click the link at the top of an example notebook to open it in Google Colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]()
 2. Run the first cell to install the required dependencies in a virtual environment on your Google Drive.
     - Optional: set options to specify the virtual environment directory (--path) and the branch of cedalion to use (--branch).
-    ![Colab Cell](../img/colab_cell.png)
+    ![Colab Cell](../img/colab/colab_cell.png)
 3. Follow the prompts to sign into your Google Drive account. 
-    ![Google Drive Prompt](../img/gdrive_prompt.png)
+    ![Google Drive Prompt](../img/colab/gdrive_prompt.png)
 4. At the end of the setup process you may also be prompted to restart the runtime (Ctrl-M .) and run the cell a second time. 
 5. Proceed with the rest of the example notebook.
+
+
+### Using your own data
+
+Follow these steps to use your own data in a colab notebook.
+
+    ![File upload](../img/colab/colab_fileupload.jpg)
+1. Click the file icon in the left sidebar.
+2. Click the upload icon (page with arrow).
+3. Choose the folder/file to upload.
+4. Files can now be accessed in the notebook, for example:
+    ![File access](../img/colab/colab_fileaccess.png)
