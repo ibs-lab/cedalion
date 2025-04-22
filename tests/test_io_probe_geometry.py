@@ -98,6 +98,24 @@ def test_load_tsv_unknown_label_error():
         load_tsv(tsv_path.name)
 
 
+def test_load_tsv_point_type():
+    # Create a TSV with point type 'Fp1'
+    tsv_path = tempfile.NamedTemporaryFile()
+    content = "labels\tX\tY\tZ\tPointType\n" + \
+              "U1\t1\t2\t3\tPointType.OBSCURE\n" + \
+              "S1\t1\t2\t3\tPointType.SOURCE\n" + \
+              "D1\t4\t5\t6\tPointType.DETECTOR\n" + \
+              "RPA\t10\t11\t12\tPointType.LANDMARK\n" + \
+              "Fp1\t7\t8\t9\tPointType.ELECTRODE"
+    with open(tsv_path.name, 'w') as f:
+        f.write(content)
+
+    geo = load_tsv(tsv_path.name)
+    assert isinstance(geo, xr.DataArray)
+    assert list(geo.label.values) == ["U1", "S1", "D1", "RPA", "Fp1"]
+    for i in range(5):
+        assert geo.type.to_numpy()[i] == cdc.PointType(i)
+
 def test_load_tsv_missing_columns():
     # Missing 'Z' column
     tsv_path = tempfile.NamedTemporaryFile()

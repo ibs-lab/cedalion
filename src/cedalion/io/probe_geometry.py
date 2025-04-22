@@ -41,7 +41,10 @@ def load_tsv(tsv_fname: str, crs: str=None, units: str=None) -> xr.DataArray:
                 'X': data.iloc[:, 1],
                 'Y': data.iloc[:, 2],
                 'Z': data.iloc[:, 3]}
+        if len(data.columns) > 4:
+            data['PointType'] = data.iloc[:, 4]
         
+    # parse crs and units
     for k in data.keys():
         if k.startswith('crs'):
             crs = k.split('=')[1].strip()
@@ -54,23 +57,39 @@ def load_tsv(tsv_fname: str, crs: str=None, units: str=None) -> xr.DataArray:
         if k not in data.keys():
             raise ValueError(f"Missing {k} in tsv file")
    
-    # parse data
+    # parse labels
     labels = data['labels'].values
-    data = np.array([data['X'].values, data['Y'].values, data['Z'].values]).T
-   
-    # detect point types
+
+    # parse types
     types = []
-    for lab in labels:
-        if lab[0] == 'S':
-            types.append(PointType(1)) # sources
-        elif lab[0] == 'D':
-            types.append(PointType(2)) # detectors
-        elif lab in ['NAS', 'Nz', 'Iz', 'LPA', 'RPA']:
-            types.append(PointType(3)) # landmarks
-        elif lab[0] in ['A', 'C', 'F', 'I', 'N', 'O', 'P', 'T']:	
-            types.append(PointType(4)) # electrodes
-        else:
-            raise ValueError("Unknown point type: %s" % lab)
+    if 'PointType' in data.keys():
+        for t in data.get('PointType', ''):
+            if t.endswith('SOURCE'):
+                types.append(PointType(1)) # sources
+            elif t.endswith('DETECTOR'):
+                types.append(PointType(2)) # detectors
+            elif t.endswith('LANDMARK'):
+                types.append(PointType(3)) # landmarks
+            elif t.endswith('ELECTRODE'):
+                types.append(PointType(4)) # electrodes
+            else:
+                types.append(PointType(0)) # unknown
+    else:
+        # try to detect point types if not in the file
+        for lab in labels:
+            if lab[0] == 'S':
+                types.append(PointType(1)) # sources
+            elif lab[0] == 'D':
+                types.append(PointType(2)) # detectors
+            elif lab in ['NAS', 'Nz', 'Iz', 'LPA', 'RPA']:
+                types.append(PointType(3)) # landmarks
+            elif lab[0] in ['A', 'C', 'F', 'I', 'N', 'O', 'P', 'T']:	
+                types.append(PointType(4)) # electrodes
+            else:
+                types.append(PointType(0)) # unknown
+    
+    # parse data
+    data = np.array([data['X'].values, data['Y'].values, data['Z'].values]).T
    
     # convert to xarray DataArray
     geo3d = build_labeled_points(data, labels=labels, crs=crs,
@@ -101,7 +120,8 @@ def export_to_tsv(tsv_filename, points):
         # else: types are optodes, fiducials, landmarks, electrodes
         with open(tsv_filename, 'w') as f:
             labels = points.label.values
-            header = "labels\tX\tY\tZ"
+            types = points.type.values
+            header = "labels\tX\tY\tZ\tPointType"
             if points.points.crs is not None:
                 header += "\tcrs=%s" % points.points.crs
             if points.pint.units is not None:
@@ -110,9 +130,10 @@ def export_to_tsv(tsv_filename, points):
                 else:
                     header += "\tunits=%s" % points.pint.units
             f.write(header + "\n")
+
             points = np.array(points.to_numpy())
-            for l, p in zip(labels, points):
-                f.write("%s\t%f\t%f\t%f\n" % (l, p[0], p[1], p[2]))
+            for l, p, t in zip(labels, points, types):
+                f.write("%s\t%f\t%f\t%f\t%s\n" % (l, p[0], p[1], p[2], str(t)))
     else:
         raise ValueError("Unknown points type: %s" % type(points))
     return
