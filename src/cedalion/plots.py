@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import itertools
 import math
+import sys
 
 import matplotlib
+import matplotlib.colors
 import matplotlib.pyplot as p
 import matplotlib.transforms as transforms
 import numpy as np
@@ -1102,3 +1104,81 @@ def scalp_plot(
 
 
     #cb.set_ticks([vmin, (vmin+vmax)//2, vmax])
+
+
+
+def brain_plot(
+    ts: cdt.NDTimeSeries,
+    geo3d: cdt.LabeledPointCloud,
+    metric: xr.DataArray | ArrayLike,
+    brain_surface: cdc.TrimeshSurface,
+    ax,
+    title: str | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str | matplotlib.colors.Colormap = "RdBu_r",
+    bad_color: ColorType = [0.7, 0.7, 0.7],
+    cb_label: str = "",
+    camera_pos: ArrayLike | str | None = None,
+):
+    if vmin is None:
+        vmin = np.nanmin(metric)
+    if vmax is None:
+        vmax = np.nanmax(metric)
+
+    cmap = p.cm.get_cmap(cmap)
+    cmap.set_bad(bad_color)
+
+    vertices = brain_surface.mesh.vertices
+    center_brain = np.mean(vertices, axis=0)
+
+    brain_surface = cdc.VTKSurface.from_trimeshsurface(brain_surface)
+    brain_surface = pv.wrap(brain_surface.mesh)
+
+    plt = pv.Plotter(off_screen=True)
+
+    plt.add_mesh(
+        brain_surface,
+        scalars=metric,
+        cmap=cmap,
+        clim=(vmin, vmax),
+        scalar_bar_args={"title": cb_label},
+        smooth_shading=True,
+    )
+
+    if camera_pos is not None:
+        if isinstance(camera_pos, str):
+            if camera_pos not in geo3d.label:
+                raise ValueError(f"camera_pos was set to '{camera_pos}' but this label"
+                                 " does not exist in geo3d.")
+            lm_pos = geo3d.sel(label=camera_pos).values
+            camera_pos = center_brain + 6 * (lm_pos - center_brain)
+
+        plt.camera.position = camera_pos
+        plt.camera.focal_point = center_brain
+        plt.camera.up = [0, 0, 1]
+
+    if title:
+        plt.add_text(title, position="upper_edge", font_size=20)
+
+    # determine size of the axes in pixels
+    bbox = ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
+    width = int(bbox.width * ax.figure.dpi * 2)
+    height = int(bbox.height * ax.figure.dpi * 2)
+
+    # FIXME plt.screenshot uses vtk functionality, which hijacks sys.stdout by replacing
+    # it with vtkPythonStdStreamCaptureHelper. We don't want this.
+    _stdout = sys.stdout
+
+    # render 3D scene and create image
+    image = plt.screenshot(window_size=(width, height))
+
+    # reset stdout to previous one
+    sys.stdout = _stdout
+
+    # show image in matplotlib axes
+    ax.imshow(image)
+
+    # remove ticks
+    ax.xaxis.set_ticks([])
+    ax.yaxis.set_ticks([])

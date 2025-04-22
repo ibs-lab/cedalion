@@ -14,7 +14,9 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
                     head_models/40_image_reconstruction.ipynb \
                     head_models/41_photogrammetric_optode_coregistration.ipynb \
                     head_models/42_1010_system.ipynb \
-                    head_models/43_crs_and_headmodel.ipynb
+                    head_models/43_crs_and_headmodel.ipynb \
+                    augmentation/61_synthetic_artifacts_example.ipynb \
+                    augmentation/62_synthetic_hrfs_example.ipynb
 
 .PHONY: notebooks clean
 

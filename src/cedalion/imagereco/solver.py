@@ -30,6 +30,9 @@ def pseudo_inverse_stacked(
     if "units" in Adot.attrs:
         units = pint.Unit(Adot.attrs["units"])
         inv_units = (1 / units).units
+    elif Adot.pint.units is not None:
+        inv_units = (1 / Adot.pint.units).units
+        Adot = Adot.pint.dequantify()
     else:
         inv_units = pint.Unit("1")
 
