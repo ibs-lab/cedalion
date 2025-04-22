@@ -1171,3 +1171,42 @@ def stimulus_mask(df_stim : pd.DataFrame, mask : xr.DataArray) -> xr.DataArray:
             trial_type=("stim", df_stim.trial_type),
         ),
     )
+
+def repair_amp(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
+    """Replace nonpositive amp values and optionally fill NaNs.
+
+    TODO: Optimize handling of sequential nonpositive values.
+
+    Args:
+        amp: Amplitude data
+        median_len: Window size for the median filter
+        interp_nan: If True, interpolate NaNs in the data
+        **kwargs: Additional arguments for xarray interpolate_na function, such
+            as method = "linear" (default), method = "nearest", etc. See xarray
+            documentation for more details.
+    """
+    pad_width = median_len // 2
+
+    # Fill NaNs
+    if interp_nan:
+        amp = amp.pint.dequantify()
+        amp = amp.interpolate_na(dim="time", **kwargs)
+        amp = amp.pint.quantify()
+
+    # Replace nonpositive values with a small value
+    unit = amp.pint.units
+    amp = amp.where(amp>0, 1e-18 * unit)
+
+    if median_len > 1:
+        # Pad the data before applying the median filter
+        padded_amp = amp.pad(time=(pad_width, pad_width), mode="edge")
+
+        # Apply median filter
+        filtered_padded_amp = (
+            padded_amp.rolling(time=median_len, center=True)
+            .reduce(np.median)
+        )
+        # Trim the padding after applying the filter
+        return filtered_padded_amp.isel(time=slice(pad_width, -pad_width))
+
+    return amp
