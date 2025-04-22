@@ -109,12 +109,14 @@ def plot3d(
     point_colors = {
         PointType.SOURCE: "r",
         PointType.DETECTOR: "b",
-        PointType.LANDMARK: "gray",
+        PointType.LANDMARK: "green",
+        PointType.ELECTRODE: "pink",
     }
     point_sizes = {
         PointType.SOURCE: 3,
         PointType.DETECTOR: 3,
         PointType.LANDMARK: 2,
+        PointType.ELECTRODE: 3,
     }
     if geo3d is not None:
         labels = geo3d.label.values
@@ -321,12 +323,14 @@ def plot_labeled_points(
         PointType.SOURCE: "r",
         PointType.DETECTOR: "b",
         PointType.LANDMARK: "g",
+        PointType.ELECTRODE: "pink",
     }
     default_point_sizes = {
         PointType.UNKNOWN: 2,
         PointType.SOURCE: 3,
         PointType.DETECTOR: 3,
         PointType.LANDMARK: 2,
+        PointType.ELECTRODE: 3,
     }
 
 
@@ -462,12 +466,14 @@ class OptodeSelector:
             PointType.SOURCE: "r",
             PointType.DETECTOR: "b",
             PointType.LANDMARK: "g",
+            PointType.ELECTRODE: "pink",
         }
         default_point_sizes = {
             PointType.UNKNOWN: 2,
             PointType.SOURCE: 3,
             PointType.DETECTOR: 3,
             PointType.LANDMARK: 2,
+            PointType.ELECTRODE: 3,
         }
 
         # points = points.pint.to("mm").pint.dequantify()  # FIXME unit handling
