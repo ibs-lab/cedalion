@@ -30,6 +30,7 @@ class PointType(Enum):
     SOURCE = 1
     DETECTOR = 2
     LANDMARK = 3
+    ELECTRODE = 4
 
     # provide an ordering of PointTypes so that e.g. np.unique works
     def __lt__(self, other):
