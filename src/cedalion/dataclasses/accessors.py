@@ -1,19 +1,23 @@
 """Accessors for Cedalion data types."""
 
 from __future__ import annotations
+
 from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
+import statsmodels
 import xarray as xr
 from numpy.typing import ArrayLike
+from typing import Callable
 
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 from cedalion import Quantity, units
-from cedalion.sigproc.frequency import freq_filter
-from cedalion.sigproc.epochs import to_epochs
 from cedalion.errors import CRSMismatchError
+from cedalion.sigproc.epochs import to_epochs
+from cedalion.sigproc.frequency import freq_filter
+
 
 @xr.register_dataarray_accessor("cd")
 class CedalionAccessor:
@@ -318,3 +322,58 @@ class StimAccessor:
         for index, row in stim.iterrows():
             stim_arr.loc[row.onset, row.trial_type] = 1
         return stim_arr
+
+
+
+@xr.register_dataarray_accessor("sm")
+class StatsModelsAccessor:
+    """Accessor for DataArrays containing statsmodel results."""
+
+    def __init__(self, obj : xr.DataArray):
+        """Initialize the accessor.
+
+        Args:
+            obj (xr.DataArray): The DataArray to which this accessor is attached.
+        """
+        self._validate(obj)
+        self._obj = obj
+
+    @staticmethod
+    def _validate(obj : xr.DataArray) :
+        """Check that data array contains stats model results."""
+
+        assert obj.ndim == 2
+
+        for i in obj.values.flatten():
+            if not isinstance(
+                i, statsmodels.regression.linear_model.RegressionResultsWrapper
+            ):
+                raise ValueError("data array may contain only RegressionResultsWrapper")
+
+    def _build_array(self):
+        regressors = self._obj[0,0].item().params.index
+
+        return xr.zeros_like(self._obj).expand_dims(
+            {"regressor": regressors}
+        ).copy()
+
+    def _map(self, function : Callable) -> xr.DataArray:
+        result = self._build_array()
+        for i in range(self._obj.shape[0]):
+            for j in range(self._obj.shape[1]):
+                result[:,i,j] = function(self._obj[i,j].item())
+
+        return result
+
+    def params(self):
+        return self._map(lambda i : i.params)
+
+    def tvalues(self):
+        return self._map(lambda i: i.tvalues)
+
+    def pvalues(self):
+        return self._map(lambda i: i.pvalues)
+
+
+    def conf_int(self, *args):
+        return self._map(lambda i : i.conf_int(*args))
