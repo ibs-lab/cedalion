@@ -15,7 +15,6 @@ If you would like to test cedalion before going through the installation process
 ### Using your own data
 
 Follow these steps to use your own data in a colab notebook.
-
     ![File upload](../img/colab/colab_fileupload.jpg)
 1. Click the file icon in the left sidebar.
 2. Click the upload icon (page with arrow).
