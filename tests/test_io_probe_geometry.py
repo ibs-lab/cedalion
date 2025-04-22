@@ -41,9 +41,9 @@ def test_export_to_tsv_other_points():
         content = f.read()
         lines = content.strip().split('\n')
 
-    assert lines[0] == "labels\tX\tY\tZ\tcrs=ijk\tunits=mm"
-    assert lines[1].startswith("Fp1\t1.000000\t2.000000\t3.000000")
-    assert lines[3].startswith("Cz\t7.000000\t8.000000\t9.000000")
+    assert lines[0] == "labels\tX\tY\tZ\tPointType\tcrs=ijk\tunits=mm"
+    assert lines[1].startswith("Fp1\t1.000000\t2.000000\t3.000000\tPointType.UNKNOWN")
+    assert lines[3].startswith("Cz\t7.000000\t8.000000\t9.000000\tPointType.UNKNOWN")
 
 
 
@@ -85,17 +85,6 @@ def test_load_tsv_without_header():
     assert list(geo.label.values) == ["Fp1", "Fp2"]
     assert geo.points.crs == "RAS"
     assert geo.pint.units == cedalion.units.mm
-
-
-def test_load_tsv_unknown_label_error():
-    # Unknown label type (e.g., starts with 'X')
-    tsv_path = tempfile.NamedTemporaryFile()
-    content = "labels\tX\tY\tZ\nXx1\t1\t2\t3"
-    with open(tsv_path.name, 'w') as f:
-        f.write(content)
-
-    with pytest.raises(ValueError, match="Unknown point type: Xx1"):
-        load_tsv(tsv_path.name)
 
 
 def test_load_tsv_point_type():

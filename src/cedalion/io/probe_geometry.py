@@ -37,12 +37,13 @@ def load_tsv(tsv_fname: str, crs: str=None, units: str=None) -> xr.DataArray:
         # tsv file contains a header
         data = pd.read_csv(tsv_fname, sep="\t")
     else:
-        data = {'labels': data.iloc[:, 0],
-                'X': data.iloc[:, 1],
-                'Y': data.iloc[:, 2],
-                'Z': data.iloc[:, 3]}
+        datadict = {'labels': data.iloc[:, 0],
+                    'X': data.iloc[:, 1],
+                    'Y': data.iloc[:, 2],
+                    'Z': data.iloc[:, 3]}
         if len(data.columns) > 4:
-            data['PointType'] = data.iloc[:, 4]
+            datadict['PointType'] = data.iloc[:, 4]
+        data = datadict
         
     # parse crs and units
     for k in data.keys():
