@@ -1,6 +1,9 @@
 ## Running Notebooks in Google Colab
 
-If you would like to test cedalion before going through the installation process on your local machine, you can run the example notebooks through Google Colab. This requires a Google account with approximately 50MB available storage space. To open a notebook using Google Colab, follow the steps below. The first time you open a notebook in Colab, setup can take 10-20 minutes. For subsequent notebooks the steps remain the same, but setup should be much faster.
+If you would like to test cedalion before going through the installation process on your local machine, you can run the example notebooks through Google Colab. Note that some cedalion features, such as interactive plotting and visualizations, are currently not working in colab. To use these features, you will need to install cedalion on your local machine.
+
+### Setup
+To run a notebook using Google Colab, follow the steps below. Setup should take less than 5 minutes total.
 
 1. Click the link at the top of an example notebook to open it in Google Colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]()
 2. Run the first cell to install the required dependencies.
