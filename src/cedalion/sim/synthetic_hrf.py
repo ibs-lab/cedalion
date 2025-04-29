@@ -258,7 +258,8 @@ def build_synthetic_hrf_timeseries(
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
     """
 
-    hrf_regs = glm.design_matrix.make_hrf_regressors(ts, stim_df, basis_fct)
+    dms = glm.design_matrix.hrf_regressors(ts, stim_df, basis_fct)
+    hrf_regs = dms.common
     hrf_regs *= stim_df.value.max()
 
     # remove HRF prefix from regressor names
