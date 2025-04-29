@@ -325,18 +325,55 @@ class StimAccessor:
 
 
 
+class SMCallableWrapper:
+    """Wraps a method of statsmodel's result object."""
+
+    def __init__(self, accessor, attr_name):
+        self._accessor = accessor
+        self._attr_name = attr_name
+
+    def __call__(self, *args, **kwargs):
+        array = self._accessor._array
+
+        first_obj = array[0,0].item()
+        function = getattr(first_obj, self._attr_name)
+
+        first_result = function(*args, **kwargs)
+
+        result = self._accessor._build_array(self._attr_name, first_result)
+
+        for i in range(array.shape[0]):
+            for j in range(array.shape[1]):
+                f = getattr(array[i, j].item(), self._attr_name)
+                x = f(*args, **kwargs)
+                if np.isscalar(first_result):
+                    result[i, j] = x
+                elif isinstance(first_result, pd.Series):
+                    result[i, j, :] = x
+                elif isinstance(first_result, pd.DataFrame):
+                    result[i, j, :, :] = x.values
+                elif isinstance(
+                    first_result, statsmodels.stats.contrast.ContrastResults
+                ):
+                    result[i,j] = x
+                else:
+                    raise NotImplementedError()
+
+        return result
+
+
 @xr.register_dataarray_accessor("sm")
 class StatsModelsAccessor:
     """Accessor for DataArrays containing statsmodel results."""
 
-    def __init__(self, obj : xr.DataArray):
+    def __init__(self, array : xr.DataArray):
         """Initialize the accessor.
 
         Args:
-            obj (xr.DataArray): The DataArray to which this accessor is attached.
+            array: The DataArray to which this accessor is attached.
         """
-        self._validate(obj)
-        self._obj = obj
+        self._validate(array)
+        self._array = array
 
     @staticmethod
     def _validate(obj : xr.DataArray) :
@@ -346,34 +383,138 @@ class StatsModelsAccessor:
 
         for i in obj.values.flatten():
             if not isinstance(
-                i, statsmodels.regression.linear_model.RegressionResultsWrapper
+                i,
+                (
+                    statsmodels.regression.linear_model.RegressionResultsWrapper,
+                    statsmodels.stats.contrast.ContrastResults,
+                ),
             ):
                 raise ValueError("data array may contain only RegressionResultsWrapper")
 
-    def _build_array(self):
-        regressors = self._obj[0,0].item().params.index
+    def _build_array(self, attr_name, attr_result):
+        """Helper function to construct the result array."""
 
-        return xr.zeros_like(self._obj).expand_dims(
-            {"regressor": regressors}
-        ).copy()
+        try:
+            regressors = self._array[0,0].item().params.index
+        except AttributeError: # ContrastResults carry no information about regressors
+            regressors = None
 
-    def _map(self, function : Callable) -> xr.DataArray:
-        result = self._build_array()
-        for i in range(self._obj.shape[0]):
-            for j in range(self._obj.shape[1]):
-                result[:,i,j] = function(self._obj[i,j].item())
+        def is_scalar_ndarray(x):
+            return isinstance(x, np.ndarray) and (x.ndim == 0 or x.shape == (1,1))
+
+        def is_regressor(x):
+            if regressors is not None:
+                return (len(x) == len(regressors)) and all(x == regressors)
+            else:
+                return False
+
+        if np.isscalar(attr_result):
+            return xr.zeros_like(self._array, dtype=np.dtype(type(attr_result)))
+        elif is_scalar_ndarray(attr_result):
+            return xr.zeros_like(self._array, dtype=np.dtype(type(attr_result[()])))
+        elif isinstance(attr_result, pd.Series):
+            if is_regressor(attr_result.index):
+                dim_name = "regressor"
+            else:
+                dim_name = attr_name
+
+            return (
+                xr.zeros_like(self._array, dtype=attr_result.values.dtype)
+                .expand_dims({dim_name: attr_result.index}, axis=-1)
+                .copy()
+            )
+        elif isinstance(attr_result, np.ndarray) and attr_result.ndim == 1:
+            dim_name = attr_name
+            return (
+                xr.zeros_like(self._array, dtype=attr_result.dtype)
+                .expand_dims({dim_name : len(attr_result)}, axis=-1)
+                .copy()
+            )
+        elif isinstance(attr_result, pd.DataFrame):
+            if is_regressor(attr_result.index):
+                row_name = "regressor"
+            else:
+                row_name = f"{attr_name}"
+            if is_regressor(attr_result.columns):
+                col_name = "regressor"
+            else:
+                col_name = f"{attr_name}"
+
+            if row_name == col_name:
+                row_name = f"{row_name}_r"
+                col_name = f"{col_name}_c"
+
+            return (
+                xr.zeros_like(self._array, dtype=attr_result.values.dtype)
+                .expand_dims(
+                    {row_name: attr_result.index, col_name: attr_result.columns},
+                    axis=[-2, -1],
+                )
+                .copy()
+            )
+        elif isinstance(attr_result, statsmodels.stats.contrast.ContrastResults):
+            return xr.zeros_like(self._array)
+        else:
+            raise NotImplementedError(f"unsupported type '{type(attr_result)}'")
+
+
+    def __getattr__(self, name):
+        try:
+            first_obj = self._array[0,0].item()
+            attr = getattr(first_obj, name)
+        except AttributeError:
+            raise AttributeError(
+                f"objects of type {str(type(first_obj))} don't have "
+                f"an attribute with name '{name}'."
+            )
+
+        if callable(attr):
+            result = SMCallableWrapper(self, name)
+        else:
+            result = self._build_array(name, attr)
+
+            for i in range(self._array.shape[0]):
+                for j in range(self._array.shape[1]):
+                    x = getattr(self._array[i, j].item(), name)
+
+                    if np.isscalar(attr):
+                        result[i, j] = x
+                    elif isinstance(attr, pd.Series):
+                        result[i, j, :] = x
+                    elif isinstance(attr, pd.DataFrame):
+                        result[i, j, :, :] = x.values
+                    else:
+                        raise NotImplementedError()
 
         return result
 
-    def params(self):
-        return self._map(lambda i : i.params)
+    def map(self, func: Callable, name: str = "map"):
+        """Applies a callable to each object in the array and returns a xr.DataArray.
 
-    def tvalues(self):
-        return self._map(lambda i: i.tvalues)
+        Args:
+            func: a Callable that expects one argument, the object
+            name: used to name dimensions in the result array
 
-    def pvalues(self):
-        return self._map(lambda i: i.pvalues)
+        Returns:
+            an xr.DataArray whose first to dimensions match our array and that holds
+            in each cell the result of the function call.
+        """
+        first_result = func(self._array[0,0].item())
+        result = self._build_array(name, first_result)
+
+        for i in range(self._array.shape[0]):
+            for j in range(self._array.shape[1]):
+                x = func(self._array[i, j].item())
+                result[i, j] = x
+
+        return result
 
 
-    def conf_int(self, *args):
-        return self._map(lambda i : i.conf_int(*args))
+    def regressor_variances(self):
+        try:
+            regressors = self._array[0, 0].item().params.index
+        except AttributeError:
+            raise NotImplementedError() #  FIXME better direct test for ContrastResult
+        return self.map(
+            lambda i: pd.Series(np.diagonal(i.cov_params()), index=regressors)
+        )
