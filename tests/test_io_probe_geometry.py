@@ -26,20 +26,25 @@ def test_export_to_tsv_measurement_list():
 
 def test_export_to_tsv_other_points():
     # Create mock data
-    coords = {"dim_0": [0, 1, 2]}
+
     data = np.array([[1.0, 2.0, 3.0],
                      [4.0, 5.0, 6.0],
                      [7.0, 8.0, 9.0]])
-    points = cdc.build_labeled_points(data, labels=["Fp1", "Fp2", "Cz"], crs="ijk", units="mm")
+    points = cdc.build_labeled_points(
+        data, labels=["Fp1", "Fp2", "Cz"], crs="ijk", units="mm"
+    )
 
     # File path to write to
-    out_file = tempfile.NamedTemporaryFile()
-    export_to_tsv(out_file.name, points)
+    out_file = tempfile.NamedTemporaryFile(suffix=".tsv", delete=False)
+    try:
+        export_to_tsv(out_file.name, points)
 
-    # Read and validate output
-    with open(out_file.name, 'r') as f:
-        content = f.read()
-        lines = content.strip().split('\n')
+        # Read and validate output
+        with open(out_file.name, 'r') as f:
+            content = f.read()
+            lines = content.strip().split('\n')
+    finally:
+        os.unlink(out_file.name)
 
     assert lines[0] == "labels\tX\tY\tZ\tPointType\tcrs=ijk\tunits=mm"
     assert lines[1].startswith("Fp1\t1.000000\t2.000000\t3.000000\tPointType.UNKNOWN")
