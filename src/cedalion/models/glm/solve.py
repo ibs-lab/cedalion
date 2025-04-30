@@ -59,7 +59,16 @@ def fit(
     Args:
         ts: the time series to be modeled
         design_matrix: DataArray with dims time, regressor, chromo
-        noise_model: specifies the linear regression model (e.g. ols, wls, ar_irls,...)
+        noise_model: specifies the linear regression model
+
+            - ols: ordinary least squares
+            - rls: recursive least squares
+            - wls: weighted least squares
+            - ar_irls: autoregressive iteratively reweighted least squares
+              (:cite:t:`Barker2013`)
+            - gls: generalized least squares
+            - glsar: generalized least squares with autoregressive covariance structure
+
         ar_order: order of the autoregressive model
         max_jobs: controls the number of jobs in parallel execution. Set to -1 for
             all available cores. Set it to 1 to disable parallel execution.

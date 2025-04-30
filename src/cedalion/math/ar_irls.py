@@ -11,9 +11,10 @@ import copy
 def ar_irls_GLM(y, x, pmax=40, M=sm.robust.norms.HuberT()):
     """This function implements the AR-IRLS GLM model.
 
-    Barker, Jeffrey W., Ardalan Aarabi, and Theodore J. Huppert.
-    "Autoregressive model based algorithm for correcting motion and serially
-    correlated errors in fNIRS." Biomedical optics express 4.8 (2013): 1366-1379.
+    The autoregressive iteratively reweighted least squares GLM model is described in
+    :cite:t:`Barker2013`. By estimating prewhitening filters it addresses serial
+    correlations and confounding noise components in the signal and avoids the inflated
+    false positive rates observed when fitting the GLM with ordinary least squares.
 
     Inputs:
         y - pandas Serial
