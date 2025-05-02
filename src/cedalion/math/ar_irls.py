@@ -5,7 +5,6 @@ import statsmodels.api as sm
 import cedalion.math.ar_model
 import scipy.signal
 import pandas as pd
-import copy
 
 
 def ar_irls_GLM(y, x, pmax=40, M=sm.robust.norms.HuberT()):
@@ -75,16 +74,21 @@ def ar_irls_GLM(y, x, pmax=40, M=sm.robust.norms.HuberT()):
       data.
     """
 
-    yorg = copy.deepcopy(y.values)
-    xorg = copy.deepcopy(x)
+    mask = np.isfinite(y.values)
+
+    yorg : pd.Series = pd.Series(y.values[mask].copy())
+    xorg : pd.DataFrame = x[mask].reset_index()
+
+    y = yorg.copy()
+    x = xorg.copy()
 
     rlm_model = sm.RLM(y, x, M=M)
     params = rlm_model.fit()
 
     resid = pd.Series(y - x @ params.params)
     for _ in range(4):  # TODO - check convergence
-        y = copy.deepcopy(yorg)
-        x = copy.deepcopy(xorg)
+        y = yorg.copy()
+        x = xorg.copy()
 
         # Update the AR whitening filter
         arcoef = cedalion.math.ar_model.bic_arfit(resid, pmax=pmax)
