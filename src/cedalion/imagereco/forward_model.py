@@ -1,8 +1,8 @@
 """Forward model for simulating light transport in the head.
-NOTE: Cedalion currently supports two ways to compute fluence: 
-1) via monte-carlo simulation using the MonteCarloXtreme (MCX) package, and 
+NOTE: Cedalion currently supports two ways to compute fluence:
+1) via monte-carlo simulation using the MonteCarloXtreme (MCX) package, and
 2) via the finite element method (FEM) using the NIRFASTer package.
-While MCX is automatically installed using pip, NIRFASTER has to be manually installed 
+While MCX is automatically installed using pip, NIRFASTER has to be manually installed
 runnning <$ bash install_nirfaster.sh CPU # or GPU> from a within your cedalion root directory. """
 
 from __future__ import annotations
@@ -1121,6 +1121,332 @@ class ForwardModel:
         )
 
         return A
+
+
+class ForwardModelEEG:
+    """EEG forward model for simulating the propagation of electromagnetic
+    signals in the head.
+
+    ...
+
+    Args:
+    head_model (TwoSurfaceHeadModel): Head model containing segmentation masks
+        and scalp surface.
+    electrode_pos (cdt.LabeledPointCloud): Electrode positions.
+    tissue_properties (xr.DataArray): Tissue properties for each tissue type.
+    mesh (np.ndarray): Meshed head volume from segmentation masks.
+    unitinmm (float): Unit of head model, electrodes expressed in mm.
+    dipoles (np.ndarray): Positions (and orientations) of Equivalent Current
+        Dipole sources
+
+    Methods:
+        generate_BEM_mesh():
+            Contruct nested surface meshes for BEM simulatoin.
+        compute_leadfields_BEM():
+            Compute the leadfields of the dipoles at the electrodes.
+        generate_FEM_mesh():
+            Contruct mesh for FEM simulatoin.
+        compute_leadfields_FEM():
+            Compute the leadfields of the dipoles at the electrodes.
+    """
+
+    def __init__(
+        self,
+        head_model: TwoSurfaceHeadModel,
+        elec3d: cdt.LabeledPointCloud,
+        dipoles: np.ndarray,
+        orientations: np.ndarray,
+    ):
+        """Constructor for the forward model.
+
+        Args:
+            head_model (TwoSurfaceHeadModel): Head model containing segmentation masks
+                and scalp surface.
+            elec3d (cdt.LabeledPointCloud): Optode positions and directions.
+        """
+
+        assert head_model.crs == "ijk"  # FIXME
+        assert head_model.crs == elec3d.points.crs
+
+        self.head_model = head_model
+
+        self.electrode_pos = elec3d[
+            elec3d.type.isin([cdc.PointType.ELECTRODE])
+        ]
+
+        # Slightly realign the optode positions to the closest scalp voxel
+        self.electrode_pos = head_model.snap_to_scalp_voxels(self.electrode_pos)
+
+        self.electrode_pos = self.electrode_pos.pint.dequantify()
+
+        #self.tissue_properties = get_tissue_properties(
+        #    self.head_model.segmentation_masks
+        #)
+
+        self.volume = self.head_model.segmentation_masks.sum("segmentation_type")
+        self.volume = self.volume.values.astype(np.uint8)
+        #self.mesh = self.generate_FEM_mesh()
+        self.mesh = self.generate_BEM_mesh()
+        self.unitinmm = self._get_unitinmm()
+        self.dipoles = dipoles
+        self.orientations = orientations
+
+    def _get_unitinmm(self):
+        """Calculate length of volume grid cells.
+
+        The forward model operates in ijk-space, in which each cell has unit length. To
+        relate to physical distances pmcx needs the 'unitinmm' parameter.
+        """
+
+        pts = cdc.build_labeled_points([[0, 0, 0], [0, 0, 1]], crs="ijk", units="1")
+        pts_ras = pts.points.apply_transform(self.head_model.t_ijk2ras)
+        length = xrutils.norm(pts_ras[1] - pts_ras[0], pts_ras.points.crs)
+        return length.pint.magnitude.item()
+
+
+    def generate_BEM_mesh(self, meshingparam=None):
+        mesh = None
+        # Call pyiso2mesh (vol2surf())
+        return mesh
+
+    def compute_leadfields_BEM(self, conductivity=(0.3, 0.006, 0.3)):
+        import mne
+        import tempfile
+        from os.path import join as pth
+        # create tempdir for mne
+        tmpdir = tempfile.TemporaryDirectory()
+        subjects_dir = tmpdir.name
+        os.mkdir(pth(subjects_dir, 'sample'))
+        os.mkdir(pth(subjects_dir, 'sample', 'bem'))
+        print('subjects_dir: ', subjects_dir)
+
+        # export meshes in mne/freesurfer format
+        names = {'csf': 'inner_skull.surf',
+                 'skull': 'outer_skull.surf',
+                 'scalp': 'outer_skin.surf'}
+        for k, surf in self.mesh.items():
+            name = names[k]
+            pos, tri = surf
+            self._write_surf_nibabel(pth(subjects_dir, 'sample', 'bem', name), pos, tri)
+
+        # create bem model
+        model = mne.make_bem_model(subject='sample', ico=None,
+                                   conductivity=conductivity,
+                                   subjects_dir=subjects_dir)
+        bem = mne.make_bem_solution(model)
+
+        # setup source space from dipoles + orientations
+        src = mne.setup_volume_source_space(subject='sample',
+                                            pos={'rr': self.dipoles / 1000.0,
+                                                 'nn': self.orientations},
+                                            subjects_dir=subjects_dir)
+
+        # the raw file containing the channel location + types
+        raw_fname = pth(subjects_dir, 'sample', 'geo3d.fif')
+        ch_names = list(self.electrode_pos.label.values)
+        info = mne.create_info(ch_names, 1000., 'eeg')
+        raw = mne.io.RawArray(np.zeros((len(ch_names), 1)), info)
+        chan_pos = self.electrode_pos.values / 1000.0
+        chans = {k: v for k, v in zip(ch_names, chan_pos)}
+        montage = mne.channels.make_dig_montage(ch_pos=chans)#, nasion=None, lpa=None, rpa=None,
+        raw.set_montage(montage)
+        raw.save(raw_fname, overwrite=True)
+        info = mne.io.read_info(raw_fname)
+
+        # The transformation file obtained by coregistration
+        trans = None #identity matrix
+
+        # compute forward soltions
+        fwd = mne.make_forward_solution(info, trans=trans, src=src, bem=bem,
+                                        meg=False, # include MEG channels
+                                        eeg=True, # include EEG channels
+                                        mindist=1.0, # ignore sources <= 5mm from inner skull
+                                        n_jobs=1) # number of jobs to run in parallel
+
+        # convert solution (no idea why!)
+        fwd = mne.convert_forward_solution(fwd, surf_ori=True)
+
+        # extract leadfields
+        leadfields = fwd['sol']['data'].T
+
+        #return xr.DataArray(
+        #    leadfields,
+        #    dims=["channel", "vertex", "wavelength"],
+        #    coords={
+        #        "channel": ("channel", channels),
+        #        "wavelength": ("wavelength", wavelengths),
+        #        "is_brain": ("vertex", is_brain),
+        #    },
+        #    attrs={"units": "mm"},
+        #)
+
+        return leadfields
+
+
+    def generate_FEM_mesh(self, meshingparam=None):
+
+        # use CGAL mesher from nirfaster to generate FEM mesh
+        # FIXME
+        src_path = os.path.abspath(
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "../../../plugins/nirfaster-uFF",
+            )
+        )
+        if src_path not in sys.path:
+            sys.path.append(src_path)
+
+        import nirfasteruff as ff
+
+        if meshingparam is None:
+            # meshing parameters; should be adjusted depending on the user's need
+            meshingparam = ff.utils.MeshingParams(
+                facet_distance=1.0,
+                facet_size=1.0,
+                general_cell_size=2.0,
+                lloyd_smooth=0,
+            )
+
+        # create a nirfaster mesh
+        self.mesh = ff.base.stndmesh()
+
+
+        """
+        # make the optical property matrix; unit in mm-1
+        tissueprop = np.zeros((self.tissue_properties.shape[0]-1, 4))
+        for i in range(tissueprop.shape[0]):
+            tissueprop[i,0] = i+1
+            tissueprop[i,1] = self.tissue_properties[i+1, 0]
+            tissueprop[i,2] = self.tissue_properties[i+1, 1] * (1-self.tissue_properties[i+1, 2]) # noqa: E501
+            tissueprop[i,3] = self.tissue_properties[i+1, 3]
+
+        # all optodes x all optodes
+        sources = ff.base.optode(coord=self.optode_pos.data)
+        detectors = ff.base.optode(coord=self.optode_pos.data)
+        n_optodes = self.optode_pos.data.shape[0]
+        link = np.zeros((n_optodes*n_optodes,3), dtype=np.int32)
+        ch = 0
+        for i in range(n_optodes):
+            for j in range(n_optodes):
+                link[ch, 0] = i+1
+                link[ch, 1] = j+1
+                link[ch, 2] = 1
+                ch += 1
+        """
+
+        # construct the mesh
+        self.mesh.from_volume(
+            self.volume,
+            param=meshingparam,
+            #prop=tissueprop,
+            #src=sources,
+            #det=detectors,
+            #link=link,
+        )
+        return self.mesh
+
+    def compute_leadfields_FEM(self):
+        import duneuropy as dp
+        leadfields = None
+        # tbd
+        return leadfields
+
+    """
+    def extract_surf_from_volume(self, segmentation_masks, seg_types, fill_holes=True):
+        #### NOT WORKING PROPERLY ####
+        # derive surfaces from segmentation masks
+        surf = surface_from_segmentation(
+            segmentation_masks, seg_types, fill_holes_in_mask=fill_holes
+        )
+        #all_seg_types = segmentation_masks.segmentation_type.values
+        return surf
+
+    def extract_labeled_surface_meshes(self, nodes, elements, labels):
+        #### NOT WORKING PROPERLY ####
+        #Extract boundary surface meshes grouped by label from a tetrahedral mesh.
+
+        #Parameters:
+        #nodes : (N, 3) ndarray
+        #    Coordinates of all mesh vertices.
+        #elements : (M, 4) ndarray
+        #    Tetrahedral elements (indices into `nodes`, 0-based).
+        #labels : (M,) ndarray
+        #    Label per tetrahedron.
+
+        #Returns:
+        #List of tuples:
+        #    [(surf_nodes_label0, surf_faces_label0),
+        #     (surf_nodes_label1, surf_faces_label1),
+        #     ...]
+        #Each face group corresponds to the external surface of tetrahedra of that label.
+
+        from collections import defaultdict
+        label_to_faces = defaultdict(list)
+        tet_faces = np.array([
+            [0, 1, 2],
+            [0, 1, 3],
+            [0, 2, 3],
+            [1, 2, 3]
+        ])
+
+        # Map each face to (sorted_vertex_tuple, label)
+        face_count = defaultdict(list)
+
+        for elem, label in zip(elements, labels):
+            for face in tet_faces:
+                tri = tuple(sorted(elem[face]))
+                face_count[tri].append(label)
+
+        # Faces on the external surface: only belong to one tetrahedron
+        for face, label_list in face_count.items():
+            if len(label_list) == 1:
+                label_to_faces[label_list[0]].append(face)
+
+        result = []
+
+        for label, faces in label_to_faces.items():
+            faces = np.array(faces)
+
+            # Reindex vertices to a local set
+            unique_node_indices, inverse_indices = np.unique(faces.flatten(), return_inverse=True)
+            surf_nodes = nodes[unique_node_indices]
+            surf_faces = inverse_indices.reshape((-1, 3))
+
+            result.append((label, surf_nodes, surf_faces))
+
+        return result
+    """
+
+    def _read_surf_mne(self, fname):
+        import mne
+        return mne.surface.read_surface(fname)
+
+    def _write_surf_nibabel(self, fname, vert, face):
+        """
+        Write a FreeSurfer surface file using nibabel.
+
+        Parameters:
+        fname : str
+            Output filename (usually ends in .surf).
+        vert : ndarray
+            Nx3 array of vertex coordinates.
+        face : ndarray
+            Mx3 array of triangle indices (MATLAB-style 1-based).
+        """
+        import nibabel as nib
+        if vert.shape[1] != 3:
+            raise ValueError("vert must be an Nx3 matrix")
+        if face.shape[1] != 3:
+            raise ValueError("face must be an Mx3 matrix")
+
+        # Convert MATLAB-style 1-based indices to Python-style 0-based
+        #face = face - 1
+
+        # Use nibabel to write the surface
+        nib.freesurfer.io.write_geometry(fname, vert, face)
+        return
+
+
 
 
 def apply_inv_sensitivity(
