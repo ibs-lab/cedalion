@@ -495,7 +495,11 @@ def tddr(ts: cdt.NDTimeSeries):
         return signal
 
     # Early exit: signal is (nearly) constant
-    if np.allclose(signal.values, signal.values[0], rtol=1e-8, atol=1e-12):
+    if np.allclose(np.squeeze(signal.values), np.squeeze(signal.values)[0], rtol=1e-8,
+                   atol=1e-12):
+        print(f"Signal is near constant, returning original signal"
+              f"(channel={signal.channel.values[0]}, "
+              f"wavelength={signal.wavelength.values[0]}).")
         return signal
 
     # Preprocess: Separate high and low frequencies
