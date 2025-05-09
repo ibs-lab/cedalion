@@ -1186,7 +1186,7 @@ class ForwardModelEEG:
         self.volume = self.head_model.segmentation_masks.sum("segmentation_type")
         self.volume = self.volume.values.astype(np.uint8)
         #self.mesh = self.generate_FEM_mesh()
-        self.mesh = self.generate_BEM_mesh()
+        #self.mesh = self.generate_BEM_mesh()
         self.unitinmm = self._get_unitinmm()
         self.dipoles = dipoles
         self.orientations = orientations
@@ -1204,10 +1204,123 @@ class ForwardModelEEG:
         return length.pint.magnitude.item()
 
 
-    def generate_BEM_mesh(self, meshingparam=None):
+    def generate_BEM_mesh(self, npnt=[1922]*4, meshingparam=None):
         mesh = None
+        #def projectmesh():
+        cfg_tissue = self.head_model.segmentation_masks.segmentation_type.values #['wm', 'gm', 'csf', 'skull', 'scalp']
+        #cfg_tissue = [t for t in cfg_tissue if t != 'air']
+        segmentedmri = {k: self.head_model.segmentation_masks.sel({'segmentation_type': k}).values for k in cfg_tissue}
+
+        from scipy.ndimage import binary_dilation
+
+        # Combine gray & white
+        segmentedmri['whitegray'] = (segmentedmri['gm'] > 0) | (segmentedmri['wm'] > 0)
+        segmentedmri['whitegray'] = segmentedmri['whitegray']
+
+        # Brain = whitegray + csf
+        segmentedmri['brain'] = segmentedmri['whitegray'] | (segmentedmri['csf'] > 0)
+
+        # Structuring element (same as ones(3,3,3))
+        se = np.ones((3,3,3), dtype=bool)
+
+        # Dilate csf with brain dilation
+        segmentedmri['csf'] = (segmentedmri['csf'] > 0) | binary_dilation(segmentedmri['brain'].astype(bool), structure=se)
+        segmentedmri['csf'] = segmentedmri['csf']
+
+        # Skull = dilated csf OR skull (AND NOT csf)
+        dilated_csf = binary_dilation(segmentedmri['csf'].astype(bool), structure=se)
+        segmentedmri['skull'] = (dilated_csf | ((segmentedmri['skull'] > 0) & ~(segmentedmri['csf'] > 0)))
+
+        # Scalp = scalp OR dilated skull
+        dilated_skull = binary_dilation(segmentedmri['skull'].astype(bool), structure=se)
+        segmentedmri['scalp'] = (segmentedmri['scalp'] > 0) | dilated_skull
+        segmentedmri['scalp'] = segmentedmri['scalp']
+
+        # Zero out boundary slices (same as setting z=1 or z=1:2 to zero)
+        segmentedmri['skull'][:,:,0] = 0
+        segmentedmri['csf'][:,:,0:2] = 0
+        segmentedmri['whitegray'][:,:,0:3] = 0
+
+        # Remove fields 'air' and 'brain' like rmfield
+        segmentedmri.pop('air')
+        segmentedmri.pop('brain') 
+        segmentedmri.pop('gm') 
+        segmentedmri.pop('wm') 
+       
+        # also remove whitegray for 3-shell BEMs
+        segmentedmri.pop('whitegray') 
+
+        mri = segmentedmri.copy()
+        # update tissue types
+        cfg_tissue = list(mri.keys())
+
+
+
+        for i in range(len(cfg_tissue)):
+            tissue_name = cfg_tissue[i]
+            seg = mri[tissue_name]
+            seglabel = cfg_tissue[i]
+
+
+            # Apply thresholding, filling holes, and padding
+            #seg = volumethreshold(seg, 0.5, seglabel)  # You need a Python version of volumethreshold
+            seg = volumefillholes(seg)                # And volumefillholes
+            seg = volumepad(seg)                      # And volumepad
+
+            # Update dimensions and transformation
+            dim = seg.shape
+
+            #transform = mri['transform'].copy()
+            #shift = ft_warp_apply(transform, np.array([[1, 1, 1]])) - ft_warp_apply(transform, np.array([[0, 0, 0]]))
+            #transform[0, 3] -= shift[0, 0]
+            #transform[1, 3] -= shift[0, 1]
+            #transform[2, 3] -= shift[0, 2]
+
+    
+            #if cfg['method'] == 'projectmesh':
+            mrix, mriy, mriz = np.meshgrid(np.arange(1, dim[0]+1),
+                                           np.arange(1, dim[1]+1),
+                                           np.arange(1, dim[2]+1), indexing='ij')
+            ori = [
+                np.mean(mrix[seg]),
+                np.mean(mriy[seg]),
+                np.mean(mriz[seg])
+            ]
+
+            pos, tri = triangulate_seg(seg, npnt[i], ori)  # Needs a Python version
+            mesh_i = (pos, tri)
+            # 'projectmesh' end
+
+
+
+            numvoxels = np.sum(seg)
+            
+            ## Apply transformation
+            #mesh_i = {
+            #    'pos': ft_warp_apply(transform, pos),
+            #    'tri': tri
+            #}
+            
+            if i == 0:
+                mesh = {tissue_name: mesh_i}
+                numvoxels_list = [numvoxels]
+            else:
+                mesh[tissue_name] = mesh_i
+                numvoxels_list.append(numvoxels) 
+
+        
+        error_threshold = 25;
+        smooth_meshes = ['scalp', 'skull', 'csf', 'cortex'] #all
+        correct_bnd_errors(mesh, error_threshold, smooth_meshes) # FIXME: smooth only scalp
+
+
         # Call pyiso2mesh (vol2surf())
         return mesh
+
+
+
+
+
 
     def compute_leadfields_BEM(self, conductivity=(0.3, 0.006, 0.3)):
         import mne
@@ -1224,6 +1337,7 @@ class ForwardModelEEG:
         names = {'csf': 'inner_skull.surf',
                  'skull': 'outer_skull.surf',
                  'scalp': 'outer_skin.surf'}
+        print(pth(subjects_dir, 'sample', 'bem'))
         for k, surf in self.mesh.items():
             name = names[k]
             pos, tri = surf
@@ -1550,3 +1664,378 @@ def unstack_flat_channel(array: xr.DataArray):
         unstacked = unstacked.assign_coords({coord_name: c_wl0})
 
     return unstacked
+
+
+
+
+### projectmesh
+import numpy as np
+from scipy import ndimage
+import scipy.ndimage
+from scipy.ndimage import binary_fill_holes
+from skimage.measure import label
+from skimage import measure
+
+def sub2ind(dim, i, j, k):
+    return i + (j - 1) * dim[0] + (k - 1) * dim[0] * dim[1]
+
+def volumefillholes(seg):
+    return binary_fill_holes(seg)
+
+#def mesh_sphere(npnt):
+#    # Generates a sphere using icosphere method
+#    # You may use trimesh or other libs
+#    import trimesh
+#    sphere = trimesh.creation.icosphere(subdivisions=3, radius=1)#int(np.log2(npnt / 42)), radius=1)
+#    # subdivisions==5 -> 10242
+#    # subdivisions==4 -> 2562
+#    # subdivisions==3 -> 642
+#    #pos, tri = mesh_sphere(npnt, 'ksphere');
+#    return sphere.vertices, sphere.faces
+
+
+from scipy.spatial import ConvexHull
+from math import sqrt, pi, cos, sin
+
+# --- ksphere subfunction ---
+def ksphere(N):
+    h_list = -1 + 2 * np.arange(N) / (N - 1)
+    theta_list = np.arccos(h_list)
+    phi_list = np.zeros_like(theta_list)
+
+    for k in range(N):
+        h = h_list[k]
+        if k == 0 or k == N - 1:
+            phi_list[k] = 0
+        else:
+            phi_list[k] = (phi_list[k - 1] + 3.6 / sqrt(N * (1 - h ** 2))) % (2 * pi)
+
+    az = phi_list
+    el = theta_list - pi / 2
+    x = np.cos(az) * np.cos(el)
+    y = np.sin(az) * np.cos(el)
+    z = np.sin(el)
+
+    pos = np.column_stack((x, y, z))
+    tri = ConvexHull(pos).simplices
+    return pos, tri
+
+
+
+
+
+
+def volumepad(input_array, n=1):
+    """
+    Adds a layer of padding around a 3D volume to ensure the tissue 
+    can be meshed up to the edges.
+
+    Parameters:
+    - input_array: 3D numpy array (bool or numeric)
+    - n: number of padding layers (default is 1)
+
+    Returns:
+    - output: padded 3D numpy array
+    """
+    dim = input_array.shape
+
+    # Determine the dtype and create the padded output
+    if input_array.dtype == bool:
+        output = np.zeros((dim[0] + 2*n, dim[1] + 2*n, dim[2] + 2*n), dtype=bool)
+    else:
+        output = np.zeros((dim[0] + 2*n, dim[1] + 2*n, dim[2] + 2*n), dtype=input_array.dtype)
+
+    # Insert the original data into the padded volume
+    output[n:dim[0]+n, n:dim[1]+n, n:dim[2]+n] = input_array
+
+    return output
+
+
+from scipy.ndimage import label, binary_fill_holes
+from skimage.morphology import remove_small_holes
+
+def volumefillholes(input_array, along=None):
+    """
+    Fill holes in a 3D segmented volume.
+
+    Parameters:
+    - input_array: 3D numpy array (binary mask)
+    - along: axis along which to perform 2D hole filling (1, 2, or 3). 
+             If None, performs 3D hole filling.
+
+    Returns:
+    - output: 3D numpy array with holes filled
+    """
+
+    input_array = input_array.astype(bool)  # Ensure binary
+    output = input_array.copy()
+
+    if along is None:
+        # 3D hole filling (analogous to SPM's spm_bwlabel + inversion trick)
+
+        # Pad the volume
+        inflate = volumepad(input_array, 1)
+
+        # Label connected components in the inverted (background) space
+        structure = np.array([[[0,1,0],
+                               [1,1,1],
+                               [0,1,0]],
+                              [[1,1,1],
+                               [1,1,1],
+                               [1,1,1]],
+                              [[0,1,0],
+                               [1,1,1],
+                               [0,1,0]]], dtype=bool)  # 18-connectivity, matching MATLAB
+        lab, num = label(~inflate, structure=structure)
+
+        if num > 1:
+            # Keep only the background connected to the corner (lab==lab[0,0,0])
+            inflate[lab != lab[0,0,0]] = True
+            # Remove the padding
+            output = inflate[1:-1, 1:-1, 1:-1]
+        else:
+            output = input_array
+
+    else:
+        dim = input_array.shape
+        if along == 1:
+            for i in range(dim[0]):
+                slice_2d = input_array[i, :, :]
+                output[i, :, :] = binary_fill_holes(slice_2d)
+        elif along == 2:
+            for i in range(dim[1]):
+                slice_2d = input_array[:, i, :]
+                output[:, i, :] = binary_fill_holes(slice_2d)
+        elif along == 3:
+            for i in range(dim[2]):
+                slice_2d = input_array[:, :, i]
+                output[:, :, i] = binary_fill_holes(slice_2d)
+        else:
+            raise ValueError(f'Invalid dimension {along} to slice the volume')
+
+    return output
+
+
+from scipy.ndimage import label
+
+def volumethreshold(input_array, threshold=0, tissuelabel='volume'):
+    """
+    Applies a threshold and keeps the largest connected component 
+    to clean up small blobs (e.g., vitamin E capsules).
+
+    Parameters:
+    - input_array: 3D numpy array (probabilistic or binary mask)
+    - threshold: relative threshold (default 0)
+    - tissuelabel: label string (for printing)
+
+    Returns:
+    - output: binary 3D numpy array after threshold + largest cluster selection
+    """
+
+    # Ensure input is numeric or boolean
+    if not (np.issubdtype(input_array.dtype, np.floating) or np.issubdtype(input_array.dtype, np.bool_)):
+        input_array = input_array.astype(np.float64)
+
+    # Apply threshold if input is not already logical
+    if not np.issubdtype(input_array.dtype, np.bool_):
+        if threshold is None:
+            raise ValueError('If the input volume is not boolean, you need to define a threshold value.')
+        print(f"Thresholding {tissuelabel} at a relative threshold of {threshold:.3f}")
+        max_val = np.max(input_array)
+        output = (input_array > (threshold * max_val)).astype(np.float64)
+    else:
+        # If already boolean, no thresholding is needed
+        output = input_array.astype(np.float64)
+
+    # Cluster the connected tissue (6-connectivity, like MATLAB's spm_bwlabel(...,6))
+    structure = np.array([[[0,0,0],
+                           [0,1,0],
+                           [0,0,0]],
+                          [[0,1,0],
+                           [1,1,1],
+                           [0,1,0]],
+                          [[0,0,0],
+                           [0,1,0],
+                           [0,0,0]]], dtype=bool)  # 6-connectivity
+    cluster, n = label(output, structure=structure)
+
+    if n > 1:
+        # Count voxel count for each cluster (skip label 0)
+        counts = np.bincount(cluster.flat)
+        counts[0] = 0  # background should be zero
+        largest_cluster = np.argmax(counts)
+        output = (cluster == largest_cluster)
+    else:
+        # Only one cluster, keep it
+        output = (cluster == 1)
+
+    return output
+
+
+def triangulate_seg(seg, npnt, origin=None):
+    """
+    seg    = 3D-matrix (boolean) containing the segmented volume
+    npnt   = requested number of vertices
+    origin = 1x3 vector specifying the location of the origin of the sphere
+             in voxel indices. This argument is optional. If undefined, the
+             origin of the sphere will be in the centre of the volume.
+    """
+    seg = (seg != 0)
+    dim = seg.shape
+    len_ = int(np.ceil(np.sqrt(np.sum(np.array(dim) ** 2)) / 2))
+
+    if not np.any(seg):
+        raise ValueError('The segmentation is empty')
+
+    # define the origin if not provided
+    if origin is None:
+        origin = [dim[0] / 2, dim[1] / 2, dim[2] / 2]
+
+    # fill holes
+    seg = volumefillholes(seg)
+
+    # label connected components
+    lab, num = label(seg)#, connectivity=3, return_num=True)
+
+    if num > 1:
+        print('Warning: multiple blobs detected, using only the largest')
+        n = np.bincount(lab.ravel())[1:]  # exclude background
+        ix = np.argmax(n) + 1
+        seg = lab == ix
+
+    # unit sphere
+    #pnt, tri = mesh_sphere(npnt)
+    pnt, tri = ksphere(npnt)
+    
+    ishollow = False
+
+    for i in range(npnt):
+        lin = np.outer(np.arange(0, len_ + 0.5, 0.5), pnt[i])
+        lin[:, 0] += origin[0]
+        lin[:, 1] += origin[1]
+        lin[:, 2] += origin[2]
+
+        lin_rounded = np.round(lin).astype(int)
+
+        # valid mask
+        valid = (
+            (lin_rounded[:, 0] >= 0) & (lin_rounded[:, 0] < dim[0]) &
+            (lin_rounded[:, 1] >= 0) & (lin_rounded[:, 1] < dim[1]) &
+            (lin_rounded[:, 2] >= 0) & (lin_rounded[:, 2] < dim[2])
+        )
+
+        lin_valid = lin_rounded[valid]
+
+        indices = (
+            lin_valid[:, 0],
+            lin_valid[:, 1],
+            lin_valid[:, 2]
+        )
+
+        int_vals = seg[indices]
+
+        if np.any(np.diff(int_vals) == 1):
+            ishollow = True
+
+        sel = np.where(int_vals)[0]
+
+        if sel.size > 0:
+            idx = sel[-1]
+            pnt[i, :] = lin_valid[idx, :]
+        else:
+            pnt[i, :] = lin_valid[-1, :]
+
+    if ishollow:
+        print('Warning: the segmentation is not star-shaped, please check the surface mesh')
+
+    return pnt, tri
+
+
+
+
+
+
+
+def correct_bnd_errors(bnd, errorthreshold, smooth):
+    """
+    Correction of triangular surface meshes for abnormal vertex outliers and
+    application of smoothing routines.
+    """
+    num_corrected = 0
+    for ii in bnd.keys():
+        for j in range(bnd[ii][1].shape[0]): 
+            pos = bnd[ii][0]
+            tri = bnd[ii][1]
+            v1 = tri[j, 0]
+            v2 = tri[j, 1]
+            v3 = tri[j, 2]
+
+            if np.linalg.norm(pos[v1, :] - pos[v2, :]) > errorthreshold:
+                if np.linalg.norm(pos[v1, :] - pos[v3, :]) > errorthreshold:
+                    nb_row = np.where(tri == v1)
+                    nbs = np.unique(tri[nb_row[0], :])
+                    nbs = nbs[nbs != v1]
+                    pos[v1, :] = np.sum(pos[nbs, :], axis=0) / len(nbs)
+                    num_corrected += 1
+                elif np.linalg.norm(pos[v2, :] - pos[v3, :]) > errorthreshold:
+                    nb_row = np.where(tri == v2)
+                    nbs = np.unique(tri[nb_row[0], :])
+                    nbs = nbs[nbs != v2]
+                    pos[v2, :] = np.sum(pos[nbs, :], axis=0) / len(nbs)
+                    num_corrected += 1
+            elif (np.linalg.norm(pos[v2, :] - pos[v3, :]) > errorthreshold and
+                  np.linalg.norm(pos[v1, :] - pos[v3, :]) > errorthreshold):
+                nb_row = np.where(tri == v3)
+                nbs = np.unique(tri[nb_row[0], :])
+                nbs = nbs[nbs != v3]
+                pos[v3, :] = np.sum(pos[nbs, :], axis=0) / len(nbs)
+                num_corrected += 1
+
+        if ii in smooth:
+            pos = lpflow_trismooth(pos, tri)
+        bnd[ii] = (pos, tri)
+
+    print(f"Corrected {num_corrected} vertex positions.")
+    return bnd
+
+
+def lpflow_trismooth(xyz, t):
+    """
+    Laplace flow mesh smoothing for vertex ring.
+    """
+    if t.shape[1] != 3:
+        raise ValueError('Triangle element matrix should be mx3!')
+    if xyz.shape[1] != 3:
+        raise ValueError('Vertices should be nx3!')
+
+    conn = neighborelem(t, np.max(t))
+    xyzn = xyz.copy()
+
+    for k in range(len(xyz)):
+        indt01 = conn[k]
+        indv01 = np.unique(t[indt01, :].flatten())
+        vdist = xyz[indv01, :] - xyz[k, :]
+        dist = np.sqrt(np.sum(vdist * vdist, axis=1))
+        indaux1 = np.where(dist == 0)[0]
+        vdist = np.delete(vdist, indaux1, axis=0)
+        if len(dist) == 0:
+            xyzn[k, :] = np.nan
+        else:
+            d = len(vdist)
+            vcorr = np.sum(vdist / d, axis=0)
+            xyzn[k, :] = xyz[k, :] + vcorr
+    return xyzn
+
+
+def neighborelem(tri, n_vertices):
+    """
+    Find neighboring elements for each vertex.
+    """
+    conn = [[] for _ in range(n_vertices + 1)]
+    for i in range(tri.shape[0]):
+        for j in range(3):
+            conn[tri[i, j]].append(i)
+    return conn
+ 
+
+
