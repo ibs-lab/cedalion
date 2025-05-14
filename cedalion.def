@@ -5,23 +5,38 @@ From: continuumio/miniconda3
     mkdir $APPTAINER_ROOTFS/app
 
 %post
-	export DEBIAN_FRONTEND=noninteractive
-	chmod 1777 /tmp
-	apt-get update 
-	apt-get install -y build-essential
-	apt-get install -y xvfb
-	apt-get install -y libgl1-mesa-dev
 
-	conda update -n base -c defaults conda -y
-	conda env create -n cedalion -f /app/environment_dev.yml
-	conda run --no-capture-output -n cedalion pip install -e /app
+    export DEBIAN_FRONTEND=noninteractive
+    chmod 1777 /tmp
+
+    # system deps for build + Xvfb
+    apt-get update
+    apt-get install -y build-essential xvfb libgl1-mesa-dev curl wget apt-transport-https gpg
+
+    mkdir -p /etc/apt/keyrings
+
+    # add Microsoft’s VS Code APT repo and install the CLI
+    wget -qO- https://packages.microsoft.com/keys/microsoft.asc \
+      | gpg --dearmor > /etc/apt/keyrings/packages.microsoft.gpg
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/packages.microsoft.gpg] \
+      https://packages.microsoft.com/repos/code stable main" \
+      > /etc/apt/sources.list.d/vscode.list
+    apt-get update
+    apt-get install -y code
+
+    # conda env for Cedalion
+    conda update -n base -c defaults conda -y
+    conda env create -n cedalion -f /app/environment_dev.yml
+    conda run --no-capture-output -n cedalion pip install -e /app
+
 
 %environment
-	export DISPLAY=:99.0
-	export PYVISTA_OFF_SCREEN=true
+    export DISPLAY=:99.0
+    export PYVISTA_OFF_SCREEN=true
 
-	. /opt/conda/etc/profile.d/conda.sh
-	conda activate cedalion
-	Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-	sleep 3
+    # activate Cedalion conda env and start Xvfb
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate cedalion
+    Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+    sleep 3
 
