@@ -1,6 +1,10 @@
 """Functions to create the design matrix for the GLM."""
 
 from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass, field
+
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -12,148 +16,152 @@ import cedalion.xrutils as xrutils
 from .basis_functions import TemporalBasisFunction
 
 
-def make_design_matrix(
-    ts_long: cdt.NDTimeSeries,
-    ts_short: cdt.NDTimeSeries | None,
-    stim: pd.DataFrame,
-    geo3d: cdt.LabeledPointCloud,
-    basis_function: TemporalBasisFunction,
-    drift_order: int | None,
-    short_channel_method: str | None,
-):
-    """Generate the design matrix for the GLM.
+@dataclass
+class DesignMatrix:
+    common : xr.DataArray | None = None
+    channel_wise : list[xr.DataArray] = field(default_factory=list)
+
+    @property
+    def regressors(self):
+        result = []
+        if self.common is not None:
+            result.extend([str(r) for r in self.common.regressor.values])
+        if self.channel_wise:
+            result.extend(
+                str(r) for cw in self.channel_wise for r in cw.regressor.values
+            )
+
+        return result
+
+    def __repr__(self):
+        uregs = ",".join([f"'{r}'" for r in self.common.regressor.values])
+        cwregs = ",".join(
+            [f"'{r}'" for cw in self.channel_wise for r in cw.regressor.values]
+        )
+        return f"DesignMatrix(universal=[{uregs}], channel_wise=[{cwregs}])"
+
+
+    def __and__(self, other: DesignMatrix):
+        our_regressors = set(self.regressors)
+        for reg in other.regressors:
+            if reg in our_regressors:
+                raise ValueError(
+                    "Cannot concatenate design matrices. "
+                    f"Both contain the regressor '{reg}'."
+                )
+
+        if (self.common is not None) and (other.common is not None):
+            common=xr.concat([self.common, other.common], dim="regressor")
+        elif (self.common is not None) and (other.common is None):
+            common = self.common.copy()
+        elif (self.common is None) and (other.common is not None):
+            common = other.common.copy()
+        elif (self.common is None) and (other.common is None):
+            common = None
+
+        return DesignMatrix(
+            common=common,
+            channel_wise=self.channel_wise + other.channel_wise
+        )
+
+
+    def iter_computational_groups(
+        self,
+        ts: cdt.NDTimeSeries,
+        channel_groups: list[int] | None = None,
+    ):
+        """Combine universal and channel-wise regressors and yield a DM for each group.
+
+        Args:
+            ts: The time series to be modeled.
+            channel_groups: Optional list of channel groups.
+
+        Yields:
+            A tuple containing:
+                - dim3 (str): The third dimension name.
+                - group_y (cdt.NDTimeSeries): The grouped time series.
+                - group_design_matrix (xr.DataArray): The grouped design matrix.
+        """
+
+        channel_wise_regressors = self.channel_wise
+
+        dim3_name = xrutils.other_dim(self.common, "time", "regressor")
+
+        for cwreg in self.channel_wise:
+            assert cwreg.sizes["regressor"] == 1
+            assert (ts.channel.values == cwreg.channel.values).all()
+
+        comp_groups = []
+        for reg in self.channel_wise:
+            if "comp_group" in reg.coords:
+                comp_groups.append(reg["comp_group"].values)
+            else:
+                comp_groups.append(_hash_channel_wise_regressor(reg))
+
+        if channel_groups is not None:
+            assert len(channel_groups) == ts.sizes["channel"]
+            comp_groups.append(channel_groups)
+
+        if len(comp_groups) == 0:
+            # There are no channel-wise regressors. Just iterate over the third dim.
+            # of the design matrix.
+            for dim3 in self.common[dim3_name].values:
+                dm = self.common.sel({dim3_name: dim3})
+                # group_y = ts.sel({dim3_name: dim3})
+                channels = ts.channel.values
+                # yield dim3, group_y, dm
+                yield dim3, channels, dm
+
+            return
+        else:
+            # there are channel-wise regressors. For each computational group, in which
+            # the channel-wise regressors are identical, we have to assemble and yield
+            # the design-matrix.
+
+            chan_idx_with_same_comp_group = defaultdict(list)
+
+            for i_ch, all_comp_groups in enumerate(zip(*comp_groups)):
+                chan_idx_with_same_comp_group[all_comp_groups].append(i_ch)
+
+            for dim3 in self.common[dim3_name].values:
+                dm = self.common.sel({dim3_name: dim3})
+
+                for chan_indices in chan_idx_with_same_comp_group.values():
+                    channels = ts.channel[np.asarray(chan_indices)].values
+
+                    regs = []
+                    for reg in channel_wise_regressors:
+                        regs.append(
+                            reg.sel({"channel": channels, dim3_name: dim3})
+                            .isel(channel=0)  # regs are identical within a group
+                            .pint.dequantify()
+                        )
+
+                    group_design_matrix = xr.concat([dm] + regs, dim="regressor")
+
+                    # yield dim3, group_y, group_design_matrix
+                    yield dim3, channels, group_design_matrix
+
+
+def _hash_channel_wise_regressor(regressor: xr.DataArray) -> list[int]:
+    """Hashes each channel slice of the regressor array.
 
     Args:
-        ts_long (cdt.NDTimeSeries): Time series of long distance channels.
-        ts_short (cdt.NDTimeSeries): Time series of short distance channels.
-        stim (DataFrame): Stimulus DataFrame
-        geo3d (cdt.LabeledPointCloud): Probe geometry
-        basis_function (TemporalBasisFunction): the temporal basis function(s) to model
-            the HRF.
-        drift_order (int): If not None specify the highest polynomial order of the drift
-            terms.
-        short_channel_method (str): Specifies the method to add short channel
-            information to the design matrix
-            Options:
-                'closest': Use the closest short channel
-                'max_corr': Use the short channel with the highest correlation
-                'mean': Use the average of all short channels.
+        regressor: array of channel-wise regressors. Dims
+            (channel, regressor, time, chromo|wavelength)
 
     Returns:
-        A tuple containing the global design_matrix and a list of channel-wise
-        regressors.
+        A list of hash values, one hash for each channel.
     """
 
-    dm = make_hrf_regressors(ts_long, stim, basis_function)
-
-    if drift_order is not None:
-        dm_drift = make_drift_regressors(ts_long, drift_order=drift_order)
-        dm = xr.concat([dm, dm_drift], dim="regressor")
+    tmp = regressor.pint.dequantify()
+    n_channel = regressor.sizes["channel"]
+    return [hash(tmp.isel(channel=i).values.data.tobytes()) for i in range(n_channel)]
 
 
-    channel_wise_regressors = None
-
-    if (short_channel_method is not None) and (ts_short is None):
-        raise ValueError("ts_short may not be None.")
-
-    if short_channel_method == "closest":
-        channel_wise_regressors = [closest_short_channel(ts_long, ts_short, geo3d)]
-    elif short_channel_method == "max_corr":
-        channel_wise_regressors = [max_corr_short_channel(ts_long, ts_short)]
-    elif short_channel_method == "mean":
-        dm_short = average_short_channel(ts_short)
-        dm = xr.concat([dm, dm_short], dim="regressor")
-
-    return dm, channel_wise_regressors
-
-
-def make_drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> xr.DataArray:
-    """Create drift regressors.
-
-    Args:
-        ts (cdt.NDTimeSeries): Time series data.
-        drift_order (int): The highest polynomial order of the drift terms.
-
-    Returns:
-        xr.DataArray: A DataArray containing the drift regressors.
-    """
-    dim3 = xrutils.other_dim(ts, "channel", "time")
-    ndim3 = ts.sizes[dim3]
-
-    nt = ts.sizes["time"]
-
-    drift_regressors = np.ones((nt, drift_order + 1, ndim3))
-
-    for i in range(1, drift_order + 1):
-        tmp = np.arange(1, nt + 1, dtype=float) ** (i)
-        tmp /= tmp[-1]
-        drift_regressors[:, i, 0] = tmp
-
-    for i in range(1, ndim3):
-        drift_regressors[:, :, i] = drift_regressors[:, :, 0]
-
-    regressor_names = [f"Drift {i}" for i in range(drift_order + 1)]
-
-    drift_regressors = xr.DataArray(
-        drift_regressors,
-        dims=["time", "regressor", dim3],
-        coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
-    )
-
-    return drift_regressors
-
-
-def pad_time_axis(time: ArrayLike, onsets: ArrayLike):
-    min_onset = onsets.min()
-
-    if min_onset < time[0]:
-        dt = (time[1:] - time[:-1]).mean()
-        pad_before = int(np.ceil(np.abs(min_onset - time[0]) / dt))
-        padded_time = np.hstack((np.arange(-pad_before, 0) * dt, time))
-    else:
-        pad_before = 0
-        padded_time = time
-
-    return padded_time, pad_before
-
-
-def build_stim_array(
-    time: ArrayLike, onsets: ArrayLike, durations: None | ArrayLike, values: ArrayLike
-) -> np.ndarray:
-    """Build an array indicating active stimulus periods.
-
-    The resuting array values are set from values between onset and onset+duration and
-    zero everywhere else.
-
-    Args:
-        time: the time axis
-        onsets: times of stimulus onsets
-        durations: either durations of each stimulus or None, in which case the stimulus
-            duration is set to one sample.
-        values: Stimulus values.
-
-    Returns:
-        The array denoting
-
-    """
-
-    smpl_start = time.searchsorted(onsets)
-    if durations is None:
-        smpl_stop = smpl_start + 1
-    else:
-        smpl_stop = time.searchsorted(onsets + durations)
-
-    stim = np.zeros_like(time)
-    for start, stop, value in zip(smpl_start, smpl_stop, values):
-        stim[start:stop] = value
-
-    return stim
-
-
-
-def make_hrf_regressors(
+def hrf_regressors(
     ts: cdt.NDTimeSeries, stim: pd.DataFrame, basis_function: TemporalBasisFunction
-):
+) -> DesignMatrix:
     """Create regressors modelling the hemodynamic response to stimuli.
 
     Args:
@@ -201,7 +209,7 @@ def make_hrf_regressors(
     shifted_stim = stim.copy()
     shifted_stim["onset"] += basis.time.values.min()
 
-    padded_time, pad_before = pad_time_axis(ts.time.values, shifted_stim["onset"])
+    padded_time, pad_before = _pad_time_axis(ts.time.values, shifted_stim["onset"])
 
     if n_components == 1:
         regressor_names = [f"HRF {tt}" for tt in trial_types]
@@ -246,7 +254,95 @@ def make_hrf_regressors(
 
     # hrf_regs = hrf_regs.pint.quantify("micromolar")
 
-    return regressors
+    return DesignMatrix(common=regressors, channel_wise=[])
+
+
+def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
+    """Create drift regressors.
+
+    Args:
+        ts (cdt.NDTimeSeries): Time series data.
+        drift_order (int): The highest polynomial order of the drift terms.
+
+    Returns:
+        xr.DataArray: A DataArray containing the drift regressors.
+    """
+    dim3 = xrutils.other_dim(ts, "channel", "time")
+    ndim3 = ts.sizes[dim3]
+
+    nt = ts.sizes["time"]
+
+    drift_regressors = np.ones((nt, drift_order + 1, ndim3))
+
+    for i in range(1, drift_order + 1):
+        tmp = np.arange(1, nt + 1, dtype=float) ** (i)
+        tmp /= tmp[-1]
+        drift_regressors[:, i, 0] = tmp
+
+    for i in range(1, ndim3):
+        drift_regressors[:, :, i] = drift_regressors[:, :, 0]
+
+    regressor_names = [f"Drift {i}" for i in range(drift_order + 1)]
+
+    drift_regressors = xr.DataArray(
+        drift_regressors,
+        dims=["time", "regressor", dim3],
+        coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
+    )
+
+    return DesignMatrix(common=drift_regressors, channel_wise=[])
+
+
+def _pad_time_axis(time: ArrayLike, onsets: ArrayLike):
+    """Make sure that time axis includes the earliest stimulus onset."""
+    min_onset = onsets.min()
+
+    if min_onset < time[0]:
+        dt = (time[1:] - time[:-1]).mean()
+        pad_before = int(np.ceil(np.abs(min_onset - time[0]) / dt))
+        padded_time = np.hstack((np.arange(-pad_before, 0) * dt, time))
+    else:
+        pad_before = 0
+        padded_time = time
+
+    return padded_time, pad_before
+
+
+def build_stim_array(
+    time: ArrayLike, onsets: ArrayLike, durations: None | ArrayLike, values: ArrayLike
+) -> np.ndarray:
+    """Build an array indicating active stimulus periods.
+
+    The resuting array values are set from values between onset and onset+duration and
+    zero everywhere else.
+
+    Args:
+        time: the time axis
+        onsets: times of stimulus onsets
+        durations: either durations of each stimulus or None, in which case the stimulus
+            duration is set to one sample.
+        values: Stimulus values.
+
+    Returns:
+        The array denoting
+
+    """
+
+    smpl_start = time.searchsorted(onsets)
+    if durations is None:
+        smpl_stop = smpl_start + 1
+    else:
+        smpl_stop = time.searchsorted(onsets + durations)
+        # when durations are provided make sure that a trial is at least one sample
+        # wide
+        too_short_mask = smpl_stop == smpl_start
+        smpl_stop[too_short_mask] = smpl_start[too_short_mask] + 1
+
+    stim = np.zeros_like(time)
+    for start, stop, value in zip(smpl_start, smpl_stop, values):
+        stim[start:stop] = value
+
+    return stim
 
 
 def _regressors_from_selected_short_channels(
@@ -254,6 +350,8 @@ def _regressors_from_selected_short_channels(
     ts_short: cdt.NDTimeSeries,
     selected_short_ch_indices: np.ndarray,
 ) -> xr.DataArray:
+    """Build channel-wise short-channel regressors from a selection."""
+
     # pick for each long channel from ts_short the selected closest channel
     # regressors has same dims as ts_long/ts_short and same channels as ts_long
     regressors = ts_short.isel(channel=selected_short_ch_indices)
@@ -285,10 +383,10 @@ def _regressors_from_selected_short_channels(
     return regressors
 
 
-def closest_short_channel(
+def closest_short_channel_regressor(
     ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries, geo3d: cdt.LabeledPointCloud
 ):
-    """Create channel-wise regressors use closest nearby short channel.
+    """Create channel-wise regressors using the closest nearby short channel.
 
     Args:
         ts_long (NDTimeSeries): Time series of long channels
@@ -317,10 +415,12 @@ def closest_short_channel(
         ts_long, ts_short, closest_short_ch_indices
     )
 
-    return regressors
+    return DesignMatrix(common=None, channel_wise=[regressors])
 
 
-def max_corr_short_channel(ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries):
+def max_corr_short_channel_regressor(
+    ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries
+):
     """Create channel-wise regressors using the most correlated short channels.
 
     For each long channel the short channel is selected that has the highest
@@ -360,9 +460,10 @@ def max_corr_short_channel(ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries
         ts_long, ts_short, max_corr_short_ch_indices
     )
 
-    return regressors
+    return DesignMatrix(common=None, channel_wise=[regressors])
 
-def average_short_channel(ts_short: cdt.NDTimeSeries):
+
+def average_short_channel_regressor(ts_short: cdt.NDTimeSeries):
     """Create a regressor by averaging all short channels.
 
     Args:
@@ -373,8 +474,8 @@ def average_short_channel(ts_short: cdt.NDTimeSeries):
     """
 
     ts_short = ts_short.pint.dequantify()
-    regressor = ts_short.mean("channel").expand_dims("regressor")
+    regressor = ts_short.mean("channel", skipna=True).expand_dims("regressor")
     regressor = regressor.assign_coords({"regressor": ["short"]})
     regressor = regressor.transpose("time", "regressor", ...)
 
-    return regressor
+    return DesignMatrix(common=regressor, channel_wise=[])

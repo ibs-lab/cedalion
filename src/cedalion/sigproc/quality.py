@@ -1133,3 +1133,80 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
     shift_mask = shift_mask.isel(time=slice(pad_samples,-pad_samples))
 
     return shift_mask
+
+
+
+def stimulus_mask(df_stim : pd.DataFrame, mask : xr.DataArray) -> xr.DataArray:
+    """Create a mask which events overlap with periods flagged as tainted in mask.
+
+    Args:
+        df_stim: stimulus data frame
+        mask: signal quality mask. Must contain dimensions 'channel' and 'time'
+
+    Returns:
+        A boolean mask with dimensions "stim", "channel".
+        The stim dimension matches the stimulus dataframe. Stimuli are marked as
+        TAINTED when there is any TAINTED flag in the mask between onset and onset+
+        duration.
+    """
+    assert mask.ndim == 2
+    assert "channel" in mask.dims
+    assert "time" in mask.dims
+
+    result = np.zeros((len(df_stim), mask.sizes["channel"]), dtype=bool)
+
+    for i, r in df_stim.iterrows():
+        tmp = mask.sel(
+            time=(r["onset"] <= mask.time) & (mask.time < (r["onset"] + r["duration"]))
+        )
+        result[i,:] = (tmp == CLEAN).all("time")
+
+    return xr.DataArray(
+        result,
+        dims=["stim", "channel"],
+        coords=xrutils.coords_from_other(
+            mask,
+            dims=["channel"],
+            stim=("stim", df_stim.index),
+            trial_type=("stim", df_stim.trial_type),
+        ),
+    )
+
+def repair_amp(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
+    """Replace nonpositive amp values and optionally fill NaNs.
+
+    TODO: Optimize handling of sequential nonpositive values.
+
+    Args:
+        amp: Amplitude data
+        median_len: Window size for the median filter
+        interp_nan: If True, interpolate NaNs in the data
+        **kwargs: Additional arguments for xarray interpolate_na function, such
+            as method = "linear" (default), method = "nearest", etc. See xarray
+            documentation for more details.
+    """
+    pad_width = median_len // 2
+
+    # Fill NaNs
+    if interp_nan:
+        amp = amp.pint.dequantify()
+        amp = amp.interpolate_na(dim="time", **kwargs)
+        amp = amp.pint.quantify()
+
+    # Replace nonpositive values with a small value
+    unit = amp.pint.units
+    amp = amp.where(amp>0, 1e-18 * unit)
+
+    if median_len > 1:
+        # Pad the data before applying the median filter
+        padded_amp = amp.pad(time=(pad_width, pad_width), mode="edge")
+
+        # Apply median filter
+        filtered_padded_amp = (
+            padded_amp.rolling(time=median_len, center=True)
+            .reduce(np.median)
+        )
+        # Trim the padding after applying the filter
+        return filtered_padded_amp.isel(time=slice(pad_width, -pad_width))
+
+    return amp

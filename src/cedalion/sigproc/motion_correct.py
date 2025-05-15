@@ -44,6 +44,9 @@ def motion_correct_spline(
     t = np.arange(0, len(fNIRSdata.time), 1 / fs)
     t = t[: len(fNIRSdata.time)]
 
+    units = fNIRSdata.pint.units
+    fNIRSdata = fNIRSdata.pint.dequantify()
+
     dodSpline = fNIRSdata.copy()
 
     for ch in fNIRSdata.channel.values:
@@ -155,6 +158,9 @@ def motion_correct_spline(
             dodSpline.loc[dict(channel=ch, wavelength=wl)] = dodSpline_chan
 
     # dodSpline = dodSpline.unstack('measurement').pint.quantify()
+
+    if units:
+        dodSpline = dodSpline.pint.quantify(units)
 
     return dodSpline
 
@@ -488,6 +494,14 @@ def tddr(ts: cdt.NDTimeSeries):
                 signal.loc[dict(channel=[ch], wavelength=[wl])] = corrected
         return signal
 
+    # Early exit: signal is (nearly) constant
+    if np.allclose(np.squeeze(signal.values), np.squeeze(signal.values)[0], rtol=1e-8,
+                   atol=1e-12):
+        print(f"Signal is near constant, returning original signal at "
+              f"(channel={signal.channel.values[0]}, "
+              f"wavelength={signal.wavelength.values[0]}).")
+        return signal
+
     # Preprocess: Separate high and low frequencies
     signal_mean = np.mean(signal)
     signal -= signal_mean
@@ -519,6 +533,8 @@ def tddr(ts: cdt.NDTimeSeries):
 
         # Step 3c. Robust estimate of standard deviation of the residuals
         sigma = 1.4826 * np.median(dev)
+        if sigma < 1e-10:
+            return signal + signal_mean
 
         # Step 3d. Scale deviations by standard deviation and tuning parameter
         r = dev / (sigma * tune)
@@ -530,9 +546,6 @@ def tddr(ts: cdt.NDTimeSeries):
         if abs(mu - mu0) < D * max(abs(mu), abs(mu0)):
             break
 
-    else:
-        # Warn if the maximum number of iterations was reached without convergence
-        print("Warning: Robust estimation did not converge within 50 iterations.")
 
     # Step 4. Apply robust weights to centered derivative
     new_deriv = w * (deriv - mu)
