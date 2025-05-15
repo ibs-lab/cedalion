@@ -258,6 +258,9 @@ def chunked_eff_xr_matmult(
         A new DataArray of containing the result of the matrix multiplication over `contract_dim`,
          with coords, dims, and attrs preserved. Should yield the same result as `xr.dot(A, B, dims=[contract_dim])`
          but at increased speed and with a much lower memory footprint.
+
+    Initial Contirbutors:
+        - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
     """
     # Total samples & number of chunks
     N = A.sizes[sample_dim]
