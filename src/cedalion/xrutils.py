@@ -249,9 +249,9 @@ def chunked_eff_xr_matmult(
     Args:
         A: DataArray to multiply (dims include `contract_dim` and `sample_dim` among others)
         B: DataArray defining the mat-mul (dims include `contract_dim` and others)
-        contract_dim: name of the axis to contract (e.g. "flat_channel")
-        sample_dim: name of the axis along which to chunk (default "time")
-        chunksize: max size of each chunk along `sample_dim`
+        contract_dim: name of the dimension to contract (e.g. "flat_channel")
+        sample_dim: name of the dimension along which to chunk (e.g. "time")
+        chunksize: max size of each chunk along dimension `sample_dim`
         tmpdir: optional path to temp directory (auto‐created and removed if None)
 
     Returns:
