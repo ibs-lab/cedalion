@@ -5,6 +5,9 @@ import warnings
 import numpy as np
 import pint
 import xarray as xr
+import os
+import tempfile
+import shutil
 
 
 def pinv(array: xr.DataArray) -> xr.DataArray:
@@ -231,3 +234,183 @@ def unit_stripping_is_error(is_error : bool = True):
             if f[0] =="error" and f[2] == pint.errors.UnitStrippedWarning:
                 del warnings.filters[i]
                 break
+
+
+def chunked_eff_xr_matmult(
+    A: xr.DataArray,
+    B: xr.DataArray,
+    contract_dim: str,
+    sample_dim: str,
+    chunksize: int = 5000,
+    tmpdir: str | None = None
+) -> xr.DataArray:
+    """Performs a large matrix multiplication of A and B, chunking A along `sample_dim` to avoid memory issues, streams each chunk to disk, and then rebuilds a full DataArray.
+
+    Args:
+        A: DataArray to multiply (dims include `contract_dim` and `sample_dim` among others)
+        B: DataArray defining the mat-mul (dims include `contract_dim` and others)
+        contract_dim: name of the axis to contract (e.g. "flat_channel")
+        sample_dim: name of the axis along which to chunk (default "time")
+        chunksize: max size of each chunk along `sample_dim`
+        tmpdir: optional path to temp directory (auto‐created and removed if None)
+
+    Returns:
+        A new DataArray of shape B_other_dims + A_other_dims, containing the result
+        of the matmul over `contract_dim`, with coords, dims, and attrs preserved.
+    """
+    # Total samples & number of chunks
+    N = A.sizes[sample_dim]
+    n_chunks = int(np.ceil(N / chunksize))
+
+    # 1) Build a “shell” result for metadata by doing the dot on the first sample
+    A0 = A.isel({sample_dim: slice(0, 1)})  # keep sample_dim as length 1
+    Xres = xr.dot(B, A0, dims=[contract_dim])
+
+    # 2) Prepare for raw numpy multiply
+    dims_B_not = [d for d in B.dims if d != contract_dim]
+    dims_A_not = [d for d in A.dims if d != contract_dim]
+    B_mat = B.transpose(*dims_B_not, contract_dim).values
+    A2 = A.transpose(contract_dim, *dims_A_not)
+
+    # 3) Temp directory
+    cleanup = False
+    if tmpdir is None:
+        tmpdir = tempfile.mkdtemp()
+        cleanup = True
+    else:
+        os.makedirs(tmpdir, exist_ok=True)
+
+    print(f"Large Matrix Multiplication: Processing {n_chunks} chunks...")
+
+    # 4) Stream‐compute each chunk
+    file_paths = []
+    for i in range(n_chunks):
+        start = i * chunksize
+        stop = min((i + 1) * chunksize, N)
+        A_chunk = A2.isel({sample_dim: slice(start, stop)})
+        C_chunk = B_mat.dot(A_chunk.values)  # raw (out_dim, chunk_len, ...)
+        fn = os.path.join(tmpdir, f"chunk_{i:04d}.npy")
+        np.save(fn, C_chunk)
+        file_paths.append(fn)
+        del A_chunk, C_chunk
+        print(f"Chunk {i+1}/{n_chunks} done.")
+
+    # 5) Read back & concatenate along the sample axis
+    arrs = [np.load(fp) for fp in sorted(file_paths)]
+    axis = Xres.get_axis_num(sample_dim)
+    full_arr = np.concatenate(arrs, axis=axis)
+
+    if cleanup:
+        shutil.rmtree(tmpdir)
+
+    # create new coordinates
+    coords = {
+    name: coord
+    for name, coord in Xres.coords.items()
+    if sample_dim not in coord.dims
+    }
+    sample_coords = {
+        name: coord
+        for name, coord in A.coords.items()
+        if sample_dim in coord.dims
+    }
+    coords.update(sample_coords)
+
+
+    # 8) rebuild the DataArray using shell’s metadata
+    result = xr.DataArray(
+        data   = full_arr,
+        dims   = Xres.dims,
+        coords = coords,
+        attrs  = Xres.attrs
+    )
+    # add time coords
+    result.assign_coords()
+    return result
+
+    """ # Determine how many samples and chunks
+    N = A.sizes[sample_dim]
+    n_chunks = int(np.ceil(N / chunksize))
+
+    # Prepare output dims, coords, attrs
+    dims_A_not = [d for d in A.dims if d != contract_dim]
+    dims_B_not = [d for d in B.dims if d != contract_dim]
+    out_dims   = dims_B_not + dims_A_not
+
+    # collect coords from B then A (excluding contract_dim)
+    coords = {
+        d: B.coords[d]
+        for d in B.coords if d != contract_dim
+    }
+    coords.update({
+        d: A.coords[d]
+        for d in A.coords if d != contract_dim and d not in coords
+    })
+
+    attrs = B.attrs.copy()
+
+    # Set up the temporary directory
+    cleanup = False
+    if tmpdir is None:
+        tmpdir = tempfile.mkdtemp()
+        cleanup = True
+    else:
+        os.makedirs(tmpdir, exist_ok=True)
+
+    file_paths = []
+
+    # Prepare raw numpy matrices
+    #    Ensure B: (out_dim, contract_dim)
+    dims_B = dims_B_not + [contract_dim]
+    B2 = B.transpose(*dims_B)
+    B_mat = B2.values
+
+    #    Ensure A: (contract_dim, sample_dim) up front
+    dims_A = [contract_dim] + dims_A_not
+    A2 = A.transpose(*dims_A)
+
+    # Loop over chunks
+    print(f"Large Matrix Multiplication: Processing {n_chunks} chunks...")
+    for i in range(n_chunks):
+        start = i * chunksize
+        stop  = min((i + 1) * chunksize, N)
+
+        # slice A2 and get raw array
+        A_chunk = A2.isel({sample_dim: slice(start, stop)})
+        A_mat   = A_chunk.values
+
+        # raw numpy mat-mul → (out_dim, chunk_len)
+        C_chunk = B_mat.dot(A_mat)
+
+        # write to disk
+        fn = os.path.join(tmpdir, f"chunk_{i:04d}.npy")
+        np.save(fn, C_chunk)
+        file_paths.append(fn)
+
+        # free memory
+        del A_chunk, A_mat, C_chunk
+
+        print(f"Chunk {i+1}/{n_chunks} done.")
+
+    # Read back & concatenate along sample axis (axis=1)
+    chunk_arrays = [np.load(fp) for fp in sorted(file_paths)]
+    full_arr     = np.concatenate(chunk_arrays, axis=1)
+    # throw away any coords that reference the contracted dim
+    out_dims = dims_B_not + dims_A_not     # e.g. ["flat_vertex","time"]
+    coords = {
+        k: v for (k, v) in coords.items()
+        if set(v.dims).issubset(out_dims)
+    }
+
+    # cleanup if needed
+    if cleanup:
+        shutil.rmtree(tmpdir)
+
+    # Wrap back into xarray.DataArray
+    result = xr.DataArray(
+        full_arr,
+        dims   = out_dims,
+        coords = coords,
+        attrs  = attrs
+    )
+    return result """

@@ -1142,7 +1142,18 @@ def apply_inv_sensitivity(
     od_stacked = od.stack({"flat_channel": ["wavelength", "channel"]})
     od_stacked = od_stacked.pint.dequantify()
 
-    delta_conc = inv_sens @ od_stacked
+
+    # if od_stacked has more than 1000 time points, chunk it
+    if od_stacked.sizes["time"] > 1000:
+        delta_conc = xrutils.chunked_eff_xr_matmult(
+            od_stacked,
+            inv_sens,
+            contract_dim="flat_channel",
+            sample_dim = "time",
+            chunksize=1000)
+    else:
+        delta_conc = inv_sens @ od_stacked
+        print("nothing to chunk")
 
     # Construct a multiindex for dimension flat_vertex from chromo and vertex.
     # Afterwards use this multiindex to unstack flat_vertex. The resulting array
