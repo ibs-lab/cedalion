@@ -142,7 +142,7 @@ class Voxels:
         # apply transformation
         hom = (transform.pint.dequantify().values.dot(hom.T)).T
         # backtransformation
-        transformed = np.array([hom[i, :3] / hom[i, 3] for i in range(hom.shape[0])])
+        transformed = np.array([hom[i,:3] / hom[i,3] for i in range(hom.shape[0])])
 
         new_units = self.units * transform.pint.units
         new_crs = transform.dims[0]
@@ -172,19 +172,24 @@ class TrimeshSurface(Surface):
         units (pint.Unit): The units of the surface.
     """
 
+    _vertices: cdt.LabeledPointCloud = None
     mesh: trimesh.Trimesh
 
     @property
     def vertices(self) -> cdt.LabeledPointCloud:
-        result = xr.DataArray(
-            self.mesh.vertices,
-            dims=["label", self.crs],
-            coords={"label": np.arange(len(self.mesh.vertices))},
-            attrs={"units": self.units},
-        )
-        result = result.pint.quantify()
-
-        return result
+        if self._vertices is None:
+            result = xr.DataArray(
+                self.mesh.vertices,
+                dims=["label", self.crs],
+                coords={"label": np.arange(len(self.mesh.vertices))},
+                attrs={"units": self.units},
+            )
+            self._vertices = result.pint.quantify()
+        return self._vertices
+    
+    @vertices.setter
+    def vertices(self, value: cdt.LabeledPointCloud):
+        self._vertices = value
 
     @property
     def nvertices(self) -> int:

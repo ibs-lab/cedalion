@@ -181,3 +181,14 @@ scratch/
 # plugins
 plugins/
 
+
+#–– apptainer / container artifacts
+*.sif
+*.img
+pyxdf-overlay.img
+
+#–– xkb bind‐mount directory (host)
+xkb/
+
+
+
