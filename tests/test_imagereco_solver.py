@@ -20,6 +20,8 @@ def Adot_stacked():
         coords={
             "is_brain": ("vertex", [True] * 60 + [False] * 40),
             "channel": [f"C{c:02d}" for c in range(1, nchannel + 1)],
+            "source": ("channel", [f"S{c:02d}" for c in range(1, nchannel + 1)]),
+            "detector": ("channel", [f"D{c:02d}" for c in range(1, nchannel + 1)]),
             "wavelength": [760.0, 850.0],
         },
     )

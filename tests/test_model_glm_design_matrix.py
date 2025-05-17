@@ -7,6 +7,7 @@ import cedalion.datasets
 import cedalion.models.glm as glm
 import cedalion.models.glm.design_matrix as dm
 
+from cedalion import units
 
 @pytest.fixture
 def rec():
@@ -27,10 +28,11 @@ def rec():
 
 def test_avg_short_channel(rec):
     ts_long, ts_short = cedalion.nirs.split_long_short_channels(
-        rec["conc"], rec.geo3d, distance_threshold=1.5 * cedalion.units.cm
+        rec["conc"], rec.geo3d, distance_threshold=1.5 * units.cm
     )
 
-    regressor = dm.average_short_channel(ts_short)
+    dms = dm.average_short_channel_regressor(ts_short)
+    regressor = dms.common
 
     assert regressor.dims == ("time", "regressor", "chromo")
 
@@ -44,22 +46,37 @@ def test_avg_short_channel(rec):
 def test_make_design_matrix(rec):
     # split time series into two based on channel distance
     ts_long, ts_short = cedalion.nirs.split_long_short_channels(
-        rec["conc"], rec.geo3d, distance_threshold=1.5 * cedalion.units.cm
+        rec["conc"], rec.geo3d, distance_threshold=1.5 * units.cm
     )
 
-    for short_channel_method in [None, "closest", "max_corr", "mean"]:
-        design_matrix, channel_wise_regressors = dm.make_design_matrix(
-            ts_long,
-            ts_short,
-            rec.stim,
-            rec.geo3d,
-            basis_function=glm.Gamma(
-                tau=0 * cedalion.units.s,
-                sigma=3 * cedalion.units.s,
-                T=3 * cedalion.units.s,
-            ),
-            drift_order=1,
-            short_channel_method=short_channel_method,
-        )
+    # FIXME only checks that methods run and returned design matrices are combined.
 
-    # FIXME only checks that methods run.
+    dms = (
+        dm.hrf_regressors(
+            ts_long,
+            rec.stim,
+            glm.Gamma(tau=0 * units.s, sigma=3 * units.s, T=3 * units.s),
+        )
+        & dm.drift_regressors(ts_long, drift_order=1)
+        & dm.closest_short_channel_regressor(ts_long, ts_short, rec.geo3d)
+    )
+
+    dms = (
+        dm.hrf_regressors(
+            ts_long,
+            rec.stim,
+            glm.Gamma(tau=0 * units.s, sigma=3 * units.s, T=3 * units.s),
+        )
+        & dm.drift_regressors(ts_long, drift_order=1)
+        & dm.max_corr_short_channel_regressor(ts_long, ts_short)
+    )
+
+    dms = (
+        dm.hrf_regressors(
+            ts_long,
+            rec.stim,
+            glm.Gamma(tau=0 * units.s, sigma=3 * units.s, T=3 * units.s),
+        )
+        & dm.drift_regressors(ts_long, drift_order=1)
+        & dm.average_short_channel_regressor(ts_short)
+    )

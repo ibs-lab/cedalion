@@ -107,26 +107,51 @@ def channel_distances(amplitudes: cdt.NDTimeSeries, geo3d: cdt.LabeledPointCloud
     return dists
 
 
-def int2od(amplitudes: cdt.NDTimeSeries):
+def int2od(amplitudes: cdt.NDTimeSeries, return_baseline: bool = False):
     """Calculate optical density from intensity amplitude  data.
 
     Args:
         amplitudes (xr.DataArray, (time, channel, *)): amplitude data.
+        return_baseline (bool, optional): If True, also return the baseline data
+            used for OD conversion (useful to get back to intensity). Defaults to False.
 
     Returns:
         od: (xr.DataArray, (time, channel,*): The optical density data.
+        baseline: (xr.DataArray, (channel, *)): The intensity baseline data
+         (average time series) used for conversion to DO.
     """
     # check negative values in amplitudes and issue an error if yes
-    if np.any(amplitudes < 0):
+    if np.any(amplitudes <= 0):
         raise AssertionError(
             "Error: DataArray contains negative values. Please fix, for example by "
             "setting them to NaN with "
             "'amplitudes = amplitudes.where(amplitudes >= 0, np.nan)'"
         )
 
+    # calculate baseline
+    baseline = amplitudes.mean("time")
+
     # conversion to optical density
-    od = -np.log(amplitudes / amplitudes.mean("time"))
-    return od
+    od = -np.log(amplitudes / baseline)
+
+    if return_baseline:
+        return od, baseline
+    else:
+        return od
+
+
+def od2int(od: cdt.NDTimeSeries, baseline: cdt.NDTimeSeries):
+    """Recover intensity amplitude data from optical density data.
+
+    Args:
+        od (xr.DataArray, (time, channel, *)): The optical density data.
+        baseline (xr.DataArray, (channel, *)): The intensity baseline data
+            (average time series) that was used for conversion to DO.
+
+    Returns:
+        amplitudes (xr.DataArray, (time, channel, *)): The amplitude data.
+    """
+    return baseline * np.exp(-od)
 
 
 def od2conc(

@@ -119,7 +119,7 @@ def apply_mask(
             flag_collapse = True
             dims2collapse = [dim for dim in mask.dims if dim != dim_collapse]
             mask = mask.all(dim=dims2collapse)
-            print(f"mask collapsed to {dim_collapse} dimension")
+            # print(f"mask collapsed to {dim_collapse} dimension")
 
     # apply the mask to data_array according to instructions from "operator" argument
     if operator.lower() == "nan":
@@ -206,12 +206,19 @@ def coords_from_other(
     """
 
     for coord_name, coord_dataarray in source.coords.items():
-        assert len(coord_dataarray.dims) == 1
-        coord_dim = coord_dataarray.dims[0]
-        if dims and coord_dim not in dims:
-            continue
+        if coord_dataarray.dims == tuple(): # scalar values without dimension
+            if dims: # skip because they cannot belong to any selected dim
+                continue
+            aux_coords[coord_name] = coord_dataarray.values
+        else:
+            assert len(coord_dataarray.dims) == 1
+            coord_dim = coord_dataarray.dims[0]
 
-        aux_coords[coord_name] = (coord_dim, coord_dataarray.values)
+            # skip unwanted coordinates
+            if dims and (coord_dim not in dims):
+                continue
+
+            aux_coords[coord_name] = (coord_dim, coord_dataarray.values)
 
     return aux_coords
 
