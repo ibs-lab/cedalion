@@ -17,7 +17,9 @@ import cedalion.models.glm as glm
 import cedalion.plots
 import cedalion.typing as cdt
 from cedalion import units
-from cedalion.models.glm.basis_functions import TemporalBasisFunction
+from cedalion.models.glm.basis_functions import TemporalBasisFunction, _to_unit
+from scipy.signal.windows import tukey
+from cedalion.sigproc.frequency import sampling_rate
 
 
 def build_spatial_activation(
@@ -355,3 +357,76 @@ def plot_spatial_activation(
     plt_pv.camera.up = [0, 0, 1]
     plt_pv.add_text(title, position="upper_edge", font_size=20)
     plt_pv.show()
+
+class RandomGaussianSum(TemporalBasisFunction):
+    r"""A single HRF composed of Gaussians with time-dependent random weights."""
+
+    def __init__(
+        self,
+        t_start: cdt.QTime,
+        t_end: cdt.QTime,
+        t_delta: cdt.QTime,
+        t_std: cdt.QTime,
+        weight_std_max: float = 0.5,
+        weight_std_min: float = 0.05,
+        weight_mean: float = 0.7,
+        seed: int | None = None,
+    ):
+        super().__init__(convolve_over_duration=False)
+        self.t_start = _to_unit(t_start, units.s)
+        self.t_end = _to_unit(t_end, units.s)
+        self.t_delta = _to_unit(t_delta, units.s)
+        self.t_std = _to_unit(t_std, units.s)
+        self.weight_std_max = weight_std_max
+        self.weight_std_min = weight_std_min
+        self.weight_mean = weight_mean
+        self.rng = np.random.default_rng(seed)  # <-- added
+
+    def __call__(self, ts: cdt.NDTimeSeries) -> xr.DataArray:
+        fs = sampling_rate(ts).to(units.Hz)
+
+        # Add margin for smoother edges
+        self.t_start += 2 * self.t_std
+        self.t_end -= 2 * self.t_std
+
+        # Extend by 3*t_std to capture the full Gaussian
+        smpl_start = int(np.floor((self.t_start - 3 * self.t_std) * fs))
+        smpl_end = int(np.ceil((self.t_end + 3 * self.t_std) * fs)) + 1
+        t_hrf = np.arange(smpl_start, smpl_end) / fs
+        t_hrf = t_hrf.to("s")
+
+        duration = self.t_end - self.t_start
+        n_gauss = max(1, int(np.floor(duration / self.t_delta)))
+
+        mu = self.t_start + np.arange(n_gauss) * self.t_delta
+
+        # Gaussian envelope for std of weight distribution
+        mid = ((self.t_start + self.t_end) / 2.0).magnitude
+        spread = ((self.t_end - self.t_start) / 2.5).magnitude
+        mu_float = mu.to("s").magnitude
+        envelope = np.exp(-((mu_float - mid) ** 2) / spread**2)
+        stds = self.weight_std_min + (
+            self.weight_std_max - self.weight_std_min
+            ) * envelope
+
+        weights = self.rng.normal(loc=self.weight_mean, scale=stds)  # <-- changed
+
+        # Generate weighted Gaussians
+        gaussians = np.exp(
+            -((t_hrf[:, None] - mu[None, :]) ** 2) / self.t_std**2
+        ) * weights[None, :]
+
+        hrf = np.sum(gaussians, axis=1)
+        window = tukey(len(t_hrf), alpha=0.1)
+        hrf *= window
+        hrf /= np.max(hrf)  # normalize to peak 1
+        hrf = hrf.to_base_units().magnitude
+
+        return xr.DataArray(
+            hrf[:, None],
+            dims=["time", "component"],
+            coords={
+                "time": xr.DataArray(t_hrf, dims=["time"]).pint.dequantify(),
+                "component": ["random_gaussian_sum"],
+            },
+        )
