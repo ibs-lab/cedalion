@@ -79,6 +79,7 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         new_pos = [pos.x0 + 0.075, pos.y0, pos.width - 0.075, pos.height]
         # Set the new position
         self._dataTimeSeries_ax.set_position(new_pos)
+        self._dataTimeSeries_ax.clear()
 
         window_layout.addWidget(NavigationToolbar(self.plots,self),stretch=1)
         window_layout.addWidget(self.plots, stretch=8)
