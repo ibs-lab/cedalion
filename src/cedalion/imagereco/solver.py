@@ -31,6 +31,9 @@ def pseudo_inverse_stacked(
     if "units" in Adot.attrs:
         units = pint.Unit(Adot.attrs["units"])
         inv_units = (1 / units).units
+    elif Adot.pint.units is not None:
+        inv_units = (1 / Adot.pint.units).units
+        Adot = Adot.pint.dequantify()
     else:
         inv_units = pint.Unit("1")
 
@@ -43,12 +46,11 @@ def pseudo_inverse_stacked(
 
         L = np.sqrt(AAtdiag + lambda_spatial)
         Linv = 1 / L
-        Linv = np.diag(Linv)
-
-        A_hat = Adot.values @ Linv
+        A_hat = Adot.values * Linv[np.newaxis, :]
         AAt = A_hat @ A_hat.T
-        At = Linv**2 @ A_hat.T
+        At = (Linv[:, np.newaxis]**2) * A_hat.T
     else:  # no spatial regularization
+        AAt = Adot.values @ Adot.values.T
         AAt = Adot.values @ Adot.values.T
         At = Adot.values.T
 
