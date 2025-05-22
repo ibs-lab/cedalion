@@ -121,7 +121,7 @@ def int2od(amplitudes: cdt.NDTimeSeries, return_baseline: bool = False):
          (average time series) used for conversion to DO.
     """
     # check negative values in amplitudes and issue an error if yes
-    if np.any(amplitudes <= 0):
+    if np.any(amplitudes < 0):
         raise AssertionError(
             "Error: DataArray contains negative values. Please fix, for example by "
             "setting them to NaN with "
