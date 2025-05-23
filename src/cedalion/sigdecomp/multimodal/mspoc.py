@@ -6,7 +6,7 @@ from sklearn.cross_decomposition import CCA
 import xarray as xr
 
 
-from utils_multimodal_models import validate_dimension_labels, validate_time_shifts
+from cedalion.sigdecomp.multimodal.utils_multimodal_models import validate_dimension_labels, validate_time_shifts
 
 class mSPoC():
     """Implements the multimodal Source Power Co-modulation (mSPoC) algorithm based on :cite:t:`Dahne2013`.

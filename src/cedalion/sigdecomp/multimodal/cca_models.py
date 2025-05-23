@@ -3,7 +3,7 @@
 import numpy as np
 import xarray as xr
 
-from utils_multimodal_models import validate_dimension_labels, validate_dimension_sizes, standardize, validate_l1_reg, validate_l2_reg
+from cedalion.sigdecomp.multimodal.utils_multimodal_models import validate_dimension_labels, validate_dimension_sizes, standardize, validate_l1_reg, validate_l2_reg
 
 class MultimodalSourceDecomposition():
     """Class for decomposing multimodal data, X and Y, into latent sources using linear filters.

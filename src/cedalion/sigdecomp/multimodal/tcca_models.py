@@ -3,9 +3,9 @@
 import numpy as np
 import xarray as xr
 
-from utils_multimodal_models import validate_dimension_labels, validate_time_shifts, validate_l1_reg, validate_l2_reg
+from cedalion.sigdecomp.multimodal.utils_multimodal_models import validate_dimension_labels, validate_time_shifts, validate_l1_reg, validate_l2_reg
 
-from cca_models import MultimodalSourceDecomposition, estimate_filters
+from cedalion.sigdecomp.multimodal.cca_models import MultimodalSourceDecomposition, estimate_filters
 
 class MultimodalSourceDecompositionWithTemporalEmbedding(MultimodalSourceDecomposition):
     """Class for decomposing multimodal data (X and Y) into latent sources using linear filters, using temporal embedding.
