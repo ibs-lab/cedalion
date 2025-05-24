@@ -212,7 +212,7 @@ class Gamma(TemporalBasisFunction):
         self,
         tau: cdt.QTime | dict[str, cdt.QTime],
         sigma: cdt.QTime | dict[str, cdt.QTime],
-        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
+        T: cdt.QTime | dict[str, cdt.QTime] = 0*units.s,  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.tau = _to_unit(tau, units.s)
