@@ -936,6 +936,7 @@ def scalp_plot(
     bad_color: ColorType = [0.7, 0.7, 0.7],
     min_dist: Quantity | None = None,
     min_metric: float | None = None,
+    max_dist: Quantity | None = None,
     channel_lw: float = 2.0,
     optode_size: float = 36.0,
     optode_labels: bool = False,
@@ -961,6 +962,7 @@ def scalp_plot(
         bad_color: the color to use when the metric contains NaNs
         min_dist: if provided channels below this distance threshold are not drawn
         min_metric: if provided channels below this metric threshold are toned down
+        max_dist: if provided channels above this distance threshold are not drawn
         channel_lw: channel line width
         optode_size: optode marker size
         optode_labels: if True draw optode labels instead of markers
@@ -1027,6 +1029,8 @@ def scalp_plot(
         d = geo2d.loc[det]
 
         if (min_dist is not None) and (dist.item() < min_dist):
+            continue
+        if (max_dist is not None) and (dist.item() > max_dist):
             continue
 
         used_sources.add(str(src))
