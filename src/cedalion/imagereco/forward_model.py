@@ -1124,13 +1124,16 @@ class ForwardModel:
 
 
 def apply_inv_sensitivity(
-    od: cdt.NDTimeSeries, inv_sens: xr.DataArray
+    od: cdt.NDTimeSeries, inv_sens: xr.DataArray, chunk: bool = True,
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """Apply the inverted sensitivity matrix to optical density data.
 
     Args:
         od: time series of optical density data
         inv_sens: the inverted sensitivity matrix
+        chunk: optional piecewise matrix multiplication. 
+         default True, gets active if more than 1000 time samples are to be converted. 
+         False force-skips chunking.
 
     Returns:
         Two DataArrays for the brain and scalp with the reconcstructed time series per
@@ -1142,7 +1145,19 @@ def apply_inv_sensitivity(
     od_stacked = od.stack({"flat_channel": ["wavelength", "channel"]})
     od_stacked = od_stacked.pint.dequantify()
 
-    delta_conc = inv_sens @ od_stacked
+    # for image recon we have time-series data either with "time" or "reltime" dimension
+    sample_dim = next((d for d in ["time","reltime"] if d in od_stacked.dims), None)
+
+    # if od_stacked has more than 1000 time points, chunk it
+    if (od_stacked.sizes["time"] > 1000) and chunk:
+        delta_conc = xrutils.chunked_eff_xr_matmult(
+            od_stacked,
+            inv_sens,
+            contract_dim="flat_channel",
+            sample_dim = sample_dim,
+            chunksize=1000)
+    else:
+        delta_conc = inv_sens @ od_stacked
 
     # Construct a multiindex for dimension flat_vertex from chromo and vertex.
     # Afterwards use this multiindex to unstack flat_vertex. The resulting array
