@@ -1,15 +1,14 @@
-import os
 import tempfile
+
 import numpy as np
-import pytest
 import pandas as pd
+import pytest
 import xarray as xr
-from numpy.testing import assert_array_almost_equal
 
 import cedalion
 import cedalion.dataclasses as cdc
-from cedalion.io import load_tsv, export_to_tsv
-
+from cedalion.io import export_to_tsv, load_tsv
+from cedalion.testing import temporary_filename
 
 
 def test_export_to_tsv_measurement_list():
@@ -35,16 +34,13 @@ def test_export_to_tsv_other_points():
     )
 
     # File path to write to
-    out_file = tempfile.NamedTemporaryFile(suffix=".tsv", delete=False)
-    try:
-        export_to_tsv(out_file.name, points)
+    with temporary_filename(suffix=".tsv") as out_file:
+        export_to_tsv(out_file, points)
 
         # Read and validate output
-        with open(out_file.name, 'r') as f:
+        with open(out_file, 'r') as f:
             content = f.read()
             lines = content.strip().split('\n')
-    finally:
-        os.unlink(out_file.name)
 
     assert lines[0] == "labels\tX\tY\tZ\tPointType\tcrs=ijk\tunits=mm"
     assert lines[1].startswith("Fp1\t1.000000\t2.000000\t3.000000\tPointType.UNKNOWN")
@@ -54,24 +50,27 @@ def test_export_to_tsv_other_points():
 
 def test_load_tsv_with_source_index():
     # Create a TSV file with sourceIndex in header
-    tsv_path = tempfile.NamedTemporaryFile()
-    content = "sourceIndex\tdetectorIndex\n0\t1\n1\t2"
-    with open(str(tsv_path.name), 'w') as f:
-        f.write(content)
 
-    df = load_tsv(tsv_path.name)
+    with temporary_filename(suffix=".tsv") as tsv_path:
+        content = "sourceIndex\tdetectorIndex\n0\t1\n1\t2"
+        with open(str(tsv_path), 'w') as f:
+            f.write(content)
+
+        df = load_tsv(tsv_path)
+
     assert isinstance(df, pd.DataFrame)
     assert "sourceIndex" in df.columns
 
 
 def test_load_tsv_with_header_and_metadata():
     # Create a TSV with header and metadata crs/units
-    tsv_path = tempfile.NamedTemporaryFile()
-    content = "labels\tX\tY\tZ\tcrs=ijk\tunits=mm\nFp1\t1\t2\t3\nFp2\t4\t5\t6"
-    with open(tsv_path.name, 'w') as f:
-        f.write(content)
+    with temporary_filename(suffix=".tsv") as tsv_path:
+        content = "labels\tX\tY\tZ\tcrs=ijk\tunits=mm\nFp1\t1\t2\t3\nFp2\t4\t5\t6"
+        with open(tsv_path, 'w') as f:
+            f.write(content)
 
-    geo = load_tsv(tsv_path.name)
+        geo = load_tsv(tsv_path)
+
     assert isinstance(geo, xr.DataArray)
     assert list(geo.label.values) == ["Fp1", "Fp2"]
     assert geo.points.crs == "ijk"
@@ -80,12 +79,13 @@ def test_load_tsv_with_header_and_metadata():
 
 def test_load_tsv_without_header():
     # No header, just raw data
-    tsv_path = tempfile.NamedTemporaryFile()
-    content = "Fp1\t1\t2\t3\nFp2\t4\t5\t6"
-    with open(tsv_path.name, 'w') as f:
-        f.write(content)
+    with temporary_filename(suffix=".tsv") as tsv_path:
+        content = "Fp1\t1\t2\t3\nFp2\t4\t5\t6"
+        with open(tsv_path, 'w') as f:
+            f.write(content)
 
-    geo = load_tsv(tsv_path.name, crs="RAS", units="mm")
+        geo = load_tsv(tsv_path, crs="RAS", units="mm")
+
     assert isinstance(geo, xr.DataArray)
     assert list(geo.label.values) == ["Fp1", "Fp2"]
     assert geo.points.crs == "RAS"
@@ -94,17 +94,19 @@ def test_load_tsv_without_header():
 
 def test_load_tsv_point_type():
     # Create a TSV with point type 'Fp1'
-    tsv_path = tempfile.NamedTemporaryFile()
-    content = "labels\tX\tY\tZ\tPointType\n" + \
-              "U1\t1\t2\t3\tPointType.OBSCURE\n" + \
-              "S1\t1\t2\t3\tPointType.SOURCE\n" + \
-              "D1\t4\t5\t6\tPointType.DETECTOR\n" + \
-              "RPA\t10\t11\t12\tPointType.LANDMARK\n" + \
-              "Fp1\t7\t8\t9\tPointType.ELECTRODE"
-    with open(tsv_path.name, 'w') as f:
-        f.write(content)
+    with temporary_filename(suffix=".tsv") as tsv_path:
+        content = "labels\tX\tY\tZ\tPointType\n" + \
+                "U1\t1\t2\t3\tPointType.OBSCURE\n" + \
+                "S1\t1\t2\t3\tPointType.SOURCE\n" + \
+                "D1\t4\t5\t6\tPointType.DETECTOR\n" + \
+                "RPA\t10\t11\t12\tPointType.LANDMARK\n" + \
+                "Fp1\t7\t8\t9\tPointType.ELECTRODE"
 
-    geo = load_tsv(tsv_path.name)
+        with open(tsv_path, "w") as f:
+            f.write(content)
+
+        geo = load_tsv(tsv_path)
+
     assert isinstance(geo, xr.DataArray)
     assert list(geo.label.values) == ["U1", "S1", "D1", "RPA", "Fp1"]
     for i in range(5):
@@ -112,11 +114,11 @@ def test_load_tsv_point_type():
 
 def test_load_tsv_missing_columns():
     # Missing 'Z' column
-    tsv_path = tempfile.NamedTemporaryFile()
-    content = "labels\tX\tY\nFp1\t1\t2"
-    with open(tsv_path.name, 'w') as f:
-        f.write(content)
+    with temporary_filename(suffix=".tsv") as tsv_path:
+        content = "labels\tX\tY\nFp1\t1\t2"
+        with open(tsv_path.name, 'w') as f:
+            f.write(content)
 
-    with pytest.raises(ValueError, match="Missing Z in tsv file"):
-        load_tsv(tsv_path.name)
+        with pytest.raises(ValueError, match="Missing Z in tsv file"):
+            load_tsv(tsv_path.name)
 
