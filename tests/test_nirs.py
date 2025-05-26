@@ -49,6 +49,12 @@ def test_int2od(ts):
     assert_allclose(od.loc[ch, 850.0, :], [-np.log(1.5), -np.log(1.0), -np.log(0.5)])
 
 
+def test_od2int(ts):
+    od, baseline = cedalion.nirs.int2od(ts, return_baseline = True)
+    amp =  cedalion.nirs.od2int(od, baseline=baseline)
+    assert_allclose(ts, amp, rtol=1e-6, equal_nan=True)
+
+
 def test_od2conc2od():
     rec = cedalion.datasets.get_snirf_test_data()[0]
 
