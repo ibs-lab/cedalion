@@ -8,6 +8,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
                     modeling/31_glm_basis_functions.ipynb \
                     modeling/32_glm_fingertapping_example.ipynb \
                     modeling/33_glm_illustrative_example.ipynb \
+                    modeling/35_statsmodels_overview.ipynb \
                     signal_quality/20_scalp_coupling_index.ipynb \
                     signal_quality/21_data_quality_and_pruning.ipynb \
                     signal_quality/22_motion_artefacts_and_correction.ipynb \
