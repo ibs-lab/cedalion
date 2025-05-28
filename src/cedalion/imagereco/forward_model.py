@@ -1,9 +1,12 @@
 """Forward model for simulating light transport in the head.
-NOTE: Cedalion currently supports two ways to compute fluence: 
-1) via monte-carlo simulation using the MonteCarloXtreme (MCX) package, and 
+
+NOTE: Cedalion currently supports two ways to compute fluence:
+1) via monte-carlo simulation using the MonteCarloXtreme (MCX) package, and
 2) via the finite element method (FEM) using the NIRFASTer package.
-While MCX is automatically installed using pip, NIRFASTER has to be manually installed 
-runnning <$ bash install_nirfaster.sh CPU # or GPU> from a within your cedalion root directory. """
+While MCX is automatically installed using pip, NIRFASTER has to be manually installed
+runnning <$ bash install_nirfaster.sh CPU # or GPU> from a within your cedalion root
+directory.
+"""
 
 from __future__ import annotations
 from dataclasses import dataclass
@@ -997,6 +1000,9 @@ class ForwardModel:
         Adot_brain = np.zeros((n_channel, n_brain, n_wavelength))
         Adot_scalp = np.zeros((n_channel, n_scalp, n_wavelength))
 
+        # fluence_all: (label, wavelength, i, j, k)
+        # fluence_at_optodes: (optode1, optode2, wavelength)
+
         for _, r in self.measurement_list.iterrows():
             # using the adjoint monte carlo method
             # see YaoIntesFang2018 and BoasDale2005
@@ -1142,7 +1148,23 @@ def apply_inv_sensitivity(
     od_stacked = od.stack({"flat_channel": ["wavelength", "channel"]})
     od_stacked = od_stacked.pint.dequantify()
 
-    delta_conc = inv_sens @ od_stacked
+    # perform the matrix multiplication on numpy arrays for speed
+    inv_sens = inv_sens.transpose("flat_channel", "flat_vertex")
+    od_stacked = od_stacked.transpose(..., "flat_channel")
+
+    delta_conc = od_stacked.values @ inv_sens.values
+
+    # repackage result as an DataArray
+    delta_conc_dims = od_stacked.dims[:-1] + ("flat_vertex",)
+
+    delta_conc = xr.DataArray(
+        delta_conc,
+        dims=delta_conc_dims,
+        coords=(
+            xrutils.coords_from_other(od_stacked, dims=delta_conc_dims)
+            | xrutils.coords_from_other(inv_sens, dims=delta_conc_dims)
+        ),
+    )
 
     # Construct a multiindex for dimension flat_vertex from chromo and vertex.
     # Afterwards use this multiindex to unstack flat_vertex. The resulting array
