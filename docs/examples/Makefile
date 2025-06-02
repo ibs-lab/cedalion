@@ -15,6 +15,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
                     head_models/41_photogrammetric_optode_coregistration.ipynb \
                     head_models/42_1010_system.ipynb \
                     head_models/43_crs_and_headmodel.ipynb
+                    physio/71_ampd_heartbeat.ipynb
 
 .PHONY: notebooks
 
