@@ -112,7 +112,7 @@ def _std_distance_to_cog(points: cdt.LabeledPointCloud):
     """Calculate the standard deviation of the distances to the center of gravity.
 
     Args:
-        points: Point cloud for which to calculate the standard deviation of the 
+        points: Point cloud for which to calculate the standard deviation of the
             distances to the center of gravity.
 
     Returns:
@@ -189,6 +189,86 @@ def register_trans_rot_isoscale(
     )
 
     return trafo_opt
+
+
+@cdc.validate_schemas
+def register_trans_rot_scale(
+    coords_target: cdt.LabeledPointCloud,
+    coords_trafo: cdt.LabeledPointCloud,
+):
+    """Finds affine transformation between coords_target and coords_trafo.
+
+    Uses translation, rotation and scaling. Requires at least 3 common labels
+    between the two point clouds.
+
+    Args:
+        coords_target (LabeledPointCloud): Target point cloud.
+        coords_trafo (LabeledPointCloud): Source point cloud.
+
+    Returns:
+        cdt.AffineTransform: Affine transformation between the two point clouds.
+    """
+    common_labels = coords_target.points.common_labels(coords_trafo)
+
+    if len(common_labels) < 3:
+        raise ValueError("less than 3 common coordinates found")
+
+    from_crs = coords_trafo.points.crs
+    from_units = coords_trafo.pint.units
+    to_crs = coords_target.points.crs
+    to_units = coords_target.pint.units
+
+    # restrict to commmon labels and dequantify
+    coords_trafo = coords_trafo.sel(label=common_labels).pint.dequantify()
+    coords_target = coords_target.sel(label=common_labels).pint.dequantify()
+
+    std_trafo = _std_distance_to_cog(coords_trafo)
+    std_target = _std_distance_to_cog(coords_target)
+
+    scale0 = std_target / std_trafo
+
+    # calculate difference between centers of gravity. Use this as initial
+    # parameters for the translational component.
+    delta_cog = (
+        coords_target.mean("label").values - coords_trafo.mean("label").values * scale0
+    )
+
+    def trafo(params):
+        return m_rot(params[3:6]) @ m_trans(params[0:3]) @ m_scale3(params[6:9])
+
+    def loss(params, coords_target, coords_trafo):
+        M = trafo(params)
+        tmp = coords_trafo.points._apply_numpy_transform(M, to_crs)
+        return np.power(_subtract(coords_target, tmp), 2).sum()
+
+    result = minimize(
+        loss,
+        [
+            delta_cog[0],
+            delta_cog[1],
+            delta_cog[2],
+            0.0,
+            0.0,
+            0.0,
+            scale0,
+            scale0,
+            scale0,
+        ],
+        args=(coords_target, coords_trafo),
+    )
+
+    trafo_opt = trafo(result.x)
+
+    trafo_opt = cdc.affine_transform_from_numpy(
+        trafo_opt,
+        from_crs=from_crs,
+        to_crs=to_crs,
+        from_units=from_units,
+        to_units=to_units,
+    )
+
+    return trafo_opt
+
 
 
 def gen_xform_from_pts(p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
@@ -336,7 +416,8 @@ def register_icp(
     # idx_best = np.argmin(losses)
     return losses, trafos
 
-#FIXME: returns only indices?
+
+# FIXME: returns only indices?
 def icp_with_full_transform(
     opt_centers: cdt.LabeledPointCloud,
     montage_points: cdt.LabeledPointCloud,
@@ -410,6 +491,7 @@ def icp_with_full_transform(
         coords_true = montage_points_mm[col_ind, :3].values
         coords = opt_centers_mm[row_ind, :3].values
 
+        # FIXME move these out of the loop
         def loss(params, coords_to, coords_from):
             transformation_matrix = complete_transformation(params)
             transformed_montage = apply_numpy_transform(
@@ -450,7 +532,7 @@ def icp_with_full_transform(
     return best_idx
 
 
-def find_spread_points(points_xr : xr.DataArray) -> np.ndarray:
+def find_spread_points(points_xr: xr.DataArray) -> np.ndarray:
     """Selects three points that are spread apart from each other in the dataset.
 
     Args:
@@ -490,8 +572,7 @@ def find_spread_points(points_xr : xr.DataArray) -> np.ndarray:
     ).values
 
 
-
-def simple_scalp_projection(geo3d : cdt.LabeledPointCloud) -> cdt.LabeledPointCloud:
+def simple_scalp_projection(geo3d: cdt.LabeledPointCloud) -> cdt.LabeledPointCloud:
     """Projects 3D coordinates onto a 2D plane using a simple scalp projection.
 
     Args:
@@ -501,17 +582,28 @@ def simple_scalp_projection(geo3d : cdt.LabeledPointCloud) -> cdt.LabeledPointCl
     Returns:
         A LabeledPointCloud containing the 2D coordinates of the projected points.
     """
-    for label in ["LPA", "RPA", "Nz"]:
-        if label not in geo3d.label:
-            raise ValueError("this projection needs the landmarks Nz, LPA and RPA.")
+    lpa = None
+    rpa = None
+    nz = None
+
+    for label in geo3d.label.values:
+        if label.lower() == "lpa":
+            lpa = label
+        if label.lower() == "rpa":
+            rpa = label
+        if label.lower() == "nz":
+            nz = label
+
+    if (lpa is None) or (rpa is None) or (nz is None):
+        raise ValueError("this projection needs the landmarks Nz, LPA and RPA.")
 
     crs = geo3d.points.crs
     # find the midpoint between LPA and RPA
-    center = 0.5 * (geo3d.sel(label="LPA") + geo3d.sel(label="RPA"))
+    center = 0.5 * (geo3d.sel(label=lpa) + geo3d.sel(label=rpa))
 
     # calculate unit vectors of RAS coordindates
-    ex = geo3d.sel(label="RPA") - center
-    ey = geo3d.sel(label="Nz") - center
+    ex = geo3d.sel(label=rpa) - center
+    ey = geo3d.sel(label=nz) - center
 
     # use same norm for ex and ey so that RPA is at (1,0,0) and Nz at (0,1,0)
     normx = xrutils.norm(ex, crs).item()
@@ -530,7 +622,6 @@ def simple_scalp_projection(geo3d : cdt.LabeledPointCloud) -> cdt.LabeledPointCl
 
     # transform into spherical coordinates
     az, el, r = cedalion.geometry.utils.cart2sph(r, a, s)
-
 
     # project into 2D by using the spherical azimuth and cos(elevation) as radius
     r2 = np.cos(el)

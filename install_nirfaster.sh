@@ -34,30 +34,36 @@ fi
 
 cd "$DIR_NAME"
 
-ZIP_URL="https://github.com/milabuob/nirfaster-uFF/archive/refs/heads/main.zip" 
-ZIP_FILE="nirfaster-uFF-main.zip"
+# specify nirfaster release and source urls
+#PYTHON_ZIP_URL="https://codeload.github.com/milabuob/nirfaster-uFF/zip/refs/tags/v1.0.0" 
+#EXT_ZIP_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v1.0.0/"
+#ZIP_FOLDER_NAME="nirfaster-uFF-1.0.0" # directory in zip file
+PYTHON_ZIP_URL="https://codeload.github.com/milabuob/nirfaster-uFF/zip/refs/tags/v0.9.6"
+EXT_ZIP_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v0.9.6/"
+ZIP_FOLDER_NAME="nirfaster-uFF-0.9.6" # directory in zip file
+FOLDER_NAME="nirfaster-uFF" # target directory under plugins
 
+curl -sL "$PYTHON_ZIP_URL" -o temp.zip && unzip temp.zip -d . && rm temp.zip
 
-curl -sL "$ZIP_URL" -o temp.zip && unzip temp.zip -d . && rm temp.zip
+mv "${ZIP_FOLDER_NAME}" "${FOLDER_NAME}"
 
-FOLDER_NAME=$(basename "$ZIP_FILE" .zip)
-mv "${FOLDER_NAME}" "${FOLDER_NAME%-main}"
-
-
-SOURCE_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v0.9.6/"
 
 if [ $1 = 'CPU' ]; then
-    curl -sL "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
+    curl -sL "$EXT_ZIP_URL""cpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME}/nirfasteruff/" && rm temp.zip
 
 elif [ $1 = 'GPU' ]; then
-    curl -sL "$SOURCE_URL""cpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
-    curl -sL "$SOURCE_URL""gpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME%-main}/nirfasteruff/" && rm temp.zip
+    curl -sL "$EXT_ZIP_URL""cpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME}/nirfasteruff/" && rm temp.zip
+    curl -sL "$EXT_ZIP_URL""gpu-"$OS_NAME"-python311.zip" -o temp.zip && unzip temp.zip -d "${FOLDER_NAME}/nirfasteruff/" && rm temp.zip
 
 
 fi
 
 if [ "$OS_NAME" = 'mac' ]; then
-    xattr -c "${FOLDER_NAME%-main}/nirfasteruff/nirfasteruff_cpu.cpython-311-darwin.so"
+    xattr -c "${FOLDER_NAME}/nirfasteruff/nirfasteruff_cpu.cpython-311-darwin.so"
+fi
+
+if [ "$OS_NAME" = 'linux' ]; then
+    chmod +x "${FOLDER_NAME}/nirfasteruff/cgalmesherLINUX"
 fi
 
 echo "NIRFASTer installed successfully."
