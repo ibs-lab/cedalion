@@ -1,3 +1,5 @@
+"""Algorithms for handling physiogical components in fNIRS data."""
+
 import numpy as np
 import cedalion.dataclasses as cdc
 from cedalion.typing import NDTimeSeries
@@ -5,11 +7,12 @@ import xarray as xr
 
 
 @cdc.validate_schemas
-def ampd(amplitudes: NDTimeSeries, chunk_size=500, step_size=200):
+def ampd(amplitudes: NDTimeSeries, chunk_size: int = 500, step_size: int = 200):
     """Automatic Multiscale Peak Detection (AMPD) algorithm.
 
-    This implementation is based on the AMPD algorithm described by Scholkmann et al. in cite:t:`Scholkmann2012`
-    which detects peaks in a signal using a multiscale approach and local scalogram matrix.
+    This implementation is based on the AMPD algorithm described in
+    :cite:t:`Scholkmann2012` which detects peaks in a signal using a multiscale approach
+    and local scalogram matrix.
 
     Args:
         amplitudes : xarray.DataArray
@@ -62,30 +65,37 @@ def ampd(amplitudes: NDTimeSeries, chunk_size=500, step_size=200):
 
                 # Generate LSM by checking for local maxima (vectorized approach)
                 for k in range(1, L + 1):
-                    maxima_mask = (dtr_chunk[k:N - k] > dtr_chunk[:N - 2 * k]) & (
-                            dtr_chunk[k:N - k] > dtr_chunk[2 * k:])
-                    LSM[k - 1, k:N - k] = (~maxima_mask) * (np.ones(len(maxima_mask)) + np.random.rand(len(maxima_mask)))  # Set LSM to 0 where condition is true
+                    maxima_mask = (dtr_chunk[k : N - k] > dtr_chunk[: N - 2 * k]) & (
+                        dtr_chunk[k : N - k] > dtr_chunk[2 * k :]
+                    )
+                    LSM[k - 1, k : N - k] = (~maxima_mask) * (
+                        np.ones(len(maxima_mask)) + np.random.rand(len(maxima_mask))
+                    )  # Set LSM to 0 where condition is true
 
                 # LSM *= np.random.rand(L, N)
 
                 # Sum across rows of LSM to compute G
                 G = np.sum(LSM, axis=1)
-                l = np.argmin(G) + 1  # Find the minimum G and the corresponding scale
+                ll = np.argmin(G) + 1  # Find the minimum G and the corresponding scale
 
                 # Reduce the LSM to the first 'l' rows
-                LSM = LSM[:l, :]
+                LSM = LSM[:ll, :]
 
                 # Compute the standard deviation across columns of LSM
                 S = np.std(LSM, axis=0)
 
-                # Find indices where the standard deviation is zero (this indicates a peak)
+                # Find indices where the standard deviation is zero
+                # (this indicates a peak)
                 initial_peaks = np.where(S == 0)[0] + start
                 final_peaks.extend(initial_peaks)
 
             # Mark detected peaks in the output array
             peaks[ch, wl, final_peaks] = 1
 
-    # Convert the peaks array back into an xarray.DataArray with the same coordinates and attributes
-    peaks = xr.DataArray(peaks, coords=amplitudes.coords, dims=amplitudes.dims, attrs=amplitudes.attrs)
+    # Convert the peaks array back into an xarray.DataArray with the same coordinates
+    # and attributes
+    peaks = xr.DataArray(
+        peaks, coords=amplitudes.coords, dims=amplitudes.dims, attrs=amplitudes.attrs
+    )
 
     return peaks
