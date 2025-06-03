@@ -82,10 +82,8 @@ def ar_filter(conc_ts: xr.DataArray, ar_order: int) -> xr.Dataset:
     """Apply autoregressive (AR) filtering to an fNIRS timeseries.
 
     Args:
-    conc_ts : xr.DataArray
-        The input concentration time series with dimensions (time, chromo, channel).
-    ar_order : int
-        The order of the autoregressive model.
+    conc_ts : The input concentration time series, shape: (time, chromo, channel, ...)
+    ar_order : The order of the autoregressive model.
 
     Returns:
     A dataset with three DataArrays:
