@@ -7,6 +7,7 @@ import cedalion.typing as cdt
 from cedalion import Quantity, units
 from cedalion.validators import check_dimensionality
 import cedalion.dataclasses as cdc
+import statsmodels.api as sm
 
 
 @cdc.validate_schemas
@@ -75,3 +76,54 @@ def freq_filter(
         result = result.pint.quantify(units)
 
     return result
+
+
+def ar_filter(conc_ts: xr.DataArray, ar_order: int) -> xr.Dataset:
+    """Apply autoregressive (AR) filtering to an fNIRS timeseries.
+
+    Args:
+    conc_ts : xr.DataArray
+        The input concentration time series with dimensions (time, chromo, channel).
+    ar_order : int
+        The order of the autoregressive model.
+
+    Returns:
+    A dataset with three DataArrays:
+        - 'original': the truncated original signal (without first ar_order points)
+        - 'ar_prediction': the AR model prediction for each timeseries
+        - 'residual': the residuals (filtered signal) after AR fitting
+    """
+    time = conc_ts.time.values[ar_order:]
+    coords = {'time': time, 'chromo': conc_ts.chromo, 'channel': conc_ts.channel}
+    shape = (len(time), len(conc_ts.chromo), len(conc_ts.channel))
+    unit = conc_ts.pint.units if conc_ts.pint.units else 1
+
+    original = np.full(shape, np.nan)
+    prediction = np.full(shape, np.nan)
+    residual = np.full(shape, np.nan)
+
+    for idx_chromo, chromo in enumerate(conc_ts.chromo):
+        for idx_ch, ch in enumerate(conc_ts.channel):
+            y = conc_ts.sel(chromo=chromo, channel=ch).pint.dequantify().values
+            if np.all(np.isfinite(y)):
+                model = sm.tsa.AutoReg(y, lags=ar_order, old_names=False)
+                result = model.fit()
+                pred = result.predict(start=ar_order, end=len(y)-1)
+                resid = result.resid
+                original[:, idx_chromo, idx_ch] = y[ar_order:]
+                prediction[:, idx_chromo, idx_ch] = pred
+                residual[:, idx_chromo, idx_ch] = resid
+
+    original_da = xr.DataArray(original, coords=coords,
+                               dims=('time', 'chromo', 'channel')) * unit
+    prediction_da = xr.DataArray(prediction, coords=coords,
+                                dims=('time', 'chromo', 'channel')) * unit
+    residual_da = xr.DataArray(residual, coords=coords,
+                               dims=('time', 'chromo', 'channel')) * unit
+    ds = xr.Dataset({
+    'original': original_da,
+    'ar_prediction': prediction_da,
+    'residual': residual_da
+    })
+
+    return ds
