@@ -93,15 +93,17 @@ def ar_filter(conc_ts: xr.DataArray, ar_order: int) -> xr.Dataset:
         - 'ar_prediction': the AR model prediction for each timeseries
         - 'residual': the residuals (filtered signal) after AR fitting
     """
+
+    # Initialize dimensions and units
     time = conc_ts.time.values[ar_order:]
     coords = {'time': time, 'chromo': conc_ts.chromo, 'channel': conc_ts.channel}
     shape = (len(time), len(conc_ts.chromo), len(conc_ts.channel))
     unit = conc_ts.pint.units if conc_ts.pint.units else 1
-
     original = np.full(shape, np.nan)
     prediction = np.full(shape, np.nan)
     residual = np.full(shape, np.nan)
 
+    # Fit AR model for each channel and chromophore
     for idx_chromo, chromo in enumerate(conc_ts.chromo):
         for idx_ch, ch in enumerate(conc_ts.channel):
             y = conc_ts.sel(chromo=chromo, channel=ch).pint.dequantify().values
@@ -114,6 +116,7 @@ def ar_filter(conc_ts: xr.DataArray, ar_order: int) -> xr.Dataset:
                 prediction[:, idx_chromo, idx_ch] = pred
                 residual[:, idx_chromo, idx_ch] = resid
 
+    # Store results in Datset
     original_da = xr.DataArray(original, coords=coords,
                                dims=('time', 'chromo', 'channel')) * unit
     prediction_da = xr.DataArray(prediction, coords=coords,
