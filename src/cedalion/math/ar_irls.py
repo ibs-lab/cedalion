@@ -24,9 +24,8 @@ def ar_irls_GLM(y, x, pmax=40, M=sm.robust.norms.HuberT()):
     Outputs:
         stats- statsmodel.RLM results model
 
-
-      See the following for the related publication:
-      http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3756568/
+    Initial Contributors:
+        Ted Huppert | huppert1@pitt.edu | 2024
 
       d is matrix containing the data; each column is a channel of data
 
