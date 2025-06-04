@@ -1,4 +1,4 @@
-Plotting and Visualization
+Physiology
 ==========================
 
 These modules provide tools for analysis of physiology in fNIRS and fNIRS auxiliary data
