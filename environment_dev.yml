@@ -2,6 +2,7 @@ name: cedalion
 channels:
   - conda-forge
   - defaults
+  - bioconda
 dependencies:
   - click=8.1
   - h5py=3.11
@@ -54,6 +55,8 @@ dependencies:
 
   - PyQt
   - ipympl
+
+  - snakemake
 
   - pip:
       - mne==1.7
