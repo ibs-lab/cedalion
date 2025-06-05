@@ -11,59 +11,49 @@ def global_physio_subtract(
     ts: xr.DataArray,
     ts_weights: xr.DataArray = None,
     k: float = 0,
-    channel_dim: str = "channel",
+    spatial_dim: str = "channel",
     spectral_dim: str = None
 ) -> tuple:
-    """Remove global physiological components from a time series by either weighted‐mean subtraction.
+    """Remove global physiological components from a time series by either weighted‐mean subtraction (if k=0) or PCA (if k>0).
 
-    (if k=0) or PCA (if k>0). Returns both the corrected time series and the global component
-    that was removed (the weighted‐mean regressor if k=0, or the first principal component time series if k>0).
+    Returns both the corrected time series and the global component that was removed:
+    the weighted‐mean regressor if k=0, or the average of backprojected  principal component time series if k>0.
 
-    Parameters
-    ----------
-    ts : xr.DataArray
-        Input DataArray. Must have a "time" dimension, one dimension for channels
-        (default name "channel") and one for spectral info ("wavelength" or "chromophore").
-    ts_weights : xr.DataArray, optional
-        A DataArray of per‐(channel_dim × spectral_dim) variances to use as weights. If None,
-        all weights = 1 (no weighting). Must have dims (channel_dim, spectral_dim).
-    k : float, default=0
-        • k = 0: perform weighted‐mean subtraction (per spectral slice).
-        • k ≥ 1: remove the first int(k) principal components per spectral slice.
-        • 0 < k < 1: remove the minimum number of PCs whose cumulative explained variance ≥ k.
-    channel_dim : str, default "channel"
-        Name of the “channel-like” dimension. If absent, no subtraction is done.
-    spectral_dim : str, optional
-        Name of the spectral dimension (e.g. "wavelength" or "chromophore"). If None, inferred
-        as the dimension in ts.dims that is neither "time" nor channel_dim.
+    Parameters:
+        ts : xr.DataArray
+            Input DataArray. Must have a "time" dimension, one dimension for space ("spatial_dim")
+            (default is "channel", can be "vertex" or "parcel") and one for spectral info ("wavelength" or "chromophore").
+        ts_weights : xr.DataArray, optional
+            A DataArray of per‐(spatial_dim × spectral_dim) weigths. This is typically 1/(channel variance). 
+            If None, all weights = 1 (no weighting). Must have same non-time dims as ts.
+        k : float, default=0
+            • k = 0: perform weighted‐mean subtraction (per spectral dim, e.g. HbX or wavelength).
+            • k ≥ 1: remove the first int(k) principal components per spectral dimension.
+            • 0 < k < 1: remove the minimum number of PCs whose cumulative explained variance ≥ k.
+        spatial_dim : str, default "channel"
+            Name of the spatial dimension, like channel, vertex or parcel, across PCA or averaging is performed. If absent, no subtraction is done.
+        spectral_dim : str, optional
+            Name of the spectral dimension (e.g. "wavelength" or "chromophore"). If None, inferred
+            as the dimension in ts.dims that is neither "time" nor spatial_dim. #FIXME for more dimensions
 
-    Returns
-    -------
-    corrected : xr.DataArray
-        The time series with global physiological components removed.
-    global_component : xr.DataArray
-        If k=0: the weighted‐mean regressor (dims: "time", spectral_dim).
-        If k>0: the reconstructed PCA component(s) averaged across all channels (dims: "time", spectral_dim).
-
-    Raises
-    ------
-    ValueError
-        - If "time" not in ts.dims.
-        - If channel_dim and spectral_dim cannot be identified.
-        - If ts_weights is provided but does not have dims (channel_dim, spectral_dim).
-        - If k < 0 or invalid for PCA.
+    Returns:
+        corrected : xr.DataArray
+            The time series with global physiological components removed.
+        global_component : xr.DataArray
+            If k=0: the weighted‐mean regressor (dims: "time", spectral_dim).
+            If k>0: the reconstructed PCA component(s) averaged across all channels (dims: "time", spectral_dim).
 
     Initial Contributors:
         Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
     """
 
-    # 1) Ensure “time” exists
+    # Ensure “time” or "reltime" exists
     if "time" not in ts.dims:
         raise ValueError("Input ts must have a 'time' dimension.")
 
-    # 2) Infer spectral_dim if not provided
+    # Infer spectral_dim if not provided
     if spectral_dim is None:
-        other_dims = [d for d in ts.dims if d not in ("time", channel_dim)]
+        other_dims = [d for d in ts.dims if d not in ("time", spatial_dim)]
         if len(other_dims) != 1:
             raise ValueError(
                 f"Could not infer spectral_dim from ts.dims {ts.dims}. "
@@ -71,17 +61,17 @@ def global_physio_subtract(
             )
         spectral_dim = other_dims[0]
 
-    # 3) If channel_dim is absent, simply return ts and a zeroed global_component
-    if channel_dim not in ts.dims:
+    # If channel_dim is absent, simply return ts and a zeroed global_component
+    if spatial_dim not in ts.dims:
         corrected = ts.copy()
-        zero_global = xr.zeros_like(ts.isel({channel_dim: 0})).drop_vars(channel_dim)
+        zero_global = xr.zeros_like(ts.isel({spatial_dim: 0})).drop_vars(spatial_dim)
         return corrected, zero_global
 
-    # 4) Validate that spectral_dim is indeed in ts.dims
+    # Validate that spectral_dim is indeed in ts.dims
     if spectral_dim not in ts.dims:
         raise ValueError(f"Spectral dimension '{spectral_dim}' not in ts.dims {ts.dims}.")
 
-    # 5) Preserve pint‐units if present, then strip them for numeric ops
+    # Preserve pint‐units if present, then strip them for numeric ops
     if hasattr(ts, "pint"):
         orig_units = ts.pint.units
         ts_vals = ts.pint.dequantify().copy()
@@ -89,33 +79,33 @@ def global_physio_subtract(
         orig_units = 1
         ts_vals = ts.copy()
 
-    # 6) Build or validate ts_weights (variances)
+    # Build or validate ts_weights (variances)
     if ts_weights is None:
-        var_vals = xr.ones_like(ts_vals.isel(time=0).drop_vars("time"))
+        weights = xr.ones_like(ts_vals.isel(time=0).drop_vars("time"))
     else:
         if not isinstance(ts_weights, xr.DataArray):
             raise ValueError("ts_weights must be an xarray.DataArray with dims (channel_dim, spectral_dim).")
-        if set(ts_weights.dims) != {channel_dim, spectral_dim}:
+        if set(ts_weights.dims) != {spatial_dim, spectral_dim}:
             raise ValueError(
-                f"ts_weights must have dims ({channel_dim},{spectral_dim}), but got {ts_weights.dims}."
+                f"ts_weights must have dims ({spatial_dim},{spectral_dim}), but got {ts_weights.dims}."
             )
         if hasattr(ts_weights, "pint"):
-            var_vals = ts_weights.pint.dequantify().copy()
+            weights = ts_weights.pint.dequantify().copy()
         else:
-            var_vals = ts_weights.copy()
+            weights = ts_weights.copy()
 
-    # 7) Pull out coords and sizes
+    # Pull out coords and sizes
     time_coord = ts_vals.coords["time"]
-    chan_coord = ts_vals.coords[channel_dim]
+    chan_coord = ts_vals.coords[spatial_dim]
     spec_coord = ts_vals.coords[spectral_dim]
 
     n_time = ts_vals.sizes["time"]
-    n_chan = ts_vals.sizes[channel_dim]
+    n_chan = ts_vals.sizes[spatial_dim]
 
-    # 8) Prepare an empty DataArray for the corrected output (plain‐float)
+    # Prepare an empty DataArray for the corrected output (plain‐float)
     corrected = xr.zeros_like(ts_vals)
 
-    # 9) Prepare a DataArray for the global component
+    # Prepare a DataArray for the global component
     global_comp = xr.DataArray(
         np.zeros((n_time, ts_vals.sizes[spectral_dim])),
         dims=("time", spectral_dim),
@@ -127,11 +117,11 @@ def global_physio_subtract(
     # ──────────────────────────────────────────────────────────────────────────────
     if k == 0:
         # Compute per‐(channel,spectral) weight = 1/var
-        w = 1.0 / var_vals  # dims: (channel_dim, spectral_dim)
+        w = weights  # dims: (channel_dim, spectral_dim)
 
         # For each spectral slice s, build the global regressor:
-        numerator = (ts_vals * w).sum(dim=channel_dim)   # dims: (time, spectral)
-        denominator = w.sum(dim=channel_dim)             # dims: (spectral)
+        numerator = (ts_vals * w).sum(dim=spatial_dim)   # dims: (time, spectral)
+        denominator = w.sum(dim=spatial_dim)             # dims: (spectral)
         gms = numerator / denominator                     # dims: (time, spectral)
 
         # Save gms as the global component
@@ -162,11 +152,12 @@ def global_physio_subtract(
         # Loop over each spectral slice independently
         for s in spec_coord.values:
             # Explicitly transpose so that data_matrix is (time, channel)
-            ts_slice = ts_vals.sel({spectral_dim: s}).transpose("time", channel_dim)
+            ts_slice = ts_vals.sel({spectral_dim: s}).transpose("time", spatial_dim)
             data_matrix = ts_slice.values  # shape = (n_time, n_chan)
 
-            # Pull out per‐channel variance for this slice
-            channel_vars = var_vals.sel({spectral_dim: s}).values  # shape = (n_chan,)
+            # Pull out per‐channel variance for this slice. Since weights are assumed 1/var this is straightforward.
+            # However, note that if weithts other than variance are provided, they will be treated as squared input for PCA.
+            channel_vars = 1 / weights.sel({spectral_dim: s}).values  # shape = (n_chan,)
 
             # Pre‐whiten if weights provided
             if ts_weights is not None:
@@ -196,18 +187,7 @@ def global_physio_subtract(
                 scores = pca.fit_transform(data_w)             # (n_time, n_remove)
                 reconstructed_w = pca.inverse_transform(scores)  # (n_time, n_chan)
 
-                # First PC time series (pre-whitened)
-                if ts_weights is not None:
-                    loading_w = pca.components_[0, :]                   # (n_chan,) in whitened space
-                    # Convert to original‐space loading: L_orig = loading_w / sqrt_vars
-                    loading_orig = loading_w / sqrt_vars                 # (n_chan,)
-                    # Project raw data_matrix onto loading_orig to get PC time series in original units
-                    global_ts = data_matrix @ loading_orig               # (n_time,)
-                else:
-                    loading = pca.components_[0, :]                      # (n_chan,) in unweighted space
-                    global_ts = data_w @ loading                      # (n_time,)
-
-                # Reconstruct in original units and subtract
+                # Reconstruct in original units (also denormalize) and subtract
                 if ts_weights is not None:
                     reconstructed = reconstructed_w * sqrt_vars[np.newaxis, :]
                 else:
@@ -219,19 +199,18 @@ def global_physio_subtract(
                 global_comp.loc[:, s] = np.mean(reconstructed, axis=1)
 
             # Write corrected_slice back into `corrected`
-            #corrected.loc[:, :, s] = corrected_slice
             corrected.loc[{spectral_dim: s}] = xr.DataArray(
                 corrected_slice,
-                dims=("time", channel_dim),
-                coords={"time": time_coord, channel_dim: chan_coord},
+                dims=("time", spatial_dim),
+                coords={"time": time_coord, spatial_dim: chan_coord},
             )
 
-    # 10) Reattach pint‐units if we stripped them off
+    # 1Reattach pint‐units
     if orig_units is not None and orig_units != 1:
         corrected = corrected * orig_units
         global_comp = global_comp * orig_units
 
-    # 11) Preserve any original attributes
+    # Preserve any original attributes
     corrected.attrs = ts.attrs.copy()
     global_comp.attrs = {"description": "Global physiological component removed"}
 

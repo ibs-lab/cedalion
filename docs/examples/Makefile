@@ -11,6 +11,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
                     signal_quality/20_scalp_coupling_index.ipynb \
                     signal_quality/21_data_quality_and_pruning.ipynb \
                     signal_quality/22_motion_artefacts_and_correction.ipynb \
+                    signal_quality/24_downweighting_noisy_channels.ipynb \
                     head_models/40_image_reconstruction.ipynb \
                     head_models/41_photogrammetric_optode_coregistration.ipynb \
                     head_models/42_1010_system.ipynb \
