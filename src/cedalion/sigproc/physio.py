@@ -7,14 +7,14 @@ from sklearn.decomposition import PCA
 import xarray as xr
 
 
-def global_physio_subtract(
+def global_component_subtract(
     ts: xr.DataArray,
     ts_weights: xr.DataArray = None,
     k: float = 0,
     spatial_dim: str = "channel",
     spectral_dim: str = None
 ) -> tuple:
-    """Remove global physiological components from a time series by either weighted‐mean subtraction (if k=0) or PCA (if k>0).
+    """Remove global (physiological) components from a time series by either weighted‐mean subtraction (if k=0) or PCA (if k>0).
 
     Returns both the corrected time series and the global component that was removed:
     the weighted‐mean regressor if k=0, or the average of backprojected  principal component time series if k>0.
@@ -38,7 +38,7 @@ def global_physio_subtract(
 
     Returns:
         corrected : xr.DataArray
-            The time series with global physiological components removed.
+            The time series with global (physiological) components removed.
         global_component : xr.DataArray
             If k=0: the weighted‐mean regressor (dims: "time", spectral_dim).
             If k>0: the reconstructed PCA component(s) averaged across all channels (dims: "time", spectral_dim).
