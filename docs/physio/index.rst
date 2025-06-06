@@ -8,6 +8,7 @@ These modules provide tools for analysis of physiology in fNIRS and fNIRS auxili
    :recursive:
 
     cedalion.sigproc.physio.ampd
+    cedalion.sigproc.physio.global_component_subtract
 
 
 Examples
@@ -17,3 +18,4 @@ Examples
    :glob:
 
    ../examples/physio/*
+   ../examples/signal_quality/24_downweighting_noisy_channels.ipynb
