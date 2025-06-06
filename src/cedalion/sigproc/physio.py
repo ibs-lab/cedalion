@@ -2,13 +2,13 @@
 
 import numpy as np
 import cedalion.dataclasses as cdc
-from cedalion.typing import NDTimeSeries
+import cedalion.typing as cdt
 from sklearn.decomposition import PCA
 import xarray as xr
 
-
+@cdc.validate_schemas
 def global_component_subtract(
-    ts: xr.DataArray,
+    ts: cdt.NDTimeSeries,
     ts_weights: xr.DataArray = None,
     k: float = 0,
     spatial_dim: str = "channel",
@@ -20,7 +20,7 @@ def global_component_subtract(
     the weighted‐mean regressor if k=0, or the average of backprojected  principal component time series if k>0.
 
     Parameters:
-        ts : xr.DataArray
+        ts : amplitudes (:class:`NDTimeSeries`):
             Input DataArray. Must have a "time" dimension, one dimension for space ("spatial_dim")
             (default is "channel", can be "vertex" or "parcel") and one for spectral info ("wavelength" or "chromophore").
         ts_weights : xr.DataArray, optional
@@ -37,9 +37,9 @@ def global_component_subtract(
             as the dimension in ts.dims that is neither "time" nor spatial_dim. #FIXME for more dimensions
 
     Returns:
-        corrected : xr.DataArray
+        corrected : (:class:`NDTimeSeries`):
             The time series with global (physiological) components removed.
-        global_component : xr.DataArray
+        global_component : (:class:`NDTimeSeries`):
             If k=0: the weighted‐mean regressor (dims: "time", spectral_dim).
             If k>0: the reconstructed PCA component(s) averaged across all channels (dims: "time", spectral_dim).
 
@@ -218,7 +218,7 @@ def global_component_subtract(
 
 
 @cdc.validate_schemas
-def ampd(amplitudes: NDTimeSeries, chunk_size: int = 500, step_size: int = 200):
+def ampd(amplitudes: cdt.NDTimeSeries, chunk_size: int = 500, step_size: int = 200):
     """Automatic Multiscale Peak Detection (AMPD) algorithm.
 
     This implementation is based on the AMPD algorithm described in
@@ -226,7 +226,7 @@ def ampd(amplitudes: NDTimeSeries, chunk_size: int = 500, step_size: int = 200):
     and local scalogram matrix.
 
     Args:
-        amplitudes : xarray.DataArray
+        amplitudes : (:class:`NDTimeSeries`)
             Input data array containing signal data for each channel and wavelength.
         chunk_size : int, optional
             The size of each chunk to be processed (default is 600).
