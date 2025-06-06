@@ -1250,12 +1250,8 @@ def measurement_variance(
     other_dim = xrutils.other_dim(ts, "time", "channel")
     other_dim_values = ts[other_dim].values
 
-    # Get units
-    unit = ts.pint.units if hasattr(ts, "pint") else 1
-    ts_copy = ts.pint.dequantify() if hasattr(ts, "pint") else ts.copy()
-
     # Compute variance
-    var = ts_copy.var(dim="time")
+    var = ts.var(dim="time")
 
     # Create bad channel mask
     zero_var_mask = (var == 0)
@@ -1281,17 +1277,17 @@ def measurement_variance(
     var = var.where(~bad_channel_mask, other=var_fill_value)
 
     if not calc_covariance:
-        return var * unit**2
+        return var
 
     # Initialize 3D covariance array, shape (other_dim, channel, channel)
-    channels = ts_copy.channel.values
+    channels = ts.channel.values
     n_other_dim, n_channels = len(other_dim_values), len(channels)
     cov_matrix_3d = np.zeros((n_other_dim, n_channels, n_channels))
     bad_ch_indices = np.array([ch in valid_bad_channels for ch in channels])
 
     # Compute covariance for each other_dim coordinate
     for i, other_val in enumerate(other_dim_values):
-        data_slice = ts_copy.sel({other_dim: other_val})
+        data_slice = ts.sel({other_dim: other_val})
         data_matrix = data_slice.values  # Shape: (n_channels, n_time)
         cov_matrix_2d = np.cov(data_matrix, ddof=1)  # Shape: (n_channels, n_channels)
 
@@ -1320,10 +1316,10 @@ def measurement_variance(
         "channel2": channels,
     }
 
-    cov_da = xr.DataArray(
+    covar = xr.DataArray(
         cov_matrix_3d,
         dims=(other_dim, "channel1", "channel2"),
         coords=coords,
     )
 
-    return cov_da * unit**2
+    return covar
