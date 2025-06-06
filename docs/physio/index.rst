@@ -18,4 +18,4 @@ Examples
    :glob:
 
    ../examples/physio/*
-   ../examples/sigproc/24_downweighting_noisy_channels.ipynb
+   ../examples/signal_quality/24_downweighting_noisy_channels.ipynb
