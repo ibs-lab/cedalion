@@ -12,7 +12,7 @@ import xarray as xr
 
 import cedalion.dataclasses as cdc
 import cedalion.io
-from cedalion.io.forward_model import load_fluence
+from cedalion.io.forward_model import load_fluence, load_Adot
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
@@ -192,9 +192,7 @@ def get_imagereco_example_fluence() -> tuple[xr.DataArray, xr.DataArray]:
     return fluence_all, fluence_at_optodes
 
 
-def get_precomputed_fluence(
-    dataset: str, head_model: str
-) -> tuple[xr.DataArray, xr.DataArray]:
+def get_precomputed_fluence(dataset: str, head_model: str) -> Path:
     """Precomputed forward model results for examples and documentation.
 
     Args:
@@ -202,7 +200,7 @@ def get_precomputed_fluence(
         head_model: "colin27" or "icbm152"
 
     Returns:
-        fluence_all, fluence_at_optodes
+        A Path object pointing to the fluence file.
     """
 
     if dataset not in ["fingertapping", "fingertappingDOT"]:
@@ -212,16 +210,16 @@ def get_precomputed_fluence(
 
     fname = DATASETS.fetch(f"fluence_{dataset}_{head_model}.h5")
 
-    return load_fluence(fname)
+    return Path(fname)
 
 
 def get_ninjanirs_colin27_precomputed_fluence() -> tuple[xr.DataArray, xr.DataArray]:
     fname = DATASETS.fetch("fluence_ninjanirs_colin27.h5")
     return load_fluence(fname)
 
-def get_ninjanirs_colin27_precomputed_sensitivity() -> Path:
+def get_ninjanirs_colin27_precomputed_sensitivity() -> xr.DataArray:
     fname = DATASETS.fetch("Adot_ninjanirs_colin27.nc")
-    return xr.open_dataarray(fname)
+    return load_Adot(fname)
 
 def get_nn22_resting_state() -> cdc.Recording:
     fnames = DATASETS.fetch("nn22_resting_state.zip", processor=pooch.Unzip())
