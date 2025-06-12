@@ -5,13 +5,15 @@ import pint
 import xarray as xr
 from numpy.typing import ArrayLike
 from pathlib import Path
-
+from abc import ABC, abstractmethod
+import h5py
 
 import cedalion.xrutils as xrutils
 import cedalion.typing as cdt
 from dataclasses import dataclass
 
 from cedalion import units
+
 
 @dataclass
 class RegularizationParams:
@@ -21,12 +23,13 @@ class RegularizationParams:
         alpha_meas: ...
         ...
     """
+
     alpha_meas: float
     alpha_spatial: None | float
-    apply_c_meas: bool # FIXME better name
+    apply_c_meas: bool  # FIXME better name
 
-@dataclass
-class SpatialBasisParams:
+
+class SpatialBasisFunctions(ABC):
     """Parameters controlling the spatial basis functions.
 
     Args:
@@ -34,14 +37,59 @@ class SpatialBasisParams:
         ...
     """
 
-    threshold_brain: cdt.QLength
-    threshold_brain: cdt.QLength
-    sigma_brain: cdt.QLength
-    sigma_scalp: cdt.QLength
-    mask_threshold: float
+    @abstractmethod
+    def prepare(self, head_model, Adot) -> xr.DataArray:
+        """Setup internal state and return reduced Adot."""
+        pass
+
+    @abstractmethod
+    def kernel_to_image_space(self, X):
+        pass
+
+    @abstractmethod
+    def to_hdf5_group(self, group: h5py.Group):
+        pass
+
+    @abstractmethod
+    @classmethod
+    def from_hdf5_group(cls, group: h5py.Group) -> "SpatialBasisFunctions":
+        pass
 
 
+class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
+    def __init__(
+        self,
+        threshold_brain: cdt.QLength,
+        threshold_scalp: cdt.QLength,
+        sigma_brain: cdt.QLength,
+        sigma_scalp: cdt.QLength,
+        mask_threshold: float,
+    ):
+        self.threshold_brain = threshold_brain
+        self.threshold_scalp = threshold_scalp
+        self.sigma_brain = sigma_brain
+        self.sigma_scalp = sigma_scalp
+        self.mask_threshold = mask_threshold
 
+        self._G = None
+
+    def prepare(self, head_model, Adot) -> xr.DataArray:
+        # compute _G
+        pass
+
+    def kernel_to_image_space(self, X):
+        pass
+
+    def to_hdf5_group(self, group):
+        pass
+
+    @classmethod
+    def from_hdf5_group(self, group):
+        pass
+
+
+class ParcellationBasisFunctions(SpatialBasisFunctions):
+    pass
 
 
 # we could define constants of parameters that work well together, e.g. based on
@@ -54,7 +102,7 @@ REG_TIKHONOV_SPATIAL = RegularizationParams(
     alpha_meas=0.01, alpha_spatial=0.001, apply_c_meas=False
 )
 
-SBF_DENSE = SpatialBasisParams(
+SBF_GAUSSIANS_DENSE = GaussianSpatialBasisFunctions(
     mask_threshold=-2,
     threshold_brain=1 * units.mm,
     threshold_scalp=5 * units.mm,
@@ -62,7 +110,8 @@ SBF_DENSE = SpatialBasisParams(
     sigma_scalp=5 * units.mm,
 )
 
-SBF_SPARSE = SpatialBasisParams(...)
+SBF_GAUSSIANS_SPARSE = GaussianSpatialBasisFunctions(...)
+
 
 # likewise, if there are any heuristics how to set these parameters, we could offer
 # functions to compute them
@@ -77,13 +126,13 @@ class ImageReco:
         Adot,
         recon_mode: str = "mua",
         regularization_params: RegularizationParams = REG_TIKHONOV_ONLY,
-        spatial_basis_params: None | SpatialBasisParams = None,
+        spatial_basis_functions: None | SpatialBasisFunctions = None,
     ):
         # error handling of invalid params
 
         self.recon_mode = recon_mode
         self.reg_params = regularization_params
-        self.sbf_params = spatial_basis_params
+        self.sbf = spatial_basis_functions
 
         # cache intermediate matrices to avoid recomputations
 
@@ -91,7 +140,8 @@ class ImageReco:
         # Depending on recon_mode they have different shapes.
         self._D = None  # Linv^2 * A.T
         self._F = None  # A_hat * A_hat.T
-        self._G = None  # SBF kernel matrices for brain and scalp
+
+        # self._G = None  # SBF kernel matrices for brain and scalp
 
         self._mua2conc
 
@@ -99,24 +149,31 @@ class ImageReco:
         self._W = None  # the pseudo_inverse (W=D@inv(F+ lambda_meas C))
         self._W_input_hash  # a hash of C_meas. if C_meas changes, recompute W
 
-        self._prepare(head_model, Adot)
+        if self.sbf is not None:
+            reduced_Adot = self.sbf.prepare(head_model, Adot)
+            self._prepare(head_model, reduced_Adot)
+        else:
+            self._prepare(head_model, Adot)
 
-    def to_file(self, fname : Path | str):
+    def to_file(self, fname: Path | str):
         """Serialize to disk."""
-        pass
+
+        with h5py.File(fname, "w") as f:
+            # store params
+            # store D,F,W, mua2conc
+
+            sbf_group = f.create_group("sbf")
+
+            if self.sbf:
+                self.sbf.to_hdf5_group(sbf_group)
 
     @classmethod
-    def from_file(cls, fname : str | Path) -> "ImageReco":
+    def from_file(cls, fname: str | Path) -> "ImageReco":
         """Load saved instance from disk."""
         pass
 
     def _prepare(self, head_model, Adot):
         """Precompute everything that depends only on inputs in the constructor."""
-
-        if self.sbf_params is not None:
-            # calculate_G
-            self._G = ...
-            Adot = ...
 
         # calculate D and F for the selected choice of recon_mode and sbf.
 
@@ -126,13 +183,12 @@ class ImageReco:
         elif self.recon_mode in ["mua", "mua*mua2conc"]:
             self._D, self._F = self._calculate_DF_mua(Adot)
         else:
-            raise ValueError() # unreachable
+            raise ValueError()  # unreachable
 
         if self.recon_mode == "mua*mua2conc":
             # calculate _mua2conc
             self._mua2conc = ...
 
-    
     def _calculate_DF_conc(self):
         pass
 
@@ -144,7 +200,6 @@ class ImageReco:
 
     def _calculate_W_mua(self):
         pass
-
 
     def reconstruct(
         self,
@@ -159,34 +214,35 @@ class ImageReco:
         W_input_hash = hash(c_meas)
 
         if (self._W is None) or (W_input_hash != self._W_input_hash):
-            self._W = ...
+            self._W = ...  # compute pseudo_inverse
             self._W_input_hash = W_input_hash
 
-
         if self.recon_mode == "conc":
-            if self.sbf_params is None:
+            if self.sbf is None:
                 # direct recon without spatial basis
-                conc = ...
+                conc_img = ...
 
             else:
                 # direct recon with spatial basis
-                conc = ...
+                conc_kernel = ...
+                conc_img = self.sbf.kernel_to_image_space(conc_kernel)
 
-            return conc
-        elif (self.recon_mode == "mua") or (self.recon_Mode == "mua*mua2conc"):
-            if self.sbf_params is None:
+            return conc_img
+        elif self.recon_mode in ["mua", "mua*mua2conc"]:
+            if self.sbf is None:
                 # indirect recon without spatial basis
-                mua = ...
+                mua_img = ...
             else:
                 # indirect recon with spatial basis
-                mua = ...
+                mua_kernel = ...
+                mua_img = self.sbf.kernel_to_image_space(mua_kernel)
 
             if self.recon_mode == "mua":
-                return mua
+                return mua_img
             else:
-                return mua @ self.mua2conc
+                return mua_img @ self.mua2conc
         else:
-            raise ValueError() # unreachable
+            raise ValueError()  # unreachable
 
     def get_image_noise(
         self, time_series: cdt.NDTimeSeries, c_meas: xr.DataArray | None = None
@@ -212,10 +268,10 @@ reco = dot.ImageReco(
     Adot,
     recon_mode="mua*mua2conc",
     regularization_params=dot.REG_TIKHONOV_SPATIAL,
-    spatial_basis_params=dot.SBF_DENSE
+    spatial_basis_functions=dot.SBF_GAUSSIANS_DENSE,
 )
 
-# or
+# or for fine-grained control:
 
 reco = dot.ImageReco(
     head_model,
@@ -224,7 +280,7 @@ reco = dot.ImageReco(
     regularization_params=dot.RegularizationParams(
         alpha_meas=0.001, alpha_spatial=None, apply_c_meas=True
     ),
-    spatial_basis_params=dot.SpatialBasisParams(
+    spatial_basis_functions=dot.GaussianSpatialBasisFunctions(
         mask_threshold=-2,
         threshold_brain=1 * units.mm,
         threshold_scalp=5 * units.mm,
@@ -233,13 +289,15 @@ reco = dot.ImageReco(
     ),
 )
 
+# saving prepared reconstruction object to disk
 reco.to_file("/path/to/cached_reco.h5")
 
+# loading prepared reconstruction object from disk
 reco = dot.ImageReco.from_file("/path/to/cached_reco.h5")
 
-conc = reco.reconstruct(od) # c_meas is internally computed from od
+conc = reco.reconstruct(od)  # c_meas is internally computed from od
 
-# or: 
+# or:
 
 c_meas = ...
 
@@ -247,13 +305,13 @@ od1 = ...
 od2 = ...
 od3 = ...
 
-conc = reco.reconstruct(od1, c_meas) # recomputes W
-conc = reco.reconstruct(od2, c_meas) # uses cached W
-conc = reco.reconstruct(od3, c_meas) # uses cached W
+conc = reco.reconstruct(od1, c_meas)  # recomputes W
+conc = reco.reconstruct(od2, c_meas)  # uses cached W
+conc = reco.reconstruct(od3, c_meas)  # uses cached W
 
 # testing:
 
-for sbf_params in [None, SBF_DENSE]:
+for sbf in [None, SBF_GAUSSIANS_DENSE]:
     for reg_params in [REG_TIKHONOV_ONLY, REG_TIKHONOV_SPATIAL, ...]:
         for recon_mode in ["conc", "mua", "mua*mua2conc"]:
             reco = ImageReco(
@@ -261,20 +319,18 @@ for sbf_params in [None, SBF_DENSE]:
                 Adot,
                 recon_mode=recon_mode,
                 regularization_params=reg_params,
-                spatial_basis_params=sbf_params
+                spatial_basis_functions=sbf,
             )
             c_meas = ...
             result = reco.reconstruct(od, c_meas)
 
 
-
-
-#def pseudo_inverse_stacked(
+# def pseudo_inverse_stacked(
 #    Adot: xr.DataArray,
 #    alpha: float = 0.01,
 #    Cmeas: ArrayLike | None = None,
 #    alpha_spatial: float | None = None,
-#):
+# ):
 #    """Calculate the pseudo-inverse of a stacked sensitivity matrix.
 #
 #    Args:
@@ -339,4 +395,3 @@ for sbf_params in [None, SBF_DENSE]:
 #    )
 #
 #    return B
-
