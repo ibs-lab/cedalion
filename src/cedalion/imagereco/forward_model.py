@@ -30,6 +30,8 @@ import cedalion.dataclasses as cdc
 from cedalion.geometry.registration import register_trans_rot_isoscale
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
+import cedalion.io
+
 from cedalion.geometry.segmentation import (
     surface_from_segmentation,
     voxels_from_segmentation,
@@ -230,13 +232,14 @@ class TwoSurfaceHeadModel:
         },
         brain_surface_file: str = None,
         scalp_surface_file: str = None,
-        landmarks_ras_file: Optional[str] = None,
+        landmarks_ras_file: Path | str | None = None,
         brain_seg_types: list[str] = ["gm", "wm"],
         scalp_seg_types: list[str] = ["scalp"],
         smoothing: float = 0.5,
-        brain_face_count: Optional[int] = 180000,
-        scalp_face_count: Optional[int] = 60000,
+        brain_face_count: int | None = 180000,
+        scalp_face_count: int | None = 60000,
         fill_holes: bool = False,
+        parcel_file: Path | str | None = None,
     ) -> "TwoSurfaceHeadModel":
         """Constructor from seg.masks, brain and head surfaces as gained from MRI scans.
 
@@ -256,6 +259,7 @@ class TwoSurfaceHeadModel:
             brain_face_count (Optional[int]): Number of faces for the brain surface.
             scalp_face_count (Optional[int]): Number of faces for the scalp surface.
             fill_holes (bool): Whether to fill holes in the segmentation masks.
+            parcel_file: Path to parcel json file.
 
         Returns:
             TwoSurfaceHeadModel: An instance of the TwoSurfaceHeadModel class.
@@ -342,6 +346,13 @@ class TwoSurfaceHeadModel:
         voxel_to_vertex_scalp = map_segmentation_mask_to_surface(
             scalp_mask, t_ijk2ras, scalp_ijk.apply_transform(t_ijk2ras)
         )
+
+        # load parcellations
+        if parcel_file is not None:
+            parcels = cedalion.io.read_parcellations(parcel_file)
+            assert len(parcels) == brain_ijk.nvertices
+            brain_ijk.vertex_coords["parcel"] = np.asarray(parcels.Label.tolist())
+
 
         return cls(
             segmentation_masks=segmentation_masks,
@@ -1056,7 +1067,17 @@ class ForwardModel:
             attrs={"units": "mm"},
         )
 
+        if "parcel" in self.head_model.brain.vertices.coords:
+            parcels = np.concatenate(
+                (
+                    self.head_model.brain.vertices.coords["parcel"].values,
+                    n_scalp * ["scalp"],
+                )
+            )
+            Adot = Adot.assign_coords(parcel = ("vertex", parcels))
+
         save_Adot(sensitivity_fname, Adot)
+
 
     # FIXME: better name for Adot * ext. coeffs
     # FIXME: hardcoded for 2 chromophores (HbO and HbR) and wavelengths
@@ -1109,24 +1130,164 @@ class ForwardModel:
         flat_channel = np.hstack((channel, channel))
         flat_source = np.hstack((source, source))
         flat_detector = np.hstack((detector, detector))
-        vertex = np.hstack([np.arange(nvertices), np.arange(nvertices),])
+        vertex = np.hstack([np.arange(nvertices), np.arange(nvertices)])
+
+        coords = {
+            "is_brain": ("flat_vertex", is_brain),
+            "chromo": ("flat_vertex", flat_chromo),
+            "vertex": ("flat_vertex", vertex),
+            "wavelength": ("flat_channel", flat_wavelength),
+            "channel": ("flat_channel", flat_channel),
+            "source": ("flat_channel", flat_source),
+            "detector": ("flat_channel", flat_detector),
+        }
+
+        if "parcel" in sensitivity.coords:
+            parcels = np.hstack([sensitivity.parcel.values, sensitivity.parcel.values])
+            coords["parcel"] = ("flat_vertex", parcels)
 
         A = xr.DataArray(
             A,
             dims=("flat_channel", "flat_vertex"),
-            coords={
-                "is_brain": ("flat_vertex", is_brain),
-                "chromo": ("flat_vertex", flat_chromo),
-                "vertex": ("flat_vertex", vertex),
-                "wavelength": ("flat_channel", flat_wavelength),
-                "channel": ("flat_channel", flat_channel),
-                "source": ("flat_channel", flat_source),
-                "detector": ("flat_channel", flat_detector),
-            },
+            coords=coords,
             attrs={"units": str(units_A)},
         )
 
         return A
+
+
+    @staticmethod
+    def parcel_sensitivity(
+        Adot: xr.DataArray,
+        chan_droplist: list = None,
+        dOD_thresh: float = 0.001,
+        minCh: int = 1,
+        dHbO: float = 10,
+        dHbR: float = -3,
+    ):
+        """Calculate a mask for parcels based on their effective cortex sensitivity.
+
+        Parcels are considered good, if a change in HbO and HbR [µM] in the parcel leads
+        to an observable change of at least dOD in at least one wavelength of one
+        channel. Sensitivities of all vertices in the parcel are summed up in the
+        sensitivity matrix Adot. Bad channels in an actual measurement that are pruned
+        can be considered by providing a boolean channel_mask, where False indicates bad
+        channels that are dropped and not considered for parcel sensitivity. Requires
+        headmodel with parcelation coordinates.
+
+        Args:
+            Adot (channel, vertex, wavelength)): Sensitivity matrix with parcel
+                coordinate belonging to each vertex
+            chan_droplist: list of channel names to be dropped from consideration of
+                sensitivity (e.g. pruned channels due to bad signal quality)
+            dOD_thresh: threshold for minimum dOD change in a channel that should be
+                observed from a hemodynamic change in a parcel
+            minCh: minimum number of channels per parcel that should see a change above
+                dOD_thresh
+            dHbO: change in HbO conc. in the parcel in [µM] used to calculate dOD
+            dHbR: change in HbR conc. in the parcel in [µM] used to calculate dOD
+
+        Returns:
+            A tuple (parcel_dOD, parcel_mask), where parcel_dOD (channel, parcel,
+            wavelength) contains the delta OD observed in a channel for each wavelength
+            given the assumed dHb change in a parcel, and parcel_mask is a boolean
+            DataArray with parcel coords from Adot that is true for parcels for which
+            dOD_thresh is met.
+
+        Initial Contributors:
+            - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
+        """
+
+        # set up xarray with chromophore changes according to user input
+        dHb = xr.DataArray(
+            [dHbO*1e-6, dHbR*1e-6],
+            dims=["chromo"],
+            coords={"chromo": ["HbO", "HbR"]},
+            attrs={"units": "M"},
+            )
+        dHb = dHb.pint.quantify()
+
+        # calculate the constant nu/D where nu = c/n the speed of light in biological
+        # tissue and D= 1/3(mu_a + mu_s') the photon diffusion coefficient
+        # using constants from Wheelock et al 2019
+        """ D = 1.03*100 * units("mm²/ns") # 1.03 cm²/ns
+        nu = 21.4*10 * units("mm/ns" )# 21.4 cm/ns
+        const = nu/D #/10 # convert to mm """
+        const = 1
+
+        # if chan_droplist is not None, set values in Adot to zero for all channels in
+        # the list
+        if chan_droplist is not None:
+            Adot_mod = Adot.where(~Adot.channel.isin(chan_droplist), other=0)
+        else:
+            Adot_mod = Adot
+
+        Adot_stacked = ForwardModel.compute_stacked_sensitivity(Adot_mod)
+
+        # copies Adot and keeps only those vertices whose is_brain coordinate is true
+        Adots_brain = Adot_stacked.sel(flat_vertex=Adot_stacked.coords['is_brain'])
+
+        # index wavelength coordinate
+        Adots_brain = Adots_brain.set_index(flat_channel='wavelength')
+        # index chromo coordinate
+        Adots_brain = Adots_brain.set_index(flat_vertex='chromo')
+
+        # get unique wavelengths in wavelength coordinate
+        wavelengths = Adots_brain.indexes['flat_channel'].unique()
+        chromos = Adots_brain.indexes['flat_vertex'].unique()
+
+        # Loop over both wavelengths and chromos, group vertices by parcels and multiply
+        # by dHb change to get the dOD contribution for each channel and parcel per
+        # wavelength
+        dOD = {}
+        for wl in wavelengths:
+            for chromo in chromos:
+                dOD[wl, chromo] = (
+                    Adots_brain.sel(flat_channel=wl)
+                    .sel(flat_vertex=chromo)
+                    .groupby("parcel")
+                    .sum("flat_vertex")
+                    * dHb.sel(chromo=chromo)
+                )
+
+        coords = {
+            "channel": ("channel", Adot.coords["channel"].values),
+            "parcel": (
+                "parcel",
+                dOD[wavelengths[0], chromos[0]].coords["parcel"].values,
+            ),
+        }
+
+        # sum values in dOD across chromophores to get the total dOD for each parcel and
+        # channel per wavelength
+        dOD_tot = {}
+        for wl in wavelengths:
+            dOD_tot[wl] = xr.DataArray(
+                dOD[wl, chromos[0]].values + dOD[wl, chromos[1]].values,
+                dims=["channel", "parcel"],
+                coords=coords,
+            )
+
+        # Combine into a single dataarray with a wavelength coordinate
+        parcel_dOD = xr.concat(
+            [dOD_tot[wl] for wl in wavelengths],
+            dim=pd.Index(wavelengths.values, name="wavelength")
+        )
+
+        # multiply with constant # FIXME: check the units a last time
+        parcel_dOD = parcel_dOD * const
+
+        # calculate mask
+        parcel_mask = xrutils.mask(parcel_dOD, True)
+        # check where dOD is greater than dOD_thresh
+        parcel_mask = parcel_mask.where(parcel_dOD.values >= dOD_thresh, other = False)
+        # check whether threshold is passed for either wavelengths
+        parcel_mask = parcel_mask.sum("wavelength") >= 1
+        # check whether threshold is passed for the minimum number of channels
+        parcel_mask = parcel_mask.sum("channel") >= minCh
+
+
+        return parcel_dOD, parcel_mask
 
 
 def apply_inv_sensitivity(

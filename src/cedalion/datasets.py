@@ -33,6 +33,8 @@ DATASETS = pooch.create(
         "fluence_fingertappingDOT_colin27.h5": "sha256:f321190e9ab537e0f020cbcca40d9ef909f67ce9c33791be14033daf162acaf7",  # noqa:E501
         "fluence_fingertappingDOT_icbm152.h5": "sha256:4e75e80d906f6c62802d9b39382f34e7546ca1cc7a737e30755666d767e1c697",  # noqa:E501
         "nn22_resting_state.zip": "sha256:0394347af172d906fe33403e84303435af26d82fdcf1d36dad5c7b05beb82d88",  # noqa:E501
+        "colin27_parcellation.zip": "sha256:70cb51cc587b7a7389050b854beede76327ed8b105fa12971584a7d1bb7fa080",  # noqa:E501
+        "icbm152_parcellation.zip": "sha256:b69ffdb3ff2fe3d85a6d5c139e59147d05ca97127589c1e4c2a8d031850f0148",  # noqa:E501
         "Adot_ninjanirs_colin27.nc" : "sha256:3382e6bfd62b5e1213332cc74c88cc8af04a4fd5cebe7001ebc111cf9e9b2d00", # noqa:E501
         "fluence_ninjanirs_colin27.h5" : "sha256:89d82c4f5a985f79777fceeffab9ef90365056ccda8ea4e29bc71c4d24fb0e0a", # noqa: E501
     },
@@ -99,6 +101,14 @@ def get_colin27_headmodel():
     return head_model
 
 
+def get_colin27_parcel_file():
+    """Retrieves the Colin27 headmodel, based on :cite:t:`Holmes1998`."""
+    fnames = DATASETS.fetch("colin27_parcellation.zip", processor=pooch.Unzip())
+    parcel_file = fnames[0]
+
+    return parcel_file
+
+
 def get_icbm152_segmentation():
     fnames = DATASETS.fetch("ICBM152_2020.zip", processor=pooch.Unzip())
 
@@ -114,6 +124,14 @@ def get_icbm152_segmentation():
     landmarks_ras_file = "landmarks.mrk.json"
 
     return basedir, mask_files, landmarks_ras_file
+
+
+def get_icbm152_parcel_file():
+    """Retrieves the Colin27 headmodel, based on :cite:t:`Holmes1998`."""
+    fnames = DATASETS.fetch("icbm152_parcellation.zip", processor=pooch.Unzip())
+    parcel_file = fnames[0]
+
+    return parcel_file
 
 
 def get_fingertapping() -> cdc.Recording:
