@@ -9,14 +9,14 @@
   by [Thomas Fischer](https://github.com/thomasfischer11). ([#77](https://github.com/ibs-lab/cedalion/pull/77))
 - Added functionality to add synthetic artifacts to fNIRS data , by [Josef Cutler](https://github.com/jccutler) 
 - Parcellations ... , by [Shakiba Moradi](https://github.com/shakiba93)
-- Spatial and measurement noise regularization options in image reconstruction,  by [David Boas](https://github.com/dboas)
+- Spatial and measurement noise regularization options in image reconstruction,  by [David Boas](https://github.com/dboas). ([#86](https://github.com/ibs-lab/cedalion/pull/86))
 - Google Colab integration ... , by [Josef Cutler](https://github.com/jccutler)
 - AMPD algorithm for heart beat detection ..., by [Isa Musisi](https://github.com/isamusisi)
 - statsmodels integration AR-IRLS, by [Ted Huppert](https://github.com/huppertt) and [Eike Middell](https://github.com/emiddell)
-- Functionality for global physiology removal, by [Alexander von Lühmann](https://github.com/avolu). ([#106])[https://github.com/ibs-lab/cedalion/pull/106]
+- Functionality for global physiology removal, by [Alexander von Lühmann](https://github.com/avolu). ([#106](https://github.com/ibs-lab/cedalion/pull/106]))
 - New multi-view animated image reconstruction plots, by [David Boas](https://github.com/dboas) and [Alexander von Lühmann](https://github.com/avolu)
 - Thresholding and visualizing probe sensitivity to brain parcels, by [Alexander von Lühmann](https://github.com/avolu)
-- Multimodal source decomposition methods, including most CCA variants, by [Tomas Codina] (https://github.com/TCodina), ([#102])[https://github.com/ibs-lab/cedalion/pull/102]
+- Multimodal source decomposition methods, including most CCA variants, by [Tomas Codina](https://github.com/TCodina), ([#102](https://github.com/ibs-lab/cedalion/pull/102]))
 
 Format:
 - One sentence summary, by AUTHOR(S). (PRs or other references)
