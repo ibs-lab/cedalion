@@ -27,7 +27,10 @@ import xarray as xr
 
 import cedalion
 import cedalion.dataclasses as cdc
-from cedalion.geometry.registration import register_trans_rot_isoscale
+from cedalion.geometry.registration import (
+    register_trans_rot_isoscale,
+    register_general_affine,
+)
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 import cedalion.io
@@ -502,13 +505,18 @@ class TwoSurfaceHeadModel:
     # algorithm is not good.
     @cdc.validate_schemas
     def align_and_snap_to_scalp(
-        self, points: cdt.LabeledPointCloud
+        self,
+        points: cdt.LabeledPointCloud,
+        mode: str = "trans_rot_isoscale",
     ) -> cdt.LabeledPointCloud:
         """Align and snap optodes or points to the scalp surface.
 
         Args:
             points (cdt.LabeledPointCloud): Points to be aligned and snapped to the
                 scalp surface.
+            mode: method to derive the affine transform. Could be either
+                'trans_rot_isoscale' or 'general'. See cedalion.geometry.registraion
+                for details.
 
         Returns:
             cdt.LabeledPointCloud: Points aligned and snapped to the scalp surface.
@@ -516,7 +524,13 @@ class TwoSurfaceHeadModel:
 
         assert self.landmarks is not None, "Please add landmarks in RAS to head \
                                             instance."
-        t = register_trans_rot_isoscale(self.landmarks, points)
+        if mode == "trans_rot_isoscale":
+            t = register_trans_rot_isoscale(self.landmarks, points)
+        elif mode == "general":
+            t = register_general_affine(self.landmarks, points)
+        else:
+            raise ValueError(f"unexpected mode '{mode}'")
+
         transformed = points.points.apply_transform(t)
         snapped = self.scalp.snap(transformed)
         return snapped
