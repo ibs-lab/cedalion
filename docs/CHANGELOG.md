@@ -8,7 +8,7 @@
 - Added functionality to add synthetic HRFs to resting state data, 
   by [Thomas Fischer](https://github.com/thomasfischer11). ([#77](https://github.com/ibs-lab/cedalion/pull/77))
 - Added functionality to add synthetic artifacts to fNIRS data , by [Josef Cutler](https://github.com/jccutler) 
-- Parcellations ... , by [Shakiba Moradi](https://github.com/shakiba93)
+- Added Schaefer atlas-based parcel labels for ICBM152 and Colin27 head models via FreeSurfer surface mapping, by [Shakiba Moradi](https://github.com/shakiba93)
 - Spatial and measurement noise regularization options in image reconstruction,  by [David Boas](https://github.com/dboas). ([#86](https://github.com/ibs-lab/cedalion/pull/86))
 - Google Colab integration ... , by [Josef Cutler](https://github.com/jccutler)
 - AMPD algorithm for heart beat detection ..., by [Isa Musisi](https://github.com/isamusisi)
