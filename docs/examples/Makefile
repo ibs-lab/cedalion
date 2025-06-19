@@ -18,6 +18,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
                     head_models/43_crs_and_headmodel.ipynb \
                     head_models/44_head_models.ipynb \
                     head_models/45_parcel_sensitivity.ipynb \
+                    head_models/46_precomputed_fluence.ipynb \
                     augmentation/61_synthetic_artifacts_example.ipynb \
                     augmentation/62_synthetic_hrfs_example.ipynb \
                     physio/71_ampd_heartbeat.ipynb

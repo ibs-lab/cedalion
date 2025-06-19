@@ -12,12 +12,13 @@ import xarray as xr
 
 import cedalion.dataclasses as cdc
 import cedalion.io
-from cedalion.io.forward_model import load_fluence, load_Adot
+from cedalion.io.forward_model import load_Adot
 
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
-    base_url="https://doc.ibs.tu-berlin.de/cedalion/datasets",
+    base_url="https://doc.ibs.tu-berlin.de/cedalion/datasets/{version}/",
     env="CEDALION_DATA_DIR",
+    version="v25.1.0",
     registry={
         "mne_nirsport2_raw.snirf": "sha256:12e5fabe64ecc7ef4b83f6bcd77abb41f5480d5f17a2b1aae0e2ad0406670944",  # noqa: E501
         "colin27_segmentation.zip": "sha256:ad02dbd9582033d3c6f712761c2a79228e4bf30c8539f23f3280b8c4c7f9ace1",  # noqa: E501
@@ -28,15 +29,26 @@ DATASETS = pooch.create(
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
         "ICBM152_2020.zip": "sha256:8dda23aa1f4592d50ba8528bb4ef7124c6593872bddeb9cbd510e7b1891568f3",  # noqa: E501
-        "fluence_fingertapping_colin27.h5": "sha256:5db30eaaf0dbd614ecefff3734822864b8357841e6c93be78344574889e1d06d",  # noqa:E501
-        "fluence_fingertapping_icbm152.h5": "sha256:5b807253e2d0ca0dcc15ac18029cd73404cc9ee589937f2394ae0a2e57dcd98f",  # noqa:E501
-        "fluence_fingertappingDOT_colin27.h5": "sha256:f321190e9ab537e0f020cbcca40d9ef909f67ce9c33791be14033daf162acaf7",  # noqa:E501
-        "fluence_fingertappingDOT_icbm152.h5": "sha256:4e75e80d906f6c62802d9b39382f34e7546ca1cc7a737e30755666d767e1c697",  # noqa:E501
+
+        "fluence_fingertapping_colin27.h5": "sha256:b758857291a26d1421f9bdf1c65a653fa09a24142a1d4f0ff8156ad0d8fd6e52",  # noqa:E501
+        "fluence_fingertapping_icbm152.h5": "sha256:d5530a271b0855d5a0e0868936ce6e680630252f0e362bb8623edd75f18beba7",  # noqa:E501
+        "fluence_fingertappingDOT_colin27.h5": "sha256:c3ec6bf0cfd2aa09ad259bdc312cfde4187596ebfa5aace4b47075790949f020",  # noqa:E501
+        "fluence_fingertappingDOT_icbm152.h5": "sha256:0a66366a829dde83277ed1389bdc1aa75fe65753788f83c5da575b6e641dfacc",  # noqa:E501
+
+        "sensitivity_fingertapping_colin27.nc": "sha256:713d6f96653ce93bf175d86d64be8c7e5ca34110e736005c002472cf16be8be4",  # noqa:E501
+        "sensitivity_fingertapping_icbm152.nc": "sha256:805ef3de5002095d0c5c07007435ea743af9c6d8da21aa696e44b5a7d4a46a37",  # noqa:E501
+        "sensitivity_fingertappingDOT_colin27.nc": "sha256:db25a11794fcc3633efd7612d6bc87da9037098e8b92d2670dba73c22ed2affa",  # noqa:E501
+        "sensitivity_fingertappingDOT_icbm152.nc": "sha256:9b365edc8e451335a43bb998aee09bb6288d7d122a34dd579ae76ca7519a42c5",  # noqa:E501
+        "sensitivity_ninja_cap_56x144_colin27.nc": "sha256:d9f99ef14f2634ac38f35748d3b5ba6afa961001d0e9f499497fca2fd6bf179f",  # noqa:E501^
+        "sensitivity_ninja_cap_56x144_icbm152.nc": "sha256:1a1431962ceb7018dd5cbcffdc9e263b8e722a78d01cbddc9ac15f5ae387db39",  # noqa:E501^
+        "sensitivity_ninja_uhd_cap_164x496_colin27.nc": "sha256:2d5ccc6a7f30376fe15826d34082a8b48899529cc516af9b14b81e4c1293ed92",  # noqa:E501^
+        "sensitivity_ninja_uhd_cap_164x496_icbm152.nc": "sha256:3579f7e122b2f80bb82426de526a5375680de3ae6b19269322cb43f45045876c",  # noqa:E501^
+        "sensitivity_nn22_resting_colin27.nc": "sha256:59c25a44c6cd9c16047dca5f901296a789817fce8e11688ecf618021d6980167",  # noqa:E501^
+        "sensitivity_nn22_resting_icbm152.nc": "sha256:a974c055d111c08fa8f9a7c1ff5a55165d78865634cca4612385af52b0237dc8",  # noqa:E501^
+
         "nn22_resting_state.zip": "sha256:0394347af172d906fe33403e84303435af26d82fdcf1d36dad5c7b05beb82d88",  # noqa:E501
         "colin27_parcellation.zip": "sha256:70cb51cc587b7a7389050b854beede76327ed8b105fa12971584a7d1bb7fa080",  # noqa:E501
         "icbm152_parcellation.zip": "sha256:b69ffdb3ff2fe3d85a6d5c139e59147d05ca97127589c1e4c2a8d031850f0148",  # noqa:E501
-        "Adot_ninjanirs_colin27.nc" : "sha256:3382e6bfd62b5e1213332cc74c88cc8af04a4fd5cebe7001ebc111cf9e9b2d00", # noqa:E501
-        "fluence_ninjanirs_colin27.h5" : "sha256:89d82c4f5a985f79777fceeffab9ef90365056ccda8ea4e29bc71c4d24fb0e0a", # noqa: E501
     },
 )
 
@@ -221,23 +233,45 @@ def get_precomputed_fluence(dataset: str, head_model: str) -> Path:
         A Path object pointing to the fluence file.
     """
 
-    if dataset not in ["fingertapping", "fingertappingDOT"]:
-        raise ValueError(f"unknown dataset {dataset}")
-    if head_model not in ["colin27", "icbm152"]:
-        raise ValueError(f"unknown head_model {head_model}")
+    fname = f"fluence_{dataset}_{head_model}.h5"
 
-    fname = DATASETS.fetch(f"fluence_{dataset}_{head_model}.h5")
+    if fname not in DATASETS.registry:
+        raise ValueError(
+            f"We don't provide precomputed fluence for dataset "
+            f"'{dataset}' and head_model '{head_model}'"
+        )
+
+    fname = DATASETS.fetch(fname)
 
     return Path(fname)
 
 
-def get_ninjanirs_colin27_precomputed_fluence() -> tuple[xr.DataArray, xr.DataArray]:
-    fname = DATASETS.fetch("fluence_ninjanirs_colin27.h5")
-    return load_fluence(fname)
+def get_precomputed_sensitivity(dataset: str, head_model: str) -> xr.DataArray:
+    """Precomputed sensitivities for examples and documentation.
 
-def get_ninjanirs_colin27_precomputed_sensitivity() -> xr.DataArray:
-    fname = DATASETS.fetch("Adot_ninjanirs_colin27.nc")
-    return load_Adot(fname)
+    Args:
+        dataset: "fingertapping", "fingertappingDOT", "nn22_resting",
+            "ninja_cap_56x144", "ninja_uhd_cap_164x496"
+        head_model: "colin27" or "icbm152"
+
+    Returns:
+        The precomputed sensitivity (Adot) matrix
+    """
+
+    fname = f"sensitivity_{dataset}_{head_model}.nc"
+
+    if fname not in DATASETS.registry:
+        raise ValueError(
+            f"We don't provide precomputed sensitivity for dataset "
+            f"'{dataset}' and head_model '{head_model}'"
+        )
+
+    fname = DATASETS.fetch(fname)
+
+    Adot = load_Adot(fname)
+
+    return Adot
+
 
 def get_nn22_resting_state() -> cdc.Recording:
     fnames = DATASETS.fetch("nn22_resting_state.zip", processor=pooch.Unzip())
