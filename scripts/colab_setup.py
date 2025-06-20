@@ -2,6 +2,7 @@
 import os
 import argparse
 import subprocess
+from time import sleep
 from google.colab import drive
 
 def kill_current_runtime():
@@ -34,6 +35,7 @@ if not CEDALION_INSTALLED:
     subprocess.run(["uv", "pip", "uninstall", "opt-einsum"], check=True)
 
     print("Dependencies installed. Killing this runtime. Please rerun the notebook.")
+    sleep(2)
     kill_current_runtime()
 
 else:
