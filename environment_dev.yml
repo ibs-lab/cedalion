@@ -12,7 +12,7 @@ dependencies:
   - nibabel=5.3
   - nilearn=0.11
   - notebook
-  - numpy=2.3
+  - numpy=2.2
   - opencv=4.11
   - pandas=2.3
   - pint-xarray=0.4
