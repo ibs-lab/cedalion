@@ -30,21 +30,21 @@ DATASETS = pooch.create(
         "colin2SHM.zip": "sha256:7568452d38d80bab91eb4b99c4dd85f3302243ecf9d5cf55afe629502e9d9960",  # noqa: E501
         "ICBM152_2020.zip": "sha256:8dda23aa1f4592d50ba8528bb4ef7124c6593872bddeb9cbd510e7b1891568f3",  # noqa: E501
 
-        "fluence_fingertapping_colin27.h5": "sha256:b758857291a26d1421f9bdf1c65a653fa09a24142a1d4f0ff8156ad0d8fd6e52",  # noqa:E501
-        "fluence_fingertapping_icbm152.h5": "sha256:d5530a271b0855d5a0e0868936ce6e680630252f0e362bb8623edd75f18beba7",  # noqa:E501
-        "fluence_fingertappingDOT_colin27.h5": "sha256:c3ec6bf0cfd2aa09ad259bdc312cfde4187596ebfa5aace4b47075790949f020",  # noqa:E501
-        "fluence_fingertappingDOT_icbm152.h5": "sha256:0a66366a829dde83277ed1389bdc1aa75fe65753788f83c5da575b6e641dfacc",  # noqa:E501
+        "fluence_fingertapping_colin27.h5": "sha256:48befc2297378230ec69411f25dc850956958915e6c3060c3eb18354f186ef29",  # noqa:E501
+        "fluence_fingertapping_icbm152.h5": "sha256:39e4a09ab84461b421f28705f52a9e201473e17ac44798e973ab68ad2838069e",  # noqa:E501
+        "fluence_fingertappingDOT_colin27.h5": "sha256:2f851a4105c16bc9030b43c04912df28ff889e9aefe9df5fa4bf17918c13ea7b",  # noqa:E501
+        "fluence_fingertappingDOT_icbm152.h5": "sha256:9da531414e5acf4b13b9cfd5fab544a42acd96d0471fa047ed56e4900c4c0dcc",  # noqa:E501
 
-        "sensitivity_fingertapping_colin27.nc": "sha256:713d6f96653ce93bf175d86d64be8c7e5ca34110e736005c002472cf16be8be4",  # noqa:E501
-        "sensitivity_fingertapping_icbm152.nc": "sha256:805ef3de5002095d0c5c07007435ea743af9c6d8da21aa696e44b5a7d4a46a37",  # noqa:E501
-        "sensitivity_fingertappingDOT_colin27.nc": "sha256:db25a11794fcc3633efd7612d6bc87da9037098e8b92d2670dba73c22ed2affa",  # noqa:E501
-        "sensitivity_fingertappingDOT_icbm152.nc": "sha256:9b365edc8e451335a43bb998aee09bb6288d7d122a34dd579ae76ca7519a42c5",  # noqa:E501
-        "sensitivity_ninja_cap_56x144_colin27.nc": "sha256:d9f99ef14f2634ac38f35748d3b5ba6afa961001d0e9f499497fca2fd6bf179f",  # noqa:E501^
-        "sensitivity_ninja_cap_56x144_icbm152.nc": "sha256:1a1431962ceb7018dd5cbcffdc9e263b8e722a78d01cbddc9ac15f5ae387db39",  # noqa:E501^
-        "sensitivity_ninja_uhd_cap_164x496_colin27.nc": "sha256:2d5ccc6a7f30376fe15826d34082a8b48899529cc516af9b14b81e4c1293ed92",  # noqa:E501^
-        "sensitivity_ninja_uhd_cap_164x496_icbm152.nc": "sha256:3579f7e122b2f80bb82426de526a5375680de3ae6b19269322cb43f45045876c",  # noqa:E501^
-        "sensitivity_nn22_resting_colin27.nc": "sha256:59c25a44c6cd9c16047dca5f901296a789817fce8e11688ecf618021d6980167",  # noqa:E501^
-        "sensitivity_nn22_resting_icbm152.nc": "sha256:a974c055d111c08fa8f9a7c1ff5a55165d78865634cca4612385af52b0237dc8",  # noqa:E501^
+        "sensitivity_fingertapping_colin27.nc": "sha256:52c7282c4bff4b9aa9d302535f24c89b4a66bc14144c7705a8b1f26010b0f613",  # noqa:E501
+        "sensitivity_fingertapping_icbm152.nc": "sha256:f7769407774b52b887a302d373ca316697e9c1fe2e9b53ea081a5e257f181109",  # noqa:E501
+        "sensitivity_fingertappingDOT_colin27.nc": "sha256:6b69f17834d8d790f831e0837aa836e87ff091171a68c5fe2a2b703ea3a566f2",  # noqa:E501
+        "sensitivity_fingertappingDOT_icbm152.nc": "sha256:14dae2a398e7031b357e46e30e4488cc4784a724ae618a461ab0ae6a174c5991",  # noqa:E501
+        "sensitivity_ninja_cap_56x144_colin27.nc": "sha256:51bca422640345f97a83fbced05934872e1a98cc798ae2613e9bafbe6b010772",  # noqa:E501^
+        "sensitivity_ninja_cap_56x144_icbm152.nc": "sha256:d98f6f197600e95b010f1cb9692f480e81055e8b4e633138add770aeb132c0d1",  # noqa:E501^
+        "sensitivity_ninja_uhd_cap_164x496_colin27.nc": "sha256:7fd82726b78baf47a6a103bfc049b2d04b5f061d25d737e612ff0646ff1304ea",  # noqa:E501^
+        "sensitivity_ninja_uhd_cap_164x496_icbm152.nc": "sha256:29b20249e451f44fc6c8ef7a85d328f085feca21dbe2a34b903bbf04942547ac",  # noqa:E501^
+        "sensitivity_nn22_resting_colin27.nc": "sha256:812a67b648a88b3fa3614cdc011dca034b9ea827591cedf4adf549cff67595ca",  # noqa:E501^
+        "sensitivity_nn22_resting_icbm152.nc": "sha256:4e8e8e16f167241835f4a8cad408dc7a0144401fe7fb3228248d2261d650c797",  # noqa:E501^
 
         "nn22_resting_state.zip": "sha256:0394347af172d906fe33403e84303435af26d82fdcf1d36dad5c7b05beb82d88",  # noqa:E501
         "colin27_parcellation.zip": "sha256:70cb51cc587b7a7389050b854beede76327ed8b105fa12971584a7d1bb7fa080",  # noqa:E501

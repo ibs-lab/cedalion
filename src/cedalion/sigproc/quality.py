@@ -321,7 +321,7 @@ def _get_gvtd_threshold(
     elif stat_type == "kdensity_mode":
         # consider only gvtd values that are finite and positive
         mask = np.isfinite(GVTD) & (GVTD > 0)
-        gvtd_log = np.log(GVTD[mask])
+        gvtd_log = np.log(GVTD[mask].values)
 
         # Kernel density estimate for the log of gvtdTimeTrace
         kde = gaussian_kde(gvtd_log)

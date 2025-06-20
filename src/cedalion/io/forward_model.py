@@ -150,6 +150,7 @@ class FluenceFile:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        self.file.flush()
         self.file.close()
 
     def create_fluence_dataset(
@@ -174,8 +175,9 @@ class FluenceFile:
             "fluence_all",
             shape=(n_optodes, n_wavelength) + fluence_shape,
             chunks=(1, 1) + fluence_shape,
-            scaleoffset=14,
-            #shuffle=True,
+            #scaleoffset=14,
+            shuffle=True,
+            fletcher32=False,
             compression="lzf",
         )
 

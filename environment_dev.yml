@@ -1,52 +1,51 @@
 name: cedalion
 channels:
   - conda-forge
-  - defaults
 dependencies:
-  - click=8.1
-  - h5py=3.11
-  - ipython=8.13.2
-  - ipywidgets=8.1.2
+  - click=8.2
+  - h5py=3.14
+  - ipython=9.3
+  - ipywidgets=8.1
   - jupyter
-  - jupyter_client=7.4.9
-  - matplotlib=3.9
-  - nibabel=5.2
-  - nilearn=0.10
-  - notebook=6.5.4
-  - numpy=1.26
-  - opencv
-  - pandas=2.2
-  - pint-xarray=0.3
+  - jupyter_client
+  - matplotlib=3.10
+  - nibabel=5.3
+  - nilearn=0.11
+  - notebook
+  - numpy=2.3
+  - opencv=4.11
+  - pandas=2.3
+  - pint-xarray=0.4
   - pip
   - pooch=1.8
   - pre_commit
-  - pybids=0.16
+  - pybids=0.19
   - pytest
   - pytest-cov
-  - python=3.11
-  - pywavelets=1.6
+  - python=3.13
+  - pywavelets=1.8
   - ruff
-  - scikit-image=0.24
-  - scikit-learn=1.5
-  - scipy=1.14
+  - scikit-image=0.25
+  - scikit-learn=1.7
+  - scipy=1.15
   - seaborn=0.13
   - statsmodels=0.14
   - strenum=0.4
-  - xarray=2024.6
-  - trimesh=4.4
-  - pyvista=0.44
-  - trame=3.6
+  - xarray=2025.6
+  - trimesh=4.6
+  - pyvista=0.45
+  - trame=3.10
   - trame-vtk=2.8
-  - trame-vuetify=2.6
-  - trame-components=2.3
-  - vtk=9.2.6
+  - trame-vuetify=3.0
+  - trame-components=2.5
+  - vtk=9.4
 
   - nbsphinx
   - nbstripout
   - sphinx
   - myst-parser
   - sphinx-autodoc-typehints
-  - sphinx_rtd_theme=2.0.0
+  - sphinx_rtd_theme=3.0
   - sphinx-autoapi
 
   - hatchling
@@ -56,14 +55,14 @@ dependencies:
   - ipympl
 
   - pip:
-      - mne==1.7
-      - mne-bids==0.15
-      - mne-nirs==0.6
+      - mne==1.9
+      - mne-bids==0.16
+      - mne-nirs==0.7
       - pywavefront==1.3
       - setuptools-scm
       - snirf==0.8
-      - pmcx==0.3.3
-      - pmcxcl==0.2.0
+      - pmcx==0.4.2
+      - pmcxcl==0.3.1
       - sphinxcontrib-bibtex
       - hatch-conda
       
