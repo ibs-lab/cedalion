@@ -127,10 +127,6 @@ def lsl_stim_to_tsv(xdf_file, tsv_file=None, stream_name='PsychoPyMarker'):
     
     # Load the markers from the XDF file
     markers_df = get_stim_from_lsl(xdf_file=xdf_file, stream_name=stream_name)
-
-    # Read onset and bring first marker to start at 0
-    t0 = markers_df.onset.values[0]
-    markers_df.onset -= t0
     
     if tsv_file is None:
         # Use stim.tsv as default name
