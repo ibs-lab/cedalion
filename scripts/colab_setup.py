@@ -31,7 +31,7 @@ if not CEDALION_INSTALLED:
 
     print("Installing dependencies...")
     subprocess.run(["uv", "pip", "install", cedalion_repo], check=True)
-    subprocess.run(["uv", "pip", "uninstall", "-y", "opt-einsum"], check=True)
+    subprocess.run(["uv", "pip", "uninstall", "opt-einsum"], check=True)
 
     print("Dependencies installed. Killing this runtime. Please rerun the notebook.")
     kill_current_runtime()
