@@ -11,6 +11,7 @@ Models
    :recursive:
 
    cedalion.models.glm
+   cedalion.math.ar_model
    
 Decomposition Methods
 ---------------------

@@ -1,10 +1,11 @@
 """Dataclasses for representing geometric objects."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
 from typing import Any
+from copy import deepcopy
 
 import mne
 import numpy as np
@@ -16,6 +17,7 @@ import xarray as xr
 from scipy import sparse
 from scipy.spatial import KDTree
 from vtk.util.numpy_support import vtk_to_numpy
+from numpy.typing import ArrayLike
 
 import cedalion
 import cedalion.typing as cdt
@@ -30,6 +32,7 @@ class PointType(Enum):
     SOURCE = 1
     DETECTOR = 2
     LANDMARK = 3
+    ELECTRODE = 4
 
     # provide an ordering of PointTypes so that e.g. np.unique works
     def __lt__(self, other):
@@ -42,9 +45,12 @@ class PointType(Enum):
 @dataclass
 class Surface(ABC):
     """Abstract base class for surfaces."""
+
     mesh: Any
     crs: str
     units: pint.Unit
+
+    vertex_coords : dict[str, ArrayLike] = field(default_factory=dict)
 
     @property
     @abstractmethod
@@ -103,7 +109,7 @@ class Surface(ABC):
 
 
 @dataclass
-class Voxels():
+class Voxels:
     """3D voxels represented by a np.array.
 
     Attributes:
@@ -111,6 +117,7 @@ class Voxels():
         crs (str): The coordinate reference system of the voxels.
         units (pint.Unit): The units of the voxels.
     """
+
     voxels: np.ndarray
     crs: str
     units: pint.Unit
@@ -134,12 +141,12 @@ class Voxels():
     def apply_transform(self, transform: cdt.AffineTransform) -> "Voxels":
         # convert to homogeneous coordinates
         num, dim = self.voxels.shape
-        hom = np.ones((num,dim+1))
-        hom[:,:3] = self.voxels
+        hom = np.ones((num, dim + 1))
+        hom[:, :3] = self.voxels
         # apply transformation
         hom = (transform.pint.dequantify().values.dot(hom.T)).T
         # backtransformation
-        transformed = np.array([hom[i,:3] / hom[i,3] for i in range(hom.shape[0])])
+        transformed = np.array([hom[i, :3] / hom[i, 3] for i in range(hom.shape[0])])
 
         new_units = self.units * transform.pint.units
         new_crs = transform.dims[0]
@@ -168,17 +175,24 @@ class TrimeshSurface(Surface):
         crs (str): The coordinate reference system of the surface.
         units (pint.Unit): The units of the surface.
     """
+
     mesh: trimesh.Trimesh
 
-    @property
+    @property  # FIXME consider cached_property?
     def vertices(self) -> cdt.LabeledPointCloud:
+        coords = {"label": np.arange(len(self.mesh.vertices))}
+        coords.update({k: ("label", v) for k, v in self.vertex_coords.items()})
+
         result = xr.DataArray(
             self.mesh.vertices,
             dims=["label", self.crs],
-            coords={"label": np.arange(len(self.mesh.vertices))},
+            coords=coords,
             attrs={"units": self.units},
         )
         result = result.pint.quantify()
+
+        for k in self.vertex_coords.keys():
+            result = result.set_xindex(k)
 
         return result
 
@@ -209,7 +223,9 @@ class TrimeshSurface(Surface):
 
         transformed.apply_transform(transform.pint.dequantify().values)
 
-        return TrimeshSurface(transformed, new_crs, new_units)
+        return TrimeshSurface(
+            transformed, new_crs, new_units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
     def decimate(self, face_count: int) -> "TrimeshSurface":
         """Use quadric decimation to reduce the number of vertices.
@@ -226,13 +242,17 @@ class TrimeshSurface(Surface):
         )
         decimated = trimesh.Trimesh(vertices, faces)
 
-        return TrimeshSurface(decimated, self.crs, self.units)
+        return TrimeshSurface(
+            decimated, self.crs, self.units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
     def smooth(self, lamb: float) -> "TrimeshSurface":
         """Apply a Taubin filter to smooth this surface."""
 
         smoothed = trimesh.smoothing.filter_taubin(self.mesh, lamb=lamb)
-        return TrimeshSurface(smoothed, self.crs, self.units)
+        return TrimeshSurface(
+            smoothed, self.crs, self.units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
     def get_vertex_normals(self, points: cdt.LabeledPointCloud, normalized=True):
         """Get normals of vertices closest to the provided points."""
@@ -270,7 +290,9 @@ class TrimeshSurface(Surface):
         mesh = trimesh.Trimesh(
             mesh.vertices, mesh.faces, vertex_normals=flipped_normals
         )
-        return TrimeshSurface(mesh, self.crs, self.units)
+        return TrimeshSurface(
+            mesh, self.crs, self.units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
     @classmethod
     def from_vtksurface(cls, vtk_surface: "VTKSurface"):
@@ -278,7 +300,12 @@ class TrimeshSurface(Surface):
         pyvista_polydata = pv.wrap(vtk_polydata)
         mesh = pyvista_polydata_to_trimesh(pyvista_polydata)
 
-        return cls(mesh=mesh, crs=vtk_surface.crs, units=vtk_surface.units)
+        return cls(
+            mesh=mesh,
+            crs=vtk_surface.crs,
+            units=vtk_surface.units,
+            vertex_coords=deepcopy(vtk_surface.vertex_coords),
+        )
 
 
 @dataclass
@@ -288,13 +315,19 @@ class VTKSurface(Surface):
     @property
     def vertices(self) -> cdt.LabeledPointCloud:
         vertices = vtk_to_numpy(self.mesh.GetPoints().GetData())
+        coords = {"label": np.arange(len(vertices))}
+        coords.update({k : ("label", v) for k,v in self.vertex_coords.items()})
+
         result = xr.DataArray(
             vertices,
             dims=["label", self.crs],
-            coords={"label": np.arange(len(vertices))},
+            coords=coords,
             attrs={"units": self.units},
         )
         result = result.pint.quantify()
+
+        for k in self.vertex_coords.keys():
+            result = result.set_xindex(k)
 
         return result
 
@@ -317,7 +350,12 @@ class VTKSurface(Surface):
         mesh = tri_mesh.mesh
         vtk_mesh = trimesh_to_vtk_polydata(mesh)
 
-        return cls(mesh=vtk_mesh, crs=tri_mesh.crs, units=tri_mesh.units)
+        return cls(
+            mesh=vtk_mesh,
+            crs=tri_mesh.crs,
+            units=tri_mesh.units,
+            vertex_coords=deepcopy(tri_mesh.vertex_coords),
+        )
 
     def decimate(self, reduction: float, **kwargs) -> "VTKSurface":
         """Use VTK's decimate_pro method to reduce the number of vertices.
@@ -334,7 +372,9 @@ class VTKSurface(Surface):
         pyvista_polydata = pv.wrap(self.mesh)
         decimated = pyvista_polydata.decimate_pro(reduction, **kwargs)
 
-        return VTKSurface(decimated, self.crs, self.units)
+        return VTKSurface(
+            decimated, self.crs, self.units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
 
 @dataclass
@@ -589,7 +629,6 @@ class PycortexSurface(Surface):
         B = (Be1 + Be1.T + Be2 + Be2.T + Be3 + Be3.T) / 12 + dBd
         return B, D, W, V
 
-
     @property
     def avg_edge_length(self):
         """Average length of all edges in the surface."""
@@ -599,7 +638,6 @@ class PycortexSurface(Surface):
             ((self.mesh.pts[tadj.row] - self.mesh.pts[tadj.col]) ** 2).sum(1)
         )
         return edgelens.mean()
-
 
     def surface_gradient(self, scalars, at_verts=True):
         """Gradient of a function with values `scalars` at each vertex on the surface.
@@ -626,11 +664,9 @@ class PycortexSurface(Surface):
 
         gradu = np.nan_to_num(((fe12 * pu3 + fe23 * pu1 + fe31 * pu2) / (2 * fa)).T)
 
-
         if at_verts:
             return (self.connected.dot(gradu).T / self.connected.sum(1).A.squeeze()).T
         return gradu
-
 
     @property
     def _facenorm_cross_edge(self):
@@ -641,9 +677,8 @@ class PycortexSurface(Surface):
         fe31 = np.cross(fnorms, ppts[:, 0] - ppts[:, 2])
         return fe12, fe23, fe31
 
-
     def geodesic_distance(self, verts, m=1.0, fem=False):
-        """Calcualte the inimum mesh geodesic distance (in mm).
+        """Calcualte the minimum mesh geodesic distance (in mm).
 
         The geodesic distance is calculated from each vertex in surface to any vertex in
         the collection `verts`.
@@ -698,9 +733,7 @@ class PycortexSurface(Surface):
             self._rlfac_solvers[m] = sparse.linalg.factorized(
                 lfac[goodrows][:, goodrows]
             )
-            self._nLC_solvers[m] = sparse.linalg.factorized(
-                nLC[goodrows][:, goodrows]
-            )
+            self._nLC_solvers[m] = sparse.linalg.factorized(nLC[goodrows][:, goodrows])
 
         # I. "Integrate the heat flow ̇u = ∆u for some fixed time t"
         # ---------------------------------------------------------
@@ -719,7 +752,7 @@ class PycortexSurface(Surface):
         gradu = self.surface_gradient(u, at_verts=False)
 
         # Compute X (normalized grad u)
-        gusum = np.sum(gradu ** 2, axis=1)
+        gusum = np.sum(gradu**2, axis=1)
         X = np.nan_to_num((-gradu.T / np.sqrt(gusum)).T)
 
         # III. "Solve the Poisson equation ∆φ = ∇·X"
@@ -743,7 +776,6 @@ class PycortexSurface(Surface):
         phi[verts] = 0.0
 
         return phi
-
 
     def geodesic_path(self, a, b, max_len=1000, d=None, **kwargs):
         """Finds the shortest path between two points `a` and `b`.
@@ -784,19 +816,37 @@ class PycortexSurface(Surface):
         if d is None:
             d = self.geodesic_distance([b], **kwargs)
         while path[-1] != b:
-            n = np.unique((self.mesh.polys[np.where(self.mesh.polys == path[-1])[0], :]))
+            n = np.unique(
+                (self.mesh.polys[np.where(self.mesh.polys == path[-1])[0], :])
+            )
             path.append(n[d[n].argmin()])
             if len(path) > max_len:
                 return path
         return path
 
     @property
+    def graph(self):
+        """NetworkX undirected graph representing this Surface."""
+        import networkx as nx
+
+        graph = nx.Graph()
+        graph.add_edges_from(self.iter_surfedges)
+        return graph
+
+    @property
+    def iter_surfedges(self):
+        for a, b, c in self.mesh.polys:
+            yield a, b
+            yield b, c
+            yield a, c
+
+    @property
     def _cot_edge(self):
         ppts = self.ppts
         cots1, cots2, cots3 = self.cotangent_weights
-        c3 = cots3[:,np.newaxis] * (ppts[:,1] - ppts[:,0])
-        c2 = cots2[:,np.newaxis] * (ppts[:,0] - ppts[:,2])
-        c1 = cots1[:,np.newaxis] * (ppts[:,2] - ppts[:,1])
+        c3 = cots3[:, np.newaxis] * (ppts[:, 1] - ppts[:, 0])
+        c2 = cots2[:, np.newaxis] * (ppts[:, 0] - ppts[:, 2])
+        c1 = cots1[:, np.newaxis] * (ppts[:, 2] - ppts[:, 1])
         c32 = c3 - c2
         c13 = c1 - c3
         c21 = c2 - c1
@@ -808,9 +858,15 @@ class PycortexSurface(Surface):
         npoly = len(self.mesh.polys)
         o = np.ones((npoly,))
 
-        c1 = sparse.coo_matrix((o, (self.mesh.polys[:,0], range(npoly))), (npt, npoly)).tocsr() # noqa: E501
-        c2 = sparse.coo_matrix((o, (self.mesh.polys[:,1], range(npoly))), (npt, npoly)).tocsr() # noqa: E501
-        c3 = sparse.coo_matrix((o, (self.mesh.polys[:,2], range(npoly))), (npt, npoly)).tocsr() # noqa: E501
+        c1 = sparse.coo_matrix(
+            (o, (self.mesh.polys[:, 0], range(npoly))), (npt, npoly)
+        ).tocsr()
+        c2 = sparse.coo_matrix(
+            (o, (self.mesh.polys[:, 1], range(npoly))), (npt, npoly)
+        ).tocsr()
+        c3 = sparse.coo_matrix(
+            (o, (self.mesh.polys[:, 2], range(npoly))), (npt, npoly)
+        ).tocsr()
 
         return c1, c2, c3
 

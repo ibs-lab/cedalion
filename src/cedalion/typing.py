@@ -37,3 +37,6 @@ QLength : TypeAlias = Annotated[Quantity, "[length]"]
 
 #: Quantities with units of frequency
 QFrequency : TypeAlias = Annotated[Quantity, "[frequency]"]
+
+#: Quantities with units of concentration
+QConcentration: TypeAlias = Annotated[Quantity, "[concentration]"]
