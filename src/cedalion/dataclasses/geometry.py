@@ -1,7 +1,7 @@
 """Dataclasses for representing geometric objects."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
 from typing import Any
@@ -16,6 +16,7 @@ import xarray as xr
 from scipy import sparse
 from scipy.spatial import KDTree
 from vtk.util.numpy_support import vtk_to_numpy
+from numpy.typing import ArrayLike
 
 import cedalion
 import cedalion.typing as cdt
@@ -47,6 +48,8 @@ class Surface(ABC):
     mesh: Any
     crs: str
     units: pint.Unit
+
+    vertex_coords : dict[str, ArrayLike] = field(default_factory=dict)
 
     @property
     @abstractmethod
@@ -174,15 +177,21 @@ class TrimeshSurface(Surface):
 
     mesh: trimesh.Trimesh
 
-    @property
+    @property  # FIXME consider cached_property?
     def vertices(self) -> cdt.LabeledPointCloud:
+        coords = {"label": np.arange(len(self.mesh.vertices))}
+        coords.update({k: ("label", v) for k, v in self.vertex_coords.items()})
+
         result = xr.DataArray(
             self.mesh.vertices,
             dims=["label", self.crs],
-            coords={"label": np.arange(len(self.mesh.vertices))},
+            coords=coords,
             attrs={"units": self.units},
         )
         result = result.pint.quantify()
+
+        for k in self.vertex_coords.keys():
+            result = result.set_xindex(k)
 
         return result
 
@@ -292,13 +301,19 @@ class VTKSurface(Surface):
     @property
     def vertices(self) -> cdt.LabeledPointCloud:
         vertices = vtk_to_numpy(self.mesh.GetPoints().GetData())
+        coords = {"label": np.arange(len(vertices))}
+        coords.update({k : ("label", v) for k,v in self.vertex_coords.items()})
+
         result = xr.DataArray(
             vertices,
             dims=["label", self.crs],
-            coords={"label": np.arange(len(vertices))},
+            coords=coords,
             attrs={"units": self.units},
         )
         result = result.pint.quantify()
+
+        for k in self.vertex_coords.keys():
+            result = result.set_xindex(k)
 
         return result
 

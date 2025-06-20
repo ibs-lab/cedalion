@@ -14,6 +14,7 @@ preprocessing, quality control, and feature extraction.
    cedalion.sigproc.frequency
    cedalion.sigproc.motion_correct
    cedalion.sigproc.quality
+   cedalion.sigproc.physio
 
 
 Examples
@@ -23,3 +24,4 @@ Examples
    :glob:
 
    ../examples/signal_quality/*
+   ../examples/physio/*

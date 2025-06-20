@@ -1210,3 +1210,116 @@ def repair_amp(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
         return filtered_padded_amp.isel(time=slice(pad_width, -pad_width))
 
     return amp
+
+
+
+def measurement_variance(
+    ts: xr.DataArray,
+    list_bad_channels: list = None,
+    bad_rel_var: float = 1e6,
+    bad_abs_var: float = None,
+    calc_covariance: bool = False,
+) -> xr.DataArray:
+    """Estimate measurement variance or covariance from an fNIRS time series.
+
+    Can be used as a proxy for measurement noise, in this case it should be applied in OD or CONC domain.
+    Ideally, the input is the residual of a time series after GLM fitting, but raw data can also be used.
+    This function can be used as a helper function for weighted mean subtraction or for image recon
+    regularization, in which bad channels (noisy, with high variance) are downweighted.
+
+    Args:
+    ts: Input time series with dimensions (time, channel, chromo/wavelength).
+    list_bad_channels: List of channel names (e.g. ["S2D4", "S2D10"]) to be treated as bad.
+    bad_rel_var: Multiplier for worst-case variance for bad channels if `bad_abs_var` is not provided.
+    bad_abs_var: Absolute variance to assign to bad channels. Overrides `bad_rel_var` if provided.
+    calc_covariance: If True, returns a 3D covariance matrix: (other_dim, channel, channel).
+        If False, returns a 2D variance array: (chromo, channel).
+
+    Returns:
+    xr.DataArray: Variance array (shape: channel, chromo/wavelength) or covariance 
+        array (shape: chromo/wavelength, channel1, channel2)
+
+    Initial Contributors:
+        Josef Cutler | cutler@tu-berlin.de | 2025
+        Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
+    """
+    if list_bad_channels is None:
+        list_bad_channels = []
+
+    # Identify other dimension (chromo/wavelength)
+    other_dim = xrutils.other_dim(ts, "time", "channel")
+    other_dim_values = ts[other_dim].values
+
+    # Compute variance
+    var = ts.var(dim="time")
+
+    # Create bad channel mask
+    zero_var_mask = (var == 0)
+    bad_channels_from_zero_var = set()
+    if zero_var_mask.any():
+        for channel in ts.channel.values:
+            if zero_var_mask.sel(channel=channel).any():
+                bad_channels_from_zero_var.add(channel)
+
+    # Combine with explicitly passed bad channels
+    all_bad_channels = bad_channels_from_zero_var.union(set(list_bad_channels))
+    valid_bad_channels = [ch for ch in all_bad_channels if ch in ts.channel.values]
+
+    # Create mask for entire bad channels (across all other_dim coordinates)
+    bad_channel_mask = ts.channel.isin(valid_bad_channels)
+
+    # Compute bad variance fill value
+    good_var = var.where(~bad_channel_mask)
+    max_good_var = good_var.max().item() if good_var.notnull().any() else 1.0
+    var_fill_value = bad_abs_var if bad_abs_var is not None else bad_rel_var * max_good_var
+
+    # Replace variance of bad channels
+    var = var.where(~bad_channel_mask, other=var_fill_value)
+
+    if not calc_covariance:
+        return var
+
+    # Initialize 3D covariance array, shape (other_dim, channel, channel)
+    channels = ts.channel.values
+    n_other_dim, n_channels = len(other_dim_values), len(channels)
+    cov_matrix_3d = np.zeros((n_other_dim, n_channels, n_channels))
+    bad_ch_indices = np.array([ch in valid_bad_channels for ch in channels])
+
+    # Compute covariance for each other_dim coordinate
+    for i, other_val in enumerate(other_dim_values):
+        data_slice = ts.sel({other_dim: other_val})
+        data_matrix = data_slice.values  # Shape: (n_channels, n_time)
+        cov_matrix_2d = np.cov(data_matrix, ddof=1)  # Shape: (n_channels, n_channels)
+
+        # Replace covariance of bad channels
+        if valid_bad_channels:
+            # Get max off-diagonal covariance from good channels
+            good_cov_matrix = cov_matrix_2d.copy()
+            good_cov_matrix[bad_ch_indices, :] = np.nan
+            good_cov_matrix[:, bad_ch_indices] = np.nan
+            np.fill_diagonal(good_cov_matrix, np.nan)
+            max_good_cov = np.nanmax(np.abs(good_cov_matrix)) if not np.isnan(good_cov_matrix).all() else 0
+
+            # Replace covariance of bad channels
+            cov_fill_value = var_fill_value if bad_abs_var is not None else bad_rel_var * max_good_cov
+            cov_matrix_2d[bad_ch_indices, :] = cov_fill_value
+            cov_matrix_2d[:, bad_ch_indices] = cov_fill_value
+            bad_diag_mask = np.diag(bad_ch_indices)
+            cov_matrix_2d[bad_diag_mask] = var_fill_value
+
+        cov_matrix_3d[i] = cov_matrix_2d
+
+    # Create coordinate arrays
+    coords = {
+        other_dim: other_dim_values,
+        "channel1": channels,
+        "channel2": channels,
+    }
+
+    covar = xr.DataArray(
+        cov_matrix_3d,
+        dims=(other_dim, "channel1", "channel2"),
+        coords=coords,
+    )
+
+    return covar

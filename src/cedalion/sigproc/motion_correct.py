@@ -494,7 +494,7 @@ def tddr(ts: cdt.NDTimeSeries):
                 corrected = tddr(curr_signal)
                 # Assign back ensuring coordinate consistency
                 signal.loc[dict(channel=[ch], wavelength=[wl])] = corrected
-        return signal
+        return signal * unit
 
     # Early exit: signal is (nearly) constant
     if np.allclose(np.squeeze(signal.values), np.squeeze(signal.values)[0], rtol=1e-8,
@@ -504,7 +504,7 @@ def tddr(ts: cdt.NDTimeSeries):
             f"(channel={signal.channel.values[0]}, "
             f"wavelength={signal.wavelength.values[0]})."
         )
-        return signal
+        return signal * unit
 
     # Preprocess: Separate high and low frequencies
     signal_mean = np.mean(signal)
@@ -538,7 +538,7 @@ def tddr(ts: cdt.NDTimeSeries):
         # Step 3c. Robust estimate of standard deviation of the residuals
         sigma = 1.4826 * np.median(dev)
         if sigma < 1e-10:
-            return signal + signal_mean
+            return (signal + signal_mean) * unit
 
         # Step 3d. Scale deviations by standard deviation and tuning parameter
         r = dev / (sigma * tune)

@@ -24,8 +24,24 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
     def __init__(self, snirfRec=None):
         # Initialize
         super().__init__()
-        self.snirfRec = snirfRec
-
+        
+        # Check what type of data passed in
+        if type(snirfRec) == cdc.recording.Recording:
+            self.snirfRec = snirfRec
+            self.oftype = "rec"
+        elif type(snirfRec) == dict:
+            self.cfg_dataset = snirfRec["cfg_dataset"]
+            self.recs = snirfRec["rec"]
+            self.i_subj = 0
+            self.i_run = 0
+            self.snirfRec = self.recs[self.i_subj][self.i_run]
+            self.oftype = "pkl"
+        else:
+            raise Exception("Unexpected format passed!")
+        
+        self._UI_SETUP()
+        
+    def _UI_SETUP(self):
         # Set central widget
         self._main = QtWidgets.QWidget()
         self.setCentralWidget(self._main)
@@ -63,6 +79,7 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         new_pos = [pos.x0 + 0.075, pos.y0, pos.width - 0.075, pos.height]
         # Set the new position
         self._dataTimeSeries_ax.set_position(new_pos)
+        self._dataTimeSeries_ax.clear()
 
         window_layout.addWidget(NavigationToolbar(self.plots,self),stretch=1)
         window_layout.addWidget(self.plots, stretch=8)
@@ -79,6 +96,37 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         control_panel_layout.setSpacing(20)
         control_panel.setLayout(control_panel_layout)
         window_layout.addWidget(control_panel, stretch=1)
+        
+        # Create File Control Layout
+        file_layout = QtWidgets.QGridLayout()
+        file_layout.setAlignment(QtCore.Qt.AlignTop)
+        control_panel_layout.addLayout(
+            file_layout,
+        )
+        
+        ## Subject Selector
+        self.subj = QtWidgets.QComboBox()
+        if self.oftype == "rec":
+            self.subj.addItems(["None"])
+        else:
+            self.subj.addItems(self.cfg_dataset["subj_ids"])
+        self.subj.setCurrentIndex(0)
+        self.subj.setFixedWidth(200)
+        self.subj.currentTextChanged.connect(self._subj_changed)
+        file_layout.addWidget(QtWidgets.QLabel("Subject:"), 0, 0)
+        file_layout.addWidget(self.subj, 0, 1)
+        
+        ## Run Selector
+        self.run = QtWidgets.QComboBox()
+        if self.oftype == "rec":
+            self.run.addItems(["None"])
+        else:
+            self.run.addItems(self.cfg_dataset["file_ids"])
+        self.run.setCurrentIndex(0)
+        self.run.setFixedWidth(200)
+        self.run.currentTextChanged.connect(self._run_changed)
+        file_layout.addWidget(QtWidgets.QLabel("Run:"), 1, 0)
+        file_layout.addWidget(self.run, 1, 1)
 
         # Create Timeseries Controls Layout
         ts_layout = QtWidgets.QGridLayout()
@@ -91,13 +139,13 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         self.ts = QtWidgets.QListWidget()
         self.ts.addItems(["None"])
         self.ts.setCurrentRow(0)
-        self.ts.setFixedHeight(60)
+        self.ts.setFixedHeight(90)
         self.ts.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.ts.currentTextChanged.connect(self._ts_changed)
         ts_layout.addWidget(QtWidgets.QLabel("Timeseries:"), 0, 0)
         ts_layout.addWidget(self.ts, 0, 1)
 
-        # Create Aux selector Layout
+        # Create Aux/wv selector Layout
         aux_layout = QtWidgets.QGridLayout()
         aux_layout.setAlignment(QtCore.Qt.AlignTop)
         control_panel_layout.addLayout(aux_layout)
@@ -110,21 +158,14 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         aux_layout.addWidget(QtWidgets.QLabel("Aux:"), 0, 0)
         aux_layout.addWidget(self.auxs, 0, 1)
 
-        # Create Wavelength Controls Layout
-        wv_layout = QtWidgets.QGridLayout()
-        wv_layout.setAlignment(QtCore.Qt.AlignTop)
-        control_panel_layout.addLayout(
-            wv_layout,
-        )
-
         ## Create Wavelength / Concentration Controls
         self.wv = QtWidgets.QListWidget()
         self.wv.setFixedHeight(45)
         self.wv.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.wv.itemSelectionChanged.connect(self._wv_changed)
         self.wv_label = QtWidgets.QLabel("Wavelength/Concentration:")
-        wv_layout.addWidget(self.wv_label, 0, 0)
-        wv_layout.addWidget(self.wv, 0, 1)
+        aux_layout.addWidget(self.wv_label, 1, 0)
+        aux_layout.addWidget(self.wv, 1, 1)
 
         # Create Optional Controls Layout
         opt_layout = QtWidgets.QVBoxLayout()
@@ -382,6 +423,24 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
     def _toggle_stims(self, s):
         self.plot_stims = s
         self._draw_timeseries()
+        
+    def _subj_changed(self, s):  # TODO
+        if s == "None":
+            return
+        
+        self.i_subj = self.cfg_dataset["subj_ids"].index(s)
+        self.snirfRec = self.recs[self.i_subj][self.i_run]
+        self._dataTimeSeries_ax.clear()
+        self._init_calc()
+    
+    def _run_changed(self, s):  # TODO
+        if s == "None":
+            return
+        
+        self.i_run = self.cfg_dataset["file_ids"].index(s)
+        self.snirfRec = self.recs[self.i_subj][self.i_run]
+        self._dataTimeSeries_ax.clear()
+        self._init_calc()
 
     def _wv_changed(self):
         self._draw_timeseries()
@@ -690,7 +749,7 @@ def run_vis(snirfRec: cdc.Recording):
     """Opens the visualization GUI.
 
     Args:
-        snirfRec: The fNIRS data to be motion corrected.
+        snirfRec: The fNIRS data to be visualized.
     """
 
     app = QtWidgets.QApplication(sys.argv)

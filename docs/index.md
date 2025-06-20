@@ -26,6 +26,7 @@ data_io/index
 sigproc/index
 machine_learning/index
 image_reco/index
+physio/index
 plot_vis/index
 synth/index
 ```
