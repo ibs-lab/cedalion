@@ -107,9 +107,9 @@ def get_stim_from_lsl(streams=None, xdf_file=None, stream_name='PsychoPyMarker',
     # Fill in 'value' column based on provided dictionary or with 1 as default
     if value_dict is None:
         stim_df['value'] = 1  # Default value if no dictionary is provided
-    else:    
+    else:
         # Default value is 1 if not specified in the dictionary
-        stim_df['value'] = stim_df['trial_type'].map(value_dict).fillna(1)  
+        stim_df['value'] = stim_df['trial_type'].map(value_dict).fillna(1)
 
     return stim_df
 
@@ -121,16 +121,17 @@ def lsl_stim_to_tsv(xdf_file, tsv_file=None, stream_name='PsychoPyMarker'):
 
     Args:
         xdf_file (str): Path to the XDF file containing LSL streams.
-        tsv_file (str, optional): Path to save the TSV file. If None, it will be saved in the same folder as the xdf_file with the name 'stim_lsl.tsv'.
+        tsv_file (str, optional): Path to save the TSV file. If None, it will be saved in the same folder as the xdf_file with the name 'events_lsl.tsv'.
         stream_name (str): Name of the stream to extract markers from. Default is 'PsychoPyMarker'.
     """
     
     # Load the markers from the XDF file
     markers_df = get_stim_from_lsl(xdf_file=xdf_file, stream_name=stream_name)
+
     
     if tsv_file is None:
         # Use stim.tsv as default name
-        tsv_file = os.path.join(os.path.dirname(xdf_file), 'stim_lsl.tsv')
+        tsv_file = os.path.join(os.path.dirname(xdf_file), 'events_lsl.tsv')
     
     # If file exists, ask for confirmation to overwrite
     if os.path.exists(tsv_file):
