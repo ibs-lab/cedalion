@@ -22,7 +22,7 @@ dependencies:
   - pybids=0.19
   - pytest
   - pytest-cov
-  - python=3.13
+  - python=3.11
   - pywavelets=1.8
   - ruff
   - scikit-image=0.25
