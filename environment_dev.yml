@@ -39,6 +39,7 @@ dependencies:
   - trame-vuetify=3.0
   - trame-components=2.5
   - vtk=9.4
+  - pyxdf=1.17.0
 
   - nbsphinx
   - nbstripout

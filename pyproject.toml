@@ -56,6 +56,7 @@ dependencies = [
   "snirf==0.8",
   "pmcx==0.4.2",
   "pmcxcl==0.3.1",
+  "pyxdf==1.17.0",
 ]
 
 
