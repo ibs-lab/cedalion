@@ -84,7 +84,7 @@ requires = [
 type = "conda"
 conda-forge = true
 environment-file = "environment_dev.yml"
-python="3.13"
+python="3.11"
 
 [tool.hatch.envs.default.scripts]
 build_docs = "./scripts/build_docs.sh docs"
@@ -94,7 +94,7 @@ check = "pre-commit run"
 type = "conda"
 conda-forge = true
 environment-file = "environment_dev.yml"
-python="3.13"
+python="3.11"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "D"]
