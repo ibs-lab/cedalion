@@ -1307,7 +1307,8 @@ def scalp_plot_gif(
             add_colorbar=False
         )
         ax1.figure.canvas.draw()
-        image = Image.frombytes('RGB', ax1.figure.canvas.get_width_height(), ax1.figure.canvas.tostring_rgb())
+        rgba = np.asarray(ax1.figure.canvas.buffer_rgba())
+        image = Image.fromarray(rgba)
         frames.append(image)
 
     frames[0].save(filename, save_all=True, append_images=frames[1:], duration=1000/fps, loop=0)
@@ -1601,6 +1602,7 @@ def image_recon_view(
             plot_labeled_points(p0, geo3d_plot)
 
         if SAVE and filename:
+            p0.show()
             p0.screenshot(filename + '.png')
         else:
             p0.show()

@@ -27,7 +27,10 @@ import xarray as xr
 
 import cedalion
 import cedalion.dataclasses as cdc
-from cedalion.geometry.registration import register_trans_rot_isoscale
+from cedalion.geometry.registration import (
+    register_trans_rot_isoscale,
+    register_general_affine,
+)
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 import cedalion.io
@@ -37,6 +40,7 @@ from cedalion.geometry.segmentation import (
     voxels_from_segmentation,
 )
 from cedalion.imagereco.utils import map_segmentation_mask_to_surface
+from cedalion.io.forward_model import FluenceFile, save_Adot
 
 from .tissue_properties import get_tissue_properties
 
@@ -501,13 +505,18 @@ class TwoSurfaceHeadModel:
     # algorithm is not good.
     @cdc.validate_schemas
     def align_and_snap_to_scalp(
-        self, points: cdt.LabeledPointCloud
+        self,
+        points: cdt.LabeledPointCloud,
+        mode: str = "trans_rot_isoscale",
     ) -> cdt.LabeledPointCloud:
         """Align and snap optodes or points to the scalp surface.
 
         Args:
             points (cdt.LabeledPointCloud): Points to be aligned and snapped to the
                 scalp surface.
+            mode: method to derive the affine transform. Could be either
+                'trans_rot_isoscale' or 'general'. See cedalion.geometry.registraion
+                for details.
 
         Returns:
             cdt.LabeledPointCloud: Points aligned and snapped to the scalp surface.
@@ -515,7 +524,13 @@ class TwoSurfaceHeadModel:
 
         assert self.landmarks is not None, "Please add landmarks in RAS to head \
                                             instance."
-        t = register_trans_rot_isoscale(self.landmarks, points)
+        if mode == "trans_rot_isoscale":
+            t = register_trans_rot_isoscale(self.landmarks, points)
+        elif mode == "general":
+            t = register_general_affine(self.landmarks, points)
+        else:
+            raise ValueError(f"unexpected mode '{mode}'")
+
         transformed = points.points.apply_transform(t)
         snapped = self.scalp.snap(transformed)
         return snapped
@@ -695,6 +710,7 @@ class ForwardModel:
         """
 
         kwargs.setdefault("nphoton", 1e8)
+        kwargs.setdefault("cuda", True)
 
         cfg = {
             "nphoton": kwargs['nphoton'],
@@ -768,10 +784,11 @@ class ForwardModel:
 
         return result
 
-    def compute_fluence_mcx(self, **kwargs):
+    def compute_fluence_mcx(self, fluence_fname : str | Path, **kwargs):
         """Compute fluence for each channel and wavelength using MCX package.
 
         Args:
+            fluence_fname : the output hdf5 file to store the fluence
             kwargs: key-value pairs are passed to MCX's configuration dict. For example
                 nphoton (int) to control the number of photons to simulate.
                 See https://pypi.org/project/pmcx for further options.
@@ -801,48 +818,9 @@ class ForwardModel:
         n_wavelength = len(wavelengths)
         n_optodes = len(self.optode_pos)
 
-        fluence_at_optodes = np.zeros((n_optodes, n_optodes, n_wavelength))
-
-        # the fluence per voxel, wavelength and optode position
-        # FIXME this may become large. eventually cache on disk?
-        fluence_all = np.zeros((n_optodes, n_wavelength) + self.volume.shape)
-
-        for i_opt in range(n_optodes):
-            label = self.optode_pos.label.values[i_opt]
-            print(f"simulating fluence for {label}. {i_opt+1} / {n_optodes}")
-
-            # run MCX or MCXCL
-            # shape: [i,j,k]
-            fluence = self._get_fluence_from_mcx(i_opt, **kwargs)
-
-            # FIXME shortcut: currently tissue props are wavelength independent -> copy
-            for i_wl in range(n_wavelength):
-                # calculate fluence at all optode positions for normalization purposes
-                fluence_at_optodes[i_opt, :, i_wl] = self._fluence_at_optodes(
-                    fluence, i_opt
-                )
-
-                fluence_all[i_opt, i_wl, :, :, :] = fluence
-
-            # accumulate brain and scalp voxels
-            # flux = flux.flatten()
-            # flux_brain[:, i_opt, i_wl] = flux @ self.head_model.voxel_to_vertex_brain
-            # flux_scalp[:, i_opt, i_wl] = flux @ self.head_model.voxel_to_vertex_scalp
-
-        # convert to DataArray
-        fluence_all = xr.DataArray(
-            fluence_all,
-            dims=["label", "wavelength", "i", "j", "k"],
-            coords={
-                "label": ("label", self.optode_pos.label.values),
-                "type": ("label", self.optode_pos.type.values),
-                "wavelength": ("wavelength", wavelengths),
-            },
-            attrs={"units": "1 / millimeter ** 2"},
-        )
+        units = "1 / millimeter ** 2"
 
         fluence_at_optodes = xr.DataArray(
-            fluence_at_optodes,
             dims=["optode1", "optode2", "wavelength"],
             coords={
                 "optode1": self.optode_pos.label.values,
@@ -852,12 +830,40 @@ class ForwardModel:
             attrs={"units": "1 / millimeter ** 2"},
         )
 
-        return fluence_all, fluence_at_optodes
+        with FluenceFile(fluence_fname, "w") as fluence_file:
+            fluence_file.create_fluence_dataset(
+                self.optode_pos,
+                wavelengths,
+                self.volume.shape,
+                units
+            )
 
-    def compute_fluence_nirfaster(self, meshingparam=None):
+            for i_opt in range(n_optodes):
+                label = self.optode_pos.label.values[i_opt]
+                print(f"simulating fluence for {label}. {i_opt+1} / {n_optodes}")
+
+                # run MCX or MCXCL
+                # shape: [i,j,k]
+                fluence = self._get_fluence_from_mcx(i_opt, **kwargs)
+
+                # FIXME shortcut:
+                # currently tissue props are wavelength independent -> copy
+                for i_wl in range(n_wavelength):
+                    # calculate fluence at all optode positions. used for normalization
+                    fluence_at_optodes[i_opt, :, i_wl] = self._fluence_at_optodes(
+                        fluence, i_opt
+                    )
+
+                    fluence_file.set_fluence_by_index(i_opt,i_wl, fluence)
+
+            fluence_file.set_fluence_at_optodes(fluence_at_optodes)
+
+
+    def compute_fluence_nirfaster(self, fluence_fname : str | Path, meshingparam=None):
         """Compute fluence for each channel and wavelength using NIRFASTer package.
 
         Args:
+            fluence_fname : the output hdf5 file to store the fluence
             meshingparam (ff.utils.MeshingParam): Parameters to be used by the CGAL
                 mesher. Note: they should all be double
 
@@ -942,57 +948,58 @@ class ForwardModel:
 
         wavelengths = self.measurement_list.wavelength.unique()
         n_wavelength = len(wavelengths)
-        fluence_all = np.zeros((n_optodes, n_wavelength) + self.volume.shape)
-        fluence_at_optodes = np.zeros((n_optodes, n_optodes, n_wavelength))
 
-        for i_wl in range(n_wavelength):
-            # PLACEHOLDER: set new property and repeat
-            # This way we can void the expensive meshing
-            # newprop = []
-            # mesh.set_prop(newprop)
-            # newdata,_=femdata(0)
-            for i_opt in range(n_optodes):
-                fluence_all[i_opt, i_wl, :, :, :] = np.transpose(
-                    data.phi[:, :, :, i_opt], (1, 0, 2)
-                )  # xyz to ijk
-                fluence_at_optodes[i_opt, :, i_wl] = amplitude_optode[:,i_opt]
-
-        # convert to DataArray; copied from foward_model
-        fluence_all = xr.DataArray(
-            fluence_all,
-            dims=["label", "wavelength", "i", "j", "k"],
-            coords={
-                "label": ("label", self.optode_pos.label.values),
-                "type": ("label", self.optode_pos.type.values),
-                "wavelength": ("wavelength", wavelengths),
-            },
-            attrs={"units": "1 / millimeter ** 2"},
-        )
+        units = "1 / millimeter ** 2"
 
         fluence_at_optodes = xr.DataArray(
-            fluence_at_optodes,
             dims=["optode1", "optode2", "wavelength"],
             coords={
                 "optode1": self.optode_pos.label.values,
                 "optode2": self.optode_pos.label.values,
                 "wavelength": wavelengths,
             },
-            attrs={"units": "1 / millimeter ** 2"},
+            attrs={"units": units},
         )
 
-        return fluence_all, fluence_at_optodes
+        with FluenceFile(fluence_fname, "w") as fluence_file:
+            fluence_file.create_fluence_dataset(
+                self.optode_pos,
+                wavelengths,
+                self.volume.shape,
+                units
+            )
 
+            for i_wl in range(n_wavelength):
+                # PLACEHOLDER: set new property and repeat
+                # This way we can void the expensive meshing
+                # newprop = []
+                # mesh.set_prop(newprop)
+                # newdata,_=femdata(0)
+                for i_opt in range(n_optodes):
+                    logger.debug(
+                        f"computing wl {i_wl + 1}/{n_wavelength} "
+                        f"optode {i_opt + 1} / {n_optodes}"
+                    )
+                    fluence = np.transpose(
+                        data.phi[:, :, :, i_opt], (1, 0, 2)
+                    )  # xyz to ijk
 
-    def compute_sensitivity(self, fluence_all, fluence_at_optodes):
+                    fluence_file.set_fluence_by_index(i_opt,i_wl, fluence)
+
+                    fluence_at_optodes[i_opt, :, i_wl] = amplitude_optode[:,i_opt]
+
+            fluence_file.set_fluence_at_optodes(fluence_at_optodes)
+
+    def compute_sensitivity(
+        self,
+        fluence_fname: str | Path,
+        sensitivity_fname: str | Path,
+    ):
         """Compute sensitivity matrix from fluence.
 
         Args:
-            fluence_all (xr.DataArray): Fluence in each voxel for each wavelength.
-            fluence_at_optodes (xr.DataArray): Fluence at all optode positions for each
-                wavelength.
-
-        Returns:
-            xr.DataArray: Sensitivity matrix for each channel, vertex and wavelength.
+            fluence_fname : the input hdf5 file to store the fluence
+            sensitivity_fname : the output netcdf file for the sensitivity
         """
 
         unique_channels = self.measurement_list[
@@ -1015,29 +1022,33 @@ class ForwardModel:
         # fluence_all: (label, wavelength, i, j, k)
         # fluence_at_optodes: (optode1, optode2, wavelength)
 
-        for _, r in self.measurement_list.iterrows():
-            # using the adjoint monte carlo method
-            # see YaoIntesFang2018 and BoasDale2005
+        with FluenceFile(fluence_fname, "r") as fluence_file:
+            fluence_at_optodes = fluence_file.get_fluence_at_optodes()
 
-            pertubation = (
-                fluence_all.loc[r.source, r.wavelength]
-                * fluence_all.loc[r.detector, r.wavelength]
-            )
-            pertubation = pertubation.values.flatten()
-            normfactor = (
-                fluence_at_optodes.loc[r.source, r.detector, r.wavelength].values
-                + fluence_at_optodes.loc[r.detector, r.source, r.wavelength].values
-            ) / 2
 
-            i_wl = wavelengths.index(r.wavelength)
-            i_ch = channels.index(r.channel)
+            for _, r in self.measurement_list.iterrows():
+                # using the adjoint monte carlo method
+                # see YaoIntesFang2018 and BoasDale2005
 
-            Adot_brain[i_ch, :, i_wl] = (
-                pertubation @ self.head_model.voxel_to_vertex_brain / normfactor
-            )
-            Adot_scalp[i_ch, :, i_wl] = (
-                pertubation @ self.head_model.voxel_to_vertex_scalp / normfactor
-            )
+                f_s = fluence_file.get_fluence(r.source, r.wavelength)
+                f_d = fluence_file.get_fluence(r.detector, r.wavelength)
+
+                pertubation = (f_s * f_d).flatten()
+
+                normfactor = (
+                    fluence_at_optodes.loc[r.source, r.detector, r.wavelength].values
+                    + fluence_at_optodes.loc[r.detector, r.source, r.wavelength].values
+                ) / 2
+
+                i_wl = wavelengths.index(r.wavelength)
+                i_ch = channels.index(r.channel)
+
+                Adot_brain[i_ch, :, i_wl] = (
+                    pertubation @ self.head_model.voxel_to_vertex_brain / normfactor
+                )
+                Adot_scalp[i_ch, :, i_wl] = (
+                    pertubation @ self.head_model.voxel_to_vertex_scalp / normfactor
+                )
 
         is_brain = np.zeros((n_brain + n_scalp), dtype=bool)
         is_brain[:n_brain] = True
@@ -1079,7 +1090,8 @@ class ForwardModel:
             )
             Adot = Adot.assign_coords(parcel = ("vertex", parcels))
 
-        return Adot
+        save_Adot(sensitivity_fname, Adot)
+
 
     # FIXME: better name for Adot * ext. coeffs
     # FIXME: hardcoded for 2 chromophores (HbO and HbR) and wavelengths

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
 from typing import Any
+from copy import deepcopy
 
 import mne
 import numpy as np
@@ -222,7 +223,9 @@ class TrimeshSurface(Surface):
 
         transformed.apply_transform(transform.pint.dequantify().values)
 
-        return TrimeshSurface(transformed, new_crs, new_units)
+        return TrimeshSurface(
+            transformed, new_crs, new_units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
     def decimate(self, face_count: int) -> "TrimeshSurface":
         """Use quadric decimation to reduce the number of vertices.
@@ -239,13 +242,17 @@ class TrimeshSurface(Surface):
         )
         decimated = trimesh.Trimesh(vertices, faces)
 
-        return TrimeshSurface(decimated, self.crs, self.units)
+        return TrimeshSurface(
+            decimated, self.crs, self.units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
     def smooth(self, lamb: float) -> "TrimeshSurface":
         """Apply a Taubin filter to smooth this surface."""
 
         smoothed = trimesh.smoothing.filter_taubin(self.mesh, lamb=lamb)
-        return TrimeshSurface(smoothed, self.crs, self.units)
+        return TrimeshSurface(
+            smoothed, self.crs, self.units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
     def get_vertex_normals(self, points: cdt.LabeledPointCloud, normalized=True):
         """Get normals of vertices closest to the provided points."""
@@ -283,7 +290,9 @@ class TrimeshSurface(Surface):
         mesh = trimesh.Trimesh(
             mesh.vertices, mesh.faces, vertex_normals=flipped_normals
         )
-        return TrimeshSurface(mesh, self.crs, self.units)
+        return TrimeshSurface(
+            mesh, self.crs, self.units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
     @classmethod
     def from_vtksurface(cls, vtk_surface: "VTKSurface"):
@@ -291,7 +300,12 @@ class TrimeshSurface(Surface):
         pyvista_polydata = pv.wrap(vtk_polydata)
         mesh = pyvista_polydata_to_trimesh(pyvista_polydata)
 
-        return cls(mesh=mesh, crs=vtk_surface.crs, units=vtk_surface.units)
+        return cls(
+            mesh=mesh,
+            crs=vtk_surface.crs,
+            units=vtk_surface.units,
+            vertex_coords=deepcopy(vtk_surface.vertex_coords),
+        )
 
 
 @dataclass
@@ -336,7 +350,12 @@ class VTKSurface(Surface):
         mesh = tri_mesh.mesh
         vtk_mesh = trimesh_to_vtk_polydata(mesh)
 
-        return cls(mesh=vtk_mesh, crs=tri_mesh.crs, units=tri_mesh.units)
+        return cls(
+            mesh=vtk_mesh,
+            crs=tri_mesh.crs,
+            units=tri_mesh.units,
+            vertex_coords=deepcopy(tri_mesh.vertex_coords),
+        )
 
     def decimate(self, reduction: float, **kwargs) -> "VTKSurface":
         """Use VTK's decimate_pro method to reduce the number of vertices.
@@ -353,7 +372,9 @@ class VTKSurface(Surface):
         pyvista_polydata = pv.wrap(self.mesh)
         decimated = pyvista_polydata.decimate_pro(reduction, **kwargs)
 
-        return VTKSurface(decimated, self.crs, self.units)
+        return VTKSurface(
+            decimated, self.crs, self.units, vertex_coords=deepcopy(self.vertex_coords)
+        )
 
 
 @dataclass
