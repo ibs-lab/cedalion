@@ -126,6 +126,17 @@ nbsphinx_thumbnails = {
     'examples/*/*': '_static/IBS_Logo_sm.png',
 }
 
+## -- Nbsphinx open in google colab button -------------------------------------------
+
+nbsphinx_prolog = r"""
+.. raw:: html
+
+    <div style="text-align: right; width: 117px; height: 20px;">
+        <a href="https://colab.research.google.com/github/ibs-lab/cedalion/blob/dev/{{ env.doc2path(env.docname, base=None) }}" target="_blank">
+            <img width="117" height="20" src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"/>
+        </a>
+    </div>
+"""
 
 # -- linkcode ------- ----------------------------------------------------------------
 # adopted from: https://stackoverflow.com/a/75279988
