@@ -37,7 +37,7 @@ dependencies = [
   "scikit-learn==1.7",
   "scipy==1.15",
   "seaborn==0.13",
-  "statsmodels==0.14",
+  "statsmodels==0.14.4",
   "strenum==0.4",
   "xarray==2025.6",
   "trimesh==4.6",
