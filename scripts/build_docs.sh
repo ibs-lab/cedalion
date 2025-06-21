@@ -7,6 +7,9 @@ fi
 
 path_to_docs=$1
 
+echo "Prefetch datasets"
+python scripts/prefetch_docs_datasets.py
+
 cd ${path_to_docs}
 
 echo "Building example notebook"
