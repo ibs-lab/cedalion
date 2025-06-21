@@ -17,6 +17,7 @@ from matplotlib.colors import ListedColormap
 import pyvista as pv
 
 import cedalion
+import cedalion.plots
 import cedalion.dataclasses as cdc
 
 

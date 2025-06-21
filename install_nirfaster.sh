@@ -35,9 +35,12 @@ fi
 cd "$DIR_NAME"
 
 # specify nirfaster release and source urls
-PYTHON_ZIP_URL="https://codeload.github.com/milabuob/nirfaster-uFF/zip/refs/tags/v1.0.0" 
-EXT_ZIP_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v1.0.0/"
-ZIP_FOLDER_NAME="nirfaster-uFF-1.0.0" # directory in zip file
+#PYTHON_ZIP_URL="https://codeload.github.com/milabuob/nirfaster-uFF/zip/refs/tags/v1.0.0" 
+#EXT_ZIP_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v1.0.0/"
+#ZIP_FOLDER_NAME="nirfaster-uFF-1.0.0" # directory in zip file
+PYTHON_ZIP_URL="https://codeload.github.com/milabuob/nirfaster-uFF/zip/refs/tags/v0.9.6"
+EXT_ZIP_URL="https://github.com/milabuob/nirfaster-uFF/releases/download/v0.9.6/"
+ZIP_FOLDER_NAME="nirfaster-uFF-0.9.6" # directory in zip file
 FOLDER_NAME="nirfaster-uFF" # target directory under plugins
 
 curl -sL "$PYTHON_ZIP_URL" -o temp.zip && unzip temp.zip -d . && rm temp.zip
