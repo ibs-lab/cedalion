@@ -14,7 +14,7 @@ cd ${path_to_docs}
 
 echo "Building example notebook"
 cd examples
-make -j 8 notebooks
+make -j 2 notebooks
 
 echo "Building html documentation"
 cd ..
