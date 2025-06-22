@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 25.1.0 (TBD)
+## Version 25.1.0 (2025-06-22)
 
 All dependencies have been updated to recent versions. Please rebuild the environment.
 
@@ -30,7 +30,8 @@ All dependencies have been updated to recent versions. Please rebuild the enviro
 - Improvements to the time-series plots, by [David Boas](https://github.com/dboas). ([#85](https://github.com/ibs-lab/cedalion/pull/85), [#108](https://github.com/ibs-lab/cedalion/pull/108))
 
 
-
+### Bugfixes:
+- Correct determination of Cz in LandmarksBuilder1010, by [Nils Harmening](https://github.com/harmening). ([#82](https://github.com/ibs-lab/cedalion/pull/82))
 
 
 
