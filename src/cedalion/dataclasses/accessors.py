@@ -518,3 +518,22 @@ class StatsModelsAccessor:
         return self.map(
             lambda i: pd.Series(np.diagonal(i.cov_params()), index=regressors)
         )
+
+    def t_values(self):
+        """Returns the t-values from each model result as a DataArray.
+
+        Returns:
+            An xarray.DataArray containing the t-values from each model result.
+        """
+        try:
+            tvalues = self.map(lambda i : i.tvalue, name="hypothesis")
+        except AttributeError:
+            raise NotImplementedError()
+        return tvalues
+
+    def p_values(self):
+        try:
+            pvalues = self.map(lambda i : i.pvalue, name="hypothesis")
+        except AttributeError:
+            raise NotImplementedError()
+        return pvalues
