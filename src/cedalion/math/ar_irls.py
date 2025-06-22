@@ -76,7 +76,7 @@ def ar_irls_GLM(y, x, pmax=40, M=sm.robust.norms.HuberT()):
     mask = np.isfinite(y.values)
 
     yorg : pd.Series = pd.Series(y.values[mask].copy())
-    xorg : pd.DataFrame = x[mask].reset_index()
+    xorg : pd.DataFrame = x[mask].reset_index(drop=True)
 
     y = yorg.copy()
     x = xorg.copy()
