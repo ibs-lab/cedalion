@@ -80,6 +80,11 @@ requires = [
   "hatch-conda>=0.5.2",
 ]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.github",
+  "/docs",
+]
 
 [tool.hatch.envs.default]
 type = "conda"
