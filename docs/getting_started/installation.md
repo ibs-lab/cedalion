@@ -40,7 +40,7 @@ whatever works best for you.
 Afterwards activate the environment and add an editable install of `cedalion` to it:
 ```
 $ conda activate cedalion
-$ pip install -e .
+$ pip install -e . --no-deps
 ```
 
 This will also install Jupyter Notebook to run the example notebooks.
@@ -118,7 +118,7 @@ $ git clone git@github.com:ibs-lab/cedalion.git path/to/cedalion_v25.1.0
 $ cd path/to/cedalion_v25.1.0
 $ conda env create -n cedalion_v25.1.0 -f environment_dev.yml
 $ conda activate cedalion_v25.1.0
-$ pip install -e .
+$ pip install -e . --no-deps
 ```
 
 Switching between the different cedalion versions is then possible by activating the 
