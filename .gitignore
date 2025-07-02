@@ -181,3 +181,9 @@ scratch/
 # plugins
 plugins/
 
+# ignore Singularity/container artifacts
+cedalion.sif
+pyxdf-overlay.img
+
+# ignore XKB bind-mount directory
+xkb/
