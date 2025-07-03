@@ -186,9 +186,17 @@ def xdf_to_aux_ts(
 
         src = _resolve_stream(streams, search)
 
-        desc       = src["info"].get("desc", [])
-        chan_root  = desc[0].get("channels", []) if desc else []
-        chan_list  = chan_root[0].get("channel", []) if chan_root else []
+        desc0      = src["info"].get("desc", [{}])[0] or {}
+        chan_root  = desc0.get("channels", [{}])[0] or {}
+        chan_list  = chan_root.get("channel", [])
+
+        channel_meta = {i: ch for i, ch in enumerate(chan_list)} if chan_list else {}
+
+        if chan_list:
+            chan_labels = [ch.get("label", [""])[0] for ch in chan_list]
+        else:
+            nchan = int(src["info"]["channel_count"][0])
+            chan_labels = [f"ch{i}" for i in range(nchan)]
 
         ts   = np.asarray(src["time_series"])
         t_ls = np.asarray(src["time_stamps"])
@@ -198,15 +206,17 @@ def xdf_to_aux_ts(
         t0   = t_ls[keep] - lsl_t0
    
     
-        channel_meta = {i: m for i, m in enumerate(chan_list)}        
-        chan_labels  = [meta.get("label", [""])[0] for meta in chan_list]
-                                   
-
-
+    
         # ── wrap in xarray ────────────────────────────────────────────
         da = _wrap_array(ts, t0, chan_labels, channel_meta)
 
         da.time.attrs["units"] = "s"
+        da.attrs["nominal_srate"] = float(src["info"]["nominal_srate"][0])  
+        if chan_list:
+            units = [ch.get("unit", [""])[0] for ch in chan_list]
+            if any(units):
+                da.attrs["channel_units"] = units
+
         rec.aux_ts[aux_name] = da
 
         print(f"    → aux_ts['{aux_name}']: "
