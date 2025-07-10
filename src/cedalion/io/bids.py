@@ -604,6 +604,26 @@ def edit_events(row: pd.Series, bids_dir: str) -> None:
         events_df.sort_values("onset").to_csv(event_path, sep="\t", index=False)
     return
 
+def sort_events(row: pd.Series, bids_dir: str) -> None:
+    """Sorts the events in a BIDS-compatible .tsv file by onset time.
+
+    This function locates the corresponding _events.tsv file for a given dataset,
+    reads the file, sorts the events by the "onset" column, and overwrites the original
+    file with the sorted version.
+
+    Parameters:
+    ----------
+    row : pd.Series
+        A row from a DataFrame containing BIDS file metadata. Must include the keys
+        "bids_name" and "parent_path".
+
+    bids_dir : str
+        The root directory of the BIDS dataset.
+    """
+    tsv_filename = row["bids_name"].replace("_nirs.snirf", "_events.tsv")
+    event_path = os.path.join(bids_dir, row["parent_path"], tsv_filename)
+    events_df = pd.read_csv(event_path, delimiter="\t")
+    events_df.sort_values("onset").to_csv(event_path, sep="\t", index=False)
 
 def save_source(dataset_path: str, destination_path: str) -> None:
     """Copies the original dataset to a 'sourcedata' folder within the specified destination path.
