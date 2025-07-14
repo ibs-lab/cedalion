@@ -231,3 +231,78 @@ def unit_stripping_is_error(is_error : bool = True):
             if f[0] =="error" and f[2] == pint.errors.UnitStrippedWarning:
                 del warnings.filters[i]
                 break
+
+
+def drop_duplicate_dimensions(array : xr.DataArray) -> xr.DataArray:
+    """Remove dimensions in which all array values are identical.
+
+    During stacking and unstacking of dimensions, coordinate arrays can occur that
+    are attributed to multiple dimensions although their values change only along
+    a single dimensions. This function reduces the array to that single dimension.
+    """
+
+    drop_dims = []
+
+    for dim in array.dims:
+        ref = array.isel({dim : 0})
+        if (array == ref).all(): # array values do not change along this dimension
+            drop_dims.append(dim)
+
+    # drop dimensions
+    reduced_array = array.isel({dim: 0 for dim in drop_dims})
+
+    # drop (now scalar) coordinates that belong to removed dimensions
+    reduced_array = reduced_array.drop_vars(drop_dims)
+
+    return reduced_array
+
+
+def unstack(
+    array: xr.DataArray, unstack_dim: str, stacked_dims: tuple[str]
+) -> xr.DataArray:
+    """Unstack a stacked DataArray.
+
+    This function unstacks a DataArray in which dimensions 'stacked_dims' have
+    been stacked into the dimension 'unstack_dim'. The function further processes
+    unstacked coordinate arrays, so that they are attributed only to their respective
+    dimension.
+
+    Args:
+        array: the stacked DataArray
+        unstack_dim: the dimension to unstack
+        stacked_dims: The dimensions that were stacked together in the order
+            given to DataArray.stack.
+
+    Returns:
+        The unstacked array.
+    """
+    if unstack_dim not in array.dims:
+        raise ValueError(f"cannot unstack missing dimension '{unstack_dim}'.")
+
+    #coords = ("chromo", "vertex")
+    for coord in stacked_dims:
+        if coord not in array.coords:
+            raise ValueError(f"array misses coordinate '{coord}'.")
+
+
+    if unstack_dim not in array.indexes:
+        array = array.set_xindex(stacked_dims)
+
+    unstacked = array.unstack(unstack_dim)
+
+    # other coorindates of the unstack_dim dimension that are not part
+    # of the MultiIndex. These coordinates will be assigned to all stacked_dims
+    # even if they initially belonged only to one of them.
+    other_dims = [
+        c
+        for c, da in array.coords.items()
+        if unstack_dim in da.dims and c not in [unstack_dim, *stacked_dims]
+    ]
+
+    # while they are assigned to all stacked_dims, they may vary only along
+    # a single dimension. remove the other duplicate dimensions.
+    for unstack_dim in other_dims:
+        coords_array = drop_duplicate_dimensions(unstacked.coords[unstack_dim])
+        unstacked = unstacked.assign_coords({unstack_dim: coords_array})
+
+    return unstacked

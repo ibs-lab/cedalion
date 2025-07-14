@@ -5,9 +5,11 @@ import numpy as np
 import pytest
 from scipy.sparse import find
 import sys
+import xarray as xr
 
 import cedalion.datasets
 import cedalion.imagereco.forward_model as fw
+import cedalion.dataclasses as cdc
 
 try:
     src_path = os.path.abspath(
@@ -145,3 +147,103 @@ def test_run_nirfaster():
     mesh.gen_intmat(igrid, jgrid, kgrid)
     # calculate fluence
     data, _ = mesh.femdata(0, solver=solver, opt=solver_opt)
+
+
+
+def test_stacking_flat_channel():
+    channel = ["S1D1", "S1D2", "S2D1"]
+    source = ["S1", "S1", "S2"]
+    detector = ["D1", "D2", "D1"]
+    time = [1.,2.,3.,4.,5.]
+    wavelength = [760., 850.]
+
+    nch = len(channel)
+    nt = len(time)
+    nwl = len(wavelength)
+
+    ts = cdc.build_timeseries(
+        np.arange(nch * nwl * nt).reshape(nch, nwl, nt),
+        dims=["channel", "wavelength", "time"],
+        channel=channel,
+        time=time,
+        value_units="mV",
+        time_units="s",
+        other_coords={
+            "wavelength": wavelength,
+            "source": ("channel", source),
+            "detector": ("channel", detector),
+        },
+    )
+
+    # flat_channel : ('wavelength', 'channel')
+    stacked = fw.stack_flat_channel(ts)
+    unstacked = fw.unstack_flat_channel(stacked)
+
+    assert stacked.dims == ("time", "flat_channel")  # stacked dim at the end
+
+    assert all(stacked.time == time)
+    assert all(unstacked.time == time)
+
+    assert all(stacked.channel == np.hstack((channel, channel)))
+    assert all(stacked.source == np.hstack((source, source)))
+    assert all(stacked.detector == np.hstack((detector, detector)))
+
+    assert all(stacked.wavelength == [wavelength[0]] * nch + [wavelength[1]] * nch)
+
+    assert unstacked.dims == ("time", "wavelength", "channel")  # stacked dim replaced
+
+    assert (ts.values == unstacked.transpose(*ts.dims).values).all()
+
+    assert unstacked.source.dims == ("channel",)
+    assert unstacked.detector.dims == ("channel",)
+
+    assert ts.pint.units == stacked.pint.units == unstacked.pint.units
+
+
+def test_stacking_flat_vertex():
+    vertex = [1, 2 , 3]
+    parcel = ["a", "b", "b"]
+    time = [1.,2.,3.,4.,5.]
+    chromo = ["HbO", "HbR"]
+
+    nvx = len(vertex)
+    nt = len(time)
+    nchr = len(chromo)
+
+    ts = xr.DataArray(
+        np.arange(nvx * nchr * nt).reshape(nvx, nchr, nt),
+        dims = ["vertex", "chromo", "time"],
+        coords={
+            "time" : time,
+            "vertex" : vertex,
+            "parcel" : ("vertex", parcel),
+            "chromo" : chromo
+        },
+        attrs= {"units" : "uM"}
+    ).pint.quantify()
+
+    ts.time.attrs["units"] = "s"
+
+
+
+    # flat_vertex : ('chromo', 'vertex')
+    stacked = fw.stack_flat_vertex(ts)
+    unstacked = fw.unstack_flat_vertex(stacked)
+
+    assert stacked.dims == ("time", "flat_vertex")  # stacked dim at the end
+
+    assert all(stacked.time == time)
+    assert all(unstacked.time == time)
+
+    assert all(stacked.vertex == np.hstack((vertex, vertex)))
+    assert all(stacked.parcel == np.hstack((parcel, parcel)))
+
+    assert all(stacked.chromo == [chromo[0]] * nvx + [chromo[1]] * nvx)
+
+    assert unstacked.dims == ("time", "chromo", "vertex")  # stacked dim replaced
+
+    assert (ts.values == unstacked.transpose(*ts.dims).values).all()
+
+    assert unstacked.parcel.dims == ("vertex",)
+
+    assert ts.pint.units == stacked.pint.units == unstacked.pint.units
