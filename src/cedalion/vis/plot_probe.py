@@ -18,6 +18,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.backends.qt_compat import QtWidgets
 from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
 
 import cedalion
 import cedalion.typing as cdt
@@ -669,3 +670,85 @@ def run_vis(
     main_gui = _MAIN_GUI(snirfData=blockaverage, geo2d=geo2d, geo3d=geo3d)
     main_gui.show()
     sys.exit(app.exec())
+
+
+def save_plot_probe_image(
+    blockaverage,
+    geo2d,
+    geo3d,
+    out_file="probe_plot.png",
+    xscale=1.0,
+    yscale=1.0,
+    title=None,
+    show_optode_labels=True,
+    show_meas_lines=False,
+):
+
+    # Extract probe layout
+    sPos = geo2d.sel(label=["S" in str(l) for l in geo2d.label.values])
+    dPos = geo2d.sel(label=["D" in str(l) for l in geo2d.label.values])
+    sourcePos3D = geo3d.sel(label=["S" in str(l) for l in geo3d.label.values])
+    detectorPos3D = geo3d.sel(label=["D" in str(l) for l in geo3d.label.values])
+    
+    sPosVal = sPos.values
+    dPosVal = dPos.values
+
+    src_idx = [np.where(sPos.label == s)[0][0] for s in blockaverage.source.values]
+    det_idx = [np.where(dPos.label == d)[0][0] for d in blockaverage.detector.values]
+
+    chan_dist = np.linalg.norm(sourcePos3D.values[src_idx] - detectorPos3D.values[det_idx], axis=1)
+
+    # Normalize positions for plotting
+    all_xy = np.vstack((sPosVal, dPosVal))
+    scale = max(all_xy[:, 0].ptp(), all_xy[:, 1].ptp())
+    sxy = (sPosVal - all_xy.mean(axis=0)) / scale
+    dxy = (dPosVal - all_xy.mean(axis=0)) / scale
+
+    sx, sy = sxy[:, 0], sxy[:, 1]
+    dx, dy = dxy[:, 0], dxy[:, 1]
+
+    # Midpoints of channels
+    mx = (sx[src_idx] + dx[det_idx]) / 2
+    my = (sy[src_idx] + dy[det_idx]) / 2
+
+    # Time and HRF
+    t = blockaverage.reltime.values
+    hrf = blockaverage.values
+    trial_idx = 0  # First condition only
+    chrom_colors = [[0.862, 0.078, 0.235], [0, 0, 0.8]]  # HbO and HbR
+
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    for i_ch in range(len(mx)):
+        for i_col in range(hrf.shape[2]):
+            x = mx[i_ch] + xscale * 0.1 * (t - t[0]) / (t[-1] - t[0])
+            y = my[i_ch] + yscale * 0.1 * (hrf[trial_idx, i_ch, i_col, :] - hrf.min()) / (hrf.max() - hrf.min())
+            ax.plot(x, y, color=chrom_colors[i_col], lw=0.7)
+
+    # Optodes
+    ax.plot(sx, sy, 'ro', label='Sources', alpha=0.6)
+    ax.plot(dx, dy, 'bo', label='Detectors', alpha=0.6)
+
+    # # Measurement lines
+    # for si, di in zip(src_idx, det_idx):
+    #     ax.plot([sx[si], dx[di]], [sy[si], dy[di]], linestyle='--', color='gray', alpha=0.3)
+
+    if show_optode_labels:
+        for i, label in enumerate(sPos.label.values):
+            ax.text(sx[i], sy[i], str(label), color="r", fontsize=8, ha="center", va="center")
+        for i, label in enumerate(dPos.label.values):
+            ax.text(dx[i], dy[i], str(label), color="b", fontsize=8, ha="center", va="center")
+
+    if show_meas_lines:
+        for si, di in zip(src_idx, det_idx):
+            ax.plot([sx[si], dx[di]], [sy[si], dy[di]], linestyle='--', color='gray', alpha=0.3)
+
+    if title:
+        ax.set_title(title)    
+
+    ax.axis('off')
+    ax.set_aspect('equal')
+    plt.tight_layout()
+    plt.savefig(out_file, dpi=300)
+    plt.close()
+    print(f"Saved probe plot to: {out_file}")
