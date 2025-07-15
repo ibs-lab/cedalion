@@ -287,6 +287,7 @@ def plot_surface(
 
         return get_points_and_labels
 
+
 def plot_labeled_points(
     plotter: pv.Plotter,
     points: cdt.LabeledPointCloud,
@@ -294,6 +295,7 @@ def plot_labeled_points(
     show_labels: bool = False,
     ppoints: bool = None,
     labels: list[str] | None = None,
+    meas_list: xr.DataArray | None = None,
 ):
     #used in selecting optode centers in Photogrammetry example.
     """Plots a labeled point cloud with optional interaction for picking points.
@@ -312,6 +314,8 @@ def plot_labeled_points(
         ppoints: A list to store indices of picked points, enables picking if not None.
         labels: List of labels to show if `show_labels` is True. If None and
             `show_labels` is True, the labels from `points` are used.
+        meas_list: A DataArray containing channel information for plotting
+            channels as lines between sources and detectors.
 
     Initial Contributors:
         - Eike Middell | middell@tu-berlin.de | 2024
@@ -367,6 +371,32 @@ def plot_labeled_points(
         # Add the label if required
         if show_labels and labels is not None:
             plotter.add_point_labels(point.values[np.newaxis], [str(labels[i_point])])
+
+
+    # If measurement list is provided, plot lines between source and detector points
+    if meas_list is not None:
+        all_points = []
+        connectivity = []
+
+        for s, d in zip(meas_list['source'], meas_list['detector']):
+            src = points.loc[s].values
+            det = points.loc[d].values
+
+            # Add source and detector points to the point list
+            idx_offset = len(all_points)
+            all_points.extend([src, det])
+
+            # Create connectivity array: [2, pt_id0, pt_id1]
+            connectivity.append([2, idx_offset, idx_offset + 1])
+
+        # Create the combined line mesh 
+        all_points = np.array(all_points)
+        connectivity = np.hstack(connectivity)
+        lines = pv.PolyData()
+        lines.points = all_points
+        lines.lines = connectivity
+
+        plotter.add_mesh(lines, color="k", smooth_shading=True, line_width=2.0)
 
     if ppoints is not None:
         plotter.enable_surface_point_picking(callback=on_pick, show_point=False)
