@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import itertools
 import math
-import os
 import sys
 
-import imageio
 import matplotlib
 import matplotlib.colors
 import matplotlib.pyplot as p
@@ -448,13 +446,15 @@ class OptodeSelector:
         - Masha Iudina | mashayudi@gmail.com | 2024
     """
     def __init__(self, surface, points, normals=None, plotter=None, labels = None):
-        self.points = points
+        self.points = points.pint.dequantify()
         self.normals = normals
         self.surface = surface
         self.plotter = plotter if plotter else pv.Plotter()
         self.labels = labels
         self.actors = []
         self.color = None
+
+        self.cog = surface.mesh.vertices.mean(axis=0)
 
     def plot(self):
         plotter = self.plotter
@@ -477,7 +477,7 @@ class OptodeSelector:
         }
 
         # points = points.pint.to("mm").pint.dequantify()  # FIXME unit handling
-        points = points.pint.dequantify()  # FIXME unit handling
+        # points = points.pint.dequantify()  # FIXME unit handling
         for type, x in points.groupby("type"):
             for i_point in range(len(x)):
 
@@ -573,7 +573,7 @@ class OptodeSelector:
         normal_vector = eigenvecs[:, 0]
 
         # Verify the direction of the normal
-        if np.dot(normal_vector, picked_point - np.mean(close_vertices, axis=0)) < 0:
+        if np.dot(normal_vector, picked_point - self.cog) < 0:
             normal_vector = -normal_vector  # Ensure the normal points outward
         return normal_vector
 
