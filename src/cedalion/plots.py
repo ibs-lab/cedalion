@@ -446,7 +446,7 @@ class OptodeSelector:
         - Masha Iudina | mashayudi@gmail.com | 2024
     """
     def __init__(self, surface, points, normals=None, plotter=None, labels = None):
-        self.points = points.pint.dequantify()
+        self.points = points
         self.normals = normals
         self.surface = surface
         self.plotter = plotter if plotter else pv.Plotter()
@@ -458,7 +458,7 @@ class OptodeSelector:
 
     def plot(self):
         plotter = self.plotter
-        points = self.points
+        points = self.points.pint.dequantify()
         color = 'r'
         # FIXME make these configurable
         default_point_colors = {
@@ -497,7 +497,7 @@ class OptodeSelector:
 
     def on_pick(self, picked_point):
         plotter = self.plotter
-        points = self.points
+        points = self.points.pint.dequantify()
         # Define how close points have to be to consider them "super close"
         threshold_distance = 5
         new_point = np.array(picked_point)
