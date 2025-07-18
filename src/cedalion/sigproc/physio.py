@@ -238,6 +238,9 @@ def ampd(amplitudes: cdt.NDTimeSeries, chunk_size: int = 500, step_size: int = 2
             Output DataArray with the same shape as amplitudes where detected peaks
             are marked with `1`, and non-peaks are marked with `0`.
 
+    References:
+        Original paper: :cite:`Scholkmann2012`
+
     Initial Contributors:
         Isa Musisi | w.musisi@campus.tu-berlin.de | 2024
 

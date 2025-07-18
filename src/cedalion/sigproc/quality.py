@@ -190,6 +190,9 @@ def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
 
     Returns:
         A DataArray with coords from the input NDTimeseries containing the GVTD metric.
+
+    References:
+        Original paper: :cite:`Sherafati2020`
     """
 
     fcut_min = 0.01

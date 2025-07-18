@@ -213,6 +213,9 @@ def motion_correct_splineSG(
     Returns:
         dodSplineSG (cdt.NDTimeSeries): The motion-corrected fNIRS data after applying
         spline interpolation and Savitzky-Golay filter.
+
+    References:
+        Paper: :cite:`Jahani2018`
     """
 
     fs = sampling_rate(fNIRSdata)
@@ -281,6 +284,9 @@ def motion_correct_PCA(
         fNIRSdata_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
         svs (np.array): the singular values of the PCA.
         nSV (Quantity): the number of principal components removed from the data.
+
+    References:
+        Paper & Code: :cite:`Huppert2009`
     """
 
     # apply mask to get only points with motion
@@ -435,6 +441,9 @@ def motion_correct_PCA_recurse(
         fNIRSdata_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
         svs (np.array): the singular values of the PCA.
         nSV (int): the number of principal components removed from the data.
+
+    References:
+        Paper & Code: :cite:`Huppert2009`
     """
 
     tIncCh = id_motion(
