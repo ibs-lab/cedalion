@@ -574,7 +574,7 @@ def tddr(ts: cdt.NDTimeSeries):
 
     return signal_corrected
 
-def pad_to_power_2(signal):
+def _pad_to_power_2(signal):
     """Pad signal to next power of 2."""
     n = int(np.ceil(np.log2(len(signal))))
     padded_length = 2**n
@@ -582,45 +582,66 @@ def pad_to_power_2(signal):
     padded[:len(signal)] = signal
     return padded, len(signal)
 
-def process_coefficients(coeffs, iqr_factor, signal_length):
-    """Deletes outlier coefficients based on IQR."""
-    n = coeffs.shape[0]
-    n_levels = coeffs.shape[1] - 1
+def _clip_coeffs_to_iqr_bounds(block, iqr_factor : float):
+    """Restrict coefficients to a multiple of the interquartile range."""
 
-    # Process each level
-    for j in range(n_levels):
-        curr_length = signal_length // (2**j) if j > 0 else signal_length
-        #n_blocks = min(2**j, 8)  # Limit number of blocks for speed
-        n_blocks = 2**j
+    # Compute statistics on valid data length
+    q25, q75 = np.percentile(block, [25, 75])
+    iqr_val = q75 - q25
+
+    # Set thresholds
+    upper = q75 + iqr_factor * iqr_val
+    lower = q25 - iqr_factor * iqr_val
+
+    block[:] = np.where((block > upper) | (block < lower), 0, block)
+
+
+def _filter_wavelet_coeffs(
+    coeffs: list[tuple[np.ndarray, np.ndarray]], iqr_factor: float, signal_length: int
+):
+    """Deletes outlier coefficients based on IQR."""
+
+    n = len(coeffs[0][0]) # length of padded timeseries
+    n_levels = len(coeffs)
+
+    # coeffs contain approximation (cA) and detail (cD) coeffients in the following
+    # order: [(cAn, cDn), ..., (cA2, cD2), (cA1, cD1)] for level 1..n_levels
+
+    filtered_coeffs = []
+
+    cAf = coeffs[0][0].copy()  # approximation coeffs at the highest level
+
+    for i, (cA, cD) in enumerate(coeffs):
+        level = n_levels - i - 1  # here level = 0...n_levels-1
+        n_blocks = 2**level
         block_length = n // n_blocks
 
-        for b in range(n_blocks):
-            start_idx = b * block_length
-            end_idx = start_idx + block_length
-            coeff_block = coeffs[start_idx:end_idx, j+1]
+        cDf = cD.copy()
 
-            # Compute statistics on valid data length
-            valid_coeffs = coeff_block[:curr_length]
-            q25, q75 = np.percentile(valid_coeffs, [25, 75])
-            iqr_val = q75 - q25
+        # Split time series into 2**level blocks and filter each block individually.
+        # In SWT the coefficient arrays at each level have the length of the padded
+        # time series n. The coefficients beyond signal_length relate to the padding.
+        # Don't process these.
+        for i_block in range(n_blocks):
+            block_start = i_block * block_length
+            block_end = (i_block + 1) * block_length
+            block_end = min(signal_length, block_end)
 
-            # Set thresholds
-            upper = q75 + iqr_factor * iqr_val
-            lower = q25 - iqr_factor * iqr_val
+            if block_end <= block_start:
+                continue
 
-            # Zero out outliers
-            coeffs[start_idx:end_idx, j+1] = np.where(
-                (coeff_block > upper) | (coeff_block < lower),
-                0,
-                coeff_block
-            )
+            # filter detail coefficents
+            _clip_coeffs_to_iqr_bounds(cDf[block_start:block_end], iqr_factor)
 
-    return coeffs
+        filtered_coeffs.append((cAf, cDf))
+
+    return filtered_coeffs
 
 def mad(x):
     """Compute Median Absolute Deviation."""
     median = np.median(x)
     return np.median(np.abs(x - median))
+
 
 def normalize_signal(signal, wavelet='db2'):
     """Normalize signal by its noise level using MAD of downsampled coefficients.
@@ -693,7 +714,7 @@ def motion_correct_wavelet(od, iqr=1.5, wavelet='db2', level=4):
             signal = od.sel(channel=ch, wavelength=wl).pint.dequantify()
 
             # Pad to power of 2
-            padded_signal, original_length = pad_to_power_2(signal)
+            padded_signal, original_length = _pad_to_power_2(signal)
 
             # Remove mean
             dc_val = np.mean(padded_signal)
@@ -707,19 +728,11 @@ def motion_correct_wavelet(od, iqr=1.5, wavelet='db2', level=4):
             actual_level = min(level, n-1)
             coeffs = pywt.swt(normalized_signal, wavelet, level=actual_level)
 
-            # Reshape coefficients for processing
-            coeffs_array = np.column_stack([c[1] for c in coeffs])  #Stack detail coeffs
-            coeffs_array = np.column_stack([coeffs[0][0], coeffs_array])  # Add approx.
-
-            # Process coefficients
-            coeffs_array = process_coefficients(coeffs_array, iqr, original_length)
-
-            # Reconstruct list of tuples for iswt
-            coeffs_list = [(coeffs_array[:, 0], coeffs_array[:, i])
-                          for i in range(1, coeffs_array.shape[1])]
+            # Filter coefficients
+            filtered_coeffs = _filter_wavelet_coeffs(coeffs, iqr, original_length)
 
             # Reconstruct
-            corrected = pywt.iswt(coeffs_list, wavelet)
+            corrected = pywt.iswt(filtered_coeffs, wavelet)
 
             # Denormalize
             corrected = corrected / norm_coef

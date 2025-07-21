@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased changes (available on the `dev` branch)
+ 
+### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed
+
+- Fixed a bug in motion_correct_wavelet affecting the selection of coefficients for IQR-based thresholding. The issue caused unintended suppression of high-frequency components, particularly near the end of recordings. Changed by [Eike Middell](https://github.com/emiddell).
+
+
 ## Version 25.1.0 (2025-06-22)
 
 All dependencies have been updated to recent versions. Please rebuild the environment.
