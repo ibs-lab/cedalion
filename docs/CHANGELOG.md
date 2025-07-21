@@ -4,6 +4,9 @@
  
 ### Added
 ### Changed
+- The ninja HD and UHD cap coordinates were changed from a right-handed to a left-handed
+coordinate system, by [Nils Harmening](https://github.com/harmening). ([#110](https://github.com/ibs-lab/cedalion/pull/110))
+
 ### Deprecated
 ### Removed
 ### Fixed
