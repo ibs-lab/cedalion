@@ -10,6 +10,7 @@ import matplotlib
 import matplotlib.colors
 import matplotlib.pyplot as p
 import matplotlib.transforms as transforms
+from matplotlib.typing import ColorType
 import numpy as np
 import pandas as pd
 import pyvista as pv
@@ -17,7 +18,6 @@ import vtk
 import xarray as xr
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Circle, Ellipse, Rectangle
-from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
 from PIL import Image
 from vtk.util.numpy_support import numpy_to_vtk
@@ -927,6 +927,34 @@ def plot_stim_markers(
         if trial_type not in labeled_patches:
             rect.set_label(trial_type)
             labeled_patches.append(trial_type)
+
+        ax.add_patch(rect)
+
+def plot_segments(
+    ax,
+    segments: list[tuple[float, float]],
+    fmt: dict | None = None,
+    y: float = 1.0,
+    label: str | None = None,
+):
+    trans = transforms.blended_transform_factory(
+    ax.transData, ax.transAxes)
+
+    if fmt is None:
+        color = COLORBREWER_Q8[0]
+        fmt = {"ec": color, "fc": color, "alpha": 0.3}
+
+    for i, (start, end) in enumerate(segments):
+        rect = Rectangle(
+            (start, 0),
+            end-start,
+            y,
+            transform=trans,
+            **fmt,
+        )
+
+        if (i == 0) and (label is not None):
+            rect.set_label(label)
 
         ax.add_patch(rect)
 

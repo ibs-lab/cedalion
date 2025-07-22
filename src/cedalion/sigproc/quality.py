@@ -618,8 +618,8 @@ def sd_dist(
 @cdc.validate_schemas
 def id_motion(
     fNIRSdata: cdt.NDTimeSeries,
-    t_motion: Quantity = 0.5 * units.s,
-    t_mask: Quantity = 1.0 * units.s,
+    t_motion: cdt.QTime = 0.5 * units.s,
+    t_mask: cdt.QTime = 1.0 * units.s,
     stdev_thresh: float = 50.0,
     amp_thresh: float = 5.0,
 ) -> cdt.NDTimeSeries:
@@ -1225,21 +1225,25 @@ def measurement_variance(
 ) -> xr.DataArray:
     """Estimate measurement variance or covariance from an fNIRS time series.
 
-    Can be used as a proxy for measurement noise, in this case it should be applied in OD or CONC domain.
-    Ideally, the input is the residual of a time series after GLM fitting, but raw data can also be used.
-    This function can be used as a helper function for weighted mean subtraction or for image recon
-    regularization, in which bad channels (noisy, with high variance) are downweighted.
+    Can be used as a proxy for measurement noise, in this case it should be applied in
+    OD or CONC domain. Ideally, the input is the residual of a time series after GLM
+    fitting, but raw data can also be used. This function can be used as a helper
+    function for weighted mean subtraction or for image recon regularization, in which
+    bad channels (noisy, with high variance) are downweighted.
 
     Args:
-    ts: Input time series with dimensions (time, channel, chromo/wavelength).
-    list_bad_channels: List of channel names (e.g. ["S2D4", "S2D10"]) to be treated as bad.
-    bad_rel_var: Multiplier for worst-case variance for bad channels if `bad_abs_var` is not provided.
-    bad_abs_var: Absolute variance to assign to bad channels. Overrides `bad_rel_var` if provided.
-    calc_covariance: If True, returns a 3D covariance matrix: (other_dim, channel, channel).
-        If False, returns a 2D variance array: (chromo, channel).
+        ts: Input time series with dimensions (time, channel, chromo/wavelength).
+        list_bad_channels: Channel names (e.g. ["S2D4", "S2D10"]) to be treated as bad.
+        bad_rel_var: Multiplier for worst-case variance for bad channels if
+            `bad_abs_var` is not provided.
+        bad_abs_var: Absolute variance to assign to bad channels. Overrides
+            `bad_rel_var` if provided.
+        calc_covariance: If True, returns a 3D covariance matrix:
+            (other_dim, channel, channel). If False, returns a 2D variance array:
+            (chromo, channel).
 
     Returns:
-    xr.DataArray: Variance array (shape: channel, chromo/wavelength) or covariance 
+    xr.DataArray: Variance array (shape: channel, chromo/wavelength) or covariance
         array (shape: chromo/wavelength, channel1, channel2)
 
     Initial Contributors:
@@ -1274,7 +1278,9 @@ def measurement_variance(
     # Compute bad variance fill value
     good_var = var.where(~bad_channel_mask)
     max_good_var = good_var.max().item() if good_var.notnull().any() else 1.0
-    var_fill_value = bad_abs_var if bad_abs_var is not None else bad_rel_var * max_good_var
+    var_fill_value = (
+        bad_abs_var if bad_abs_var is not None else bad_rel_var * max_good_var
+    )
 
     # Replace variance of bad channels
     var = var.where(~bad_channel_mask, other=var_fill_value)
@@ -1301,10 +1307,18 @@ def measurement_variance(
             good_cov_matrix[bad_ch_indices, :] = np.nan
             good_cov_matrix[:, bad_ch_indices] = np.nan
             np.fill_diagonal(good_cov_matrix, np.nan)
-            max_good_cov = np.nanmax(np.abs(good_cov_matrix)) if not np.isnan(good_cov_matrix).all() else 0
+            max_good_cov = (
+                np.nanmax(np.abs(good_cov_matrix))
+                if not np.isnan(good_cov_matrix).all()
+                else 0
+            )
 
             # Replace covariance of bad channels
-            cov_fill_value = var_fill_value if bad_abs_var is not None else bad_rel_var * max_good_cov
+            cov_fill_value = (
+                var_fill_value
+                if bad_abs_var is not None
+                else bad_rel_var * max_good_cov
+            )
             cov_matrix_2d[bad_ch_indices, :] = cov_fill_value
             cov_matrix_2d[:, bad_ch_indices] = cov_fill_value
             bad_diag_mask = np.diag(bad_ch_indices)
@@ -1326,3 +1340,36 @@ def measurement_variance(
     )
 
     return covar
+
+
+def mask_to_segments(
+    mask: cdt.NDTimeSeries, value=TAINTED
+) -> list[tuple[float, float]]:
+    """Find in 1D mask consecutive segments of a given value.
+
+    Args:
+        mask: a boolean mask with a time coordinate.
+        value: select consecutive segments of this value
+
+    Returns:
+        a list of start and stop times (inklusive) of the found segments.
+    """
+
+    if mask.ndim != 1:
+        raise ValueError("Input mask must be one-dimensional")
+
+    if len(mask) == 0:
+        return []
+
+    maskv= mask.values
+
+    change_indices = np.where(np.diff(maskv))[0]+1
+    start_indices = np.r_[0, change_indices]
+    end_indices = np.r_[change_indices, len(maskv)]
+
+    segments = [
+        (mask.time.values[start], mask.time.values[end - 1])
+        for start, end in zip(start_indices, end_indices)
+        if maskv[start] == value
+    ]
+    return segments
