@@ -266,14 +266,25 @@ def spline_sg(
     # )
 
     # apply SG filter
-    K = 3
     framesize_samples = int(np.round(frame_size * fs))
+
     if framesize_samples % 2 == 0:
         framesize_samples = framesize_samples + 1
 
-    assert framesize_samples > K
+    assert framesize_samples >= 3
 
-    dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_samples, K).T
+    dodSplineSG = None
+    for K in [3,2,1]:
+        try:
+            dodSplineSG = xr.apply_ufunc(
+                savgol_filter, dodSpline, framesize_samples, K
+            ).T
+            break
+        except np.linalg.LinAlgError: # SVD in polynomial expansion did not converge
+            continue # try lower K
+
+    if dodSplineSG is None:
+        raise RuntimeError("Error while appying savgol_filter.")
 
     # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
     dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
