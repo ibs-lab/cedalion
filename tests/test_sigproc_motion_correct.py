@@ -16,7 +16,9 @@ def rec():
     # Add some synthetic spikes and baseline shifts
     artifacts = {"spike": synthetic_artifact.gen_spike}
     timing = synthetic_artifact.random_events_perc(rec["od"].time, 0.05, ["spike"])
-    rec["od"] = synthetic_artifact.add_artifacts(rec["od"], timing, artifacts)
+    rec["od"] = synthetic_artifact.add_artifacts(
+        rec["od"], timing, artifacts, window_size=10
+    )
 
     return rec
 

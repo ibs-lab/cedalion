@@ -259,32 +259,21 @@ def spline_sg(
     # remove padding
     dodSpline = dodSpline.transpose("channel", "wavelength", "time")
     dodSpline = dodSpline[:, :, extend:-extend]
-    # dodSpline = (
-    #    dodSpline.stack(measurement=["channel", "wavelength"])
-    #    .sortby("wavelength")
-    #    .pint.dequantify()
-    # )
 
     # apply SG filter
+    if not np.isfinite(dodSpline).all():
+        # MKL (used for savgol_filter on Windows) is strict about NaNs
+        raise ValueError("time series contains nonfinite values.")
+
+    K = 3
     framesize_samples = int(np.round(frame_size * fs))
 
     if framesize_samples % 2 == 0:
         framesize_samples = framesize_samples + 1
 
-    assert framesize_samples >= 3
+    assert framesize_samples >= K
 
-    dodSplineSG = None
-    for K in [3,2,1]:
-        try:
-            dodSplineSG = xr.apply_ufunc(
-                savgol_filter, dodSpline, framesize_samples, K
-            ).T
-            break
-        except np.linalg.LinAlgError: # SVD in polynomial expansion did not converge
-            continue # try lower K
-
-    if dodSplineSG is None:
-        raise RuntimeError("Error while appying savgol_filter.")
+    dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_samples, K).T
 
     # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
     dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
