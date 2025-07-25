@@ -967,6 +967,7 @@ def scalp_plot(
     title: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
+    center : float | None = None,
     cmap: str | matplotlib.colors.Colormap = "bwr",
     norm: Normalize | None = None,
     bad_color: ColorType = [0.7, 0.7, 0.7],
@@ -993,6 +994,7 @@ def scalp_plot(
         title: the axes title
         vmin: the minimum value of the metric
         vmax: the maximum value of the metric
+        center: when calculating vmin and vmax, center the value range at this value.
         cmap: the name of the colormap
         norm: normalization for color map
         bad_color: the color to use when the metric contains NaNs
@@ -1032,17 +1034,25 @@ def scalp_plot(
     source = ts.source.values
     detector = ts.detector.values
 
-    if vmin is None:
-        vmin = np.nanmin(metric)
-    if vmax is None:
-        vmax = np.nanmax(metric)
+    if norm is None:
+        if vmin is None:
+            vmin = np.nanmin(metric)
+        if vmax is None:
+            vmax = np.nanmax(metric)
+
+        if center is not None:
+            delta = max(abs(vmin-center), abs(vmax-center))
+            vmin = center - delta
+            vmax = center + delta
+        norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+    else:
+        if (vmin is not None) or (vmax is not None) or (center is not None):
+            raise ValueError("Specify either norm or vmin/vmax/center.")
 
     if isinstance(cmap, str):
-        norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
         cmap = p.cm.get_cmap(cmap)
-        cmap.set_bad(bad_color)
-    else:
-        cmap.set_bad(bad_color)
+
+    cmap.set_bad(bad_color)
 
     ax.set_aspect("equal", adjustable="datalim")
 
@@ -1061,6 +1071,9 @@ def scalp_plot(
     used_sources = set()
     used_detectors = set()
 
+    extend_upper = False
+    extend_lower = False
+
     for ch,src,det,dist in zip(channel, source, detector, channel_dists):
         s = geo2d.loc[src]
         d = geo2d.loc[det]
@@ -1077,6 +1090,13 @@ def scalp_plot(
             v = np.nan
 
         normed_v = norm(v)
+
+        # check if any channel metric exceeds vmin or vmax
+        if (normed_v > 1).any():
+            extend_upper = True
+        if (normed_v < 0).any():
+            extend_lower = True
+
         c = cmap(normed_v)
         line_fmt = {'c' : c, 'ls' : '-', 'lw' : channel_lw, 'alpha' : 1.0}
 
@@ -1141,10 +1161,20 @@ def scalp_plot(
 
     # colorbar
     if add_colorbar:
+        if extend_upper and extend_lower:
+            extend = "both"
+        elif extend_upper and not extend_lower:
+            extend = "max"
+        elif not extend_upper and extend_lower:
+            extend = "min"
+        else:
+            extend = "neither"
+
         cb = p.colorbar(
             matplotlib.cm.ScalarMappable(cmap=cmap,norm=norm),
             ax=ax,
-            shrink=0.6
+            shrink=0.6,
+            extend=extend
         )
         cb.set_label(cb_label)
         if cb_ticks_labels is not None:
