@@ -16,7 +16,7 @@ import pandas as pd
 import pyvista as pv
 import vtk
 import xarray as xr
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import ListedColormap, Normalize, LinearSegmentedColormap
 from matplotlib.patches import Circle, Ellipse, Rectangle
 from numpy.typing import ArrayLike
 from PIL import Image
@@ -968,7 +968,7 @@ def scalp_plot(
     vmin: float | None = None,
     vmax: float | None = None,
     cmap: str | matplotlib.colors.Colormap = "bwr",
-    norm: object | None = None,
+    norm: Normalize | None = None,
     bad_color: ColorType = [0.7, 0.7, 0.7],
     min_dist: Quantity | None = None,
     min_metric: float | None = None,
@@ -994,6 +994,7 @@ def scalp_plot(
         vmin: the minimum value of the metric
         vmax: the maximum value of the metric
         cmap: the name of the colormap
+        norm: normalization for color map
         bad_color: the color to use when the metric contains NaNs
         min_dist: if provided channels below this distance threshold are not drawn
         min_metric: if provided channels below this metric threshold are toned down
@@ -1001,6 +1002,8 @@ def scalp_plot(
         optode_size: optode marker size
         optode_labels: if True draw optode labels instead of markers
         cb_label: colorbar label
+        cb_ticks_labels: ticks and labels for colorbar
+        add_colorbar: if true a colorbar is added to the plot
         zorder: 'ascending' or 'descending' or None. Controls whether channels
             with high or low metric values are plotted on top.
 
@@ -1249,39 +1252,41 @@ def scalp_plot_gif(
 
     Args:
         data_ts : xarray.DataArray
-            A 2D DataArray with dimensions (channel, time). Must include coordinate labels
-            for 'source' and 'detector' in the 'channel' dimension.
+            A 2D DataArray with dimensions (channel, time). Must include coordinate
+            labels for 'source' and 'detector' in the 'channel' dimension.
         geo3d : cedalion.core.LabeledPointCloud
-            3D geometry object defining optode locations for projecting onto the scalp surface.
+            3D geometry defining optode locations for projecting onto the scalp surface.
         filename : str
             Full path to the output GIF file without file extension.
-        time_range: tuple, optional 
-           Provides (start_time, stop_time, step_time) in quantity 's' for generating animation.
+        time_range: tuple, optional
+           Provides (start_time, stop_time, step_time) in quantity 's' for generating
+           animation.
         cmap : string, optional
             A matplotlib colormap name or a Colormap object. Default is 'seismic'.
         scl : tuple of (float, float), optional
-            Tuple defining the (vmin, vmax) for the color scale. If None, the color scale is set
-            to ± the maximum absolute value of the data.
+            Tuple defining the (vmin, vmax) for the color scale. If None, the color
+            scale is set to ± the maximum absolute value of the data.
         fps : int, optional
             Frames per second for the output GIF. Default is 10.
         optode_size : float, optional
             Size of optode markers on the plot. Default is 6.
         optode_labels : bool, optional
-            Whether to show text labels for optodes instead of markers. Default is False.
+            Whether to show text labels for optodes instead of markers. Default: False.
         str_title : str, optional
             Extra string to append to the title of each frame.
 
     Returns:
-    None
+        None.
         The function saves a GIF file to the specified location.
 
     Initial Contributors:
-    - David Boas | dboas@bu.edu | 2025
-    - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
+        - David Boas | dboas@bu.edu | 2025
+        - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
     """
 
-    if (("time" in data_ts.dims and data_ts.sizes["time"] > 1) or 
-        ("reltime" in data_ts.dims and data_ts.sizes["reltime"] > 1)):
+    if ("time" in data_ts.dims and data_ts.sizes["time"] > 1) or (
+        "reltime" in data_ts.dims and data_ts.sizes["reltime"] > 1
+    ):
 
         # If time_range is not provided, default to using the range in X_ts
         if time_range is None:
@@ -1296,10 +1301,11 @@ def scalp_plot_gif(
 
         # Create an array of time points to iterate over
         time_points = np.arange(start_time, end_time + step_time, step_time)
-        # Select the subset of data within the given time range (using label-based slicing)
+        # Select the subset of data within the given time range
         X_subset = data_ts.sel(time=slice(start_time, end_time))
 
-        # Initialize using the first time point (using nearest in case of slight mismatches)
+        # Initialize using the first time point
+        # (using nearest in case of slight mismatches)
         X_frame = X_subset.sel(time=time_points[0], method="nearest")
 
     filename = filename+'.gif'
@@ -1320,7 +1326,8 @@ def scalp_plot_gif(
         X_frame = X_subset.sel(time=current_time, method="nearest")
 
         ax1.cla()
-        ax1.set_position([0.1, 0.1, 0.8, 0.8])  # reset position to avoid inset growth from colorbar
+        # reset position to avoid inset growth from colorbar
+        ax1.set_position([0.1, 0.1, 0.8, 0.8])
         scalp_plot(
             data_ts,
             geo3d,
@@ -1339,7 +1346,9 @@ def scalp_plot_gif(
         image = Image.fromarray(rgba)
         frames.append(image)
 
-    frames[0].save(filename, save_all=True, append_images=frames[1:], duration=1000/fps, loop=0)
+    frames[0].save(
+        filename, save_all=True, append_images=frames[1:], duration=1000 / fps, loop=0
+    )
 
 
 def image_recon(
@@ -1361,12 +1370,14 @@ def image_recon(
 
     This function creates (or reuses) a PyVista plotter, applies a custom colormap,
     sets the camera view according to the given view_position, adds the surface mesh
-    with the scalar data (extracted from X), and returns the plotter, the mesh, and a text label.
+    with the scalar data (extracted from X), and returns the plotter, the mesh, and a
+    text label.
 
     Args:
         X: cdt.NDTimeSeries (or similar)
             Scalar data for the current frame. Expected to have a boolean attribute
-            `is_brain` indicating brain vs. non-brain vertices, and HbO / HbR chromophore dimension
+            `is_brain` indicating brain vs. non-brain vertices, and HbO / HbR
+            chromophore dimension
         head: TwoSurfaceHeadModel
             A head model containing attributes such as `head.brain` and `head.scalp`.
         cmap: str or matplotlib.colors.Colormap, default 'seismic'
@@ -1380,7 +1391,7 @@ def image_recon(
             The view direction. Options are:
             'superior', 'anterior', 'posterior','left', 'right', and 'scale_bar'.
         p0: PyVista Plotter instance, optional
-            If provided the mesh is added to this plotter; else a new plotter is created.
+            If provided the mesh is added to this plotter; else a new plotter is created
         title_str: str, optional
             Title to use on the scalar bar.
         off_screen: bool, default False
@@ -1429,7 +1440,11 @@ def image_recon(
 
     # Create a new plotter if none is provided
     if p0 is None:
-        p0 = pv.Plotter(shape=(plotshape[0], plotshape[1]), window_size=wdw_size, off_screen=off_screen)
+        p0 = pv.Plotter(
+            shape=(plotshape[0], plotshape[1]),
+            window_size=wdw_size,
+            off_screen=off_screen,
+        )
     p0.subplot(iax[0], iax[1])
 
     # Select the appropriate head surface based on flag_hbx
@@ -1474,19 +1489,34 @@ def image_recon(
 
     # Set camera: adjust 'view_up' depending on the view position
     view_up = [0, 1, 0] if view_position == 'superior' else [0, 0, 1]
-    p0.camera_position = [centroid + np.array(camera_direction) * 500, centroid, view_up]
+    p0.camera_position = [
+        centroid + np.array(camera_direction) * 500,
+        centroid,
+        view_up,
+    ]
 
     # Add the scalar bar or view label for multiview plot
     if iax == (1, 1):
         p0.clear_actors()
-        p0.add_scalar_bar(title=title_str, vertical=False, position_x=0.1, position_y=0.5,
-                          height=0.1, width=0.8, fmt='%.1e', label_font_size=16, title_font_size=32)
+        p0.add_scalar_bar(
+            title=title_str,
+            vertical=False,
+            position_x=0.1,
+            position_y=0.5,
+            height=0.1,
+            width=0.8,
+            fmt="%.1e",
+            label_font_size=16,
+            title_font_size=32,
+        )
         surf_label = p0.add_text('', position='upper_left', font_size=10)
     else:
         surf_label = p0.add_text(view_position, position='lower_left', font_size=10)
     # add scalar bar to (each) single view if flag is set
     if show_scalar_bar:
-        p0.add_scalar_bar(title=title_str, fmt='%.1e', label_font_size=24, title_font_size=32)
+        p0.add_scalar_bar(
+            title=title_str, fmt="%.1e", label_font_size=24, title_font_size=32
+        )
 
     return p0, surf, surf_label
 
@@ -1509,15 +1539,15 @@ def image_recon_view(
 ):
     """Generate a single-view visualization of head activity.
 
-    For static data (2D: vertex × channel) the function can display (or save) a single frame.
-    For time series data (3D: vertex × channel × time) the function can create an animated
-    GIF by looping over the specified frame indices.
+    For static data (2D: vertex × channel) the function can display (or save) a single
+    frame. For time series data (3D: vertex × channel × time) the function can create an
+    animated GIF by looping over the specified frame indices.
 
     Args:
         X_ts: xarray.DataArray or NDTimeSeries
-            Activity data. If 2D, a single static frame is plotted; if 3D, a time series is used.
-            Expected to have a boolean attribute `is_brain` indicating brain vs. non-brain vertices, 
-            and HbO / HbR chromophore dimension
+            Activity data. If 2D, a single static frame is plotted; if 3D, a time series
+            is used. Expected to have a boolean attribute `is_brain` indicating brain
+            vs. non-brain vertices, and HbO / HbR chromophore dimension
         head: TwoSurfaceHeadModel
             The head mesh data to plot activity on.
         cmap: str or matplotlib.colors.Colormap, default 'seismic'
@@ -1537,9 +1567,11 @@ def image_recon_view(
         filename: str, optional
             The output filename (without extension) for saving the image/GIF.
         SAVE: bool, default False
-            If True, the resulting still image is saved, otherwise only shown. Rendered gifs are always saved.
-        time_range: tuple, optional 
-           Provides (start_time, stop_time, step_time) in quantity 's' for generating animation.
+            If True, the resulting still image is saved, otherwise only shown. Rendered
+            gifs are always saved.
+        time_range: tuple, optional
+           Provides (start_time, stop_time, step_time) in quantity 's' for generating
+           animation.
         fps: int, default 6
             Frames per second for the GIF.
         geo3d_plot: cdt.LabeledPointCloud, optional
@@ -1555,9 +1587,11 @@ def image_recon_view(
     - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
     """
 
-    # Animated case (time dimension exists with more than one element): check for frame indices
-    if (("time" in X_ts.dims and X_ts.sizes["time"] > 1) or 
-        ("reltime" in X_ts.dims and X_ts.sizes["reltime"] > 1)):
+    # Animated case (time dimension exists with more than one element):
+    # check for frame indices
+    if ("time" in X_ts.dims and X_ts.sizes["time"] > 1) or (
+        "reltime" in X_ts.dims and X_ts.sizes["reltime"] > 1
+    ):
         # If time_range is not provided, default to using the range in X_ts
         if time_range is None:
             start_time = float(X_ts.time.values[0])
@@ -1571,13 +1605,15 @@ def image_recon_view(
 
         # Create an array of time points to iterate over
         time_points = np.arange(start_time, end_time + step_time, step_time)
-        # Select the subset of data within the given time range (using label-based slicing)
+        # Select the subset of data within the given time range
         X_subset = X_ts.sel(time=slice(start_time, end_time))
 
-        # Initialize using the first time point (using nearest in case of slight mismatches)
+        # Initialize using the first time point
+        # (using nearest in case of slight mismatches)
         X_frame = X_subset.sel(time=time_points[0], method="nearest")
 
-        # Initialize using the first time point (using nearest in case of slight mismatches)
+        # Initialize using the first time point
+        # (using nearest in case of slight mismatches)
         X_frame = X_subset.sel(time=time_points[0], method="nearest")
 
         p0, surf, label = image_recon(
@@ -1594,7 +1630,9 @@ def image_recon_view(
             # Open GIF output with desired fps; filename will have a .gif extension
             p0.open_gif(filename + '.gif', fps=fps)
         else:
-            assert(filename is None), "Filename must be provided to generate and save GIF."
+            assert filename is None, (
+                "Filename must be provided to generate and save GIF."
+            )
 
         # Loop over frames, update the mesh's scalar data, and update the text label
         for current_time in time_points:
@@ -1612,7 +1650,8 @@ def image_recon_view(
 
             surf['brain'] = new_data
             if label:
-                # Update the label text with the current time (assumes X_ts has a 'time' coordinate)
+                # Update the label text with the current time
+                # (assumes X_ts has a 'time' coordinate)
                 label.set_text('upper_left', f"Time = {float(current_time):0.1f} sec")
             p0.write_frame()
 
@@ -1651,17 +1690,17 @@ def image_recon_multi_view(
     geo3d_plot: cdt.LabeledPointCloud = None,
     wdw_size: tuple = (1024, 768)
 ):
-    """Generate a multi-view (2×3 grid) visualization of head activity across different views.
+    """Generate a multi-view (2×3 grid) vis. of head activity across different views.
 
-    For static data (2D: vertex × channel) the function can display (or save) a single frame.
-    For time series data (3D: vertex × channel × time) the function creates an animated 
-    GIF where each frame updates all views.
+    For static data (2D: vertex × channel) the function can display (or save) a single
+    frame. For time series data (3D: vertex × channel × time) the function creates an
+    animated GIF where each frame updates all views.
 
     Args:
         X_ts: xarray.DataArray or NDTimeSeries
-            Activity data. If 2D, a single static frame is plotted; if 3D, a time series is used.
-            Expected to have a boolean attribute `is_brain` indicating brain vs. non-brain vertices, 
-            and HbO / HbR chromophore dimension
+            Activity data. If 2D, a single static frame is plotted; if 3D, a time series
+            is used. Expected to have a boolean attribute `is_brain` indicating brain
+            vs. non-brain vertices, and HbO / HbR chromophore dimension
         head: TwoSurfaceHeadModel
             The head mesh data to plot activity on.
         cmap: str or matplotlib.colors.Colormap, default 'seismic'
@@ -1678,9 +1717,11 @@ def image_recon_multi_view(
         filename: str, optional
             The output filename (without extension) for saving the image/GIF.
         SAVE: bool, default False
-            If True, the resulting still image is saved, otherwise only shown. Rendered gifs are always saved.
+            If True, the resulting still image is saved, otherwise only shown. Rendered
+            gifs are always saved.
         time_range: tuple, optional
-           Provides (start_time, stop_time, step_time) in quantity 's' for generating animation.
+           Provides (start_time, stop_time, step_time) in quantity 's' for generating
+           animation.
         fps: int, default 6
             Frames per second for the GIF.
         geo3d_plot: cdt.LabeledPointCloud, optional
@@ -1708,9 +1749,11 @@ def image_recon_multi_view(
         'posterior': (1, 2)
     }
 
-    # Animated case (time dimension exists with more than one element): check for frame indices
-    if (("time" in X_ts.dims and X_ts.sizes["time"] > 1) or 
-        ("reltime" in X_ts.dims and X_ts.sizes["reltime"] > 1)):
+    # Animated case (time dimension exists with more than one element):
+    # check for frame indices
+    if ("time" in X_ts.dims and X_ts.sizes["time"] > 1) or (
+        "reltime" in X_ts.dims and X_ts.sizes["reltime"] > 1
+    ):
 
         # If time_range is not provided, default to using the range in X_ts
         if time_range is None:
@@ -1725,10 +1768,11 @@ def image_recon_multi_view(
 
         # Create an array of time points to iterate over
         time_points = np.arange(start_time, end_time + step_time, step_time)
-        # Select the subset of data within the given time range (using label-based slicing)
+        # Select the subset of data within the given time range
         X_subset = X_ts.sel(time=slice(start_time, end_time))
 
-        # Initialize using the first time point (using nearest in case of slight mismatches)
+        # Initialize using the first time point
+        # (using nearest in case of slight mismatches)
         X_frame = X_subset.sel(time=time_points[0], method="nearest")
 
         p0 = None
@@ -1753,16 +1797,26 @@ def image_recon_multi_view(
             # Open GIF output with desired fps; filename will have a .gif extension
             p0.open_gif(filename + '.gif', fps=fps)
         else:
-            assert(filename is None), "Filename must be provided to generate and save GIF."
+            assert filename is None, (
+                "Filename must be provided to generate and save GIF."
+            )
 
         # Iterate over the time points
         for current_time in time_points:
             # Select the frame closest to the current time point
             X_frame = X_subset.sel(time=current_time, method="nearest")
             if view_type in ['hbo_brain', 'hbr_brain']:
-                new_data = X_frame.sel(chromo='HbO').where(X_ts.is_brain, drop=True) if view_type == 'hbo_brain' else X_frame.sel(chromo='HbR').where(X_ts.is_brain, drop=True)
+                new_data = (
+                    X_frame.sel(chromo="HbO").where(X_ts.is_brain, drop=True)
+                    if view_type == "hbo_brain"
+                    else X_frame.sel(chromo="HbR").where(X_ts.is_brain, drop=True)
+                )
             elif view_type in ['hbo_scalp', 'hbr_scalp']:
-                new_data = X_frame.sel(chromo='HbO').where(~X_ts.is_brain, drop=True) if view_type == 'hbo_scalp' else X_frame.sel(chromo='HbR').where(~X_ts.is_brain, drop=True)
+                new_data = (
+                    X_frame.sel(chromo="HbO").where(~X_ts.is_brain, drop=True)
+                    if view_type == "hbo_scalp"
+                    else X_frame.sel(chromo="HbR").where(~X_ts.is_brain, drop=True)
+                )
             else:
                 new_data = None
 
@@ -1771,7 +1825,9 @@ def image_recon_multi_view(
 
             # Update the scalar bar text (for the central 'scale_bar' view)
             if 'scale_bar' in labels:
-                labels['scale_bar'].set_text('upper_left', f"Time = {float(current_time):0.1f} sec")
+                labels["scale_bar"].set_text(
+                    "upper_left", f"Time = {float(current_time):0.1f} sec"
+                )
             p0.write_frame()
 
         p0.close()  # This finalizes and writes the GIF file.
@@ -1799,3 +1855,30 @@ def image_recon_multi_view(
             p0.screenshot(filename + '.png')
         else:
             p0.show()
+
+
+def segmented_cmap(
+    name : str,
+    vmin: float,
+    vmax: float,
+    segments: list[tuple[float, ColorType]],
+    over : None | ColorType = None,
+    under : None | ColorType = None,
+    bad : None | ColorType = None,
+) -> tuple[Normalize, LinearSegmentedColormap]:
+    """Create a linear segmented colormap."""
+
+    norm = Normalize(vmin, vmax)
+
+    segments = [(norm(v), c) for v, c in segments]
+
+    cmap = LinearSegmentedColormap.from_list(name, segments)
+
+    if over is not None:
+        cmap.set_over(over)
+    if under is not None:
+        cmap.set_under(under)
+    if bad is not None:
+        cmap.set_bad(bad)
+
+    return norm, cmap
