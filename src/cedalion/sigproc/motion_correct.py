@@ -271,6 +271,8 @@ def spline_sg(
     if framesize_samples % 2 == 0:
         framesize_samples = framesize_samples + 1
 
+    assert framesize_samples > K
+
     dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_samples, K).T
 
     # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()

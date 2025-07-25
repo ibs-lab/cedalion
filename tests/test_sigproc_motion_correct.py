@@ -26,7 +26,7 @@ def test_motion_correct_splineSG_default_param(rec):
 
 
 def test_motion_correct_splineSG_custom_param(rec):
-    mc.spline_sg(rec["od"], p=1.0, frame_size=3 * units.s)
+    mc.spline_sg(rec["od"], p=1.0, frame_size=1 * units.s)
 
 
 def test_motion_correct_tddr(rec):
