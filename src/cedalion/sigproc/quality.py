@@ -165,13 +165,17 @@ def psp(
     psp = np.max(power, axis=2).T  # shape(nchannel, ntime)
 
     # keep dims channel and time
-    psp_xr = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
+    psp = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
+
+    # manually set psp for the first window because it contains only a single
+    # finite amplitude value.
+    psp[:, 0] = psp[:, 1]
 
     # Apply threshold mask
-    psp_mask = xrutils.mask(psp_xr, CLEAN)
-    psp_mask = psp_mask.where(psp_xr > psp_thresh, other=TAINTED)
+    psp_mask = xrutils.mask(psp, CLEAN)
+    psp_mask = psp_mask.where(psp > psp_thresh, other=TAINTED)
 
-    return psp_xr, psp_mask
+    return psp, psp_mask
 
 
 @cdc.validate_schemas
@@ -477,6 +481,8 @@ def sci(
 
     assert "wavelength" in amplitudes.dims  # FIXME move to validate schema
 
+    amplitudes = amplitudes.pint.dequantify()
+
     amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
 
     amp = (amp - amp.mean("time")) / amp.std("time")
@@ -492,7 +498,11 @@ def sci(
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
 
     sci = (windows - windows.mean("window")).prod("wavelength").sum("window") / nsamples
-    sci /= windows.std("window").prod("wavelength") # dims: channel, time
+    sci /= windows.std("window").prod("wavelength")  # dims: channel, time
+
+    # manually set sci for the first window because it contains only a single
+    # finite amplitude value.
+    sci[:,0] = sci[:,1]
 
     # create sci mask and update accoording to sci_thresh
     sci_mask = xrutils.mask(sci, CLEAN)
