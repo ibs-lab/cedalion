@@ -21,6 +21,14 @@ import cedalion.math.ar_irls
 
 
 def _channel_fit(y, x, noise_model="ols", ar_order=30):
+    available_models = ["ols", "rls", "wls", "ar_irls", "gls", "glsar"]
+
+    if noise_model not in available_models:
+        raise ValueError(
+            f"unsupported noise_model '{noise_model}'. Please select one"
+            f"of these: {', '.join(available_models)}"
+        )
+
     if noise_model == "ols":
         reg_result = statsmodels.api.OLS(y, x).fit()
     elif noise_model == "rls":
