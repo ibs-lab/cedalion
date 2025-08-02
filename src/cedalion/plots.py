@@ -994,6 +994,7 @@ def scalp_plot(
             length as ts.channel and the matching is done by position.
         ax: the matplotlib.Axes object into which to draw
         title: the axes title
+        y_title: the y position of the title in axes coordinates
         vmin: the minimum value of the metric
         vmax: the maximum value of the metric
         center: when calculating vmin and vmax, center the value range at this value.
