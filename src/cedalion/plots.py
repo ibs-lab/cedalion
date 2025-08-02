@@ -598,6 +598,7 @@ def _robust_scalp_plot(
     ax,
     colormap=p.cm.bwr,
     title=None,
+    y_title=1,
     threshold_ind=None,
     threshold_col=None,
     saturation=None,
@@ -852,7 +853,7 @@ def _robust_scalp_plot(
 
     ax.plot(0, 1 , marker="^",markersize=16)
     p.colorbar(sm, ax=ax, shrink=0.6, ticks=ticks)
-    ax.set_title(title)
+    ax.set_title(title, y=y_title)
     p.tight_layout()
     p.axis('equal')
     p.axis('off')
@@ -965,6 +966,7 @@ def scalp_plot(
     metric: xr.DataArray | ArrayLike,
     ax,
     title: str | None = None,
+    y_title: float = 1.0,
     vmin: float | None = None,
     vmax: float | None = None,
     center : float | None = None,
@@ -1182,7 +1184,7 @@ def scalp_plot(
             cb.set_ticklabels([label for _, label in cb_ticks_labels])
 
     if title:
-        ax.set_title(title)
+        ax.set_title(title, y=y_title)
 
 
     #cb.set_ticks([vmin, (vmin+vmax)//2, vmax])
