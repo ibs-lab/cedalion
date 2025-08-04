@@ -5,6 +5,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
                     getting_started_io/34_store_hrfs_in_snirf_file.ipynb \
                     plots_visualization/12_plots_example.ipynb \
                     machine_learning/50_finger_tapping_lda_classification.ipynb \
+                    machine_learning/52_ica_erbm_fingertapping_example.ipynb \
                     modeling/31_glm_basis_functions.ipynb \
                     modeling/32_glm_fingertapping_example.ipynb \
                     modeling/33_glm_illustrative_example.ipynb \
