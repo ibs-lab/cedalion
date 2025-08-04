@@ -3,6 +3,8 @@
 ## Unreleased changes (available on the `dev` branch)
  
 ### Added
+- An example notebook for ICA source extraction was added, by [Jacqueline Behrendt](https://github.com/jackybehrendt12). 
+([#112](https://github.com/ibs-lab/cedalion/pull/112))
 ### Changed
 - The ninja HD and UHD cap coordinates were changed from a right-handed to a left-handed
 coordinate system, by [Nils Harmening](https://github.com/harmening). ([#110](https://github.com/ibs-lab/cedalion/pull/110))
