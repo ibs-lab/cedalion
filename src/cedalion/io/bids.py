@@ -410,8 +410,8 @@ def create_data_description(
     """
 
     data_des = {
-        "Name": "Enter dataset name here",
-        "BIDSVersion": "1.8.0",
+        "Name": os.path.basename(dataset_path),
+        "BIDSVersion": "1.10.0",
         "License": "CC0",
         "DatasetType": "raw",
         "Authors": ["Enter author names here"],
@@ -439,18 +439,6 @@ def create_data_description(
         with open(result[0], "r") as file:
             data_des.update(json.load(file))
             data_des = {key: value for key, value in data_des.items() if value != ""}
-
-    if "Name" not in data_des:
-        name = os.path.basename(dataset_path)
-        data_des["Name"] = name
-    if "BIDSVersion" not in data_des:
-        data_des["BIDSVersion"] = "1.10.0"
-
-    array_columns = ["Authors", "Funding", "EthicsApprovals", "ReferencesAndLinks"]
-    for arr in array_columns:
-        if arr in data_des:
-            if not isinstance(data_des[arr], list) and isinstance(data_des[arr], str):  # noqa: E721
-                data_des[arr] = [data_des[arr]]
 
     with open(os.path.join(bids_dir, "dataset_description.json"), "w") as json_file:
         json.dump(data_des, json_file, indent=4)
@@ -482,90 +470,143 @@ def check_coord_files(bids_dir: str) -> None:
                 with open(coord_file, "w") as json_file:
                     json.dump(data, json_file, indent=4)
 
+def create_participants_tsv(bids_dir: str, mapping_df: pd.DataFrame, fields: Optional[List[str]] = None) -> None:
+    """Creates a `participants.tsv` file in a BIDS-compliant directory.
 
-def create_participants_tsv(dataset_path, bids_dir, mapping_df):
-    """Generates or updates a `participants.tsv` file in a BIDS-compliant directory.
-
-    This function creates a `participants.tsv` file based on a mapping DataFrame (`mapping_df`)
-    and optionally merges it with an existing `participants.tsv` file found in the dataset directory.
-    Missing columns recommended by the BIDS specification are added with `None` values.
+    This function generates a `participants.tsv` file based on the provided `mapping_df`,
+    which must include at least a "sub" column (subject identifier). It ensures that 
+    the specified fields are present in the output, initializing any missing fields with `None`.
 
     Args:
-        dataset_path (str): Path to the dataset directory.
         bids_dir (str): Path to the BIDS directory.
-        mapping_df (pd.DataFrame): A DataFrame containing SNIRF records' information with at least a "sub" column.
+        mapping_df (pd.DataFrame): A DataFrame containing subject metadata,
+                                   including a "sub" column.
+        fields (List[str], optional): A list of additional participant-level fields 
+                                      to include in the TSV. Defaults to 
+                                      ["species", "age", "sex", "handedness"].
 
     Returns:
-        None: The function writes the resulting `participants.tsv` file directly to the `bids_dir`.
+        None: Writes `participants.tsv` to the specified BIDS directory.
     """
-
     participants_df = "sub-" + mapping_df[["sub"]]
     participants_df.drop_duplicates(inplace=True)
     participants_df = participants_df.rename(columns={"sub": "participant_id"})
 
-    participants_org = find_files_with_pattern(dataset_path, "participants.tsv")
-    if participants_org:
-        participants_org_df = pd.read_csv(participants_org[0], delimiter="\t")
-        participants_org_df.drop_duplicates(subset=["participant_id"], inplace=True)
-        participants_df = pd.merge(
-            participants_df, participants_org_df, on="participant_id", how="left"
-        )
-
-    participants_columns = ["species", "age", "sex", "handedness"]
-    for c in participants_columns:
-        if c not in participants_df.columns:
-            participants_df[c] = None
+    if fields is None:
+        fields = ["species", "age", "sex", "handedness"]
+    for c in fields:
+        participants_df[c] = None
     participants_df.to_csv(
         os.path.join(bids_dir, "participants.tsv"), sep="\t", index=False
     )
 
+def create_participants_json(bids_dir: str, fields: Optional[List[str]] = None) -> None:
+    """Creates or updates a `participants.json` file in a BIDS-compliant directory.
 
-def create_participants_json(dataset_path: str, bids_dir: str) -> None:
-    """Generates or updates a `participants.json` file in a BIDS-compliant directory.
-
-    This function searches for an existing `participants.json` file in the specified
-    dataset directory. If found, it reads the file, merges its contents with a default
-    template, and writes the result to the `bids_dir`. If no file is found, it uses the
-    default template to create a new `participants.json`.
+    If no custom fields are provided, this function uses a default schema based on 
+    BIDS recommendations. The output describes participant-level metadata for each 
+    field in the corresponding `participants.tsv` file.
 
     Args:
-        dataset_path (str): Path to the dataset directory.
         bids_dir (str): Path to the BIDS directory.
+        fields (List[str], optional): List of fields to include in the JSON schema. 
+                                      If None, a default set is used.
 
     Returns:
-        None: The function writes the resulting `participants.json` file directly to the `bids_dir`.
+        None: Writes `participants.json` to the specified BIDS directory.
     """
 
-    result = find_files_with_pattern(dataset_path, "participants.json")
-
-    json_template = {
-        "species": {
-            "Description": "species of the participant",
-            "Levels": {
-                "homo sapiens": "a binomial species name from the NCBI Taxonomy"
+    if fields is None:
+        json_template = {
+            "species": {
+                "Description": "species of the participant",
+                "Levels": {
+                    "homo sapiens": "a binomial species name from the NCBI Taxonomy"
+                },
             },
-        },
-        "age": {"Description": "age of the participant", "Units": "year"},
-        "sex": {
-            "Description": "sex of the participant as reported by the participant",
-            "Levels": {"M": "male", "F": "female"},
-        },
-        "handedness": {
-            "Description": "handedness of the participant as reported by the participant",
-            "Levels": {"left": "left", "right": "right"},
-        },
-    }
+            "age": {"Description": "age of the participant", "Units": "year"},
+            "sex": {
+                "Description": "sex of the participant as reported by the participant",
+                "Levels": {"M": "male", "F": "female"},
+            },
+            "handedness": {
+                "Description": "handedness of the participant as reported by the participant",
+                "Levels": {"left": "left", "right": "right"},
+            },
+        }
 
-    if len(result) != 0:
-        with open(result[0], "r") as file:
-            json_template.update(json.load(file))
-            json_template = {
-                key: value for key, value in json_template.items() if value != ""
-            }
+    else:
+        json_template = dict.fromkeys(fields)
 
     with open(os.path.join(bids_dir, "participants.json"), "w") as json_file:
         json.dump(json_template, json_file, indent=4)
 
+def create_participants_files(
+    bids_dir: str,
+    mapping_df: Optional[pd.DataFrame] = None,
+    participants_tsv_path: Optional[str] = None,
+    participants_json_path: Optional[str] = None,
+    fields: Optional[List[str]] = None
+):
+    """Creates or updates `participants.tsv` and `participants.json` files in a BIDS-compliant directory.
+
+    If a `participants.tsv` file already exists and contains data, it is cleaned and standardized:
+    - Ensures the first column is named `participant_id`
+    - Prepends "sub-" to subject IDs if missing
+    - Sorts the participants by ID
+    The corresponding `participants.json` file is also updated or created based on the TSV's columns.
+
+    If no valid `participants.tsv` file is found, the function will fall back to generating new files
+    using the provided `mapping_df`.
+
+    Args:
+        bids_dir (str): Path to the BIDS directory where output files will be written.
+        mapping_df (pd.DataFrame, optional): Used to create participants.tsv if no existing file is found.
+        participants_tsv_path (str, optional): Path to an existing `participants.tsv` file.
+        participants_json_path (str, optional): Path to an existing `participants.json` file.
+        fields (List[str], optional): List of fields to include in your schema. If None, a default set is used.
+
+    """
+
+    if os.path.exists(participants_tsv_path):
+        if participants_tsv_path.endswith(".tsv"):
+            participants_tsv = read_events_from_tsv(participants_tsv_path)
+        else:
+            participants_tsv = pd.read_csv(participants_tsv_path)
+        if len(participants_tsv) > 0:
+            sub_field = participants_tsv.columns[0]
+            if sub_field != "participant_id":
+                participants_tsv.columns = ['participant_id'] + list(participants_tsv.columns[1:])
+                participants_tsv["participant_id"] = participants_tsv["participant_id"].astype(str)
+                participants_tsv.drop_duplicates(subset=["participant_id"], inplace=True)
+            sample_sub = participants_tsv["participant_id"].iloc[0]
+            if not sample_sub.startswith("sub-"):
+                participants_tsv['sort_key'] = participants_tsv['participant_id'].map(lambda val: (0, int(val)) if val.isdigit() else (1, val))
+                participants_tsv = participants_tsv.sort_values(by='sort_key').drop(columns=['sort_key'])
+                participants_tsv["participant_id"] = "sub-" + participants_tsv["participant_id"].astype(str)
+            else:
+                participants_tsv['participant_id'] = participants_tsv['participant_id'].str.replace('sub-', '')
+                participants_tsv['sort_key'] = participants_tsv['participant_id'].map(lambda val: (0, int(val)) if val.isdigit() else (1, val))
+                participants_tsv = participants_tsv.sort_values(by='sort_key').drop(columns=['sort_key'])
+                participants_tsv["participant_id"] = "sub-" + participants_tsv["participant_id"].astype(str)       
+            participants_tsv.to_csv(os.path.join(bids_dir, "participants.tsv"), sep="\t", index=False)   
+            if participants_json_path is not None:
+                if os.path.exists(participants_json_path):
+                    with open(participants_json_path, "r") as file:
+                        participants_json = json.load(file)
+                        participants_json = {{sub_field: "participant_id"}.get(key, key): value for key, value in participants_json.items()}
+                    with open(os.path.join(bids_dir, "participants.json"), "w") as file:
+                        json.dump(participants_json, file)
+                else:
+                    create_participants_json(bids_dir=bids_dir, fields=participants_tsv.columns.tolist())
+            else:
+                create_participants_json(bids_dir=bids_dir, fields=participants_tsv.columns.tolist())
+        else:
+            create_participants_tsv(bids_dir=bids_dir, mapping_df=mapping_df, fields=fields)
+            create_participants_json(bids_dir=bids_dir, fields=fields)
+    else:
+        create_participants_tsv(bids_dir=bids_dir, mapping_df=mapping_df, fields=fields)
+        create_participants_json(bids_dir=bids_dir, fields=fields)
 
 def edit_events(row: pd.Series, bids_dir: str) -> None:
     """Edits an events.tsv file in a BIDS directory based on specified conditions.
@@ -626,13 +667,19 @@ def sort_events(row: pd.Series, bids_dir: str) -> None:
     events_df.sort_values("onset").to_csv(event_path, sep="\t", index=False)
 
 def save_source(dataset_path: str, destination_path: str) -> None:
-    """Copies the original dataset to a 'sourcedata' folder within the specified destination path.
+    """Copies the dataset to a 'sourcedata' folder within the specified destination path.
 
-    Parameters:
-    -----------
-    dataset_path : str
-        The path to the original dataset to be copied.
-    destination_path : str
-        The directory where the 'sourcedata' folder will be created and the dataset copied.
+    If a 'sourcedata' folder already exists inside the `dataset_path`, only that folder is copied.
+    Otherwise, the entire dataset is copied into a new 'sourcedata' folder in the destination.
+
+    Args:
+        dataset_path (str): Path to the original dataset.
+        destination_path (str): Directory where the 'sourcedata' folder will be created and data copied.
     """
-    shutil.copytree(dataset_path, os.path.join(destination_path, "sourcedata"))
+    source_folder = os.path.join(dataset_path, "sourcedata")
+
+    if os.path.isdir(source_folder):
+        shutil.copytree(source_folder, os.path.join(destination_path, "sourcedata"))
+    else:
+        shutil.copytree(dataset_path, os.path.join(destination_path, "sourcedata"))
+
