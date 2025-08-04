@@ -966,7 +966,7 @@ def scalp_plot(
     metric: xr.DataArray | ArrayLike,
     ax,
     title: str | None = None,
-    y_title: float = 1.0,
+    y_title: float = None,
     vmin: float | None = None,
     vmax: float | None = None,
     center : float | None = None,
