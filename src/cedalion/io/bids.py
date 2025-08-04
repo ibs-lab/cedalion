@@ -263,7 +263,7 @@ def search_for_acq_time_in_snirf_files(row: pd.Series, dataset_path: str) -> dat
         nirs_data = next(iter(nirs_data.nirs))
 
         datetime_str = f"{nirs_data.metaDataTags.MeasurementDate} {nirs_data.metaDataTags.MeasurementTime}"
-        timestamp = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.strptime(datetime_str.split('.')[0], "%Y-%m-%d %H:%M:%S")
         return timestamp
     else:
         return row.acq_time
