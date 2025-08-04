@@ -1372,15 +1372,7 @@ def stack_flat_vertex(array: xr.DataArray):
 
 
 def unstack_flat_vertex(array: xr.DataArray):
-    if "flat_vertex" not in array.dims:
-        raise ValueError("array misses dimension 'flat_vertex'.")
-
-    coords = ("chromo", "vertex")
-    for coord in coords:
-        if coord not in array.coords:
-            raise ValueError(f"array misses coordinate '{coord}'.")
-
-    return array.set_xindex(coords).unstack("flat_vertex")
+    return xrutils.unstack(array, "flat_vertex", ("chromo", "vertex"))
 
 
 def stack_flat_channel(array: xr.DataArray):
@@ -1394,30 +1386,5 @@ def stack_flat_channel(array: xr.DataArray):
 
 
 def unstack_flat_channel(array: xr.DataArray):
-    if "flat_channel" not in array.dims:
-        raise ValueError("array misses dimension 'flat_channel'.")
+    return xrutils.unstack(array, "flat_channel", ("wavelength", "channel"))
 
-    coords = ("wavelength", "channel")
-    for coord in coords:
-        if coord not in array.coords:
-            raise ValueError(f"array misses coordinate '{coord}'.")
-
-    unstacked = array.set_xindex(coords).unstack("flat_channel")
-
-    # source and detector are unstacked into 2D arrays with dims channel and wavelength.
-    # Assert that these coordinates do not vary along the wavelength dimension and
-    # then reduce them to channel-only coordinates.
-
-    for coord_name in ["source", "detector"]:
-        c = unstacked.coords[coord_name]
-        c_wl0 = (
-            c[{"wavelength": 0}].copy().drop_vars(["wavelength", "source", "detector"])
-        )
-        if not (c_wl0 == c).all().item():
-            raise ValueError(
-                f"coord {coord_name} varies over wavelength after unstacking."
-            )
-        #unstacked = unstacked.drop_vars(coord_name)
-        unstacked = unstacked.assign_coords({coord_name: c_wl0})
-
-    return unstacked

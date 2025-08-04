@@ -563,9 +563,9 @@ def icp_with_full_transform(
             (-2 * np.pi, 2 * np.pi),
             (-2 * np.pi, 2 * np.pi),
             (-2 * np.pi, 2 * np.pi),
-            (0.5, 1.5),
-            (0.5, 1.5),
-            (0.5, 1.5),
+            (-1.5, 1.5),
+            (-1.5, 1.5),
+            (-1.5, 1.5),
         ]
 
         # Optimization step to minimize the loss function

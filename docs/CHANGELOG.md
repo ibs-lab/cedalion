@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased changes (available on the `dev` branch)
+ 
+### Added
+### Changed
+- The ninja HD and UHD cap coordinates were changed from a right-handed to a left-handed
+coordinate system, by [Nils Harmening](https://github.com/harmening). ([#110](https://github.com/ibs-lab/cedalion/pull/110))
+- Changed the names of several motion correction algorithms from `motion_correct.motion_correct_X` 
+to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_motion_artefacts_and_correction` was improved. By [Eike Middell](https://github.com/emiddell).
+
+
+### Deprecated
+### Removed
+### Fixed
+
+- Fixed a bug in motion_correct_wavelet affecting the selection of coefficients for IQR-based thresholding. The issue caused unintended suppression of high-frequency components, particularly near the end of recordings. Changed by [Eike Middell](https://github.com/emiddell).
+- Fixed a bug in the stopping criterion of motion_correct.pca_recurse caused by an inverted 
+boolean mask of motion artifacts, by [Eike Middell](https://github.com/emiddell).
+
 ## Version 25.1.0 (2025-06-22)
 
 All dependencies have been updated to recent versions. Please rebuild the environment.

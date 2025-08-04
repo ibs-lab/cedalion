@@ -23,6 +23,7 @@ Decomposition Methods
 
     cedalion.sigdecomp.ERBM
     cedalion.sigdecomp.ICA_EBM
+    cedalion.sigdecomp.multimodal
 
 Examples
 --------
