@@ -569,7 +569,7 @@ def create_participants_files(
     """
 
     if os.path.exists(participants_tsv_path):
-        if participants_tsv_path.endswith(".tsv"):
+        if str(participants_tsv_path).endswith(".tsv"):
             participants_tsv = read_events_from_tsv(participants_tsv_path)
         else:
             participants_tsv = pd.read_csv(participants_tsv_path)
@@ -605,6 +605,7 @@ def create_participants_files(
             create_participants_tsv(bids_dir=bids_dir, mapping_df=mapping_df, fields=fields)
             create_participants_json(bids_dir=bids_dir, fields=fields)
     else:
+        print("No valid participants.tsv file found. Creating default files.")
         create_participants_tsv(bids_dir=bids_dir, mapping_df=mapping_df, fields=fields)
         create_participants_json(bids_dir=bids_dir, fields=fields)
 
