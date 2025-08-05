@@ -34,7 +34,7 @@ from cedalion.geometry.segmentation import (
     surface_from_segmentation,
     voxels_from_segmentation,
 )
-from cedalion.imagereco.utils import map_segmentation_mask_to_surface
+from cedalion.dot.utils import map_segmentation_mask_to_surface
 from cedalion.io.forward_model import FluenceFile, save_Adot
 
 from .tissue_properties import get_tissue_properties

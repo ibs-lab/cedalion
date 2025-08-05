@@ -1,4 +1,30 @@
-# FIXME imports
+
+from __future__ import annotations
+from dataclasses import dataclass
+import logging
+from typing import Optional
+import os
+import warnings
+import sys
+from pathlib import Path
+
+import scipy
+import numpy as np 
+import xarray as xr
+import trimesh 
+from scipy.spatial import KDTree
+
+import cedalion 
+from cedalion import xrutils, units
+from dataclasses import dataclass
+import cedalion.dataclasses as cdc
+import cedalion.typing as cdt
+from cedalion.geometry.segmentation import (
+    surface_from_segmentation,
+    voxels_from_segmentation,
+)
+from cedalion.dot.utils import map_segmentation_mask_to_surface
+from cedalion.geometry.registration import register_trans_rot_isoscale
 
 
 @dataclass

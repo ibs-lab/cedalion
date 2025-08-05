@@ -32,7 +32,7 @@ import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 from cedalion import Quantity
 from cedalion.dataclasses import PointType
-from cedalion.imagereco.forward_model import TwoSurfaceHeadModel
+from cedalion.dot.head_model import TwoSurfaceHeadModel
 
 
 def plot_montage3D(amp: xr.DataArray, geo3d: xr.DataArray):

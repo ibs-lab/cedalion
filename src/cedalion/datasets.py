@@ -5,7 +5,7 @@ import pickle
 from gzip import GzipFile
 from pathlib import Path
 import pandas as pd
-from cedalion.imagereco.forward_model import TwoSurfaceHeadModel
+from cedalion.dot.head_model import TwoSurfaceHeadModel
 
 import pooch
 import xarray as xr
