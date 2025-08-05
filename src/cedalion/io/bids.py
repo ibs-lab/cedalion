@@ -571,6 +571,8 @@ def create_participants_files(
     if os.path.exists(participants_tsv_path):
         if str(participants_tsv_path).endswith(".tsv"):
             participants_tsv = read_events_from_tsv(participants_tsv_path)
+        elif str(participants_tsv_path).endswith(".xlsx"):
+            participants_tsv = pd.read_excel(participants_tsv_path, engine='openpyxl')
         else:
             participants_tsv = pd.read_csv(participants_tsv_path)
         if len(participants_tsv) > 0:
