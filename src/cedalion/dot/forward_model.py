@@ -86,6 +86,7 @@ class ForwardModel:
         assert head_model.crs == geo3d.points.crs
 
         self.head_model = head_model
+        self.measurement_list = measurement_list
 
         self.optode_pos = geo3d[
             geo3d.type.isin([cdc.PointType.SOURCE, cdc.PointType.DETECTOR])
@@ -106,14 +107,14 @@ class ForwardModel:
         self.optode_dir = self.optode_dir.pint.dequantify()
 
         self.tissue_properties = get_tissue_properties(
-            self.head_model.segmentation_masks
-        )
+                                                        self.head_model.segmentation_masks, 
+                                                        self.measurement_list.wavelength.unique()
+                                                    )
 
         self.volume = self.head_model.segmentation_masks.sum("segmentation_type")
         self.volume = self.volume.values.astype(np.uint8)
         self.unitinmm = self._get_unitinmm()
 
-        self.measurement_list = measurement_list
 
     def _get_unitinmm(self):
         """Calculate length of volume grid cells.
@@ -127,7 +128,7 @@ class ForwardModel:
         length = xrutils.norm(pts_ras[1] - pts_ras[0], pts_ras.points.crs)
         return length.pint.magnitude.item()
 
-    def _get_fluence_from_mcx(self, i_optode: int, **kwargs) -> np.ndarray:
+    def _get_fluence_from_mcx(self, i_optode: int, i_wl: int, **kwargs) -> np.ndarray:
         """Run MCX simulation to get fluence for one optode.
 
         Args:
@@ -149,7 +150,7 @@ class ForwardModel:
             "tstep": 5e-9,
             "srcpos": self.optode_pos.values[i_optode],
             "srcdir": self.optode_dir.values[i_optode],
-            "prop": self.tissue_properties,
+            "prop": self.tissue_properties[:,:,i_wl],
             "issrcfrom0": 1,
             "isnormalized": 1,
             "outputtype": "fluence", # units: 1/mm^2
