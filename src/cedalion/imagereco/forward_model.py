@@ -642,7 +642,8 @@ class ForwardModel:
         self.optode_dir = self.optode_dir.pint.dequantify()
 
         self.tissue_properties = get_tissue_properties(
-            self.head_model.segmentation_masks
+            self.head_model.segmentation_masks,
+            measurement_list.wavelength.unique()
         )
 
         self.volume = self.head_model.segmentation_masks.sum("segmentation_type")
@@ -663,7 +664,7 @@ class ForwardModel:
         length = xrutils.norm(pts_ras[1] - pts_ras[0], pts_ras.points.crs)
         return length.pint.magnitude.item()
 
-    def _get_fluence_from_mcx(self, i_optode: int, **kwargs) -> np.ndarray:
+    def _get_fluence_from_mcx(self, i_optode: int, i_wl: int, **kwargs) -> np.ndarray:
         """Run MCX simulation to get fluence for one optode.
 
         Args:
@@ -684,7 +685,7 @@ class ForwardModel:
             "tstep": 5e-9,
             "srcpos": self.optode_pos.values[i_optode],
             "srcdir": self.optode_dir.values[i_optode],
-            "prop": self.tissue_properties,
+            "prop": self.tissue_properties[:,:,i_wl],
             "issrcfrom0": 1,
             "isnormalized": 1,
             "outputtype": "fluence", # units: 1/mm^2
@@ -834,7 +835,34 @@ class ForwardModel:
 
         return fluence_all, fluence_at_optodes
 
+<<<<<<< Updated upstream
     def compute_fluence_nirfaster(self, meshingparam=None):
+=======
+            for i_opt in range(n_optodes):
+                label = self.optode_pos.label.values[i_opt]
+                print(f"simulating fluence for {label}. {i_opt+1} / {n_optodes}")
+
+                # run MCX or MCXCL
+                # shape: [i,j,k]
+
+                # FIXME shortcut:
+                # currently tissue props are wavelength independent -> copy
+                for i_wl in range(n_wavelength):
+
+                    fluence = self._get_fluence_from_mcx(i_opt, i_wl, **kwargs)
+
+                    # calculate fluence at all optode positions. used for normalization
+                    fluence_at_optodes[i_opt, :, i_wl] = self._fluence_at_optodes(
+                        fluence, i_opt
+                    )
+
+                    fluence_file.set_fluence_by_index(i_opt,i_wl, fluence)
+
+            fluence_file.set_fluence_at_optodes(fluence_at_optodes)
+
+
+    def compute_fluence_nirfaster(self, fluence_fname : str | Path, meshingparam=None):
+>>>>>>> Stashed changes
         """Compute fluence for each channel and wavelength using NIRFASTer package.
 
         Args:
@@ -1128,7 +1156,7 @@ def apply_inv_sensitivity(
     delta_conc = delta_conc.unstack("flat_vertex")
 
     # unstacking flat_vertex makes is_brain 2D. is_brain[0,:] == is_brain[1,:]
-    is_brain = delta_conc.is_brain[0, :].values
+    is_brain = delta_conc.is_brain[ 0, :].values
 
     delta_conc_brain = delta_conc.sel(vertex=is_brain)
     delta_conc_brain.attrs["units"] = units_str

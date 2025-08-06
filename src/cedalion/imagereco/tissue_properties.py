@@ -81,22 +81,35 @@ TISSUE_PROPS_REFRACTION = {
 # FIXME allow for wavelength dependencies
 
 
-def get_tissue_properties(segmentation_masks: xr.DataArray) -> np.ndarray:
+def get_tissue_properties(segmentation_masks: xr.DataArray, wavelengths: list) -> np.ndarray:
     """Return tissue properties for the given segmentation mask."""
     ntissues = segmentation_masks.sizes["segmentation_type"] + 1
-    tissue_props = np.zeros((ntissues, 4))
-    tissue_props[0, :] = [0.0, 0.0, 1.0, 1.0]  # background
+    nwavelength = len(wavelengths)
+    tissue_props = np.zeros((ntissues, 4, nwavelength))
 
+<<<<<<< Updated upstream
     for st in segmentation_masks.segmentation_type.values:
         m = segmentation_masks.sel(segmentation_type=st).values
         int_label = np.unique(m[m > 0]).item()
+=======
+    for i_wl in range(nwavelength):
+        tissue_props[0, :, i_wl ] = [0.0, 0.0, 1.0, 1.0]  # background
+>>>>>>> Stashed changes
 
-        if (tissue_type := TISSUE_LABELS.get(st, None)) is None:
-            raise ValueError(f"unknown tissue type '{st}'")
+        for st in segmentation_masks.segmentation_type.values:
+            m = segmentation_masks.sel(segmentation_type=st).values
+            int_labels = np.unique(m[m > 0])
+            if len(int_labels) == 0:
+                warn("Segmentation type %s is empty." % st)
+                continue
+            int_label = int_labels.item()
 
-        tissue_props[int_label, 0] = TISSUE_PROPS_ABSORPTION[tissue_type]
-        tissue_props[int_label, 1] = TISSUE_PROPS_SCATTERING[tissue_type]
-        tissue_props[int_label, 2] = TISSUE_PROPS_ANISOTROPY[tissue_type]
-        tissue_props[int_label, 3] = TISSUE_PROPS_REFRACTION[tissue_type]
+            if (tissue_type := TISSUE_LABELS.get(st, None)) is None:
+                raise ValueError(f"unknown tissue type '{st}'")
+
+            tissue_props[int_label, 0, i_wl] = TISSUE_PROPS_ABSORPTION[tissue_type]
+            tissue_props[int_label, 1, i_wl] = TISSUE_PROPS_SCATTERING[tissue_type]
+            tissue_props[int_label, 2, i_wl] = TISSUE_PROPS_ANISOTROPY[tissue_type]
+            tissue_props[int_label, 3, i_wl] = TISSUE_PROPS_REFRACTION[tissue_type]
 
     return tissue_props
