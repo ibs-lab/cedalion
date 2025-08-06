@@ -212,7 +212,7 @@ class Gamma(TemporalBasisFunction):
         self,
         tau: cdt.QTime | dict[str, cdt.QTime],
         sigma: cdt.QTime | dict[str, cdt.QTime],
-        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
+        T: cdt.QTime | dict[str, cdt.QTime] = 0 * units.s,  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.tau = _to_unit(tau, units.s)
@@ -279,7 +279,7 @@ class GammaDeriv(TemporalBasisFunction):
         self,
         tau: cdt.QTime | dict[str, cdt.QTime],
         sigma: cdt.QTime | dict[str, cdt.QTime],
-        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
+        T: cdt.QTime | dict[str, cdt.QTime] = 0 * units.s,  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.tau = _to_unit(tau, units.s)
@@ -350,7 +350,7 @@ class AFNIGamma(TemporalBasisFunction):
         self,
         p: float | dict[str, float],
         q: cdt.QTime | dict[str, cdt.QTime],
-        T: cdt.QTime | dict[str, cdt.QTime],  # noqa: N803
+        T: cdt.QTime | dict[str, cdt.QTime] = 0 * units.s,  # noqa: N803
     ):
         super().__init__(convolve_over_duration=True)
         self.p = p
@@ -404,6 +404,38 @@ class AFNIGamma(TemporalBasisFunction):
             },
         )
 
+class DiracDelta(TemporalBasisFunction):
+    r"""Convoluted with the stim duration this basis function yields a square wave."""
+
+    def __init__(self):
+        super().__init__(convolve_over_duration=True)
+
+    def __call__(
+        self,
+        ts: cdt.NDTimeSeries,
+    ) -> xr.DataArray:
+        other_dim = xrutils.other_dim(ts, "time", "channel")
+        other_dim_values = ts[other_dim].values
+
+        n_samples = 2
+        n_components = 1
+        n_other_dim = ts.sizes[other_dim]
+
+        fs = sampling_rate(ts).to(units.Hz)
+        t = np.array([0,1]) / fs
+
+        regressors = np.zeros((n_samples, n_components, n_other_dim))
+        regressors[0,0,:] = 1.
+
+        return xr.DataArray(
+            regressors,
+            dims=["time", "component", other_dim],
+            coords={
+                "time": xr.DataArray(t, dims=["time"]).pint.dequantify(),
+                other_dim: other_dim_values,
+                "component": ["square"],
+            },
+        )
 
 # FIXME: instead of defining IndividualBasis we may want to make make_hrf_regressor
 # accept xr.DataArrays directly?

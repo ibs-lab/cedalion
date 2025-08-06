@@ -2,6 +2,7 @@
 
 from enum import Enum, auto
 from typing import Dict
+from warnings import warn
 
 import numpy as np
 import xarray as xr
@@ -87,14 +88,8 @@ def get_tissue_properties(segmentation_masks: xr.DataArray, wavelengths: list) -
     nwavelength = len(wavelengths)
     tissue_props = np.zeros((ntissues, 4, nwavelength))
 
-<<<<<<< Updated upstream
-    for st in segmentation_masks.segmentation_type.values:
-        m = segmentation_masks.sel(segmentation_type=st).values
-        int_label = np.unique(m[m > 0]).item()
-=======
     for i_wl in range(nwavelength):
         tissue_props[0, :, i_wl ] = [0.0, 0.0, 1.0, 1.0]  # background
->>>>>>> Stashed changes
 
         for st in segmentation_masks.segmentation_type.values:
             m = segmentation_masks.sel(segmentation_type=st).values

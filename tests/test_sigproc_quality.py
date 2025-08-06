@@ -1,7 +1,11 @@
+import numpy as np
+import pandas as pd
 import pytest
 from numpy.testing import assert_allclose
-import cedalion.sigproc.quality as quality
+
+import cedalion.dataclasses as cdc
 import cedalion.datasets
+import cedalion.sigproc.quality as quality
 from cedalion import units
 
 
@@ -94,3 +98,43 @@ def test_detect_outliers(rec):
 def test_detect_baselineshift(rec):
     outlier_mask = quality.detect_outliers(rec["amp"], t_window_std=2 * units.s)
     _ = quality.detect_baselineshift(rec["amp"], outlier_mask)
+
+
+
+def test_stimulus_mask():
+    t = np.arange(10)
+    channel = ["S1D1", "S1D2", "S1D3"]
+    source = ["S1", "S1", "S1"]
+    detector = ["D1", "D2", "D3"]
+
+    df_stim = pd.DataFrame(
+        {
+            "onset": [1.0, 5.0],
+            "duration": [3.0, 3.0],
+            "value": [1.0, 1.0],
+            "trial_type": ["X", "X"],
+        }
+    )
+
+    mask = cdc.build_timeseries(
+        np.array([
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 1, 1, 1, 1, 1, 1, 1, 1], # stim 0 in channel 1 tainted
+            [1, 1, 1, 1, 1, 1, 0, 1, 1, 1], # stim 1 in channel 2 tainted
+        ]),
+        dims=["channel", "time"],
+        time=t,
+        channel=channel,
+        value_units="1",
+        time_units="s",
+        other_coords={"source": ("channel", source), "detector": ("channel", detector)},
+    ).astype(bool)
+
+    stim_mask = quality.stimulus_mask(df_stim, mask)
+
+    assert stim_mask.dims == ("stim", "channel")
+    assert stim_mask.sizes["stim"] == 2
+    assert stim_mask.sizes["channel"] == 3
+
+    assert all(stim_mask[0,:] == [True, False, True])
+    assert all(stim_mask[1, :] == [True, True, False])

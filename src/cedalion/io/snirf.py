@@ -447,12 +447,17 @@ def read_aux(
         else:
             raise ValueError("aux.dataTimeSeries must have either 1 or 2 dimensions.")
 
+        attrs = {"units" : aux_units}
+
+        if time_offset is not None:
+            attrs["time_offset"] = time_offset
+
         x = xr.DataArray(
             aux_data,
             coords={"time": aux.time},
             dims=dims,
             name=name,
-            attrs={"units": aux_units, "time_offset": time_offset},
+            attrs=attrs,
         )
 
         result[name] = x.pint.quantify()
@@ -500,7 +505,7 @@ def read_data_elements(
         list[tuple[str, NDTimeSeries]]: List of tuples containing the canonical name
             of the data element and the DataArray.
     """
-    time = data_element.time
+    time = data_element.time[:].squeeze()
 
     trial_types = stim["trial_type"].drop_duplicates().values
 
@@ -1053,10 +1058,14 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
 
         aux_group.name = aux_name
         aux_group.dataTimeSeries = aux_array
-        aux_group.dataUnit = aux_array.attrs["units"]
+
         # FIXME add checks that time units match those in metaDataTags
         aux_group.time = aux_array.time
-        aux_group.timeOffset = aux_array.attrs["time_offset"]
+
+        if "units" in aux_array.attrs:
+            aux_group.dataUnit = aux_array.attrs["units"]
+        if "time_offset" in aux_array.attrs:
+            aux_group.timeOffset = aux_array.attrs["time_offset"]
 
 
 def write_snirf(
