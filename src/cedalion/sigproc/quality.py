@@ -1205,6 +1205,17 @@ def repair_amp(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
         amp = amp.pint.dequantify()
         amp = amp.interpolate_na(dim="time", **kwargs)
         amp = amp.pint.quantify()
+        # Replace NaN val at sample=0 with val at sample=1
+        t0s = amp.time[amp.samples == 0]
+        t1s = amp.time[amp.samples == 1]
+        assert t0s.shape == t1s.shape, "Mismatched number of sample 0 and 1 time points"
+        vals_at_t0s = amp.sel(time=t0s)
+        nan_mask = np.isnan(vals_at_t0s)
+        amp.loc[dict(time=t0s)] = np.where(
+            nan_mask,                            # condition: where sample 0 is NaN
+            amp.sel(time=t1s).values,            # use value from sample 1
+            amp.sel(time=t0s).values             # otherwise, keep original
+        )
 
     # Replace nonpositive values with a small value
     unit = amp.pint.units
