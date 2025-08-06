@@ -1,0 +1,2 @@
+from cedalion.sigdecomp.multimodal.cca_models import ElasticNetCCA, StructuredSparseCCA
+from cedalion.sigdecomp.multimodal.tcca_models import ElasticNetTCCA, StructuredSparseTCCA, temporal_embedding

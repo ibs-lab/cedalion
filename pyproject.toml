@@ -17,6 +17,49 @@ classifiers = [
 dynamic=["version"]
 requires-python = ">=3.11"
 
+# This is subset of cedalion's dependencies, sufficient to run it it in a 
+# Google Colab environment. For a local installation please use the conda 
+# environment defined in environments_dev.yml .
+dependencies = [
+  "click==8.2.*",
+  "h5py==3.14.*",
+  "matplotlib==3.10.*",
+  "nibabel==5.3.*",
+  "nilearn==0.11.*",
+  "numpy==2.2.*",
+  "opencv-python>4",
+  "pandas==2.3.*",
+  "pint-xarray==0.4.*",
+  "pooch==1.8.*",
+  "pybids==0.19.*",
+  "pywavelets==1.8.*",
+  "scikit-image==0.25.*",
+  "scikit-learn==1.7.*",
+  "scipy==1.15.*",
+  "seaborn==0.13.*",
+  "statsmodels==0.14.4",
+  "strenum==0.4.*",
+  "xarray==2025.6.*",
+  "trimesh==4.6.*",
+  "pyvista==0.45.*",
+  "trame==3.10.*",
+  "trame-vtk==2.8.*",
+  "trame-vuetify==3.0.*",
+  "trame-components==2.5.*",
+  "vtk>9.3",
+  "ipympl",
+  "mne==1.9.*",
+  "mne-bids==0.16.*",
+  "mne-nirs==0.7.*",
+  "pywavefront==1.3.*",
+  "setuptools-scm",
+  "snirf==0.8.*",
+  "pmcx>=0.3.3",
+  "pmcxcl==0.3.1",
+  "pyxdf==1.17.0",
+]
+
+
 [project.urls]
 Home = "https://ibs-lab.com/cedalion/"
 Documentation = "https://doc.ibs.tu-berlin.de/cedalion/doc/dev/"
@@ -28,6 +71,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/cedalion/_version.py"
+template = "__version__ = '{version}'\n"
 
 [tool.hatch.version]
 source = "vcs"
@@ -37,6 +81,11 @@ requires = [
   "hatch-conda>=0.5.2",
 ]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.github",
+  "/docs",
+]
 
 [tool.hatch.envs.default]
 type = "conda"

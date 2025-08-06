@@ -28,7 +28,7 @@ if "SNIRF_ZOO" in os.environ:
 
 @skip_if_snirf_zoo_unavailable
 @pytest.mark.parametrize("fname", testfiles)
-def test_read_snirf(fname):
+def test_read_snirf(fname: str):
     cedalion.io.read_snirf(fname)
 
 

@@ -2,6 +2,7 @@
 
 from enum import Enum, auto
 from typing import Dict
+from warnings import warn
 
 import numpy as np
 import xarray as xr
@@ -89,7 +90,11 @@ def get_tissue_properties(segmentation_masks: xr.DataArray) -> np.ndarray:
 
     for st in segmentation_masks.segmentation_type.values:
         m = segmentation_masks.sel(segmentation_type=st).values
-        int_label = np.unique(m[m > 0]).item()
+        int_labels = np.unique(m[m > 0])
+        if len(int_labels) == 0:
+            warn("Segmentation type %s is empty." % st)
+            continue
+        int_label = int_labels.item()
 
         if (tissue_type := TISSUE_LABELS.get(st, None)) is None:
             raise ValueError(f"unknown tissue type '{st}'")
