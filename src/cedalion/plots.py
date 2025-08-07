@@ -1885,6 +1885,7 @@ def image_recon_multi_view(
                 plot_labeled_points(p0, geo3d_plot)
 
         if SAVE and filename:
+            p0.show()
             p0.screenshot(filename + '.png')
         else:
             p0.show()
