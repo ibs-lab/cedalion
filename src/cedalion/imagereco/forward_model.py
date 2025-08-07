@@ -677,7 +677,8 @@ class ForwardModel:
         self.optode_dir = self.optode_dir.pint.dequantify()
 
         self.tissue_properties = get_tissue_properties(
-            self.head_model.segmentation_masks
+            self.head_model.segmentation_masks,
+            measurement_list.wavelength.unique()
         )
 
         self.volume = self.head_model.segmentation_masks.sum("segmentation_type")

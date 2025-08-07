@@ -227,7 +227,10 @@ def conc2od(
     dists = cedalion.nirs.channel_distances(conc, geo3d)
     dists = dists.pint.to("mm")
 
-    od = xr.dot(E, conc, dim=["chromo"]) * (dists * dpf)
+    if dpf[0] != 1:
+        od = xr.dot(E, conc, dim=["chromo"]) * (dists * dpf)
+    else:
+        od = xr.dot(E, conc, dim=["chromo"]) * (1*units.mm * dpf)
 
     od = od.rename("optical_density")
 
