@@ -24,7 +24,7 @@ class MultimodalSourceDecomposition():
 
     def __init__(self, 
                  N_components : int = None, 
-                 max_iter : int = 100, 
+                 max_iter : int = 1000, 
                  tol : float = 1e-6, 
                  scale : bool = True):
 
@@ -255,9 +255,8 @@ class MultimodalSourceDecomposition():
 
 
 class ElasticNetCCA(MultimodalSourceDecomposition):
-
     """Perform Elastic Net Canonical Correlation Analysis (CCA) between two datasets X and Y.
-         
+
     Apply CCA with L1 + L2 regularization, a.k.a elastic net. The algorithm finds sparse (L1) 
     and normalized (L2) vectors Wx, and Wy as the solution to the following constrained optimization problem:
 
@@ -265,7 +264,7 @@ class ElasticNetCCA(MultimodalSourceDecomposition):
     subject to  Wx^T Cx Wx = 1,  Wy^T Cy Wy = 1, 
                 ||Wx||_1 <= c1x,  ||Wy||_1 <= c1y, 
                 ||Wx||^2_2 <= c2x,  ||Wy||^2_2 <= c2y
-    
+
     where Cx, Cy, and Cxy are the individual and cross-covariance matrices between X and Y datasets, 
     and the last four constraints correspond to the standard L1-norm and L2-norm penalization terms. 
     c1x and c1y controls sparsity while c2x and c2y controls the magnitude of the vectors. PLS algorithms 
@@ -291,11 +290,11 @@ class ElasticNetCCA(MultimodalSourceDecomposition):
     The resulting u and v are the leading left and right singular vectors of K which are nothing but individual components of the
     filters Wx and Wy. The softthresholding function bring some components to zero. If L2 regularization is used, prior to 
     computing K, Cx and Cy are shifted by Cx <- Cx + alpha_x I and Cy <- Cy + alpha_y I. 
-    
+
     Multiple components are obtained via a deflation method, subtracting from K its 1-rank approximation on each iteration. 
     The returned vectors Wx and Wy are ordered in desceding order w.r.t. the singular values, which coincide with the canonical 
     correlations.
-    
+
     Args:
         N_components (int, optional): Number of components to extract. If None,
             the number of components is set to the minimum number of features between modalities.
@@ -329,7 +328,7 @@ class ElasticNetCCA(MultimodalSourceDecomposition):
                  N_components : int = None, 
                  l1_reg : float | list[float, float] = 0,
                  l2_reg : float | list[float, float] = 0,
-                 max_iter : int = 100, 
+                 max_iter : int = 1000, 
                  tol : float = 1e-6, 
                  scale : bool = True,
                  pls : bool = False):
@@ -380,6 +379,8 @@ class ElasticNetCCA(MultimodalSourceDecomposition):
         Wx, Wy = estimate_filters(X.data, 
                                   Y.data, 
                                   N_components=self.N_components, 
+                                  max_iter=self.max_iter,
+                                  tol=self.tol,
                                   l1_reg=self.l1_reg, 
                                   l2_reg=self.l2_reg,
                                   pls=self.pls)
@@ -468,7 +469,7 @@ class StructuredSparseCCA(MultimodalSourceDecomposition):
                  Ly : np.ndarray = None,
                  l1_reg : float | list[float, float] = 0,
                  l2_reg : float | list[float, float] = 0,
-                 max_iter : int = 100, 
+                 max_iter : int = 1000, 
                  tol : float = 1e-6, 
                  scale : bool = True,
                  pls : bool = False):
@@ -519,6 +520,8 @@ class StructuredSparseCCA(MultimodalSourceDecomposition):
         Wx, Wy = estimate_filters(X.data, 
                                   Y.data, 
                                   N_components=self.N_components, 
+                                  max_iter=self.max_iter, 
+                                  tol=self.tol,
                                   l1_reg=self.l1_reg, 
                                   l2_reg=self.l2_reg,
                                   Lx=self.Lx,
@@ -562,7 +565,7 @@ class RidgeCCA(ElasticNetCCA):
     def __init__(self, 
                 N_components : int = None,
                 l2_reg : float | list[float, float] = 0, 
-                max_iter : int = 100, 
+                max_iter : int = 1000, 
                 tol : float = 1e-6, 
                 scale : bool = True):
         
@@ -610,7 +613,7 @@ class SparseCCA(ElasticNetCCA):
     def __init__(self, 
                 N_components : int = None, 
                 l1_reg : float | list[float, float] = 0,
-                max_iter : int = 100, 
+                max_iter : int = 1000, 
                 tol : float = 1e-6, 
                 scale : bool = True):
 
@@ -655,7 +658,7 @@ class CCA(ElasticNetCCA):
 
     def __init__(self, 
                 N_components: int = None,
-                max_iter: int = 100, 
+                max_iter: int = 1000, 
                 tol: float = 1e-6, 
                 scale: bool = True):
         
@@ -709,12 +712,12 @@ class SparsePLS(ElasticNetCCA):
     def __init__(self, 
                 N_components: int = None, 
                 l1_reg: float | list[float, float] = 0,
-                max_iter: int = 100, 
+                max_iter: int = 1000, 
                 tol: float = 1e-6, 
                 scale: bool = True):
     
 
-        super(SparsePLS).__init__(
+        super(SparsePLS, self).__init__(
             N_components=N_components,
             l1_reg=l1_reg,
             l2_reg=0,
@@ -732,7 +735,7 @@ class PLS(SparsePLS):
     Args:
         N_components (int, optional): Number of components to extract. If None,
             the number of components is set to the minimum number of features between modalities.
-        max_iter (int): Maximum number of iterations for the algorithm. Defaults to 100.
+        max_iter (int): Maximum number of iterations for the algorithm. Defaults to 1000.
         tol (float): Tolerance for convergence. Defaults to 1e-6.
         scale (bool): Whether to scale the data during normalization to unit variance. Defaults to True.
 
@@ -752,11 +755,11 @@ class PLS(SparsePLS):
     """
      def __init__(self, 
                 N_components: int = None,
-                max_iter: int = 100, 
+                max_iter: int = 1000, 
                 tol: float = 1e-6, 
                 scale: bool = True):
 
-        super().__init__(
+        super(PLS, self).__init__(
             N_components=N_components,
             l1_reg=0,
             max_iter=max_iter,
@@ -768,6 +771,8 @@ class PLS(SparsePLS):
 def estimate_filters(X : np.ndarray, 
                      Y : np.ndarray,
                      N_components : int,
+                     max_iter : int = 1000,
+                     tol : float = 1e-6,
                      l1_reg : list[float, float] = 0,
                      l2_reg : list[float, float] = 0,
                      Lx : np.ndarray = None,
@@ -785,6 +790,8 @@ def estimate_filters(X : np.ndarray,
             X (ndarray): Input data for modality X with shape (Nt, Nx).
             Y (ndarray): Input data for modality Y with shape (Nt, Ny).
             N_components (int): Number of components to extract.
+            max_iter (int, optional): Maximum number of iterations for the algorithm. Defaults to 1000.
+            tol (float, optional): Tolerance for convergence. Defaults to 1e-6.
             l1_reg (list of floats): list containing lambda_u and lambda_v.
             l2_reg (list of floats): list containing alpha_x and alpha_y.
             Lx (ndarray, optional): Laplacian matrix for modality X. Defaults to None.
@@ -824,7 +831,11 @@ def estimate_filters(X : np.ndarray,
             K = Cxx_inv_sqrt @ Cxy @ Cyy_inv_sqrt
         
         # Perform SVD + deflation via rank-1 approximation subtraction
-        Wx, _, Wy = get_singular_vectors(K, N_components, l1_reg)
+        Wx, _, Wy = get_singular_vectors(K, 
+                                         N_components, 
+                                         l1_reg,
+                                         max_iter=max_iter,
+                                         tol=tol)
         
         # Project back to original unwhitened space
         if not pls:
@@ -863,6 +874,8 @@ def inv_sqrt_cov(C : np.ndarray,
 def get_singular_vectors(X : np.ndarray, 
                          N_components : int, 
                          l1_reg : float | list[float, float] = 0,
+                         max_iter : int = 1000, 
+                         tol : float = 1e-6
                          ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Extracts the top singular vectors from X using an iterative power method.
 
@@ -876,6 +889,8 @@ def get_singular_vectors(X : np.ndarray,
         N_components (int): Number of singular components to extract.
         l1_reg (float or list of floats, optional): Regularization parameter for L1 sparsity. If scalar, the 
             same value is applied for both u and v. Defaults to 0 (no sparsity).
+        max_iter (int, optional): Maximum number of iterations for the power method. Defaults to 1000.
+        tol (float, optional): Tolerance for convergence of the power method. Defaults to 1e-6.
 
     Returns:
         tuple:
@@ -892,14 +907,17 @@ def get_singular_vectors(X : np.ndarray,
     X_new = X.copy()
     for k in range(N_components):
         # Apply one-unit algorithm
-        u, s, v = leading_singular_pair_power_method(X_new, l1_reg)
+        u, s, v = leading_singular_pair_power_method(X_new, 
+                                                     l1_reg,
+                                                     max_iter,
+                                                     tol)
         # Substract rank-1 approximation
         X_rank1 = s * u @ v.T
         X_new -= X_rank1
         # Store component
         U[:, k] = u[:, 0]
         V[:, k] = v[:, 0]
-        S[k] = s 
+        S[k] = s
 
     return U, S, V
 
