@@ -71,6 +71,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/cedalion/_version.py"
+template = "__version__ = '{version}'\n"
 
 [tool.hatch.version]
 source = "vcs"

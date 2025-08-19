@@ -1207,6 +1207,8 @@ def repair_amp(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
         amp = amp.pint.dequantify()
         amp = amp.interpolate_na(dim="time", **kwargs)
         amp = amp.pint.quantify()
+        # replace sample 0 with sample 1 if NaN
+        amp.loc[{"time":0}] = amp.isel(time=0).fillna(amp.isel(time=1))
 
     # Replace nonpositive values with a small value
     unit = amp.pint.units
