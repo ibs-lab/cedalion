@@ -1,6 +1,7 @@
 """Signal quality metrics and channel pruning functionality."""
 
 from __future__ import annotations
+from typing import Callable, Iterable, Mapping, Any, Union, Tuple
 import logging
 from functools import reduce
 
@@ -16,7 +17,8 @@ import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 import cedalion.sigproc.frequency as freq
-from cedalion import Quantity, units
+import cedalion.math as math
+from cedalion import Quantity, math, units
 from cedalion.typing import NDTimeSeries
 import cedalion.nirs as nirs
 from .frequency import freq_filter, sampling_rate
@@ -1225,131 +1227,129 @@ def repair_amp(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
     return amp
 
 
+Step = Union[
+    Callable[[xr.DataArray], xr.DataArray],
+    Tuple[Callable[[xr.DataArray], xr.DataArray], Mapping[str, Any]]
+]
 
-def measurement_variance(
+def est_measurement_noise(
     ts: xr.DataArray,
+    art_reject_steps: Iterable[Step] = [],
+    var_wdw = 10 * units.s,
+    qthresh = 2,
     list_bad_channels: list = None,
-    bad_rel_var: float = 1e6,
-    bad_abs_var: float = None,
-    calc_covariance: bool = False,
+    var_penalty: float = 1e6,
 ) -> xr.DataArray:
-    """Estimate measurement variance or covariance from an fNIRS time series.
+    """Estimate channel measurement noise, noise covariance and a Svar/Nvar quality metric from an fNIRS time series.
 
-    Can be used as a proxy for measurement noise, in this case it should be applied in
-    OD or CONC domain. Ideally, the input is the residual of a time series after GLM
-    fitting, but raw data can also be used. This function can be used as a helper
-    function for weighted mean subtraction or for image recon regularization, in which
-    bad channels (noisy, with high variance) are downweighted.
+    Expects OD time series. Optionally applies motion correction before calculating the metrics.
+    Highpass filters the time series from 0.01Hz to remove slow drifts.
+    Then estimates the signal and measurement noise of each channel via an AR model,
+    using the innovation as a noise estimate. Calculates a quality metric based on the
+    ratio of signal variance to noise variance over a sliding window.
+    Bad (saturated) channels can be flagged via "list_bad_channels"
+    and will receive a penalty factor "bad_rel_var" times the median variance of all 
+    channel's signals. Returns estimated noise time series, noise covariance matrix and quality mask.
 
     Args:
-        ts: Input time series with dimensions (time, channel, chromo/wavelength).
-        list_bad_channels: Channel names (e.g. ["S2D4", "S2D10"]) to be treated as bad.
-        bad_rel_var: Multiplier for worst-case variance for bad channels if
-            `bad_abs_var` is not provided.
-        bad_abs_var: Absolute variance to assign to bad channels. Overrides
-            `bad_rel_var` if provided.
-        calc_covariance: If True, returns a 3D covariance matrix:
-            (other_dim, channel, channel). If False, returns a 2D variance array:
-            (chromo, channel).
+        ts  (:class:`NDTimeSeries`, (channel, wavelength, time)): Input OD time series
+        art_reject_steps: iterable of artifact rejection method "Step"s
+            Each Step is either:
+            - a callable: fn(data) -> xr.DataArray
+            - a tuple: (fn, {"kw": "args"}) -> xr.DataArray
+            For instance, use [motion_correct.tddr, motion_correct.wavelet], 
+            set empty skip artifact rejection by default.
+        var_wdw: Time window for sliding window Svar/Nvar calculation, e.g. 10s.
+        qthresh (unitless): Svar/Nvar signal variance to noise variance ratio threshold 
+            below which signal is flagged as bad
+        list_bad_channels: Channel names (e.g. ["S2D4", "S2D10"]) to be flagged as bad.
+        var_penalty: Multiplier for worst-case variance for listed bad channels
 
     Returns:
-    xr.DataArray: Variance array (shape: channel, chromo/wavelength) or covariance
-        array (shape: chromo/wavelength, channel1, channel2)
+    noise_est (xr.DataArray): estimated noise timeseries in each channel (shape: time, channel, wavelength).
+    ncov (xr.DataArray): estimated noise covariance matrix (shape: wavelength, channel, channel).
+    snvarr (xr.DataArray): single signal variance to noise variance ratio (Svar/Nvar)
+        quality metric across time for each channel (shape: channel, wavelength)
+    quality_mask (xr.DataArray): boolean quality mask indicating good (TRUE) or bad (FALSE) 
+        (shape: time, channel, wavelength) time points based on thresholded  Svar/Nvar ratio.
 
     Initial Contributors:
-        Josef Cutler | cutler@tu-berlin.de | 2025
         Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
     """
     if list_bad_channels is None:
         list_bad_channels = []
 
-    # Identify other dimension (chromo/wavelength)
-    other_dim = xrutils.other_dim(ts, "time", "channel")
-    other_dim_values = ts[other_dim].values
+    # Do artifact correction 
+    tst = ts.copy(deep=True)
+    for step in art_reject_steps:
+        if isinstance(step, tuple):
+            fn, kw = step
+            tst = fn(tst, **kw)
+        else:
+            tst = step(tst)
+        if not isinstance(tst, xr.DataArray):
+            raise TypeError(f"Step {step} did not return an xarray.DataArray")
 
-    # Compute variance
-    var = ts.var(dim="time")
+    # Highpass filter the time series to remove slow drifts
+    tst = tst.cd.freq_filter(fmin=0.01, fmax=0.0, butter_order=4)
 
-    # Create bad channel mask
-    zero_var_mask = (var == 0)
-    bad_channels_from_zero_var = set()
-    if zero_var_mask.any():
-        for channel in ts.channel.values:
-            if zero_var_mask.sel(channel=channel).any():
-                bad_channels_from_zero_var.add(channel)
+    # AR filter the time series to estimate noise
+    noise_est = math.ar_model.ar_filter(tst)
+    sig_est = tst - noise_est
 
-    # Combine with explicitly passed bad channels
-    all_bad_channels = bad_channels_from_zero_var.union(set(list_bad_channels))
-    valid_bad_channels = [ch for ch in all_bad_channels if ch in ts.channel.values]
+    # compute signal and noise variances across time
+    sig_est_var = sig_est.var(dim="time")
+    noise_est_var = noise_est.var(dim="time")
 
-    # Create mask for entire bad channels (across all other_dim coordinates)
-    bad_channel_mask = ts.channel.isin(valid_bad_channels)
+    # compute signal and noise variances over a sliding window
+    fs = freq.sampling_rate(tst)
+    window_size = int(np.round(fs * var_wdw))
+    noise_est_sliding_var = noise_est.rolling(time=window_size, center=True).var()
+    sig_est_sliding_var = sig_est.rolling(time=window_size, center=True).var()
 
-    # Compute bad variance fill value
-    good_var = var.where(~bad_channel_mask)
-    max_good_var = good_var.max().item() if good_var.notnull().any() else 1.0
-    var_fill_value = (
-        bad_abs_var if bad_abs_var is not None else bad_rel_var * max_good_var
-    )
-
-    # Replace variance of bad channels
-    var = var.where(~bad_channel_mask, other=var_fill_value)
-
-    if not calc_covariance:
-        return var
-
-    # Initialize 3D covariance array, shape (other_dim, channel, channel)
-    channels = ts.channel.values
-    n_other_dim, n_channels = len(other_dim_values), len(channels)
-    cov_matrix_3d = np.zeros((n_other_dim, n_channels, n_channels))
-    bad_ch_indices = np.array([ch in valid_bad_channels for ch in channels])
-
-    # Compute covariance for each other_dim coordinate
-    for i, other_val in enumerate(other_dim_values):
-        data_slice = ts.sel({other_dim: other_val})
-        data_matrix = data_slice.values  # Shape: (n_channels, n_time)
-        cov_matrix_2d = np.cov(data_matrix, ddof=1)  # Shape: (n_channels, n_channels)
-
-        # Replace covariance of bad channels
-        if valid_bad_channels:
-            # Get max off-diagonal covariance from good channels
-            good_cov_matrix = cov_matrix_2d.copy()
-            good_cov_matrix[bad_ch_indices, :] = np.nan
-            good_cov_matrix[:, bad_ch_indices] = np.nan
-            np.fill_diagonal(good_cov_matrix, np.nan)
-            max_good_cov = (
-                np.nanmax(np.abs(good_cov_matrix))
-                if not np.isnan(good_cov_matrix).all()
-                else 0
+    # for each channel in list_bad_channels set the values in noise_est_var 
+    # to the median of noise_est_var * bad_rel_var
+    for ch in list_bad_channels:
+        if ch in noise_est_var.channel.values:
+            penalty_noise = noise_est_var.median(dim="channel") * var_penalty
+            noise_est_var.loc[dict(channel=ch)] = penalty_noise
+            noise_est_sliding_var.loc[dict(channel=ch)] = (
+                noise_est_sliding_var.median(dim="channel") * var_penalty
             )
 
-            # Replace covariance of bad channels
-            cov_fill_value = (
-                var_fill_value
-                if bad_abs_var is not None
-                else bad_rel_var * max_good_cov
-            )
-            cov_matrix_2d[bad_ch_indices, :] = cov_fill_value
-            cov_matrix_2d[:, bad_ch_indices] = cov_fill_value
-            bad_diag_mask = np.diag(bad_ch_indices)
-            cov_matrix_2d[bad_diag_mask] = var_fill_value
+    # compute signal variance /  noise variance ratio
+    snvarr = sig_est_var / noise_est_var
+    snvarr_sliding = sig_est_sliding_var / noise_est_sliding_var
 
-        cov_matrix_3d[i] = cov_matrix_2d
+    # create a quality mask based on the Svar/Nvar ratio
+    quality_mask = snvarr_sliding > qthresh
 
-    # Create coordinate arrays
-    coords = {
-        other_dim: other_dim_values,
-        "channel1": channels,
-        "channel2": channels,
-    }
+    # compute measurement noise covariance matrix
+    noise_est = noise_est.transpose("time", "channel", "wavelength")
+    noise_est = noise_est.pint.dequantify()  # keep math simple; re-attach units later if you like
 
-    covar = xr.DataArray(
-        cov_matrix_3d,
-        dims=(other_dim, "channel1", "channel2"),
-        coords=coords,
+    T = noise_est.sizes["time"]
+    # Rename the second argument's 'channel' to 'channel_j' so we get cross-channel products
+    ncov = xr.dot(
+        noise_est,                                 # (time, channel, wavelength)
+        noise_est.rename(channel="channel_j"),     # (time, channel_j, wavelength)
+        dims="time",
+    ) / (T - 1)
+    # add noise penalty to 
+
+    # Now we have dims: ('channel', 'channel_j', 'wavelength')
+    # Rename and order dims to taste
+    ncov = (
+        ncov.rename(channel="channel_i")
+            .transpose("wavelength", "channel_i", "channel_j")
+            .rename("covariance")
     )
 
-    return covar
+    # add units on covariance:
+    cov_units = (tst.pint.units)**2
+    ncov = ncov.pint.quantify(cov_units)
+
+    return noise_est, ncov, snvarr, quality_mask, sig_est
 
 
 def mask_to_segments(
