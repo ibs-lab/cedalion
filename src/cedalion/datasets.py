@@ -35,6 +35,8 @@ DATASETS = pooch.create(
         "nn22_resting_state.zip": "sha256:0394347af172d906fe33403e84303435af26d82fdcf1d36dad5c7b05beb82d88",  # noqa:E501
         "Adot_ninjanirs_colin27.nc" : "sha256:3382e6bfd62b5e1213332cc74c88cc8af04a4fd5cebe7001ebc111cf9e9b2d00", # noqa:E501
         "fluence_ninjanirs_colin27.h5" : "sha256:89d82c4f5a985f79777fceeffab9ef90365056ccda8ea4e29bc71c4d24fb0e0a", # noqa: E501
+        "icbm152_parcellation.zip": "sha256:b69ffdb3ff2fe3d85a6d5c139e59147d05ca97127589c1e4c2a8d031850f0148",  # noqa:E501
+
     },
 )
 
@@ -115,6 +117,13 @@ def get_icbm152_segmentation():
 
     return basedir, mask_files, landmarks_ras_file
 
+
+def get_icbm152_parcel_file():
+    """Retrieves the Colin27 headmodel, based on :cite:t:`Holmes1998`."""
+    fnames = DATASETS.fetch("icbm152_parcellation.zip", processor=pooch.Unzip())
+    parcel_file = fnames[0]
+
+    return parcel_file
 
 def get_fingertapping() -> cdc.Recording:
     """Retrieves a finger tapping recording in BIDS format.

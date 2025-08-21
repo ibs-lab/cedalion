@@ -1,10 +1,15 @@
 """Functions for reading and processing anatomical data."""
 
 import nibabel
-import xarray as xr
 import os
 from typing import Dict, Tuple
+from pathlib import Path
+
+import nibabel
 import numpy as np
+import pandas as pd 
+import xarray as xr
+
 from cedalion.dataclasses import affine_transform_from_numpy
 
 # FIXME
@@ -147,3 +152,23 @@ def cell_coordinates(mask, affine, units="mm"):
     transformed = transformed.pint.quantify()
 
     return transformed
+
+
+def read_parcellations(parcel_file: str | Path) -> pd.DataFrame:
+    """Read parcellation labels from a json file.
+
+    Args:
+        parcel_file: The parcels file name
+
+    Returns:
+        pd.DataFrame: Contains vertices' labels, their appropriate colors
+    """
+    parcels = pd.read_json(parcel_file)
+
+    parcels = parcels.explode("Vertices")
+    parcels["Vertices"] = parcels["Vertices"].astype(int)
+    parcels = parcels.sort_values("Vertices")
+
+    parcels["Label"] = parcels["Label"].apply(lambda x: "_".join(x.split(" ")) + "H")
+
+    return parcels

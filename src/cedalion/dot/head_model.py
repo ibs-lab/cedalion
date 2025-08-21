@@ -25,7 +25,7 @@ from cedalion.geometry.segmentation import (
 )
 from cedalion.dot.utils import map_segmentation_mask_to_surface
 from cedalion.geometry.registration import register_trans_rot_isoscale
-
+from cedalion.io import read_mrk_json, read_parcellations, read_segmentation_masks
 
 @dataclass
 class TwoSurfaceHeadModel:
@@ -118,7 +118,7 @@ class TwoSurfaceHeadModel:
         """
 
         # load segmentation mask
-        segmentation_masks, t_ijk2ras = cedalion.io.read_segmentation_masks(
+        segmentation_masks, t_ijk2ras = read_segmentation_masks(
             segmentation_dir, mask_files
         )
 
@@ -134,7 +134,7 @@ class TwoSurfaceHeadModel:
             if not os.path.isabs(landmarks_ras_file):
                 landmarks_ras_file = os.path.join(segmentation_dir, landmarks_ras_file)
 
-            landmarks_ras = cedalion.io.read_mrk_json(landmarks_ras_file, crs=crs_ras)
+            landmarks_ras = read_mrk_json(landmarks_ras_file, crs=crs_ras)
             landmarks_ijk = landmarks_ras.points.apply_transform(t_ras2ijk)
         else:
             landmarks_ijk = None
@@ -222,6 +222,8 @@ class TwoSurfaceHeadModel:
         brain_face_count: Optional[int] = 180000,
         scalp_face_count: Optional[int] = 60000,
         fill_holes: bool = False,
+        parcel_file: Path | str | None = None,
+
     ) -> "TwoSurfaceHeadModel":
         """Constructor from seg.masks, brain and head surfaces as gained from MRI scans.
 
@@ -247,7 +249,7 @@ class TwoSurfaceHeadModel:
         """
 
         # load segmentation mask
-        segmentation_masks, t_ijk2ras = cedalion.io.read_segmentation_masks(
+        segmentation_masks, t_ijk2ras = read_segmentation_masks(
             segmentation_dir, mask_files
         )
 
@@ -257,13 +259,14 @@ class TwoSurfaceHeadModel:
         # crs_ijk = t_ijk2ras.dims[1]
         crs_ras = t_ijk2ras.dims[0]
 
+
         # load landmarks. Other than the segmentation masks which are in voxel (ijk)
         # space, these are already in RAS space.
         if landmarks_ras_file is not None:
             if not os.path.isabs(landmarks_ras_file):
                 landmarks_ras_file = os.path.join(segmentation_dir, landmarks_ras_file)
 
-            landmarks_ras = cedalion.io.read_mrk_json(landmarks_ras_file, crs=crs_ras)
+            landmarks_ras = read_mrk_json(landmarks_ras_file, crs=crs_ras)
             landmarks_ijk = landmarks_ras.points.apply_transform(t_ras2ijk)
         else:
             landmarks_ijk = None
@@ -327,6 +330,11 @@ class TwoSurfaceHeadModel:
         voxel_to_vertex_scalp = map_segmentation_mask_to_surface(
             scalp_mask, t_ijk2ras, scalp_ijk.apply_transform(t_ijk2ras)
         )
+
+        if parcel_file is not None:
+            parcels = read_parcellations(parcel_file)
+            assert len(parcels) == brain_ijk.nvertices
+            brain_ijk.vertex_coords["parcel"] = np.asarray(parcels.Label.tolist())
 
         return cls(
             segmentation_masks=segmentation_masks,

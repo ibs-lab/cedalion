@@ -3,7 +3,7 @@
 import xarray as xr
 import numpy as np
 import cedalion
-from cedalion import units
+from cedalion import units, nirs
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.geometry.segmentation as segm
@@ -12,6 +12,30 @@ import scipy.stats
 
 from cedalion import xrutils
 
+def get_stacked_sensitivity(Adot):
+        
+    nchannel = Adot.shape[0]
+    nvertices = Adot.shape[1]
+    wavelengths = Adot.wavelength.values
+
+    E = nirs.get_extinction_coefficients('prahl', wavelengths)
+
+    Adot_stacked = np.zeros((2 * nchannel, 2 * nvertices))
+    wl1 = wavelengths[0]
+    wl2 = wavelengths[1]
+    Adot_stacked[:nchannel, :nvertices] = E.sel(chromo="HbO", wavelength=wl1).values * Adot.sel(wavelength=wl1) # noqa: E501
+    Adot_stacked[:nchannel, nvertices:] = E.sel(chromo="HbR", wavelength=wl1).values * Adot.sel(wavelength=wl1) # noqa: E501
+    Adot_stacked[nchannel:, :nvertices] = E.sel(chromo="HbO", wavelength=wl2).values * Adot.sel(wavelength=wl2) # noqa: E501
+    Adot_stacked[nchannel:, nvertices:] = E.sel(chromo="HbR", wavelength=wl2).values * Adot.sel(wavelength=wl2) # noqa: E501
+
+    Adot_stacked = xr.DataArray(Adot_stacked, dims=("measurement", "flat_vertex"))
+    if 'parcel' in Adot.coords:
+        Adot_stacked = Adot_stacked.assign_coords({"parcel" : ("flat_vertex", np.concatenate((Adot.coords['parcel'].values, Adot.coords['parcel'].values)))})
+    if 'is_brain' in Adot.coords:
+        Adot_stacked = Adot_stacked.assign_coords({"is_brain" : ("flat_vertex", np.concatenate((Adot.coords['is_brain'].values, Adot.coords['is_brain'].values)))})
+    
+    return Adot_stacked
+    
 
 # FIXME right location?
 def map_segmentation_mask_to_surface(

@@ -12,7 +12,8 @@ import xarray as xr
 
 import cedalion.dataclasses as cdc
 import cedalion.dataclasses.geometry as cdg
-import cedalion.imagereco.forward_model as cfm
+import cedalion.dot.forward_model as cfm
+import cedalion.dot.head_model as cdhm
 import cedalion.models.glm as glm
 import cedalion.plots
 import cedalion.typing as cdt
@@ -21,7 +22,7 @@ from cedalion.models.glm.basis_functions import TemporalBasisFunction
 
 
 def build_spatial_activation(
-    head_model: cfm.TwoSurfaceHeadModel,
+    head_model: cdhm.TwoSurfaceHeadModel,
     seed_vertex: int,
     spatial_scale: cdt.QLength = 1 * units.cm,
     intensity_scale: cdt.QConcentration = 1 * units.micromolar,
