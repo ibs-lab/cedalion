@@ -23,14 +23,14 @@ from cedalion.sigproc.frequency import sampling_rate
 
 
 def build_spatial_activation(
-    head_model: cfm.TwoSurfaceHeadModel,
-    seed_vertex: int,
+    surface: cdg.TrimeshSurface,
+    seed_vertices: list[int] | int,
     spatial_scale: cdt.QLength = 1 * units.cm,
     intensity_scale: cdt.QConcentration = 1 * units.micromolar,
     hbr_scale: float = None,
     m: float = 10.0,
 ):
-    """Generates a spatial activation at a seed vertex.
+    """Generates a spatial activation at one or multiple seed vertices.
 
     This function generates a blob of activity on the brain surface.
     The blob is centered at the seed vertex.
@@ -38,69 +38,30 @@ def build_spatial_activation(
     due to mesh decimation or unsuitable m value.
 
     Args:
-        head_model (cfm.TwoSurfaceHeadModel): Head model with brain and scalp surfaces.
-        seed_vertex (int): Index of the seed vertex.
+        surface (cdg.TrimeshSurface): Brain or scalp surface.
+        seed_vertices (list[int] | int): Indices of the seed vertices.
         spatial_scale (Quantity): Scale of the spatial size.
         intensity_scale (Quantity): Scaling factor for the intensity of the blob.
-        hbr_scale (float): Scaling factor for HbR relative to HbO. If None, the blob
-            will have no concentration dimension and only represent HbO.
-        m (float): Geodesic distance parameter. Larger values of m will smooth &
-            regularize the distance computation. Smaller values of m will roughen and
-            will usually increase error in the distance computation.
+        hbr_scale (float): Scaling factor for HbR relative to HbO.
+        m (float): Geodesic distance parameter.
 
     Returns:
         xr.DataArray: Spatial image with activation values for each vertex.
 
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-
     """
 
-    spatial_scale_unit = (
-        (spatial_scale / head_model.brain.units).to_base_units().magnitude
-    )
+    if isinstance(seed_vertices, int):
+        seed_vertices = [seed_vertices]
 
-    seed_pos = head_model.brain.mesh.vertices[seed_vertex]
+    spatial_scale_unit = (spatial_scale / surface.units).to_base_units().magnitude
 
-    # if the mesh is not contiguous:
-    # only calculate distances on the submesh on which the seed vertex lies
+    distances_from_seeds = cdg.robust_geodesic_distance(surface, seed_vertices, m=m)
 
-    # get a list of the distinct submeshes
-    mesh_split = head_model.brain.mesh.split(only_watertight=False)
-
-    # check in which submesh the seed vertex is
-    for i, submesh in enumerate(mesh_split):
-        if seed_pos in submesh.vertices:
-            break
-
-    # get index of the seed vertex in the submesh
-    seed_vertex = np.where((submesh.vertices == seed_pos).all(axis=1))[0]
-
-    # create a pycortex surface of the submesh to calculate geodesic distances
-    cortex_surface = cdg.PycortexSurface(
-        cdg.SimpleMesh(submesh.vertices, submesh.faces),
-        crs=head_model.brain.crs,
-        units=head_model.brain.units,
-    )
-    distances_on_submesh = cortex_surface.geodesic_distance([seed_vertex], m=m)
-
-    # find indices of submesh in original mesh
-    # convert meshes into set of tuples for fast lookup
-    submesh_set = set(map(tuple, submesh.vertices))
-    submesh_indices = [
-        i
-        for i, coord in enumerate(map(tuple, head_model.brain.mesh.vertices))
-        if coord in submesh_set
-    ]
-
-    # set distances on vertices outside of the submesh to inf
-    distances_from_seed = np.ones(head_model.brain.mesh.vertices.shape[0]) * np.inf
-    distances_from_seed[submesh_indices] = distances_on_submesh
-
-    # plug the distances in a normal distribution
+    # plug geodesic distances in gaussian pdf
     norm_pdf = stats.norm(scale=spatial_scale_unit).pdf
-
-    blob_img = norm_pdf(distances_from_seed)
+    blob_img = norm_pdf(distances_from_seeds)
     blob_img = blob_img / np.max(blob_img)
     blob_img = xr.DataArray(blob_img, dims=["vertex"])
 
@@ -113,7 +74,6 @@ def build_spatial_activation(
         )
 
     blob_img = blob_img * intensity_scale
-
     blob_img = blob_img.pint.to(units.molar)
 
     return blob_img
@@ -358,6 +318,7 @@ def plot_spatial_activation(
     plt_pv.add_text(title, position="upper_edge", font_size=20)
     plt_pv.show()
 
+
 class RandomGaussianSum(TemporalBasisFunction):
     r"""A single HRF composed of Gaussians with time-dependent random weights."""
 
@@ -405,16 +366,17 @@ class RandomGaussianSum(TemporalBasisFunction):
         spread = ((self.t_end - self.t_start) / 2.5).magnitude
         mu_float = mu.to("s").magnitude
         envelope = np.exp(-((mu_float - mid) ** 2) / spread**2)
-        stds = self.weight_std_min + (
-            self.weight_std_max - self.weight_std_min
-            ) * envelope
+        stds = (
+            self.weight_std_min + (self.weight_std_max - self.weight_std_min) * envelope
+        )
 
         weights = self.rng.normal(loc=self.weight_mean, scale=stds)  # <-- changed
 
         # Generate weighted Gaussians
-        gaussians = np.exp(
-            -((t_hrf[:, None] - mu[None, :]) ** 2) / self.t_std**2
-        ) * weights[None, :]
+        gaussians = (
+            np.exp(-((t_hrf[:, None] - mu[None, :]) ** 2) / self.t_std**2)
+            * weights[None, :]
+        )
 
         hrf = np.sum(gaussians, axis=1)
         window = tukey(len(t_hrf), alpha=0.1)
