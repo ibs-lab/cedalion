@@ -484,30 +484,30 @@ class ImageRecon:
         # calculate hash(c_meas) and (re)compute W if necessary
         # W_input_hash = hash(tuple(c_meas))
 
-        if (self._W is None): #or (W_input_hash != self._W_input_hash):
-            if c_meas is not None:
-                time_dim = self._get_time_dimension(c_meas)
-                if time_dim is not None:
-                    c_meas = c_meas.mean(time_dim)
-                else:
-                    c_meas = c_meas
-
-            if self.reg_params.alpha_spatial is None:
-                if self.sbf is not None:
-                    if self.recon_mode == "conc":
-                        D = get_stacked_sensitivity(self.sbf._H.sel(kernel=self.sbf._H.is_brain.values)).T
-                    else:
-                        D = self.sbf._H.sel(kernel=self.sbf._H.is_brain.values).transpose('kernel', 'channel', 'wavelength')
-                    self._W = self._get_W(D, c_meas)
-                else:
-                    # Need to store original Adot for this case
-                    if self.recon_mode == "conc":
-                        D = get_stacked_sensitivity(self.Adot.sel(vertex=self.Adot.is_brain.values)).T
-                    else:
-                        D = self.Adot.sel(vertex=self.Adot.is_brain.values).transpose('vertex', 'channel', 'wavelength')
-                    self._W = self._get_W(D, c_meas)
+        # if (self._W is None): #or (W_input_hash != self._W_input_hash):
+        if c_meas is not None:
+            time_dim = self._get_time_dimension(c_meas)
+            if time_dim is not None:
+                c_meas = c_meas.mean(time_dim)
             else:
-                self._W = self._get_W(self._D, c_meas)
+                c_meas = c_meas
+
+        if self.reg_params.alpha_spatial is None:
+            if self.sbf is not None:
+                if self.recon_mode == "conc":
+                    D = get_stacked_sensitivity(self.sbf._H.sel(kernel=self.sbf._H.is_brain.values)).T
+                else:
+                    D = self.sbf._H.sel(kernel=self.sbf._H.is_brain.values).transpose('kernel', 'channel', 'wavelength')
+                self._W = self._get_W(D, c_meas)
+            else:
+                # Need to store original Adot for this case
+                if self.recon_mode == "conc":
+                    D = get_stacked_sensitivity(self.Adot.sel(vertex=self.Adot.is_brain.values)).T
+                else:
+                    D = self.Adot.sel(vertex=self.Adot.is_brain.values).transpose('vertex', 'channel', 'wavelength')
+                self._W = self._get_W(D, c_meas)
+        else:
+            self._W = self._get_W(self._D, c_meas)
 
             # self._W_input_hash = W_input_hash
 
@@ -545,36 +545,36 @@ class ImageRecon:
         # calculate hash(c_meas) and (re)compute W if necessary
         # W_input_hash = hash(tuple(c_meas))
 
-        if (self._W is None): #or (W_input_hash != self._W_input_hash):
-            if c_meas is not None:
-                time_dim = self._get_time_dimension(c_meas)
-                if time_dim is not None:
-                    c_meas_tmp = c_meas.mean(time_dim)
-                else:
-                    c_meas_tmp = c_meas
-
-            if self.reg_params.alpha_spatial is None:
-                if self.sbf is not None:
-                    if self.recon_mode == "conc":
-                        D = get_stacked_sensitivity(self.sbf._H.sel(kernel=self.sbf._H.is_brain.values)).T
-                    else:
-                        D = self.sbf._H.sel(kernel=self.sbf._H.is_brain.values).transpose('kernel', 'channel', 'wavelength')
-                    self._W = self._get_W(D, c_meas_tmp)
-                else:
-                    # Need to store original Adot for this case
-                    if self.recon_mode == "conc":
-                        D = get_stacked_sensitivity(self.Adot.sel(vertex=self.Adot.is_brain.values)).T
-                    else:
-                        D = self.Adot.sel(vertex=self.Adot.is_brain.values).transpose('vertex', 'channel', 'wavelength')
-                    self._W = self._get_W(D, c_meas_tmp)
+        # if (self._W is None): #or (W_input_hash != self._W_input_hash):
+        if c_meas is not None:
+            time_dim = self._get_time_dimension(c_meas)
+            if time_dim is not None:
+                c_meas_tmp = c_meas.mean(time_dim)
             else:
-                self._W = self._get_W(self._D, c_meas_tmp)
+                c_meas_tmp = c_meas
+
+        if self.reg_params.alpha_spatial is None:
+            if self.sbf is not None:
+                if self.recon_mode == "conc":
+                    D = get_stacked_sensitivity(self.sbf._H.sel(kernel=self.sbf._H.is_brain.values)).T
+                else:
+                    D = self.sbf._H.sel(kernel=self.sbf._H.is_brain.values).transpose('kernel', 'channel', 'wavelength')
+                self._W = self._get_W(D, c_meas_tmp)
+            else:
+                # Need to store original Adot for this case
+                if self.recon_mode == "conc":
+                    D = get_stacked_sensitivity(self.Adot.sel(vertex=self.Adot.is_brain.values)).T
+                else:
+                    D = self.Adot.sel(vertex=self.Adot.is_brain.values).transpose('vertex', 'channel', 'wavelength')
+                self._W = self._get_W(D, c_meas_tmp)
+        else:
+            self._W = self._get_W(self._D, c_meas_tmp)
 
 
             # self._W_input_hash = W_input_hash
 
         if self.recon_mode == "conc":
-            c_meas = c_meas.stack(measurement=("wavelength", "channel")).sortby('channel')
+            c_meas = c_meas.stack(measurement=("wavelength", "channel")).sortby('wavelength')
             conc_img = self._get_image_noise_conc(c_meas)
             return conc_img
         
@@ -768,9 +768,9 @@ class ImageRecon:
   
         if c_meas is not None:
             
-            W = A.values @ np.linalg.inv(F  + lambda_meas * c_meas)
+            W = A.values @ np.linalg.inv(F.values  + lambda_meas * c_meas)
         else:
-            W = A.values @ np.linalg.inv(F  + lambda_meas * np.eye(A.shape[1]) )
+            W = A.values @ np.linalg.inv(F.values  + lambda_meas * np.eye(A.shape[1]) )
 
         W_xr = xr.DataArray(W, dims=("flat_vertex", "measurement"))
 

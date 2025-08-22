@@ -12,6 +12,7 @@ import scipy.stats
 
 from cedalion import xrutils
 
+
 def get_stacked_sensitivity(Adot):
         
     nchannel = Adot.shape[0]
