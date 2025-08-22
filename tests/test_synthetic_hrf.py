@@ -24,14 +24,14 @@ def test_build_spatial_activation(head_model):
 
     for seed in seeds:
         blob_small = syn.build_spatial_activation(
-            head_model,
+            head_model.brain,
             seed,
             spatial_scale=scale_small,
             intensity_scale=intensity_scale,
             hbr_scale=-0.4,
         )
         blob_big = syn.build_spatial_activation(
-            head_model,
+            head_model.brain,
             seed,
             spatial_scale=scale_big,
             intensity_scale=intensity_scale,
