@@ -1027,12 +1027,15 @@ class ImageRecon:
             dims = ('chromo', 'vertex', time_dim)
             coords = {
                 'chromo': ['HbO', 'HbR'],
-                time_dim: c_meas[time_dim]
+                time_dim: c_meas[time_dim],
+                'samples': (time_dim, np.arange(len(c_meas[time_dim]))),
+                'vertex': np.arange(X.shape[1])
             }
         else:
             dims = ('chromo', 'vertex')
-            coords = {'chromo': ['HbO', 'HbR']}
-        
+            coords = {'chromo': ['HbO', 'HbR'], 
+                      'vertex': np.arange(X.shape[1])}
+
         X = xr.DataArray(X, dims=dims, coords=coords)
         return self._add_spatial_coordinates(X)
     
@@ -1051,11 +1054,14 @@ class ImageRecon:
             dims = ('wavelength', 'vertex', time_dim)
             coords = {
                 'wavelength': c_meas.wavelength,
-                time_dim: c_meas[time_dim]
+                time_dim: c_meas[time_dim],
+                'samples': (time_dim, np.arange(len(c_meas[time_dim]))),
+                'vertex': np.arange(X.shape[1])
             }
         else:
             dims = ('wavelength', 'vertex')
-            coords = {'wavelength': c_meas.wavelength}
+            coords = {'wavelength': c_meas.wavelength, 
+                      'vertex': np.arange(X.shape[1])}
         
         noise_da = xr.DataArray(X, dims=dims, coords=coords)
         return self._add_spatial_coordinates(noise_da)
