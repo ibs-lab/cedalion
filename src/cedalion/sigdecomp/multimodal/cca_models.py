@@ -1,4 +1,15 @@
-"""Module for CCA-like models"""
+"""Module for CCA-like models for multimodal data decomposition.
+
+Includes:
+- ElasticNetCCA: CCA with L1 + L2 regularization
+- StructuredSparseCCA: CCA with L1 + graph-structure regularization
+- RidgeCCA: CCA with L2 regularization
+- SparseCCA: CCA with L1 regularization
+- CCA: Standard CCA
+- SparsePLS: PLS with L1 regularization
+- PLS: Standard PLS
+"""
+
 
 import numpy as np
 import xarray as xr
@@ -19,7 +30,6 @@ class MultimodalSourceDecomposition():
         max_iter (int): Maximum number of iterations for the algorithm.
         tol (float): Tolerance for convergence.
         scale (bool): Whether to scale the data during normalization to unit variance. Defaults to True.
-    
     """
 
     def __init__(self, 
@@ -390,7 +400,6 @@ class ElasticNetCCA(MultimodalSourceDecomposition):
 
 
 class StructuredSparseCCA(MultimodalSourceDecomposition):
-
     """Perform structured sparse Canonical Correlation Analysis (ssCCA) between two datasets X and Y.
          
     The ssCCA algorithm is based on :cite:t:`chen_structure-constrained_2013` and it assumes the underlying X and Y features 

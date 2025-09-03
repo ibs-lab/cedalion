@@ -1,4 +1,13 @@
-"""Module for temporally embedded CCA-like models. The temporally embedded technique is based on :cite:t:`biesmann_temporal_2010`"""
+"""Module for temporally embedded CCA-like models for multimodal data.
+
+This module implements classes for performing source decomposition on multimodal data using
+temporal embedding techniques. The latter is based on :cite:t:`biesmann_temporal_2010`
+
+Includes:
+- ElasticNetTCCA: Class for performing Elastic Net regularized temporally embedded CCA.
+- StructuredSparseTCCA: Class for performing structured sparse temporally embedded CCA.
+- tCCA: Class for performing standard temporally embedded CCA.
+"""
 
 import numpy as np
 import xarray as xr

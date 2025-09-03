@@ -1,5 +1,6 @@
-"""Simulate bimodal data as a toy model for concurrent EEG–fNIRS data
-following an approach inspired by Dähne et al., 2014.
+"""Simulate bimodal data as a toy model for concurrent EEG–fNIRS data.
+
+Follows an approach inspired by Dähne et al., 2014.
 
 Reference: https://doi.org/10.1016/j.neuroimage.2014.01.014
 """
@@ -545,24 +546,26 @@ class BimodalToyDataSimulation:
             sx_power_norm = standardize(self.sx_power[i])
             plt.plot(self.time_y, sx_power_norm, '-*', label='Sx Power (Normalized)')
 
-            # Calculate correlation between Sy and Sx_power
-            corr = np.corrcoef(self.sx_power[i], self.sy_t[i])[0, 1]
-            # Calculate correlation between Sy and envelope with time-shift
-            if self.args.Nde:
-                corr_shifted = np.corrcoef(
-                    self.sx_power[i, :-self.args.Nde], self.sy_t[i, self.args.Nde:]
-                )[0, 1]
-            else:
-                corr_shifted = corr
-
             if xlim is not None:
                 plt.xlim(xlim)
             if ylim is not None:
                 plt.ylim(ylim)
 
-            plt.title(
-                f'Source {i+1} | (Corr(Sy, Sx_power)= {corr:.5f}) | (Corr(Sy, Sx_power time-shifted) = {corr_shifted:.5f})'
-            )
+            # Calculate correlation between Sy and Sx_power
+            corr = np.corrcoef(self.sx_power[i], self.sy_t[i])[0, 1]
+            
+            # Calculate correlation between Sy and envelope with time-shift
+            if self.args.Nde:
+                corr_shifted = np.corrcoef(
+                    self.sx_power[i, :-self.args.Nde], self.sy_t[i, self.args.Nde:]
+                )[0, 1]
+
+                plt.title(
+                    f'Source {i+1} | (Corr(Sy, Sx_power)= {corr:.5f}) | (Corr(Sy, Sx_power time-shifted) = {corr_shifted:.5f})'
+                )
+            else:
+                plt.title(f'Source {i+1} | (Corr(Sy, Sx_power)= {corr:.5f})')
+            
             plt.legend()
             plt.grid()
             plt.show()
@@ -584,14 +587,17 @@ class BimodalToyDataSimulation:
             ax = [ax]
         # Background sources + noise
         for i in range(N):
-            ax[i].plot(self.time_x, self.x[i], label=f'X channel {i}')
-            ax[i].plot(self.time_y, self.y[i], label=f'Y channel {i}')
+            ax[i].plot(self.time_x, self.x[i], label='X')
+            ax[i].plot(self.time_y, self.y[i], label='Y')
+            ax[i].set_title(f'Channel {i+1}')
+            ax[i].set_xlabel('Time [s]')
             ax[i].grid()
             ax[i].legend()
             if xlim is not None:
                 ax[i].set_xlim(xlim)
             if ylim is not None:
                 ax[i].set_ylim(ylim)
+        plt.suptitle('Observed Channels', fontsize=16, fontweight='bold')
         plt.show()
 
     def plot_mixing_patterns(self, Ax=None, Ay=None, cmap='viridis', activity_size=200, title=None):
