@@ -1,6 +1,7 @@
 """Functions for generating synthetic hemodynamic response functions."""
 
 from __future__ import annotations
+
 import random
 
 import numpy as np
@@ -8,263 +9,126 @@ import pandas as pd
 import pyvista as pv
 import scipy.stats as stats
 import xarray as xr
-from scipy import signal
 
 import cedalion.dataclasses as cdc
 import cedalion.dataclasses.geometry as cdg
 import cedalion.imagereco.forward_model as cfm
+import cedalion.models.glm as glm
 import cedalion.plots
 import cedalion.typing as cdt
-import cedalion.xrutils as xrutils
-from cedalion import Quantity, units
+from cedalion import units
+from cedalion.models.glm.basis_functions import TemporalBasisFunction, _to_unit
+from scipy.signal.windows import tukey
+from cedalion.sigproc.frequency import sampling_rate
 
 
-def generate_hrf(
-    time_axis: xr.DataArray,
-    stim_dur: Quantity = 10 * units.seconds,
-    params_basis: list = [0.1000, 3.0000, 1.8000, 3.0000],
-    scale: list = [10 * units.micromolar, -4 * units.micromolar],
-):
-    """Generates HRF basis functions for different chromophores.
-
-    This function calculates the HRF basis functions using gamma distributions. It
-    supports adjusting the response scale for HbO and HbR using parameters provided in
-    `params_basis` and `scale`.
-
-    Args:
-        time_axis: The time axis for the resulting HRF.
-        stim_dur: Duration of the stimulus.
-        params_basis (list of float): Parameters for tau and sigma for the modified
-            gamma function for each chromophore. Expected to be a flat list where pairs
-            represent [tau, sigma] for each chromophore.
-        scale (list of float): Scaling factors for each chromophore, typically
-            [HbO scale, HbR scale].
-
-    Returns:
-        xarray.DataArray: A DataArray object with dimensions "time" and "chromo",
-            containing the HRF basis functions for each chromophore.
-
-    Initial Contributors:
-        - Laura Carlton | lcarlton@bu.edu | 2024
-        - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-    """
-
-    time_axis = time_axis - time_axis[0]
-    stim_dur = (stim_dur / units.seconds).to_base_units().magnitude
-    scale[0] = (scale[0] / units.molar).to_base_units().magnitude
-    scale[1] = (scale[1] / units.molar).to_base_units().magnitude
-
-    n_conc = len(params_basis) // 2
-    if scale is None:
-        scale = np.ones(n_conc).tolist()
-    if n_conc != len(scale):
-        raise ValueError(
-            f"Length of `params_basis` ({len(params_basis)}) must be twice the length"
-            f" of `scale` ({len(scale)})"
-        )
-    if stim_dur > time_axis[-1]:
-        raise Warning(
-            "Stimulus duration is longer than the time axis. The stimulus will be "
-            "cut off."
-        )
-
-    tHRF_gamma = time_axis[time_axis <= stim_dur]
-    boxcar = xr.DataArray(
-        np.zeros(len(tHRF_gamma)), dims=["time"], coords={"time": tHRF_gamma}
-    )
-    boxcar.loc[boxcar["time"] <= stim_dur] = 1
-    boxcar.loc[boxcar["time"] < 0] = 0
-
-    stimulus = np.zeros((len(time_axis), n_conc))
-
-    for iConc in range(n_conc):
-        tau = params_basis[iConc * 2]
-        sigma = params_basis[iConc * 2 + 1]
-
-        gamma = (np.exp(1) * (tHRF_gamma - tau) ** 2 / sigma**2) * np.exp(
-            -((tHRF_gamma - tau) ** 2) / sigma**2
-        )
-        gamma = xr.DataArray(gamma, dims=["time"], coords={"time": tHRF_gamma})
-        gamma = gamma.where(gamma["time"] >= 0, 0)
-
-        if tHRF_gamma[0] < tau:
-            gamma = gamma.where(gamma["time"] >= tau, 0)
-
-        convolved = signal.convolve(boxcar, gamma, mode="full")
-
-        convolved = convolved[: len(time_axis)]
-        normalized = convolved / np.max(np.abs(convolved)) * scale[iConc]
-        stimulus[: convolved.size, iConc] = normalized[: len(time_axis)]
-
-    tbasis = xr.DataArray(
-        stimulus,
-        dims=["time", "chromo"],
-        coords={"time": time_axis, "chromo": ["HbO", "HbR"][:n_conc]},
-    ).T
-    tbasis = tbasis.assign_coords(samples=("time", np.arange(len(time_axis))))
-    tbasis.pint.units = cedalion.units.molar
-
-    return tbasis
-
-
-def build_blob(
+def build_spatial_activation(
     head_model: cfm.TwoSurfaceHeadModel,
-    landmark: str,
-    scale: Quantity = 1 * units.cm,
+    seed_vertex: int,
+    spatial_scale: cdt.QLength = 1 * units.cm,
+    intensity_scale: cdt.QConcentration = 1 * units.micromolar,
+    hbr_scale: float = None,
     m: float = 10.0,
 ):
-    """Generates a blob of activity at a seed landmark.
+    """Generates a spatial activation at a seed vertex.
 
     This function generates a blob of activity on the brain surface.
-    The blob is centered at the vertex closest to the seed landmark.
+    The blob is centered at the seed vertex.
+    Geodesic distances, and therefore also the blob, can be distorded
+    due to mesh decimation or unsuitable m value.
 
     Args:
         head_model (cfm.TwoSurfaceHeadModel): Head model with brain and scalp surfaces.
-        landmark (str): Name of the seed landmark.
-        scale (Quantity): Scale of the blob.
+        seed_vertex (int): Index of the seed vertex.
+        spatial_scale (Quantity): Scale of the spatial size.
+        intensity_scale (Quantity): Scaling factor for the intensity of the blob.
+        hbr_scale (float): Scaling factor for HbR relative to HbO. If None, the blob
+            will have no concentration dimension and only represent HbO.
         m (float): Geodesic distance parameter. Larger values of m will smooth &
             regularize the distance computation. Smaller values of m will roughen and
             will usually increase error in the distance computation.
 
     Returns:
-        xr.DataArray: Blob image with activation values for each vertex.
+        xr.DataArray: Spatial image with activation values for each vertex.
 
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
 
     """
 
-    scale = (scale / head_model.brain.units).to_base_units().magnitude
+    spatial_scale_unit = (
+        (spatial_scale / head_model.brain.units).to_base_units().magnitude
+    )
 
-    seed_lm = head_model.landmarks.sel(label=landmark).pint.dequantify()
-    seed_vertex = head_model.brain.mesh.kdtree.query(seed_lm)[1]
+    seed_pos = head_model.brain.mesh.vertices[seed_vertex]
 
-    cortex_surface = cdg.PycortexSurface.from_trimeshsurface(head_model.brain)
+    # if the mesh is not contiguous:
+    # only calculate distances on the submesh on which the seed vertex lies
 
-    distances_from_seed = cortex_surface.geodesic_distance([seed_vertex], m=m)
-    # distances can be distord due to mesh decimation or unsuitable m value
+    # get a list of the distinct submeshes
+    mesh_split = head_model.brain.mesh.split(only_watertight=False)
 
-    norm_pdf = stats.norm(scale=scale).pdf
+    # check in which submesh the seed vertex is
+    for i, submesh in enumerate(mesh_split):
+        if seed_pos in submesh.vertices:
+            break
+
+    # get index of the seed vertex in the submesh
+    seed_vertex = np.where((submesh.vertices == seed_pos).all(axis=1))[0]
+
+    # create a pycortex surface of the submesh to calculate geodesic distances
+    cortex_surface = cdg.PycortexSurface(
+        cdg.SimpleMesh(submesh.vertices, submesh.faces),
+        crs=head_model.brain.crs,
+        units=head_model.brain.units,
+    )
+    distances_on_submesh = cortex_surface.geodesic_distance([seed_vertex], m=m)
+
+    # find indices of submesh in original mesh
+    # convert meshes into set of tuples for fast lookup
+    submesh_set = set(map(tuple, submesh.vertices))
+    submesh_indices = [
+        i
+        for i, coord in enumerate(map(tuple, head_model.brain.mesh.vertices))
+        if coord in submesh_set
+    ]
+
+    # set distances on vertices outside of the submesh to inf
+    distances_from_seed = np.ones(head_model.brain.mesh.vertices.shape[0]) * np.inf
+    distances_from_seed[submesh_indices] = distances_on_submesh
+
+    # plug the distances in a normal distribution
+    norm_pdf = stats.norm(scale=spatial_scale_unit).pdf
 
     blob_img = norm_pdf(distances_from_seed)
     blob_img = blob_img / np.max(blob_img)
     blob_img = xr.DataArray(blob_img, dims=["vertex"])
 
+    if hbr_scale is not None:
+        blob_img = np.stack([blob_img, blob_img * hbr_scale], axis=1)
+        blob_img = xr.DataArray(
+            blob_img,
+            dims=["vertex", "chromo"],
+            coords={"chromo": ["HbO", "HbR"]},
+        )
+
+    blob_img = blob_img * intensity_scale
+
+    blob_img = blob_img.pint.to(units.molar)
+
     return blob_img
 
 
-def hrfs_from_image_reco(
-    blob: xr.DataArray,
-    hrf_model: xr.DataArray,
-    Adot: xr.DataArray,
-):
-    """Maps an activation blob on the brain to HRFs in channel space.
-
-    Args:
-        blob (xr.DataArray): Activation values for each vertex.
-        hrf_model (xr.DataArray): HRF model for HbO and HbR.
-        Adot (xr.DataArray): Sensitivity matrix for the forward model.
-
-    Returns:
-        cdt.NDTimeseries: HRFs in channel space.
-
-    Initial Contributors:
-        - Laura Carlton | lcarlton@bu.edu | 2024
-        - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-
-    """
-
-    hrf_model = hrf_model.pint.to(units.molar)
-    hrf_model = hrf_model.pint.dequantify()
-
-    n_channels = Adot.channel.size
-    n_v_brain = Adot.sel(vertex=Adot.is_brain).vertex.size
-
-    Adot_stacked = cfm.ForwardModel.compute_stacked_sensitivity(Adot)
-    # Adot should have units
-    Adot_is_brain_stack = xr.concat([Adot.is_brain, Adot.is_brain], dim="vertex")
-    Adot_is_brain_stack = Adot_is_brain_stack.rename({"vertex": "flat_vertex"})
-    Adot_brain_stacked = Adot_stacked.sel(flat_vertex=Adot_is_brain_stack)
-
-    HRF_image = add_hrf_to_vertices(hrf_model, n_v_brain, scale=blob)
-    HRF_chan = Adot_brain_stacked @ HRF_image
-
-    HRF_chan = np.stack([HRF_chan[:n_channels], HRF_chan[n_channels:]], axis=1)
-    HRF_chan = xr.DataArray(
-        HRF_chan,
-        coords=[Adot.channel, Adot.wavelength, hrf_model.time],
-        dims=["channel", "wavelength", "time"],
-    ).assign_coords(samples=("time", np.arange(len(hrf_model.time))))
-
-    return HRF_chan
-
-
-def add_hrf_to_vertices(
-    hrf_basis: xr.DataArray, num_vertices: int, scale: np.array = None
-):
-    """Adds hemodynamic response functions (HRF) for HbO and HbR to specified vertices.
-
-    This function applies temporal HRF profiles to vertices, optionally scaling the
-    response by a provided amplitude scale. It generates separate images for HbO and HbR
-    and then combines them.
-
-    Args:
-        hrf_basis (xarray.DataArray): Dataset containing HRF time series for
-            HbO and HbR.
-        num_vertices (int): Total number of vertices in the image space.
-        scale (np.array, optional): Array of scale factors of shape (num_vertices) to
-            scale the amplitude of HRFs.
-
-    Returns:
-        xr.DataArray: Combined image of HbO and HbR responses across all vertices for
-            all time points.
-
-    Initial Contributors:
-        - Laura Carlton | lcarlton@bu.edu | 2024
-        - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-
-    """
-
-    unit = hrf_basis.pint.units
-    num_time_points = len(hrf_basis.time)
-    hbo = hrf_basis.sel({"chromo": "HbO"})
-    hbr = hrf_basis.sel({"chromo": "HbR"})
-    hbo_real_image = (
-        hbo.pint.dequantify().values * np.ones([num_vertices, num_time_points])
-    ).T
-    hbr_real_image = (
-        hbr.pint.dequantify().values * np.ones([num_vertices, num_time_points])
-    ).T
-
-    if scale is not None:
-        scale = scale.pint.dequantify()
-        scale = scale.values
-        scale = scale / np.max(scale)
-        hbo_real_image *= scale
-        hbr_real_image *= scale
-
-    hrf_real_image = np.hstack([hbo_real_image, hbr_real_image])
-
-    hrf_real_image = xr.DataArray(
-        hrf_real_image,
-        dims=["time", "flat_vertex"],
-        coords={
-            "time": hrf_basis.time,
-            "chromo": ("flat_vertex", ["HbO"] * num_vertices + ["HbR"] * num_vertices),
-        },
-    )
-    hrf_real_image.set_xindex("chromo")
-    hrf_real_image.pint.units = unit
-
-    return hrf_real_image
-
-
 def build_stim_df(
-    num_stims: int,
-    stim_dur: Quantity = 10 * units.seconds,
-    trial_types: list = ["Stim"],
-    min_interval: Quantity = 5 * units.seconds,
-    max_interval: Quantity = 10 * units.seconds,
+    max_time: cdt.QTime,
+    max_num_stims: int | None = None,
+    trial_types: list[str] = ["Stim"],
+    min_stim_dur: cdt.QTime = 10 * units.seconds,
+    max_stim_dur: cdt.QTime = 10 * units.seconds,
+    min_interval: cdt.QTime = 10 * units.seconds,
+    max_interval: cdt.QTime = 30 * units.seconds,
+    min_stim_value: float = 1.0,
+    max_stim_value: float = 1.0,
     order: str = "alternating",
 ):
     """Generates a DataFrame for stimulus metadata based on provided parameters.
@@ -273,11 +137,15 @@ def build_stim_df(
     interval (ISI) is chosen randomly between the minimum and maximum allowed intervals.
 
     Args:
-        num_stims (int): Number of stimuli to be added for each trial type.
-        stim_dur (int): Duration of the stimulus in seconds.
-        trial_types (list): List of trial types for the stimuli.
-        min_interval (int): Minimum inter-stimulus interval in seconds.
-        max_interval (int): Maximum inter-stimulus interval in seconds.
+        max_time (Quantity): Maximum total duration for the stimuli.
+        max_num_stims (int): Maximum number of stimuli to be added for each trial type.
+        trial_types (list): List of different trial types.
+        min_stim_dur (Quantity): Minimum duration of the stimulus.
+        max_stim_dur (Quantity): Maximum duration of the stimulus.
+        min_interval (Quantity): Minimum inter-stimulus interval.
+        max_interval (Quantity): Maximum inter-stimulus interval.
+        min_stim_value (float): Minimum amplitude-value of the stimulus.
+        max_stim_value (float): Maximum amplitude-value of the stimulus.
         order (str): Order of adding Stims; 'alternating' or 'random'.
 
     Returns:
@@ -286,16 +154,28 @@ def build_stim_df(
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-
     """
 
-    stim_dur = (stim_dur / units.seconds).to_base_units().magnitude
-    min_interval = (min_interval / units.seconds).to_base_units().magnitude
-    max_interval = (max_interval / units.seconds).to_base_units().magnitude
+    # Calculate a default number of stimuli if not provided, based on max_time
+    if max_num_stims is None:
+        max_num_stims = int(
+            (max_time / ((min_stim_dur + min_interval) * len(trial_types)))
+            .to_base_units()
+            .magnitude
+        )
 
-    current_time = -stim_dur
+    # Convert all time-related quantities to seconds
+    min_stim_dur = min_stim_dur.to("s").magnitude
+    max_stim_dur = max_stim_dur.to("s").magnitude
+    min_interval = min_interval.to("s").magnitude
+    max_interval = max_interval.to("s").magnitude
+    max_time = max_time.to("s").magnitude
+
+    current_time = round(random.uniform(min_interval, max_interval), 2)
     onset_times = []
     onset_trial_types = []
+    stim_durations = []
+    stim_values = []
 
     trial_types = [str(tt) for tt in trial_types]
     order = order.lower()
@@ -306,31 +186,50 @@ def build_stim_df(
         )
 
     if order == "alternating":
-        for stim in range(num_stims):
+        stim_index = 0
+        while stim_index < max_num_stims:
             for trial_type in trial_types:
+                stim_dur = round(random.uniform(min_stim_dur, max_stim_dur), 2)
                 interval = round(random.uniform(min_interval, max_interval), 2)
-                current_time += stim_dur + interval
+                next_time = current_time + stim_dur + interval
+                if next_time > max_time:
+                    # break the outer loop
+                    stim_index = max_num_stims
+                    break
+                stim_durations.append(stim_dur)
                 onset_times.append(current_time)
                 onset_trial_types.append(trial_type)
+                stim_val = round(random.uniform(min_stim_value, max_stim_value), 2)
+                stim_values.append(stim_val)
+                current_time = next_time
+            stim_index += 1
 
     elif order == "random":
-        stims_left = {trial_type: num_stims for trial_type in trial_types}
+        stims_left = {trial_type: max_num_stims for trial_type in trial_types}
         while any(stims_left.values()):
             trial_type = random.choices(
                 list(trial_types),
                 weights=[stims_left[tt] for tt in trial_types],
             )[0]
-            interval = round(random.uniform(min_interval, max_interval), 1)
-            current_time += stim_dur + interval
+            stim_dur = round(random.uniform(min_stim_dur, max_stim_dur), 2)
+            interval = round(random.uniform(min_interval, max_interval), 2)
+            next_time = current_time + stim_dur + interval
+            if next_time > max_time:
+                break
+            stim_durations.append(stim_dur)
             onset_times.append(current_time)
             onset_trial_types.append(trial_type)
+            stim_val = round(random.uniform(min_stim_value, max_stim_value), 2)
+            stim_values.append(stim_val)
+            current_time = next_time
             stims_left[trial_type] -= 1
 
+    # Create the DataFrame with onset, duration, and trial type info
     stim_df = pd.DataFrame(
         {
             "onset": onset_times,
-            "duration": [stim_dur] * len(onset_times),
-            "value": [1] * len(onset_times),
+            "duration": stim_durations,
+            "value": stim_values,
             "trial_type": onset_trial_types,
         }
     )
@@ -339,110 +238,44 @@ def build_stim_df(
 
 
 @cdc.validate_schemas
-def add_hrf_to_od(od: cdt.NDTimeSeries, hrfs: cdt.NDTimeSeries, stim_df: pd.DataFrame):
-    """Adds Hemodynamic Response Functions (HRFs) to optical density (OD) data.
-
-    The timing of the HRFs is based on the provided stimulus dataframe (stim_df).
-
-    Args:
-        od (cdt.NDTimeSeries): OD timeseries data with dimensions
-            ["channel", "wavelength", "time"].
-        hrfs (cdt.NDTimeSeries): HRFs in channel space with dimensions
-            ["channel", "wavelength", "time"] + maybe ["trial_type"].
-        stim_df (pd.DataFrame): DataFrame containing stimulus metadata.
-
-    Returns:
-        cdt.NDTimeSeries: OD data with HRFs added based on the stimulus dataframe.
-
-    Initial Contributors:
-        - Laura Carlton | lcarlton@bu.edu | 2024
-        - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-    """
-
-    if "trial_type" not in hrfs.dims:
-        hrfs = hrfs.expand_dims("trial_type").assign_coords(trial_type=["Stim"])
-
-    od = od.transpose("channel", "wavelength", "time")
-    hrfs = hrfs.transpose("channel", "wavelength", "time", "trial_type")
-
-    units_od = od.pint.units
-
-    hrfs = hrfs.pint.dequantify()
-    od_w_hrf = od.pint.dequantify().copy()
-
-    n_tpts_hrf = len(hrfs.time)
-    n_tpts_data = len(od.time)
-    time_axis = od.time
-
-    for _, stim_info in stim_df.iterrows():
-        current_time = stim_info["onset"]
-        trial_type = stim_info["trial_type"]
-
-        onset_idx = (np.abs(time_axis - current_time)).argmin("time")
-
-        # Stop if the stimulus goes past the data length
-        if onset_idx + n_tpts_hrf > n_tpts_data:
-            print(
-                f"Stimulus goes past data length. Onset time: {current_time}. "
-                "Stopping loop..."
-            )
-            break
-
-        # Add the HRF at this onset index
-        od_w_hrf[:, :, int(onset_idx) : int(onset_idx + n_tpts_hrf)] += hrfs.sel(
-            {"trial_type": trial_type}
-        ).values
-
-    return od_w_hrf.pint.quantify(units_od)
-
-
-@cdc.validate_schemas
-def hrf_to_long_channels(
-    hrf_model: xr.DataArray,
-    y: cdt.NDTimeSeries,
-    geo3d: xr.DataArray,
-    ss_tresh: Quantity = 1.5 * units.cm,
+def build_synthetic_hrf_timeseries(
+    ts: cdt.NDTimeSeries,
+    stim_df: pd.DataFrame,
+    basis_fct: TemporalBasisFunction,
+    spatial_pattern: xr.DataArray,
 ):
-    """Add HRFs to optical density (OD) data in channel space.
-
-    Broadcasts the HRF model to long channels based on the source-detector distances.
-    Short channel hrfs are filled with zeros.
+    """Builds a synthetic HRF timeseries based on the provided data.
 
     Args:
-        hrf_model (xr.DataArray): HRF model with dimensions ["time", "wavelength"].
-        y (cdt.NDTimeSeries): Raw amp / OD / Chromo timeseries data with dimensions
-            ["channel", "time"].
-        geo3d (xr.DataArray): 3D coordinates of sources and detectors.
-        ss_tresh (Quantity): Threshold for short/long channels.
+        ts (cdt.NDTimeSeries): Timeseries data.
+        stim_df (pd.DataFrame): DataFrame containing stimulus metadata.
+        basis_fct (TemporalBasisFunction): Temporal basis function defining the HRF.
+        spatial_pattern (xr.DataArray): Spatial activation pattern (intensity scaling
+                                        for each vertex/channel and trial type).
 
     Returns:
-        xr.DataArray: HRFs in channel space with dimensions
-            ["channel", "time", "wavelength"].
+        cdt.NDTimeSeries: Synthetic HRF timeseries.
 
     Initial Contributors:
         - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2024
-
     """
 
-    # Calculate source-detector distances for each channel
-    dists = (
-        xrutils.norm(geo3d.loc[y.source] - geo3d.loc[y.detector], dim="pos")
-        .pint.to("mm")
-        .round(2)
+    dms = glm.design_matrix.hrf_regressors(ts, stim_df, basis_fct)
+    hrf_regs = dms.common
+    hrf_regs *= stim_df.value.max()
+
+    # remove HRF prefix from regressor names
+    hrf_regs = hrf_regs.assign_coords(
+        regressor=[
+            regressor.removeprefix("HRF ") for regressor in hrf_regs.regressor.values
+        ]
     )
+    hrf_regs = hrf_regs.rename({"regressor": "trial_type"})
 
-    # Identify long channels
-    long_channels = dists.channel[dists > ss_tresh]
+    # create [time x channel/voxel x wavelength/chromo] array for each trial type
+    result = spatial_pattern * hrf_regs
 
-    hrf_long_chans = xr.DataArray(
-        np.zeros((y.channel.size, hrf_model.time.size, hrf_model.wavelength.size)),
-        coords=[y.channel, hrf_model.time, hrf_model.wavelength],
-        dims=["channel", "time", "wavelength"],
-    ).pint.quantify(hrf_model.pint.units)
-
-    hrf_long_chans.loc[long_channels] = hrf_model
-
-    return hrf_long_chans
+    return result
 
 
 def get_colors(
@@ -472,8 +305,9 @@ def get_colors(
     # map on a logarithmic scale to the range [0, 255]
     if log_scale:
         activations = np.log(activations + 1)
-        activations = (activations / max_scale) * 255
-    colors = np.zeros((vertex_colors.shape))
+        activations = (activations / np.log(max_scale)) * 255
+    activations = activations.astype(np.uint8)
+    colors = np.zeros((vertex_colors.shape), dtype=np.uint8)
     colors[:, 3] = 255
     colors[:, 0] = 255
     activations = 255 - activations
@@ -484,19 +318,19 @@ def get_colors(
     return colors
 
 
-def plot_blob(
-    blob_img: xr.DataArray,
-    brain,
+def plot_spatial_activation(
+    spatial_img: xr.DataArray,
+    brain: cdg.TrimeshSurface,
     seed: int = None,
     title: str = "",
     log_scale: bool = False,
 ):
-    """Plots a blob of activity on the brain.
+    """Plots a spatial activation pattern on the brain surface.
 
     Args:
-        blob_img (xr.DataArray): Activation values for each vertex.
+        spatial_img (xr.DataArray): Activation values for each vertex.
         brain (TrimeshSurface): Brain Surface with brain mesh.
-        seed (int): Seed vertex for the blob.
+        seed (int): Seed vertex for the activation pattern.
         title (str): Title for the plot.
         log_scale (bool): Whether to map activations on a logarithmic scale.
 
@@ -509,10 +343,12 @@ def plot_blob(
     """
 
     if seed is None:
-        seed = blob_img.argmax()
+        seed = spatial_img.argmax()
     vertices = brain.mesh.vertices
     center_brain = np.mean(vertices, axis=0)
-    colors_blob = get_colors(blob_img, brain.mesh.visual.vertex_colors)
+    colors_blob = get_colors(
+        spatial_img, brain.mesh.visual.vertex_colors, log_scale=log_scale
+    )
     brain.mesh.visual.vertex_colors = colors_blob
     plt_pv = pv.Plotter()
     cedalion.plots.plot_surface(plt_pv, brain)
@@ -521,3 +357,76 @@ def plot_blob(
     plt_pv.camera.up = [0, 0, 1]
     plt_pv.add_text(title, position="upper_edge", font_size=20)
     plt_pv.show()
+
+class RandomGaussianSum(TemporalBasisFunction):
+    r"""A single HRF composed of Gaussians with time-dependent random weights."""
+
+    def __init__(
+        self,
+        t_start: cdt.QTime,
+        t_end: cdt.QTime,
+        t_delta: cdt.QTime,
+        t_std: cdt.QTime,
+        weight_std_max: float = 0.5,
+        weight_std_min: float = 0.05,
+        weight_mean: float = 0.7,
+        seed: int | None = None,
+    ):
+        super().__init__(convolve_over_duration=False)
+        self.t_start = _to_unit(t_start, units.s)
+        self.t_end = _to_unit(t_end, units.s)
+        self.t_delta = _to_unit(t_delta, units.s)
+        self.t_std = _to_unit(t_std, units.s)
+        self.weight_std_max = weight_std_max
+        self.weight_std_min = weight_std_min
+        self.weight_mean = weight_mean
+        self.rng = np.random.default_rng(seed)  # <-- added
+
+    def __call__(self, ts: cdt.NDTimeSeries) -> xr.DataArray:
+        fs = sampling_rate(ts).to(units.Hz)
+
+        # Add margin for smoother edges
+        self.t_start += 2 * self.t_std
+        self.t_end -= 2 * self.t_std
+
+        # Extend by 3*t_std to capture the full Gaussian
+        smpl_start = int(np.floor((self.t_start - 3 * self.t_std) * fs))
+        smpl_end = int(np.ceil((self.t_end + 3 * self.t_std) * fs)) + 1
+        t_hrf = np.arange(smpl_start, smpl_end) / fs
+        t_hrf = t_hrf.to("s")
+
+        duration = self.t_end - self.t_start
+        n_gauss = max(1, int(np.floor(duration / self.t_delta)))
+
+        mu = self.t_start + np.arange(n_gauss) * self.t_delta
+
+        # Gaussian envelope for std of weight distribution
+        mid = ((self.t_start + self.t_end) / 2.0).magnitude
+        spread = ((self.t_end - self.t_start) / 2.5).magnitude
+        mu_float = mu.to("s").magnitude
+        envelope = np.exp(-((mu_float - mid) ** 2) / spread**2)
+        stds = self.weight_std_min + (
+            self.weight_std_max - self.weight_std_min
+            ) * envelope
+
+        weights = self.rng.normal(loc=self.weight_mean, scale=stds)  # <-- changed
+
+        # Generate weighted Gaussians
+        gaussians = np.exp(
+            -((t_hrf[:, None] - mu[None, :]) ** 2) / self.t_std**2
+        ) * weights[None, :]
+
+        hrf = np.sum(gaussians, axis=1)
+        window = tukey(len(t_hrf), alpha=0.1)
+        hrf *= window
+        hrf /= np.max(hrf)  # normalize to peak 1
+        hrf = hrf.to_base_units().magnitude
+
+        return xr.DataArray(
+            hrf[:, None],
+            dims=["time", "component"],
+            coords={
+                "time": xr.DataArray(t_hrf, dims=["time"]).pint.dequantify(),
+                "component": ["random_gaussian_sum"],
+            },
+        )

@@ -72,53 +72,33 @@ class DataTypeLabel(StrEnum):
     HRF_HBT = "HRF HbT"  # Hemodynamic response function for total hemoglobin conc.
     HRF_BFI = "HRF BFi"  # Hemodynamic response function for blood flow index
 
-    # fields introduced by other vendors
+    # labels used by other vendors
     RAW_SATORI = "RAW"  # Satori CW_AMPLITUDE
     RAW_NIRX = "raw-DC"  # Satori CW_AMPLITUDE
+    MOMENTS_KERNEL = "Time Domain - Moments - Amplitude"
 
 
-# The snirf standard allows to put different data types into the same
-# data element. At least Satori does this to store processing results.
-# Define groups of data types which we would like to bundle in DataArrays.
-
-DATA_TYPE_GROUPINGS = {
-    (DataType.CW_AMPLITUDE, None): "unprocessed raw",
-    (DataType.CW_AMPLITUDE, DataTypeLabel.RAW_NIRX): "unprocessed raw",
-    # FIXME assume that there are not processed raw channels from different
-    # vendors in the same data element
-    (DataType.PROCESSED, DataTypeLabel.RAW_SATORI): "processed raw",
-    (DataType.PROCESSED, DataTypeLabel.RAW_NIRX): "processed raw",
-    (DataType.PROCESSED, DataTypeLabel.DOD): "processed dOD",
-    (DataType.PROCESSED, DataTypeLabel.HBO): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HBR): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HBT): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.H2O): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.LIPID): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.DMEAN): "processed central moments",
-    (DataType.PROCESSED, DataTypeLabel.DVAR): "processed central moments",
-    (DataType.PROCESSED, DataTypeLabel.DSKEW): "processed central moments",
-    (DataType.PROCESSED, DataTypeLabel.BFI): "processed blood flow index",
-    (DataType.PROCESSED, DataTypeLabel.HRF_DOD): "processed HRF dOD",
-    (DataType.PROCESSED, DataTypeLabel.HRF_DMEAN): "processed HRF central moments",
-    (DataType.PROCESSED, DataTypeLabel.HRF_DVAR): "processed HRF central moments",
-    (DataType.PROCESSED, DataTypeLabel.HRF_DSKEW): "processed HRF central moments",
-    (DataType.PROCESSED, DataTypeLabel.HRF_HBO): "processed HRF concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HRF_HBR): "processed HRF concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HRF_HBT): "processed HRF concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HRF_BFI): "processed HRF blood flow index",
-    (DataType.PROCESSED, DataTypeLabel.MUA): "processed absorption coefficient",
-    (DataType.PROCESSED, DataTypeLabel.MUSP): "processed scattering coefficient",
-}
+# This dictionary defines the canonical names used as keys in the recording container
+# for different data types. The keys in this dictionary are data_type_group labels
+# which are defined in assign_data_type_group.
 
 CANONICAL_NAMES = {
     "unprocessed raw": "amp",
     "processed raw": "amp",
     "processed dOD": "od",
     "processed concentrations": "conc",
-    "processed central moments": "moments",
+    "unprocessed 0th central moment": "amp",
+    "unprocessed 1st central moment": "mean",
+    "unprocessed 2nd central moment": "var",
+    "unprocessed 3nd central moment": "skew",
+    "processed 1st central moment": "dmean",
+    "processed 2nd central moment": "dvar",
+    "processed 3nd central moment": "dskew",
     "processed blood flow index": "bfi",
     "processed HRF dOD": "hrf_od",
-    "processed HRF central moments": "hrf_moments",
+    "processed HRF 1st central moment": "hrf_dmean",
+    "processed HRF 2nd central moment": "hrf_dvar",
+    "processed HRF 3rd central moment": "hrf_dskew",
     "processed HRF concentrations": "hrf_conc",
     "processed HRF blood flow index": "hrf_bfi",
     "processed absorption coefficient": "mua",
@@ -126,26 +106,122 @@ CANONICAL_NAMES = {
 }
 
 
-def parse_data_type(value):
+def assign_data_type_group(
+    data_type: DataType,
+    data_type_label: DataTypeLabel,
+    data_type_index: int,
+    nirs_element : NirsElement
+) -> str:
+    """Define groupings of data_type, data_type_label and data_type_index.
+
+    The snirf standard allows to put different data types into the same
+    data element. Satori does this to store processing results. Kernel stores different
+    moments in the same data element. When reading such data elements, their
+    content must be grouped by data type and the groups will be individually packaged
+    in DataArrays.
+
+    To this end, combinations of data_type, data_type_label and data_type_index are
+    mapped to a data_type_group string.
+    """
+
+    match (data_type, data_type_label):
+        case (DataType.CW_AMPLITUDE, None):
+            return "unprocessed raw"
+        case (DataType.CW_AMPLITUDE, DataTypeLabel.RAW_NIRX):
+            return "unprocessed raw"
+
+        case (DataType.TDM_AMPLITUDE, DataTypeLabel.MOMENTS_KERNEL):
+            moment = int(nirs_element.probe.momentOrders[data_type_index - 1])
+            moment_name = ("0th", "1st", "2nd", "3rd")[moment]
+            return f"unprocessed {moment_name} central moment"
+
+        case (DataType.PROCESSED, DataTypeLabel.RAW_SATORI):
+            return "processed raw"
+        case (DataType.PROCESSED, DataTypeLabel.RAW_NIRX):
+            return "processed raw"
+
+        case (DataType.PROCESSED, DataTypeLabel.DOD):
+            return "processed dOD"
+
+        case (DataType.PROCESSED, DataTypeLabel.HBO):
+            return "processed concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.HBR):
+            return "processed concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.HBT):
+            return "processed concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.H2O):
+            return "processed concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.LIPID):
+            return "processed concentrations"
+
+        case (DataType.PROCESSED, DataTypeLabel.DMEAN):
+            return "processed 1st central moment"
+        case (DataType.PROCESSED, DataTypeLabel.DVAR):
+            return "processed 2nd central moment"
+        case (DataType.PROCESSED, DataTypeLabel.DSKEW):
+            return "processed 3rd central moment"
+
+        case (DataType.PROCESSED, DataTypeLabel.BFI):
+            return "processed blood flow index"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_DOD):
+            return "processed HRF dOD"
+
+        case (DataType.PROCESSED, DataTypeLabel.HRF_DMEAN):
+            return "processed HRF 1st central moment"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_DVAR):
+            return "processed HRF 2nd central moment"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_DSKEW):
+            return "processed HRF 3rd central moment"
+
+        case (DataType.PROCESSED, DataTypeLabel.HRF_HBO):
+            return "processed HRF concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_HBR):
+            return "processed HRF concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_HBT):
+            return "processed HRF concentrations"
+
+        case (DataType.PROCESSED, DataTypeLabel.HRF_BFI):
+            return "processed HRF blood flow index"
+
+        case (DataType.PROCESSED, DataTypeLabel.MUA):
+            return "processed absorption coefficient"
+        case (DataType.PROCESSED, DataTypeLabel.MUSP):
+            return "processed scattering coefficient"
+
+        case _:
+            raise ValueError(
+                f"unexpected combination of {data_type=} "
+                f"{data_type_label=} and {data_type_index=}"
+            )
+
+
+def parse_data_type(value) -> DataType | None:
+    if value is None:
+        return None
+
+    try:
+        return DataType(value)
+    except ValueError:
+        log.warning(f"unsupported DataType '{value}'")
+        return None
+
+
+def parse_data_type_label(value) -> DataTypeLabel | None:
+    if value is None:
+        return None
+
+    try:
+        return DataTypeLabel(value)
+    except ValueError:
+        log.warning(f"unsupported DataTypeLabel '{value}'")
+        return None
+
+
+def parse_data_type_index(value) -> int | None:
     if value is None:
         return None
     else:
-        try:
-            return DataType(value)
-        except Exception:
-            log.warning(f"unsupported DataType '{value}'")
-            return None
-
-
-def parse_data_type_label(value):
-    if value is None:
-        return None
-    else:
-        try:
-            return DataTypeLabel(value)
-        except Exception:
-            log.warning(f"unsupported DataTypeLabel '{value}'")
-            return None
+        return int(value)
 
 
 def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
@@ -447,12 +523,17 @@ def read_aux(
         else:
             raise ValueError("aux.dataTimeSeries must have either 1 or 2 dimensions.")
 
+        attrs = {"units" : aux_units}
+
+        if time_offset is not None:
+            attrs["time_offset"] = time_offset
+
         x = xr.DataArray(
             aux_data,
             coords={"time": aux.time},
             dims=dims,
             name=name,
-            attrs={"units": aux_units, "time_offset": time_offset},
+            attrs=attrs,
         )
 
         result[name] = x.pint.quantify()
@@ -513,12 +594,16 @@ def read_data_elements(
     df_ml = denormalize_measurement_list(df_ml, nirs_element)
 
     # unique_data_types = df_ml[["dataType", "dataTypeLabel"]].drop_duplicates()
-    data_types = df_ml[["dataType", "dataTypeLabel"]]
+    data_types = df_ml[["dataType", "dataTypeLabel", "dataTypeIndex"]]
     data_types = data_types.transform(
-        {"dataType": parse_data_type, "dataTypeLabel": parse_data_type_label}
+        {
+            "dataType": parse_data_type,
+            "dataTypeLabel": parse_data_type_label,
+            "dataTypeIndex": parse_data_type_index,
+        }
     )
     df_ml["data_type_group"] = [
-        DATA_TYPE_GROUPINGS[tuple(r)] for r in data_types.to_numpy()
+        assign_data_type_group(*r, nirs_element) for r in data_types.to_numpy()
     ]
 
     if len(df_ml["data_type_group"].drop_duplicates()) > 1:
@@ -1053,10 +1138,14 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
 
         aux_group.name = aux_name
         aux_group.dataTimeSeries = aux_array
-        aux_group.dataUnit = aux_array.attrs["units"]
+
         # FIXME add checks that time units match those in metaDataTags
         aux_group.time = aux_array.time
-        aux_group.timeOffset = aux_array.attrs["time_offset"]
+
+        if "units" in aux_array.attrs:
+            aux_group.dataUnit = aux_array.attrs["units"]
+        if "time_offset" in aux_array.attrs:
+            aux_group.timeOffset = aux_array.attrs["time_offset"]
 
 
 def write_snirf(

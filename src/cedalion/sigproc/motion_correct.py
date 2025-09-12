@@ -7,21 +7,36 @@ from scipy.interpolate import UnivariateSpline
 from scipy.linalg import svd
 from scipy.signal import savgol_filter
 import pywt
+import logging
 
 
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 from cedalion.sigproc.frequency import sampling_rate
+from cedalion.utils import deprecated
 from cedalion import units, Quantity
 
-from .quality import detect_baselineshift, detect_outliers, id_motion, id_motion_refine
+from .quality import (
+    detect_baselineshift,
+    detect_outliers,
+    id_motion,
+    id_motion_refine,
+    TAINTED,
+)
 
+logger = logging.getLogger("cedalion")
 
-# %% SPLINE
-@cdc.validate_schemas
+@deprecated("This function was renamed to 'spline'.")
 def motion_correct_spline(
     fNIRSdata: cdt.NDTimeSeries, tIncCh: cdt.NDTimeSeries, p: float
+) -> cdt.NDTimeSeries:
+    return spline(fNIRSdata, tIncCh, p)
+
+
+@cdc.validate_schemas
+def spline(
+    ts: cdt.NDTimeSeries, t_inc_ch: cdt.NDTimeSeries, p: float
 ) -> cdt.NDTimeSeries:
     """Apply motion correction using spline interpolation to fNIRS data.
 
@@ -30,8 +45,8 @@ def motion_correct_spline(
     https://github.com/BUNPC/Homer3
 
     Args:
-        fNIRSdata: The fNIRS data to be motion corrected.
-        tIncCh: The time series indicating the presence of motion artifacts.
+        ts: The time series to be motion corrected.
+        t_inc_ch: The time series indicating the presence of motion artifacts.
         p: smoothing factor
 
     Returns:
@@ -40,19 +55,19 @@ def motion_correct_spline(
     dtShort = 0.3
     dtLong = 3
 
-    fs = fNIRSdata.cd.sampling_rate
-    t = np.arange(0, len(fNIRSdata.time), 1 / fs)
-    t = t[: len(fNIRSdata.time)]
+    fs = ts.cd.sampling_rate
+    t = np.arange(0, len(ts.time), 1 / fs)
+    t = t[: len(ts.time)]
 
-    units = fNIRSdata.pint.units
-    fNIRSdata = fNIRSdata.pint.dequantify()
+    units = ts.pint.units
+    ts = ts.pint.dequantify()
 
-    dodSpline = fNIRSdata.copy()
+    dodSpline = ts.copy()
 
-    for ch in fNIRSdata.channel.values:
-        for wl in fNIRSdata.wavelength.values:
-            channel = fNIRSdata.sel(channel=ch, wavelength=wl).values
-            tInc_channel = tIncCh.sel(channel=ch, wavelength=wl)
+    for ch in ts.channel.values:
+        for wl in ts.wavelength.values:
+            channel = ts.sel(channel=ch, wavelength=wl).values
+            tInc_channel = t_inc_ch.sel(channel=ch, wavelength=wl)
             dodSpline_chan = channel.copy()
 
             # get list of start and finish of each motion artifact segment
@@ -192,18 +207,24 @@ def compute_window(
     return int(wind)
 
 
-# FIXME frame_size -> unit
+@deprecated("This function was renamed to 'spline_sg'.")
+def motion_correct_splineSG(
+    fNIRSdata: cdt.NDTimeSeries, p: float, frame_size: Quantity = 10 * units.s
+):
+    return spline_sg(fNIRSdata, p, frame_size)
+
+
 # %% SPLINESG
 @cdc.validate_schemas
-def motion_correct_splineSG(
-    fNIRSdata: cdt.NDTimeSeries,
+def spline_sg(
+    ts: cdt.NDTimeSeries,
     p: float,
-    frame_size: Quantity = 10 * units.s,
+    frame_size: cdt.QTime = 10 * units.s,
 ):
     """Apply motion correction using spline interpolation and Savitzky-Golay filter.
 
     Args:
-        fNIRSdata (cdt.NDTimeSeries): The fNIRS data to be motion corrected.
+        ts: The time series to be motion corrected.
         frame_size (Quantity): The size of the sliding window in seconds for the
             Savitzky-Golay filter. Default is 10 seconds.
         p: smoothing factor
@@ -211,16 +232,19 @@ def motion_correct_splineSG(
     Returns:
         dodSplineSG (cdt.NDTimeSeries): The motion-corrected fNIRS data after applying
         spline interpolation and Savitzky-Golay filter.
+
+    References:
+        Paper: :cite:`Jahani2018`
     """
 
-    fs = sampling_rate(fNIRSdata)
+    fs = sampling_rate(ts)
 
-    M = detect_outliers(fNIRSdata, 1 * units.s)
+    M = detect_outliers(ts, 1 * units.s)
 
-    tIncCh = detect_baselineshift(fNIRSdata, M)
+    tIncCh = detect_baselineshift(ts, M)
 
-    fNIRSdata = fNIRSdata.pint.dequantify()
-    fNIRSdata_lpf2 = fNIRSdata.cd.freq_filter(0, 2, butter_order=4)
+    ts = ts.pint.dequantify()
+    fNIRSdata_lpf2 = ts.cd.freq_filter(0, 2, butter_order=4)
 
     PADDING_TIME = 12 * units.s # FIXME configurable?
     extend = int(np.round(PADDING_TIME  * fs))  # extension for padding
@@ -230,22 +254,24 @@ def motion_correct_splineSG(
 
     tIncCh_pad = tIncCh.pad(time=extend, mode="constant", constant_values=False)
 
-    dodSpline = motion_correct_spline(fNIRSdata_lpf2_pad, tIncCh_pad, p)
+    dodSpline = spline(fNIRSdata_lpf2_pad, tIncCh_pad, p)
 
     # remove padding
     dodSpline = dodSpline.transpose("channel", "wavelength", "time")
     dodSpline = dodSpline[:, :, extend:-extend]
-    # dodSpline = (
-    #    dodSpline.stack(measurement=["channel", "wavelength"])
-    #    .sortby("wavelength")
-    #    .pint.dequantify()
-    # )
 
     # apply SG filter
+    if not np.isfinite(dodSpline).all():
+        # MKL (used for savgol_filter on Windows) is strict about NaNs
+        raise ValueError("time series contains nonfinite values.")
+
     K = 3
     framesize_samples = int(np.round(frame_size * fs))
+
     if framesize_samples % 2 == 0:
         framesize_samples = framesize_samples + 1
+
+    assert framesize_samples >= K
 
     dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_samples, K).T
 
@@ -256,12 +282,17 @@ def motion_correct_splineSG(
     return dodSplineSG
 
 
-# FIXME nSV unit or simply float?
-# %% PCA
-# @cdc.validate_schemas
+@deprecated("This function was renamed to 'pca'")
 def motion_correct_PCA(
     fNIRSdata: cdt.NDTimeSeries, tInc: cdt.NDTimeSeries, nSV: Quantity = 0.97
 ):
+    return pca(fNIRSdata, tInc, nSV)
+
+
+# @cdc.validate_schemas
+def pca(
+    ts: cdt.NDTimeSeries, t_inc: cdt.NDTimeSeries, n_sv: float = 0.97
+) -> tuple[cdt.NDTimeSeries, int, np.ndarray]:
     """Apply motion correction using PCA filter identified as motion artefact segments.
 
     Based on Homer3 [1] v1.80.2 "hmrR_MotionCorrectPCA.m"
@@ -269,20 +300,25 @@ def motion_correct_PCA(
     https://github.com/BUNPC/Homer3
 
     Inputs:
-        fNIRSdata: The fNIRS data to be motion corrected.
-        tInc: The time series indicating the presence of motion artifacts.
-        nSV (Quantity): Specifies the number of prinicpal components to remove from the
-            data. If nSV < 1 then the filter removes the first n components of the data
-            that removes a fraction of the variance up to nSV.
+        ts: The time series to be motion corrected.
+        t_inc: The time series indicating the presence of motion artifacts.
+        n_sv: Specifies the number of prinicpal components to remove from the
+            data. If n_sv < 1 then the filter removes the first n components of the data
+            that removes a fraction of the variance up to n_sv.
 
     Returns:
-        fNIRSdata_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
+        ts_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
+        n_sv (int): the number of principal components removed from the data.
         svs (np.array): the singular values of the PCA.
-        nSV (Quantity): the number of principal components removed from the data.
+
+
+    References:
+        Paper & Code: :cite:`Huppert2009`
     """
 
-    # apply mask to get only points with motion
-    y, m = xrutils.apply_mask(fNIRSdata, ~tInc, "drop", "none")
+    # apply_mask drops time points where the provided mask is False
+    # -> keep only points with motion
+    y, m = xrutils.apply_mask(ts, t_inc == TAINTED, "drop", "none")
 
     # stack y and od
     y = (
@@ -293,8 +329,8 @@ def motion_correct_PCA(
 
     y_zscore = ( y - y.mean('time') ) / y.std('time')
 
-    fNIRSdata_stacked = (
-        fNIRSdata.stack(measurement=["channel", "wavelength"])
+    ts_stacked = (
+        ts.stack(measurement=["channel", "wavelength"])
         .sortby("wavelength")
         .pint.dequantify()
     )
@@ -311,12 +347,12 @@ def motion_correct_PCA(
     for idx in range(1, svs.shape[0]):
         svsc[idx] = svsc[idx - 1] + svs[idx]
 
-    if nSV < 1 and nSV > 0:
-        ev = svsc < nSV
-        nSV = np.where(ev == 0)[0][0]
+    if n_sv < 1 and n_sv > 0:
+        ev = svsc < n_sv
+        n_sv = np.where(ev == 0)[0][0]
 
     ev = np.zeros((svs.shape[0], 1))
-    ev[:nSV] = 1
+    ev[:n_sv] = 1
     ev = np.diag(np.squeeze(ev))
 
     # remove top PCs
@@ -325,17 +361,17 @@ def motion_correct_PCA(
     yc = (yc * y.std('time')) + y.mean('time')
 
     # insert cleaned signal back into od
-    lstMs = np.where(np.diff(tInc.values.astype(int)) == -1)[0]
-    lstMf = np.where(np.diff(tInc.values.astype(int)) == 1)[0]
+    lstMs = np.where(np.diff(t_inc.values.astype(int)) == -1)[0]
+    lstMf = np.where(np.diff(t_inc.values.astype(int)) == 1)[0]
 
     if len(lstMs) == 0:
         lstMs = np.asarray([0])
     if len(lstMf) == 0:
-        lstMf = np.asarray([len(tInc) - 1])
+        lstMf = np.asarray([len(t_inc) - 1])
     if lstMs[0] > lstMf[0]:
         lstMs = np.insert(lstMs, 0, 0)
     if lstMs[-1] > lstMf[-1]:
-        lstMf = np.append(lstMf, len(tInc) - 1)
+        lstMf = np.append(lstMf, len(t_inc) - 1)
 
     lstMb = lstMf - lstMs
 
@@ -345,59 +381,58 @@ def motion_correct_PCA(
     lstMb = lstMb - 1
 
     yc_ts = yc.values
-    fNIRSdata_cleaned_ts = fNIRSdata_stacked.copy().values
-    fNIRSdata_ts = fNIRSdata_stacked.copy().values
+    tmp_cleaned = ts_stacked.copy().values
+    tmp_uncleaned = ts_stacked.copy().values
 
-    for jj in range(fNIRSdata_cleaned_ts.shape[1]):
+    for jj in range(tmp_cleaned.shape[1]):
         lst = np.arange(lstMs[0], lstMf[0])
 
         if lstMs[0] > 0:
-            fNIRSdata_cleaned_ts[lst, jj] = (
+            tmp_cleaned[lst, jj] = (
                 yc_ts[: lstMb[0] + 1, jj]
                 - yc_ts[0, jj]
-                + fNIRSdata_cleaned_ts[lst[0], jj]
+                + tmp_cleaned[lst[0], jj]
             )
         else:
-            fNIRSdata_cleaned_ts[lst, jj] = (
+            tmp_cleaned[lst, jj] = (
                 yc_ts[: lstMb[0] + 1, jj]
                 - yc_ts[lstMb[0], jj]
-                + fNIRSdata_cleaned_ts[lst[-1], jj]
+                + tmp_cleaned[lst[-1], jj]
             )
 
         for kk in range(len(lstMf) - 1):
             lst = np.arange(lstMf[kk] - 1, lstMs[kk + 1] + 1)
-            fNIRSdata_cleaned_ts[lst, jj] = (
-                fNIRSdata_ts[lst, jj]
-                - fNIRSdata_ts[lst[0], jj]
-                + fNIRSdata_cleaned_ts[lst[0], jj]
+            tmp_cleaned[lst, jj] = (
+                tmp_uncleaned[lst, jj]
+                - tmp_uncleaned[lst[0], jj]
+                + tmp_cleaned[lst[0], jj]
             )
 
             lst = np.arange(lstMs[kk + 1], lstMf[kk + 1])
-            fNIRSdata_cleaned_ts[lst, jj] = (
+            tmp_cleaned[lst, jj] = (
                 yc_ts[lstMb[kk] + 1 : lstMb[kk + 1] + 1, jj]
                 - yc_ts[lstMb[kk] + 1, jj]
-                + fNIRSdata_cleaned_ts[lst[0], jj]
+                + tmp_cleaned[lst[0], jj]
             )
 
-        if lstMf[-1] < len(fNIRSdata_ts) - 1:
-            lst = np.arange(lstMf[-1] - 1, len(fNIRSdata_ts))
-            fNIRSdata_cleaned_ts[lst, jj] = (
-                fNIRSdata_ts[lst, jj]
-                - fNIRSdata_ts[lst[0], jj]
-                + fNIRSdata_cleaned_ts[lst[0], jj]
+        if lstMf[-1] < len(tmp_uncleaned) - 1:
+            lst = np.arange(lstMf[-1] - 1, len(tmp_uncleaned))
+            tmp_cleaned[lst, jj] = (
+                tmp_uncleaned[lst, jj]
+                - tmp_uncleaned[lst[0], jj]
+                + tmp_cleaned[lst[0], jj]
             )
 
-    fNIRSdata_cleaned = fNIRSdata_stacked.copy()
-    fNIRSdata_cleaned.values = fNIRSdata_cleaned_ts
+    ts_cleaned = ts_stacked.copy()
+    ts_cleaned.values = tmp_cleaned
 
-    fNIRSdata_cleaned = fNIRSdata_cleaned.unstack("measurement").pint.quantify()
-    fNIRSdata_cleaned = fNIRSdata_cleaned.transpose("channel", "wavelength", "time")
-    fNIRSdata_cleaned = fNIRSdata_cleaned.assign_coords({"source": fNIRSdata.source})
+    ts_cleaned = ts_cleaned.unstack("measurement").pint.quantify()
+    ts_cleaned = ts_cleaned.transpose("channel", "wavelength", "time")
+    ts_cleaned = ts_cleaned.assign_coords({"source": ts.source})
 
-    return fNIRSdata_cleaned, nSV, svs
+    return ts_cleaned, n_sv, svs
 
-
-# %% PCA RECURSE
+@deprecated("This function was renamed to 'pca_recurse'.")
 def motion_correct_PCA_recurse(
     fNIRSdata: cdt.NDTimeSeries,
     t_motion: Quantity = 0.5,
@@ -407,15 +442,29 @@ def motion_correct_PCA_recurse(
     nSV: Quantity = 0.97,
     maxIter: Quantity = 5,
 ):
-    """Identify motion artefacts in input fNIRSdata.
+    return pca_recurse(
+        fNIRSdata, t_motion, t_mask, stdev_thresh, amp_thresh, nSV, maxIter
+    )
 
-    If any active channel exhibits signal change greater than STDEVthresh or AMPthresh,
-    then that segment of data is marked as a motion artefact. motion_correct_PCA is
+
+def pca_recurse(
+    ts: cdt.NDTimeSeries,
+    t_motion: cdt.QTime = 0.5 * units.s,
+    t_mask: cdt.QTime = 1 * units.s,
+    stdev_thresh: float = 20,
+    amp_thresh: float = 5,
+    n_sv: float = 0.97,
+    max_iter: int = 5,
+) -> tuple[cdt.NDTimeSeries, np.ndarray, int]:
+    """Identify motion artefacts in input time series ts.
+
+    If any active channel exhibits signal change greater than stdev_thresh or
+    amp_thresh, then that segment of data is marked as a motion artefact. pca is
     applied to all segments of data identified as a motion artefact. This is called
-    until maxIter is reached or there are no motion artefacts identified.
+    until max_iter is reached or there are no motion artefacts identified.
 
     Args:
-        fNIRSdata (cdt.NDTimeSeries): The fNIRS data to be motion corrected.
+        ts: The time series to be motion corrected.
         t_motion: check for signal change indicative of a motion artefact over
             time range tMotion. (units of seconds)
         t_mask (Quantity): mark data +/- tMask seconds aroundthe identified motion
@@ -426,42 +475,48 @@ def motion_correct_PCA_recurse(
         amp_thresh (Quantity): if the signal d for any given active channel changes
             by more than amp_thresh over the time interval tMotion then this time point
             is marked as a motion artefact.
-        nSV: FIXME
-        maxIter: FIXME
+        n_sv: Specifies the number of prinicpal components to remove from the
+            data. If n_sv < 1 then the filter removes the first n components of the data
+            that removes a fraction of the variance up to n_sv.
+        max_iter: maximum number of iterations.
 
     Returns:
-        fNIRSdata_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
+        ts_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
         svs (np.array): the singular values of the PCA.
-        nSV (int): the number of principal components removed from the data.
+        n_sv (int): the number of principal components removed from the data.
+        t_inc (np.ndarray): remaining motion artifacts
+
+    References:
+        Paper & Code: :cite:`Huppert2009`
     """
 
-    tIncCh = id_motion(
-        fNIRSdata, t_motion, t_mask, stdev_thresh, amp_thresh
+    t_inc_ch = id_motion(
+        ts, t_motion, t_mask, stdev_thresh, amp_thresh
     )  # unit stripped error x2
 
-    tInc = id_motion_refine(tIncCh, "all")[0]
-    tInc.values = np.hstack([tInc.values[0], tInc.values[:-1]])
+    t_inc = id_motion_refine(t_inc_ch, "all")[0]
+    t_inc.values = np.hstack([t_inc.values[0], t_inc.values[:-1]])
 
     nI = 0
-    fNIRSdata_cleaned = fNIRSdata.copy()
+    ts_cleaned = ts.copy()
 
-    while sum(tInc.values) > 0 and nI < maxIter:
+    # default values for the case that ts is already clean
+    n_sv_ret = -1
+    svs = np.ndarray([])
+
+    while sum(~t_inc.values) > 0 and nI < max_iter:
         nI = nI + 1
 
-        fNIRSdata_cleaned, nSV_ret, svs = motion_correct_PCA(
-            fNIRSdata_cleaned, tInc, nSV=nSV
-        )
+        ts_cleaned, n_sv_ret, svs = pca(ts_cleaned, t_inc, n_sv=n_sv)
 
-        tIncCh = id_motion(
-            fNIRSdata_cleaned, t_motion, t_mask, stdev_thresh, amp_thresh
-        )
-        tInc = id_motion_refine(tIncCh, "all")[0]
-        tInc.values = np.hstack([tInc.values[0], tInc.values[:-1]])
+        t_inc_ch = id_motion(ts_cleaned, t_motion, t_mask, stdev_thresh, amp_thresh)
+        t_inc = id_motion_refine(t_inc_ch, "all")[0]
+        t_inc.values = np.hstack([t_inc.values[0], t_inc.values[:-1]])
 
-    return fNIRSdata_cleaned, svs, nSV_ret, tInc
+    return ts_cleaned, svs, n_sv_ret, t_inc
 
 
-def tddr(ts: cdt.NDTimeSeries):
+def tddr(ts: cdt.NDTimeSeries) -> cdt.NDTimeSeries:
     """Implementation of the TDDR algorithm for motion correction.
 
     Uses an iterative reweighting approach to reduce large fluctuations typically
@@ -492,7 +547,17 @@ def tddr(ts: cdt.NDTimeSeries):
                 corrected = tddr(curr_signal)
                 # Assign back ensuring coordinate consistency
                 signal.loc[dict(channel=[ch], wavelength=[wl])] = corrected
-        return signal
+        return signal * unit
+
+    # Early exit: signal is (nearly) constant
+    if np.allclose(np.squeeze(signal.values), np.squeeze(signal.values)[0], rtol=1e-8,
+                   atol=1e-12):
+        logger.debug(
+            f"Signal is near constant, returning original signal at "
+            f"(channel={signal.channel.values[0]}, "
+            f"wavelength={signal.wavelength.values[0]})."
+        )
+        return signal * unit
 
     # Preprocess: Separate high and low frequencies
     signal_mean = np.mean(signal)
@@ -525,6 +590,8 @@ def tddr(ts: cdt.NDTimeSeries):
 
         # Step 3c. Robust estimate of standard deviation of the residuals
         sigma = 1.4826 * np.median(dev)
+        if sigma < 1e-10:
+            return (signal + signal_mean) * unit
 
         # Step 3d. Scale deviations by standard deviation and tuning parameter
         r = dev / (sigma * tune)
@@ -536,9 +603,6 @@ def tddr(ts: cdt.NDTimeSeries):
         if abs(mu - mu0) < D * max(abs(mu), abs(mu0)):
             break
 
-    else:
-        # Warn if the maximum number of iterations was reached without convergence
-        print("Warning: Robust estimation did not converge within 50 iterations.")
 
     # Step 4. Apply robust weights to centered derivative
     new_deriv = w * (deriv - mu)
@@ -554,53 +618,77 @@ def tddr(ts: cdt.NDTimeSeries):
 
     return signal_corrected
 
-def pad_to_power_2(signal):
+
+def _pad_to_power_2(signal : np.ndarray) -> tuple[np.ndarray, int]:
     """Pad signal to next power of 2."""
     n = int(np.ceil(np.log2(len(signal))))
     padded_length = 2**n
     padded = np.zeros(padded_length)
     padded[:len(signal)] = signal
+
     return padded, len(signal)
 
-def process_coefficients(coeffs, iqr_factor, signal_length):
-    """Deletes outlier coefficients based on IQR."""
-    n = coeffs.shape[0]
-    n_levels = coeffs.shape[1] - 1
 
-    # Process each level
-    for j in range(n_levels):
-        curr_length = signal_length // (2**j) if j > 0 else signal_length
-        #n_blocks = min(2**j, 8)  # Limit number of blocks for speed
-        n_blocks = 2**j
+def _clip_coeffs_to_iqr_bounds(block: np.ndarray, iqr_factor: float):
+    """Restrict coefficients to a multiple of the interquartile range."""
+
+    # Compute statistics on valid data length
+    q25, q75 = np.percentile(block, [25, 75])
+    iqr_val = q75 - q25
+
+    # Set thresholds
+    upper = q75 + iqr_factor * iqr_val
+    lower = q25 - iqr_factor * iqr_val
+
+    block[:] = np.where((block > upper) | (block < lower), 0, block)
+
+
+def _filter_wavelet_coeffs(
+    coeffs: list[tuple[np.ndarray, np.ndarray]], iqr_factor: float, signal_length: int
+):
+    """Deletes outlier coefficients based on IQR."""
+
+    n = len(coeffs[0][0]) # length of padded timeseries
+    n_levels = len(coeffs)
+
+    # coeffs contain approximation (cA) and detail (cD) coeffients in the following
+    # order: [(cAn, cDn), ..., (cA2, cD2), (cA1, cD1)] for level 1..n_levels
+
+    filtered_coeffs = []
+
+    cAf = coeffs[0][0].copy()  # approximation coeffs at the highest level
+
+    for i, (cA, cD) in enumerate(coeffs):
+        level = n_levels - i - 1  # here level = 0...n_levels-1
+        n_blocks = 2**level
         block_length = n // n_blocks
 
-        for b in range(n_blocks):
-            start_idx = b * block_length
-            end_idx = start_idx + block_length
-            coeff_block = coeffs[start_idx:end_idx, j+1]
+        cDf = cD.copy()
 
-            # Compute statistics on valid data length
-            valid_coeffs = coeff_block[:curr_length]
-            q25, q75 = np.percentile(valid_coeffs, [25, 75])
-            iqr_val = q75 - q25
+        # Split time series into 2**level blocks and filter each block individually.
+        # In SWT the coefficient arrays at each level have the length of the padded
+        # time series n. The coefficients beyond signal_length relate to the padding.
+        # Don't process these.
+        for i_block in range(n_blocks):
+            block_start = i_block * block_length
+            block_end = (i_block + 1) * block_length
+            block_end = min(signal_length, block_end)
 
-            # Set thresholds
-            upper = q75 + iqr_factor * iqr_val
-            lower = q25 - iqr_factor * iqr_val
+            if block_end <= block_start:
+                continue
 
-            # Zero out outliers
-            coeffs[start_idx:end_idx, j+1] = np.where(
-                (coeff_block > upper) | (coeff_block < lower),
-                0,
-                coeff_block
-            )
+            # filter detail coefficents
+            _clip_coeffs_to_iqr_bounds(cDf[block_start:block_end], iqr_factor)
 
-    return coeffs
+        filtered_coeffs.append((cAf, cDf))
+
+    return filtered_coeffs
 
 def mad(x):
     """Compute Median Absolute Deviation."""
     median = np.median(x)
     return np.median(np.abs(x - median))
+
 
 def normalize_signal(signal, wavelet='db2'):
     """Normalize signal by its noise level using MAD of downsampled coefficients.
@@ -641,7 +729,13 @@ def normalize_signal(signal, wavelet='db2'):
 
     return normalized_signal, norm_coef
 
+@deprecated("This function was renamed to 'wavelet'.")
 def motion_correct_wavelet(od, iqr=1.5, wavelet='db2', level=4):
+    renamed_func = globals()['wavelet']
+    return renamed_func(od, iqr, wavelet, level)
+
+
+def wavelet(od, iqr=1.5, wavelet='db2', level=4):
     """Wavelet-based motion correction, specializing in spike correction.
 
     Implements the wavelet-based motion correction algorithm described in
@@ -673,7 +767,7 @@ def motion_correct_wavelet(od, iqr=1.5, wavelet='db2', level=4):
             signal = od.sel(channel=ch, wavelength=wl).pint.dequantify()
 
             # Pad to power of 2
-            padded_signal, original_length = pad_to_power_2(signal)
+            padded_signal, original_length = _pad_to_power_2(signal)
 
             # Remove mean
             dc_val = np.mean(padded_signal)
@@ -687,19 +781,11 @@ def motion_correct_wavelet(od, iqr=1.5, wavelet='db2', level=4):
             actual_level = min(level, n-1)
             coeffs = pywt.swt(normalized_signal, wavelet, level=actual_level)
 
-            # Reshape coefficients for processing
-            coeffs_array = np.column_stack([c[1] for c in coeffs])  #Stack detail coeffs
-            coeffs_array = np.column_stack([coeffs[0][0], coeffs_array])  # Add approx.
-
-            # Process coefficients
-            coeffs_array = process_coefficients(coeffs_array, iqr, original_length)
-
-            # Reconstruct list of tuples for iswt
-            coeffs_list = [(coeffs_array[:, 0], coeffs_array[:, i])
-                          for i in range(1, coeffs_array.shape[1])]
+            # Filter coefficients
+            filtered_coeffs = _filter_wavelet_coeffs(coeffs, iqr, original_length)
 
             # Reconstruct
-            corrected = pywt.iswt(coeffs_list, wavelet)
+            corrected = pywt.iswt(filtered_coeffs, wavelet)
 
             # Denormalize
             corrected = corrected / norm_coef

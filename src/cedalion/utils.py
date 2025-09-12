@@ -1,6 +1,8 @@
 """Utility functions."""
 
 import numpy as np
+import warnings
+import functools
 
 
 def zero_padded_numbers(numbers: list[int], prefix: str = "") -> list[str]:
@@ -14,3 +16,27 @@ def zero_padded_numbers(numbers: list[int], prefix: str = "") -> list[str]:
 
     length = int(np.ceil(np.log10(max(np.abs(numbers)))))
     return [prefix + str(i).zfill(length) for i in numbers]
+
+
+def deprecated_api(message):
+    """Issue a deprecation warning."""
+
+    # FIXME: replace with @deprecated for python 3.13
+    warnings.warn(message, DeprecationWarning)
+
+
+def deprecated(reason: str):
+    """Marks a function as deprecated by issuing a DeprecationWarning when used."""
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"'{func.__name__}' is deprecated: {reason}",
+                category=DeprecationWarning,
+                stacklevel=2
+            )
+            return func(*args, **kwargs)
+        return wrapper
+
+    return decorator

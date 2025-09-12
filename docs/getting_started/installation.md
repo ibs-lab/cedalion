@@ -31,10 +31,16 @@ this checked-out directory and run:
 $ conda env create -n cedalion -f environment_dev.yml
 ```
 
+Select a descriptive name for the environment. Keep in mind that over time you
+may want to have multiple environments in parallel, for example when you are working
+on two projects that use different versions of cedalion. A naming scheme that
+includes the current date ('cedalion_YYMMDD') is practical but you are free to choose
+whatever works best for you.
+
 Afterwards activate the environment and add an editable install of `cedalion` to it:
 ```
 $ conda activate cedalion
-$ pip install -e .
+$ pip install -e . --no-deps
 ```
 
 This will also install Jupyter Notebook to run the example notebooks.
@@ -92,6 +98,43 @@ $ hatch run build_docs
 
 The same procedure as above applies. However, make sure to use a released version
 from the main branch.
+
+## Updating
+
+### Updating between releases
+
+In the past, you cloned the git repository to a local directory using the last released 
+version on the main branch. During installation, you created a conda environment and 
+added cedalion from that directory to the environment.
+
+Updating to a newer version is easiest done by cloning the git repository again to a 
+different folder and creating a new environment. This way, the installed version remains 
+usable. It also guarantees that the new environment contains any updated dependencies.
+
+The following example uses the version suffix in the directory and  environment name.
+
+```
+$ git clone git@github.com:ibs-lab/cedalion.git path/to/cedalion_v25.1.0
+$ cd path/to/cedalion_v25.1.0
+$ conda env create -n cedalion_v25.1.0 -f environment_dev.yml
+$ conda activate cedalion_v25.1.0
+$ pip install -e . --no-deps
+```
+
+Switching between the different cedalion versions is then possible by activating the 
+corresponding environment.
+
+### During development
+
+Cedalion's development happens in the dev branch. The cloned git repository contains the
+complete development history and maintains the connection to our main repository at
+GitHub. By pulling the recent changes from there or by checking out a commit from the past
+the cedalion directory can be brought to any desired version. The conda environment
+will then use the checked out version. 
+
+Keep in mind that the cedalion's dependencies changed over time. When pulling recent
+changes from dev you might need to update or recreate the environment.
+
 
 
 ## Container Environments
