@@ -1,4 +1,13 @@
-"""Module for temporally embedded CCA-like models. The temporally embedded technique is based on :cite:t:`biesmann_temporal_2010`"""
+"""Module for temporally embedded CCA-like models for multimodal data.
+
+This module implements classes for performing source decomposition on multimodal data using
+temporal embedding techniques. The latter is based on :cite:t:`biesmann_temporal_2010`
+
+Includes:
+- ElasticNetTCCA: Class for performing Elastic Net regularized temporally embedded CCA.
+- StructuredSparseTCCA: Class for performing structured sparse temporally embedded CCA.
+- tCCA: Class for performing standard temporally embedded CCA.
+"""
 
 import numpy as np
 import xarray as xr
@@ -30,7 +39,7 @@ class MultimodalSourceDecompositionWithTemporalEmbedding(MultimodalSourceDecompo
     def __init__(self, 
                  N_components : int = None, 
                  time_shifts : np.ndarray = None,
-                 max_iter : int = 100, 
+                 max_iter : int = 1000, 
                  tol : float = 1e-6, 
                  scale : bool = True,
                  shift_source = True):
@@ -228,7 +237,7 @@ class ElasticNetTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
                  l1_reg: float | list[float, float] = 0,
                  l2_reg: float | list[float, float] = 0, 
                  time_shifts = None,
-                 max_iter: int = 100, 
+                 max_iter: int = 1000, 
                  tol: float = 1e-6, 
                  scale: bool = True,
                  pls : bool = False,
@@ -289,6 +298,8 @@ class ElasticNetTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
         Wx, Wy = estimate_filters(X_concat.data, 
                                   Y.data,
                                   N_components=self.N_components,
+                                  max_iter=self.max_iter, 
+                                  tol=self.tol,
                                   l1_reg=self.l1_reg,
                                   l2_reg=self.l2_reg,
                                   pls=self.pls)
@@ -390,7 +401,7 @@ class StructuredSparseTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
                  time_shifts = None,
                  l1_reg : float | list[float, float] = 0,
                  l2_reg : float | list[float, float] = 0,
-                 max_iter : int = 100, 
+                 max_iter : int = 1000, 
                  tol : float = 1e-6, 
                  scale : bool = True,
                  shift_source : bool = True,
@@ -458,6 +469,8 @@ class StructuredSparseTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
         Wx, Wy = estimate_filters(X_concat.data, 
                                   Y.data, 
                                   N_components=self.N_components, 
+                                  max_iter=self.max_iter, 
+                                  tol=self.tol,
                                   l1_reg=self.l1_reg, 
                                   l2_reg=self.l2_reg,
                                   Lx=new_Lx,
@@ -508,7 +521,7 @@ class tCCA(ElasticNetTCCA):
     def __init__(self, 
                 N_components : int = None,
                 time_shifts : np.ndarray = None,
-                max_iter : int = 100, 
+                max_iter : int = 1000, 
                 tol : float = 1e-6, 
                 scale : bool = True,
                 shift_source = True):
