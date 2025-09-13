@@ -19,6 +19,10 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 - Fixed a bug in motion_correct_wavelet affecting the selection of coefficients for IQR-based thresholding. The issue caused unintended suppression of high-frequency components, particularly near the end of recordings. Changed by [Eike Middell](https://github.com/emiddell).
 - Fixed a bug in the stopping criterion of motion_correct.pca_recurse caused by an inverted 
 boolean mask of motion artifacts, by [Eike Middell](https://github.com/emiddell).
+- Fixed an issue with constant regressors when fitting a GLM using the AR-IRLS method. The autoregressive filter used to
+account for serial correlations was not properly applied to them. The fix ignores samples at the beginning of the time
+series until the filter is initialized, by [Eike Middell](https://github.com/emiddell).
+
 
 ## Version 25.1.0 (2025-06-22)
 
