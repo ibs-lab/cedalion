@@ -4,6 +4,8 @@ import argparse
 import subprocess
 from time import sleep
 from google.colab import drive
+from IPython.display import display, HTML
+
 
 def kill_current_runtime():
     os.kill(os.getpid(), 9)
@@ -34,7 +36,13 @@ if not CEDALION_INSTALLED:
     subprocess.run(["uv", "pip", "install", cedalion_repo], check=True)
     subprocess.run(["uv", "pip", "uninstall", "opt-einsum"], check=True)
 
-    print("Dependencies installed. Killing this runtime. Please rerun the notebook.")
+    display(
+        HTML(
+            '<h1 style="background-color:#FF0000; color: #FFFFFF">'
+            "All dependencies were installed. Killing this runtime now."
+            "Please rerun the notebook.</h1>"
+        )
+    )
     sleep(2)
     kill_current_runtime()
 
