@@ -373,7 +373,7 @@ def create_session_files(group_df: pd.DataFrame, bids_dir: str) -> None:
     """
     sub = group_df.name
     tsv_df = group_df[["ses", "ses_acq_time"]]
-    if tsv_df["ses"].isna().all():
+    if not tsv_df["ses"].isna().all():
         tsv_df["ses"] = "ses-" + tsv_df["ses"]
         tsv_df = tsv_df.rename(columns={"ses_acq_time": "acq_time", "ses": "session_id"})
         tsv_df.drop_duplicates(subset="session_id", inplace=True)
