@@ -373,13 +373,14 @@ def create_session_files(group_df: pd.DataFrame, bids_dir: str) -> None:
     """
     sub = group_df.name
     tsv_df = group_df[["ses", "ses_acq_time"]]
-    tsv_df["ses"] = "ses-" + tsv_df["ses"]
-    tsv_df = tsv_df.rename(columns={"ses_acq_time": "acq_time", "ses": "session_id"})
-    tsv_df.drop_duplicates(subset="session_id", inplace=True)
-    if not pd.isna(tsv_df["session_id"]).any():
-        filename = "sub-" + str(sub) + "_sessions.tsv"
-        path_to_save = os.path.join(bids_dir, "sub-" + str(sub), filename)
-        tsv_df.to_csv(path_to_save, sep="\t", index=False)
+    if tsv_df["ses"].isna().all():
+        tsv_df["ses"] = "ses-" + tsv_df["ses"]
+        tsv_df = tsv_df.rename(columns={"ses_acq_time": "acq_time", "ses": "session_id"})
+        tsv_df.drop_duplicates(subset="session_id", inplace=True)
+        if not pd.isna(tsv_df["session_id"]).any():
+            filename = "sub-" + str(sub) + "_sessions.tsv"
+            path_to_save = os.path.join(bids_dir, "sub-" + str(sub), filename)
+            tsv_df.to_csv(path_to_save, sep="\t", index=False)
 
 
 def create_data_description(
