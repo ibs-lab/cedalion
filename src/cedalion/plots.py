@@ -783,6 +783,8 @@ def scalp_plot(
 
     cmap.set_bad(bad_color)
 
+    ax.set_xlim(-1.1, 1.1)
+    ax.set_ylim(-1.1, 1.1)
     ax.set_aspect("equal", adjustable="datalim")
 
     # head and ears
@@ -885,8 +887,6 @@ def scalp_plot(
 
     # remove axes and ticks
     ax.set_axis_off()
-    ax.set_xlim(-1.1, 1.1)
-    # ax.set_ylim(-1.1, 1.1)
 
     # colorbar
     if add_colorbar:
@@ -1043,6 +1043,8 @@ def scalp_plot_gif(
         - Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
     """
 
+    data_ts = data_ts.pint.dequantify()
+
     if ("time" in data_ts.dims and data_ts.sizes["time"] > 1) or (
         "reltime" in data_ts.dims and data_ts.sizes["reltime"] > 1
     ):
@@ -1070,13 +1072,9 @@ def scalp_plot_gif(
     filename = filename+'.gif'
 
     if scl is None:
-        scl = (-np.max(np.abs(data_ts.values)),np.max(np.abs(data_ts.values)))
+        absmax = np.max(np.abs(data_ts.values)) * (1+1e-6) # eps to avoid cb-extension
+        scl = (-absmax,absmax)
 
-    f,axs = p.subplots(1, 1, figsize=(8, 8))
-
-    ax1 = axs
-
-    ax1.figure.canvas.draw()
     frames = []
 
     # Iterate over the time points
@@ -1084,26 +1082,27 @@ def scalp_plot_gif(
         # Select the frame closest to the current time point
         X_frame = X_subset.sel(time=current_time, method="nearest")
 
-        ax1.cla()
+        f,ax = p.subplots(1, 1, figsize=(8, 8))
         # reset position to avoid inset growth from colorbar
-        ax1.set_position([0.1, 0.1, 0.8, 0.8])
+        ax.set_position([0.1, 0.1, 0.8, 0.8])
         scalp_plot(
             data_ts,
             geo3d,
             X_frame.values,
-            ax1,
+            ax,
             cmap=cmap,
             vmin=scl[0],
             vmax=scl[1],
             optode_labels=optode_labels,
             title=f"Time: {float(current_time):0.1f}s\n{str_title}",
             optode_size=optode_size,
-            add_colorbar=False
+            add_colorbar=True,
         )
-        ax1.figure.canvas.draw()
-        rgba = np.asarray(ax1.figure.canvas.buffer_rgba())
+        ax.figure.canvas.draw()
+        rgba = np.asarray(ax.figure.canvas.buffer_rgba())
         image = Image.fromarray(rgba)
         frames.append(image)
+        p.close(f)
 
     frames[0].save(
         filename, save_all=True, append_images=frames[1:], duration=1000 / fps, loop=0
