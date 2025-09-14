@@ -7,3 +7,7 @@ ul.xr-var-list li.xr-var-item label {
     margin-top: 2px !important;
     margin-bottom: 2px !important;
 }
+
+div.citation .label {
+    width: 5em;
+}

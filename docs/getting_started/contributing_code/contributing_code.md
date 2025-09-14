@@ -102,10 +102,19 @@ how to dormat these docstrings. We will follow the Google style as described in 
 
 Please add references to the literature if you are implementing a published algorithm.
 There is a global bibtex file under `docs/references.bib` to which reference entries
-should be added with a unique bibtex label. Refer to a reference entry with:
+should be added with a unique bibtex label. In docstrings cite a reference entry with:
 ```
     :cite:t:`BIBTEXLABEL`
 ```
+
+In notebooks you can add citations in markdown cells like this:
+```
+    <cite data-cite="Barker2013">(Barker,2013)</cite>
+```
+
+If citations do not show correctly in the rendered documentation, check the Sphinx output for errors while parsing `references.bib`. Duplicate or ill-formed entries are
+often the culprit.
+
 Further options are documented in the 
 [sphinxcontrib-bibtex documentation](https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html#minimal-example).
 
