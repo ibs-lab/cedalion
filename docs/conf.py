@@ -10,8 +10,8 @@ from urllib.parse import quote
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "cedalion"
-copyright = "2024, the cedalion developers"
-author = "the cedalion developers"
+copyright = "2024-2025, the Cedalion developers"
+author = "the Cedalion developers"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

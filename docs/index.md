@@ -15,7 +15,7 @@ getting_started/index.md
 data_structures/index.md
 
 community/index.md
-LICENSE.md
+../LICENSE.md
 ```
 
 ```{toctree}
