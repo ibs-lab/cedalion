@@ -108,8 +108,6 @@ on the CPU and can be installed by running:
 $ bash install_nirfaster.sh CPU # or GPU
 ```
 
-
-
 ## Using the environment
 
 To use your Cedalion installation, first activate the environment and then execute
@@ -121,6 +119,8 @@ For example, to run jupyter notebook:
 $ conda activate <environment_name>
 $ jupyter notebook
 ```
+
+To test your installation, you can use the example notebook [examples/00_test_installation.ipynb](../examples/getting_started_io/00_test_installation.ipynb).
 
 Alternatively, integrated development environments (IDEs) like **VSCode** have builtin 
 support for [managing environments](https://code.visualstudio.com/docs/python/environments) and 
