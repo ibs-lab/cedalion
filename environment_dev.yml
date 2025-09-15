@@ -1,6 +1,7 @@
 name: cedalion
 channels:
   - conda-forge
+  - bioconda
 dependencies:
   - click=8.2
   - h5py=3.14
@@ -40,6 +41,7 @@ dependencies:
   - trame-components=2.5
   - vtk=9.4
   - pyxdf=1.17.0
+  - snakemake=9.5.1
 
   - nbsphinx
   - nbstripout

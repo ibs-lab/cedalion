@@ -12,7 +12,7 @@ import cedalion.typing as cdt
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
 import cedalion.data
-
+import pdb
 
 def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
     """Provide a matrix of extinction coefficients from tabulated data.
@@ -216,7 +216,7 @@ def conc2od(
         od (xr.DataArray, (channel, wavelength, *)): A data array containing
             optical density data.
     """
-
+    #pdb.set_trace()
     conc = conc.pint.to("molar")
 
     # Get the extinction coefficients for the chosen spectrum
@@ -228,6 +228,12 @@ def conc2od(
     dists = dists.pint.to("mm")
 
     od = xr.dot(E, conc, dim=["chromo"]) * (dists * dpf)
+
+    if dpf[0] != 1:
+        od = xr.dot(E, conc, dim=["chromo"]) * (dists * dpf)
+    else:
+        od = xr.dot(E, conc, dim=["chromo"]) * (1*units.mm * dpf)
+        
 
     od = od.rename("optical_density")
 

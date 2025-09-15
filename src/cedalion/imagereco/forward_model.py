@@ -44,6 +44,7 @@ from cedalion.io.forward_model import FluenceFile, save_Adot
 
 from .tissue_properties import get_tissue_properties
 
+
 logger = logging.getLogger("cedalion")
 
 
@@ -530,8 +531,8 @@ class TwoSurfaceHeadModel:
             t = register_general_affine(self.landmarks, points)
         else:
             raise ValueError(f"unexpected mode '{mode}'")
-
         transformed = points.points.apply_transform(t)
+        # transformed = transformed * units.millimeter
         snapped = self.scalp.snap(transformed)
         return snapped
 

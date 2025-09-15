@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 
 import cedalion
 import cedalion.typing as cdt
+from PySide6.QtGui import QAction
 
 warnings.simplefilter("ignore")
 
@@ -187,7 +188,8 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         # control_panel_layout.addWidget(ref_point,stretch=1)
 
         # Create button action for opening file
-        open_btn = QtWidgets.QAction("Open...", self)
+        #open_btn = QtWidgets.QAction("Open...", self)
+        open_btn = QAction("Open...", self)
         open_btn.setStatusTip("Open SNIRF file")
         open_btn.triggered.connect(self._open_dialog)
 
@@ -700,7 +702,7 @@ def save_plot_probe_image(
 
     # Normalize positions for plotting
     all_xy = np.vstack((sPosVal, dPosVal))
-    scale = max(all_xy[:, 0].ptp(), all_xy[:, 1].ptp())
+    scale = max(np.ptp(all_xy[:, 0]), np.ptp(all_xy[:, 1]))
     sxy = (sPosVal - all_xy.mean(axis=0)) / scale
     dxy = (dPosVal - all_xy.mean(axis=0)) / scale
 
