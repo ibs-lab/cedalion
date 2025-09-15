@@ -38,7 +38,7 @@ You have two options to use your own data in a colab notebook.
 
 
 ### 2. Use Google Drive
-During the execution of the first notebook cell a connection was created between
+During the execution of the first notebook cell, a connection was created between
 your Google Drive and the instance running the notebook. The drive is mounted
 under `/content/drive`.
 
