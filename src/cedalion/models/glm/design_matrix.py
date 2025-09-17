@@ -36,11 +36,11 @@ class DesignMatrix:
         return result
 
     def __repr__(self):
-        uregs = ",".join([f"'{r}'" for r in self.common.regressor.values])
+        cregs = ",".join([f"'{r}'" for r in self.common.regressor.values])
         cwregs = ",".join(
             [f"'{r}'" for cw in self.channel_wise for r in cw.regressor.values]
         )
-        return f"DesignMatrix(universal=[{uregs}], channel_wise=[{cwregs}])"
+        return f"DesignMatrix(common=[{cregs}], channel_wise=[{cwregs}])"
 
 
     def __and__(self, other: DesignMatrix):
@@ -257,6 +257,93 @@ def hrf_regressors(
     # hrf_regs = hrf_regs.pint.quantify("micromolar")
 
     return DesignMatrix(common=regressors, channel_wise=[])
+
+# FIXME reduce overlap with hrf_regressors
+
+def hrf_extract_regressors(
+    ts: cdt.NDTimeSeries, stim: pd.DataFrame, basis_function: TemporalBasisFunction
+) -> DesignMatrix:
+    """Create regressors for extracting the fitted, unconvolved HRF.
+
+    The returned design matrix spans only the time range of the basis functions.
+    Regressors are not convolved.
+
+    Args:
+        ts (NDTimeSeries): Time series data.
+        stim (pd.DataFrame): Stimulus DataFrame.
+        basis_function (TemporalBasisFunction): TemporalBasisFunction object defining
+            the HRF.
+
+    Returns:
+        regressors (xr.DataArray): A DataArray containing the regressors.
+    """
+
+    # FIXME allow basis_function to be an xarray as returned by basis_function()
+    # so that users can pass their own individual hrf function
+
+    trial_types: np.ndarray = stim.trial_type.unique()
+
+    basis = basis_function(ts)
+
+    components = basis.component.values
+
+    # could be "chromo" or "wavelength"
+    other_dim = xrutils.other_dim(ts, "channel", "time")
+
+    n_time = basis.sizes["time"]
+    n_other = ts.sizes[other_dim]
+    n_components = basis.sizes["component"]
+    n_trial_types = len(trial_types)
+    n_regressors = n_trial_types * n_components
+
+    if other_dim in basis.dims:
+        if not set(basis[other_dim].values) == set(ts[other_dim].values):
+            raise ValueError(
+                f"basis and timeseries don't match in dimension '{other_dim}'"
+            )
+    else:
+        # if the basis function does not contain other_dim (e.g. the same HRF is applied
+        # to HbO and HbR), add other_dim by copying the array.
+        basis = xr.concat(n_other * [basis], dim=other_dim)
+        basis = basis.transpose("time", "component", other_dim)
+        basis = basis.assign_coords({other_dim: ts[other_dim]})
+
+    # basis.time may contain time-points before the stimulus onset. To account for this
+    # offset in the convolution shift the onset times.
+    shifted_stim = stim.copy()
+    shifted_stim["onset"] += basis.time.values.min()
+
+    #padded_time, pad_before = _pad_time_axis(ts.time.values, shifted_stim["onset"])
+
+    if n_components == 1:
+        regressor_names = [f"HRF {tt}" for tt in trial_types]
+    else:
+        regressor_names = [f"HRF {tt} {c}" for tt in trial_types for c in components]
+
+    regressors = np.zeros((n_time, n_regressors, n_other))
+
+    for i_tt, trial_type in enumerate(trial_types):
+        for i_comp in range(n_components):
+            i_reg = i_tt * n_components + i_comp
+            for i_other, other in enumerate(ts[other_dim].values):
+                bb = basis.sel({other_dim: other})
+                regressor = bb[:,i_comp]
+                regressor /= regressor.max()
+
+                regressors[:, i_reg, i_other] = regressor
+
+    regressors = xr.DataArray(
+        regressors,
+        dims=["time", "regressor", other_dim],
+        coords={
+            "time": basis.time.values,
+            "regressor": regressor_names,
+            other_dim: ts[other_dim].values,
+        },
+    )
+
+    return DesignMatrix(common=regressors, channel_wise=[])
+
 
 
 def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:

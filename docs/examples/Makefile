@@ -10,10 +10,12 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
                     modeling/32_glm_fingertapping_example.ipynb \
                     modeling/33_glm_illustrative_example.ipynb \
                     modeling/35_statsmodels_overview.ipynb \
+                    modeling/36_glm_workshop.ipynb \
                     signal_quality/20_scalp_coupling_index.ipynb \
                     signal_quality/21_data_quality_and_pruning.ipynb \
                     signal_quality/22_motion_artefacts_and_correction.ipynb \
                     signal_quality/24_downweighting_noisy_channels.ipynb \
+                    signal_quality/25_intro_quality_workshop.ipynb \
                     head_models/40_image_reconstruction.ipynb \
                     head_models/41_photogrammetric_optode_coregistration.ipynb \
                     head_models/42_1010_system.ipynb \
