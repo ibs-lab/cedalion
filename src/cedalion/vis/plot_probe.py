@@ -345,6 +345,7 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         # Calculate the size of each HRF
         self.axWid = self.plot_Xscale / self.nAcross
         self.axHgt = self.plot_Yscale / self.nUp
+        self.axHgt_initial = self.axHgt  # Store initial height for reference
 
         # Extract the x-y coordinates of the optodes
         self.sx = self.sPosVal[:, 0] - self.axXoff
@@ -381,11 +382,12 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
 
         # Calculate the HRF plot coordinates
         self.xa = (self.sx[self.src_idx] + self.dx[self.det_idx]) / 2
-        self.ya = (self.sy[self.src_idx] + self.dy[self.det_idx]) / 2
+        self.ya_center = (self.sy[self.src_idx] + self.dy[self.det_idx]) / 2  # HRF center positions
         self.hrf_val = [
             self.snirfData.sel(trial_type=i).values for i in self.snirfData.trial_type
         ]
-        self.ya = np.array([[[a] * len(self.t)] * self.chromophores for a in self.ya])
+        # Create base coordinate array for HRF plotting
+        self.ya = np.array([[[center_y] * len(self.t)] * self.chromophores for center_y in self.ya_center])
 
         self.cmin = [0] * self.trial_types
         self.cmax = [0] * self.trial_types
@@ -407,13 +409,16 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
             0
         ] * self.trial_types  # access via: condition, channel, chromophore
         for trial in range(self.trial_types):
-            self.hrfT[trial] = (
-                self.ya
-                - self.axHgt / 8
-                + (1 / 4)
-                * self.axHgt
-                * ((self.hrf_val[trial] - self.cmin) / (self.cmax - self.cmin))
-            )
+            # Center the data around 0, then scale, then shift to ya_center
+            centered_data = (self.hrf_val[trial] - self.cmin) / (self.cmax - self.cmin) - 0.5
+            scaled_data = centered_data * (1/4) * self.axHgt
+            
+            # Ensure each HRF timeseries is perfectly centered around its ya_center
+            # by removing any residual mean from the scaled data
+            scaled_data_mean = np.mean(scaled_data, axis=-1, keepdims=True)
+            centered_scaled_data = scaled_data - scaled_data_mean
+            
+            self.hrfT[trial] = self.ya + centered_scaled_data
 
         # Update Conditions in list widget
         for tidx, trial in enumerate(self.snirfData.trial_type.values):
@@ -534,16 +539,23 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
     def _yscale_changed(self, i):
         # Pass the new yscale and draw hrf again
         self.plot_Yscale = i
-        # print(f"Changing y-scale to {self.plot_Yscale}!")
         self.axHgt = self.plot_Yscale / self.nUp
+        
+        # Recalculate ya with new scaling to maintain center positions
+        # ya should always center the HRFs at the channel midpoints regardless of scale
+        self.ya = np.array([[[center_y] * len(self.t)] * self.chromophores for center_y in self.ya_center])
+        
         for trial in range(self.trial_types):
-            self.hrfT[trial] = (
-                self.ya
-                - self.axHgt / 8
-                + (1 / 4)
-                * self.axHgt
-                * ((self.hrf_val[trial] - self.cmin) / (self.cmax - self.cmin))
-            )
+            # Center the data around 0, then scale, then shift to ya_center
+            centered_data = (self.hrf_val[trial] - self.cmin) / (self.cmax - self.cmin) - 0.5
+            scaled_data = centered_data * (1/4) * self.axHgt
+            
+            # Ensure each HRF timeseries is perfectly centered around its ya_center
+            # by removing any residual mean from the scaled data
+            scaled_data_mean = np.mean(scaled_data, axis=-1, keepdims=True)
+            centered_scaled_data = scaled_data - scaled_data_mean
+            
+            self.hrfT[trial] = self.ya + centered_scaled_data
 
         self._re_draw_hrf()
         # print("HRFs should have changed!")
