@@ -51,10 +51,9 @@ def pseudo_inverse_stacked(
         At = (Linv[:, np.newaxis]**2) * Adot.values.T
     else:  # no spatial regularization
         AAt = Adot.values @ Adot.values.T
-        AAt = Adot.values @ Adot.values.T
         At = Adot.values.T
 
-    highest_eigenvalue = np.linalg.eig(AAt)[0][0].real
+    highest_eigenvalue = np.linalg.norm(AAt, ord=2)
     lambda_meas = alpha * highest_eigenvalue
     if Cmeas is None:
         B = At @ np.linalg.pinv(AAt + lambda_meas * np.eye(AAt.shape[0]))
