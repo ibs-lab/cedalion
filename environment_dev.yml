@@ -65,5 +65,6 @@ dependencies:
       - pmcx>=0.3.3
       - pmcxcl>=0.2.0
       - sphinxcontrib-bibtex
+      - snirf2bids
       - hatch-conda
       
