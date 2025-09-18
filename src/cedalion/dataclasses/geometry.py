@@ -50,7 +50,7 @@ class Surface(ABC):
     crs: str
     units: pint.Unit
 
-    vertex_coords : dict[str, ArrayLike] = field(default_factory=dict)
+    vertex_coords: dict[str, ArrayLike] = field(default_factory=dict)
 
     @property
     @abstractmethod
@@ -316,7 +316,7 @@ class VTKSurface(Surface):
     def vertices(self) -> cdt.LabeledPointCloud:
         vertices = vtk_to_numpy(self.mesh.GetPoints().GetData())
         coords = {"label": np.arange(len(vertices))}
-        coords.update({k : ("label", v) for k,v in self.vertex_coords.items()})
+        coords.update({k: ("label", v) for k, v in self.vertex_coords.items()})
 
         result = xr.DataArray(
             vertices,
@@ -731,9 +731,11 @@ class PycortexSurface(Surface):
             goodrows = np.nonzero(~np.array(lfac.sum(0) == 0).ravel())[0]
             self._goodrows = goodrows
             self._rlfac_solvers[m] = sparse.linalg.factorized(
-                lfac[goodrows][:, goodrows]
+                lfac.tocsc()[goodrows][:, goodrows].tocsc()
             )
-            self._nLC_solvers[m] = sparse.linalg.factorized(nLC[goodrows][:, goodrows])
+            self._nLC_solvers[m] = sparse.linalg.factorized(
+                nLC.tocsc()[goodrows][:, goodrows].tocsc()
+            )
 
         # I. "Integrate the heat flow ̇u = ∆u for some fixed time t"
         # ---------------------------------------------------------
@@ -898,3 +900,66 @@ def affine_transform_from_numpy(
     units = cedalion.units.Unit(to_units) / cedalion.units.Unit(from_units)
 
     return xr.DataArray(transform, dims=[to_crs, from_crs]).pint.quantify(units)
+
+
+def robust_geodesic_distance(
+    surface: TrimeshSurface, seed_vertices: list[int] | int, m: float = 10.0
+) -> np.ndarray:
+    """Compute geodesic distances from seed vertices robustly across multiple submeshes.
+
+    Args:
+        surface (TrimeshSurface): The surface.
+        seed_vertices (list[int] | int): Seed vertices (single int or list of ints).
+        m (float): Geodesic distance parameter.
+
+    Returns:
+        np.ndarray: Distance array of shape (num_vertices,), inf for vertices
+                    not reachable (not on the same submesh as any seed).
+
+    Initial Contributors:
+        - Thomas Fischer | t.fischer.1@campus.tu-berlin.de | 2025
+    """
+
+    mesh = surface.mesh
+
+    if isinstance(seed_vertices, int):
+        seed_vertices = [seed_vertices]
+
+    seed_positions = mesh.vertices[seed_vertices]
+    mesh_split = mesh.split(only_watertight=False)
+    distances_from_seed = np.ones(mesh.vertices.shape[0]) * np.inf
+
+    for submesh in mesh_split:
+        submesh_set = set(map(tuple, submesh.vertices))
+        seeds_in_submesh = [pos for pos in seed_positions if tuple(pos) in submesh_set]
+
+        if not seeds_in_submesh:
+            continue
+
+        seed_indices_in_submesh = [
+            np.where((submesh.vertices == pos).all(axis=1))[0][0]
+            for pos in seeds_in_submesh
+        ]
+
+        cortex_surface = PycortexSurface(
+            SimpleMesh(submesh.vertices, submesh.faces),
+            crs=surface.crs,
+            units=mesh.units,
+        )
+
+        distances_on_submesh = cortex_surface.geodesic_distance(
+            seed_indices_in_submesh, m=m
+        )
+
+        submesh_vertex_indices = [
+            i
+            for i, coord in enumerate(map(tuple, mesh.vertices))
+            if coord in submesh_set
+        ]
+
+        distances_from_seed[submesh_vertex_indices] = np.minimum(
+            distances_from_seed[submesh_vertex_indices],
+            distances_on_submesh,
+        )
+
+    return distances_from_seed
