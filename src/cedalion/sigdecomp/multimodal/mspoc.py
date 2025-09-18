@@ -79,12 +79,12 @@ class mSPoC():
         self.N_shifts = len(time_shifts)
         self.optimal_shift = None
         self.shift_source = shift_source
-    
+
     def fit(self, 
             X: xr.DataArray, 
             Y: xr.DataArray, 
             featureX_name : str = 'channel', 
-            featureY_name : str = 'channel'):
+            featureY_name : str = 'channel'):     
         """Train mSPoC model on the X, Y dataset
 
         Implement the pseudo-code of Algorithm 1 of :cite:t:`Dahne2013` 
