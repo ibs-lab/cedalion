@@ -52,21 +52,13 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
 
     verbose = False  # report the progress if verbose== True
 
-    # show the cost values vs. iterations at each stage if show_cost== True
-    # not implemented yet
-    show_cost = False
-
     # Load 8 measuring functions. But we only use 4 of them.
     K = 8
-
-    # table = np.load('measfunc_table.npy', allow_pickle= True)
 
     file_path = cedalion.data.get("measfunc_table.npy")
     table = np.load(file_path, allow_pickle=True)
 
-    nf1, nf2, nf3, nf4, nf5, nf6, nf7, nf8 = (
-        table[0], table[1], table[2], table[3], table[4], table[5], table[6], table[7]
-    )
+    nf1, nf3, nf5, nf7 = table[0], table[2], table[4], table[6] 
 
 
     N = X.shape[0]
@@ -189,7 +181,6 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
     min_mu = 1/50
     cost_increaser_counter = 0
     fastica_on = True
-    error = 0
     max_negentropy = np.zeros((N, 1))
     negentropy_array = np.zeros((N, 1))
     for iter in range(max_iter_orth):
@@ -268,7 +259,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
             # Perform orthogonal ICA
             if max_i == 0:
                 # G1(x) = x^4
-                if fastica_on == True :
+                if fastica_on :
                     grad = X.dot( (4* y* yy).T )/T
                     Edgx = 12
                 else :
@@ -276,7 +267,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
                     vEGx = 2 * (EGx[0] > nf1['critical_point']) -1
             elif max_i == 2:
                 # G3(x) = np.abs(x)/ (1 + np.abs(x))
-                if fastica_on == True :
+                if fastica_on :
                     grad = X.dot( (sign_y * inv_pabs_y * inv_pabs_y).T )/T
                     Edgx = np.sum(-2 * inv_pabs_y * inv_pabs_y * inv_pabs_y)/T
                 else :
@@ -284,7 +275,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
                     vEGx = 2 * (EGx[2] > nf3['critical_point']) -1
             elif max_i == 4:
                 # G5(x)  = x* np.abs(x) /(10 + np.abs(x))
-                if fastica_on == True :
+                if fastica_on :
                     grad  = X.dot((abs_y *(20 + abs_y) * inv_p10abs_y * inv_p10abs_y).T )/T
                     Edgx = np.sum(200 * sign_y * inv_p10abs_y * inv_p10abs_y * inv_p10abs_y)/T
                 else :
@@ -292,13 +283,13 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
                     vEGx = 2 * (EGx[4] > nf5['critical_point']) -1
             elif max_i == 6:
                 # G7(x) =  x / (1 + x**2)
-                if fastica_on == True :
+                if fastica_on :
                     grad = X.dot(((1 - yy)* inv_pabs_yy**2).T )/T
                     Edgx = np.sum(2 * y * (yy-3)* inv_pabs_yy* inv_pabs_yy* inv_pabs_yy)/T
                 else :
                     grad = X.dot((weight * (1 - yy) * inv_pabs_yy**2 ).T ) / np.sum(weight)
                     vEGx = 2 * (EGx[6] > nf7['critical_point']) -1
-            if fastica_on == True :
+            if fastica_on :
                 w1 = grad - Edgx * w
             else :
                 grad = vEGx * grad
@@ -321,12 +312,11 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
 
         min_cost_queue[iter] = np.copy(min_cost)
 
-        if fastica_on == True :
+        if fastica_on :
             if cost_increaser_counter >= max_cost_increase_number  or 1- np.min(np.abs(np.diag(W.dot(last_W.T)))) < tolerance:
                 cost_increaser_counter = 0
                 W = np.copy(best_W )
                 last_W = np.copy(W)
-                iter_fastica = np.copy(iter)
                 fastica_on = False
                 continue
         else :
@@ -348,7 +338,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
     ##############################################################################################################
     # Part 2: check for saddle points
     ##############################################################################################################
-    if saddle_test_enable == True :
+    if saddle_test_enable :
         if verbose:
             print('Saddle point detection.')
         SADDLE_TESTED = False
@@ -507,7 +497,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
         SADDLE_TESTED = False
 
 
-    if SADDLE_TESTED == True :
+    if SADDLE_TESTED :
     ##############################################################################################################
     # Part 3: if saddle points are detected, refine orthogonal ICA
     # fix step size gradient search
@@ -522,7 +512,6 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
         mu = 1/ 50
         cost_increaser_counter = 0
         fastica_on = True
-        error = 0
 
         for iter in range(max_iter_orth_refine):
             for n in range(N):
@@ -595,7 +584,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
                 # Perform orthogonal ICA
                 if max_i == 0:
                     # G1(x) = x^4
-                    if fastica_on == True :
+                    if fastica_on :
                         grad = X.dot( (4* y* yy).T )/T
                         Edgx = 12
                     else :
@@ -603,7 +592,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
                         vEGx = 2 * (EGx[0] > nf1['critical_point']) -1
                 elif max_i == 2:
                     # G3(x) = np.abs(x)/ (1 + np.abs(x))
-                    if fastica_on == True :
+                    if fastica_on :
                         grad = X.dot( (sign_y * inv_pabs_y * inv_pabs_y).T )/T
                         Edgx = np.sum(-2 * inv_pabs_y * inv_pabs_y * inv_pabs_y)/T
                     else :
@@ -611,7 +600,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
                         vEGx = 2 * (EGx[2] > nf3['critical_point']) -1
                 elif max_i == 4:
                     # G5(x)  = x* np.abs(x) /(10 + np.abs(x))
-                    if fastica_on == True :
+                    if fastica_on :
                         grad  = X.dot((abs_y *(20 + abs_y) * inv_p10abs_y * inv_p10abs_y).T )/T
                         Edgx = np.sum(200 * sign_y * inv_p10abs_y * inv_p10abs_y * inv_p10abs_y)/T
                     else :
@@ -619,13 +608,13 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
                         vEGx = 2 * (EGx[4] > nf5['critical_point']) -1
                 elif max_i == 6:
                     # G7(x) =  x / (1 + x**2)
-                    if fastica_on == True :
+                    if fastica_on :
                         grad = X.dot(((1 - yy)* inv_pabs_yy**2).T )/T
                         Edgx = np.sum(2 * y * (yy-3)* inv_pabs_yy* inv_pabs_yy* inv_pabs_yy)/T
                     else :
                         grad = X.dot((weight * (1 - yy) * inv_pabs_yy**2 ).T ) / np.sum(weight)
                         vEGx = 2 * (EGx[6] > nf7['critical_point']) -1
-                if fastica_on == True :
+                if fastica_on :
                     w1 = grad - Edgx * w
                 else :
                     grad = vEGx * grad
@@ -649,12 +638,11 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
             min_cost_queue[iter] = np.copy(min_cost)
 
 
-            if fastica_on == True :
+            if fastica_on :
                 if cost_increaser_counter >= max_cost_increase_number  or 1- np.min(np.abs(np.diag(W.dot(last_W.T)))) < tolerance:
                     cost_increaser_counter = 0
                     W = np.copy(best_W )
                     last_W = np.copy(W)
-                    iter_fastica = iter
                     fastica_on = False
                     continue
             else :
@@ -678,7 +666,6 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
     best_W = np.copy(W)
     Cost = np.zeros((max_iter_nonorth, 1))
     min_cost_queue = min_cost * np.ones((max_iter_nonorth, 1))
-    error = np.inf
     mu = 1 / 25
     min_mu = 1/ 200
     max_cost_increase_number = 3
@@ -848,7 +835,6 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
     W = best_W
     W = W.dot(P)
 
-    # if show cost:  to do later
 
     return W
 
@@ -871,20 +857,19 @@ def simplified_ppval(pp: dict, xs: float) -> float:
     """
     b = pp['breaks'][0]
     c = pp['coefs']
-    l = int(pp['pieces'] )
+    l_pieces = int(pp['pieces'] )
     k = 4
-    dd = 1
     # find index
     index = float('nan ')
     middle_index = float('nan ')
-    if xs > b[l-1]:
-        index = l-1
+    if xs > b[l_pieces-1]:
+        index = l_pieces-1
     else:
         if xs < b[1]:
             index = 0
         else :
             low_index = 0
-            high_index = l-1
+            high_index = l_pieces-1
 
             while True :
                 middle_index = int(np.ceil(((0.6* low_index + 0.4* high_index))))
@@ -933,7 +918,6 @@ def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
 
     # pre-processing program
-    N = X.shape[0]
     T = X.shape[1]
     # remove DC
     Xmean = np.mean(X, axis=1)
