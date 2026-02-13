@@ -3,6 +3,7 @@
 ## Unreleased changes (available on the `dev` branch)
  
 ### Added
+- Added the function `cedalion.geometry.landmarks.normalize_landmarks_labels` that case-insensitively maps common landmark labels to canonical names, by [Mohammad Orabe](https://github.com/orabe). ([#132](https://github.com/ibs-lab/cedalion/pull/132))
 - Added functionality and examples for constrained ICA methods (arc-ERBM, arc-EBM),  by [Jacqueline Behrendt](https://github.com/jackybehrendt12). ([#133](https://github.com/ibs-lab/cedalion/pull/133))
 - An example notebook for ICA source extraction was added, by [Jacqueline Behrendt](https://github.com/jackybehrendt12). 
 ([#112](https://github.com/ibs-lab/cedalion/pull/112))
