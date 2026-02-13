@@ -20,6 +20,58 @@ from cedalion.dataclasses import (
 from cedalion.typing import LabeledPoints
 
 
+def normalize_landmarks_labels(geo3d: LabeledPoints) -> LabeledPoints:
+    """Normalize landmark labels to canonical names.
+
+    Maps commonly used alternative landmark names and capitalizations to canonical
+    names.
+
+    When multiple labels normalize to the same canonical name:
+    - If the canonical name already exists, alternative forms are not altered.
+    - If multiple alternatives exist without the canonical form, a ValueError is
+      raised and the user must resolve the ambiguity.
+
+    Args:
+        geo3d: LabeledPoints with potentially non-canonical landmark names.
+
+    Returns:
+        LabeledPoints with normalized landmark labels.
+    """
+    if len(geo3d.label) == 0:
+        return geo3d
+
+    label_mapping = {
+        "Nz": {"nz", "nasion", "nas"},
+        "Iz": {"iz", "inion", "ini"},
+        "LPA": {"lpa", "lpa_l", "left ear", "le", "left", "l"},
+        "RPA": {"rpa", "rpa_r", "right ear", "re", "right", "r"},
+        "Cz": {"cz", "vertex"},
+    }
+
+    # reverse mapping from aliases to canoncial
+    label_mapping_r = {v: k for k, vs in label_mapping.items() for v in vs}
+
+    labels_to_rename = {}
+
+    for lbl in geo3d.label.values:
+        lbl_lower = lbl.lower()
+        if lbl_lower in label_mapping_r:
+            canonical = label_mapping_r[lbl_lower]
+
+            if canonical not in geo3d.label.values:
+                labels_to_rename[lbl] = canonical
+
+    geo3d_renamed = geo3d.points.rename(labels_to_rename)
+
+    if len(set(geo3d_renamed.label.values)) != geo3d_renamed.sizes["label"]:
+        raise ValueError(
+            "During landmark label normalization, multiple landmarks were "
+            "mapped to the same name. Please resolve this ambiguity manually."
+        )
+
+    return geo3d_renamed
+
+
 def _sort_line_points(start_point: np.ndarray, points: np.ndarray):
     sorted_indices = []
     sorted_distances = []

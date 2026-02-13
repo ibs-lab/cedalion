@@ -3,6 +3,7 @@
 ## Unreleased changes (available on the `dev` branch)
  
 ### Added
+- Added the function `cedalion.geometry.landmarks.normalize_landmarks_labels` that case-insensitively maps common landmark labels to canonical names, by [Mohammad Orabe](https://github.com/orabe). ([#132](https://github.com/ibs-lab/cedalion/pull/132))
 - Added functionality and examples for constrained ICA methods (arc-ERBM, arc-EBM),  by [Jacqueline Behrendt](https://github.com/jackybehrendt12). ([#133](https://github.com/ibs-lab/cedalion/pull/133))
 - An example notebook for ICA source extraction was added, by [Jacqueline Behrendt](https://github.com/jackybehrendt12). 
 ([#112](https://github.com/ibs-lab/cedalion/pull/112))
@@ -10,6 +11,7 @@
 - The factory method `cedalion.dot.get_standard_headmodel` to construct the `TwoSurfaceHeadModel` of the standard Colin27 and ICBM-152 heads was added, by [Eike Middell](https://github.com/emiddell).
 - Added `cedalion.xrutils.dot_dataarray_csr` for matrix products between `xr.DataArray` 
   and `scipy.sparse` arrays, by [Eike Middell](https://github.com/emiddell).
+- Added `cedalion.geometry.landmarks.normalize_landmarks_labels` to map alternative landmark names (e.g., "nasion", "left ear", "nz") to their canonical 10-10 system labels (e.g. Nz, LPA). The function handles now case-insensitive matching and supports common naming conventions. Usage: `geo3d = normalize_landmarks_labels(geo3d)` before calling registration or plotting functions, by [Mohammad Orabe](https://github.com/orabe). ([#84](https://github.com/ibs-lab/cedalion/issues/84))
 ### Changed
 - The package `cedalion.sigproc.motion_correct` was renamed to `cedalion.sigproc.motion`.
 - The ICA-EBM and ICA_ERBM implementations were moved into `cedalion.sigdecomp.unimodal`.
@@ -36,6 +38,7 @@ access example datasets are now available under `cedalion.data`.
 coordinate system, by [Nils Harmening](https://github.com/harmening). ([#110](https://github.com/ibs-lab/cedalion/pull/110))
 - Changed the names of several motion correction algorithms from `motion_correct.motion_correct_X` 
 to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_motion_artefacts_and_correction` was improved. By [Eike Middell](https://github.com/emiddell).
+- The function `cedalion.vis.anatomy.plot_montage3D` now accepts a `landmarks` parameter to specify which landmarks should be highlighted. Pass `None` (default) to show all available canonical registration landmarks (e.g. Nz, Iz, LPA, RPA, Cz), a list of landmark names to show specific ones, or an empty list to show none, by [Mohammad Orabe](https://github.com/orabe). ([#84](https://github.com/ibs-lab/cedalion/issues/84))
 
 
 ### Deprecated
