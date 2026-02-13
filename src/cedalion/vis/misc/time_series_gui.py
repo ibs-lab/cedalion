@@ -12,7 +12,7 @@ import numpy as np
 
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
-from matplotlib.backends.qt_compat import QtCore, QtWidgets
+from matplotlib.backends.qt_compat import QtCore, QtWidgets, QtGui
 from matplotlib.figure import Figure
 
 import cedalion
@@ -25,12 +25,12 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
     def __init__(self, snirfRec=None):
         # Initialize
         super().__init__()
-        
+
         # Check what type of data passed in
-        if type(snirfRec) == cdc.recording.Recording:
+        if isinstance(snirfRec, cdc.recording.Recording):
             self.snirfRec = snirfRec
             self.oftype = "rec"
-        elif type(snirfRec) == dict:
+        elif isinstance(snirfRec, dict):
             self.cfg_dataset = snirfRec["cfg_dataset"]
             self.recs = snirfRec["rec"]
             self.i_subj = 0
@@ -39,9 +39,9 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
             self.oftype = "pkl"
         else:
             raise Exception("Unexpected format passed!")
-        
+
         self._UI_SETUP()
-        
+
     def _UI_SETUP(self):
         # Set central widget
         self._main = QtWidgets.QWidget()
@@ -97,14 +97,14 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         control_panel_layout.setSpacing(20)
         control_panel.setLayout(control_panel_layout)
         window_layout.addWidget(control_panel, stretch=1)
-        
+
         # Create File Control Layout
         file_layout = QtWidgets.QGridLayout()
         file_layout.setAlignment(QtCore.Qt.AlignTop)
         control_panel_layout.addLayout(
             file_layout,
         )
-        
+
         ## Subject Selector
         self.subj = QtWidgets.QComboBox()
         if self.oftype == "rec":
@@ -116,7 +116,7 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         self.subj.currentTextChanged.connect(self._subj_changed)
         file_layout.addWidget(QtWidgets.QLabel("Subject:"), 0, 0)
         file_layout.addWidget(self.subj, 0, 1)
-        
+
         ## Run Selector
         self.run = QtWidgets.QComboBox()
         if self.oftype == "rec":
@@ -190,7 +190,7 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         control_panel_layout.addStretch()
 
         # Create button action for opening file
-        open_btn = QtWidgets.QAction("Open...", self)
+        open_btn = QtGui.QAction("Open...", self)
         open_btn.setStatusTip("Open SNIRF file")
         open_btn.triggered.connect(self._open_dialog)
 
@@ -424,20 +424,20 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
     def _toggle_stims(self, s):
         self.plot_stims = s
         self._draw_timeseries()
-        
+
     def _subj_changed(self, s):  # TODO
         if s == "None":
             return
-        
+
         self.i_subj = self.cfg_dataset["subj_ids"].index(s)
         self.snirfRec = self.recs[self.i_subj][self.i_run]
         self._dataTimeSeries_ax.clear()
         self._init_calc()
-    
+
     def _run_changed(self, s):  # TODO
         if s == "None":
             return
-        
+
         self.i_run = self.cfg_dataset["file_ids"].index(s)
         self.snirfRec = self.recs[self.i_subj][self.i_run]
         self._dataTimeSeries_ax.clear()
