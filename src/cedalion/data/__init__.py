@@ -58,7 +58,7 @@ DATASETS = pooch.create(
 
         "fieldtrip_standard1005.elc" : "sha256:1ee59197946d62de872db2ac7f2243a596662c231427366f6dc5d84ed237f853", # noqa:E501
 
-        "spafNIRS_example_sub179.zip" : "sha256:49f20b0ac608f3f752ca73e1a2a553a3b4f2e680c061505bcee132cca226daee", # noqa:E501
+        "spafNIRS_example_sub179.zip" : "sha256:0a247be5bfa3c7b5bc12d19203e2bd5432df964d72646945891601d0ba944141", # noqa:E501
     },
     urls={
         "fieldtrip_standard1005.elc" : "https://raw.githubusercontent.com/fieldtrip/fieldtrip/refs/heads/master/template/electrode/standard_1005.elc"
