@@ -3,6 +3,7 @@
 ## Unreleased changes (available on the `dev` branch)
  
 ### Added
+- Added functionality and examples for constrained ICA methods (arc-ERBM, arc-EBM),  by [Jacqueline Behrendt](https://github.com/jackybehrendt12). ([#133](https://github.com/ibs-lab/cedalion/pull/133))
 - An example notebook for ICA source extraction was added, by [Jacqueline Behrendt](https://github.com/jackybehrendt12). 
 ([#112](https://github.com/ibs-lab/cedalion/pull/112))
 - Added `TwoSurfaceHeadmodel.scale_to_headsize` and `TwoSurfaceHeadmodel.scale_to_landmarks` to adjust the head model's size to the head circumferences or digitized landmarks, respectively. By [Eike Middell](https://github.com/emiddell).
