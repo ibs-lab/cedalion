@@ -66,6 +66,14 @@ class DesignMatrix:
             channel_wise=self.channel_wise + other.channel_wise
         )
 
+    def copy(self):
+        """Create a copy of this design matrix."""
+
+        return DesignMatrix(
+            common=self.common.copy(),
+            channel_wise=[i.copy() for i in self.channel_wise]
+        )
+
 
     def iter_computational_groups(
         self,

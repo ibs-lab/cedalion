@@ -1,1 +1,1 @@
-from cedalion.sigdecomp.multimodal.utils_multimodal_models import validate_time_shifts, standardize
+from cedalion.sigdecomp.multimodal.utils import validate_time_shifts, standardize

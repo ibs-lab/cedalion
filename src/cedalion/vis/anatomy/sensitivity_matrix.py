@@ -36,6 +36,15 @@ class Main:
         self.wavelength = wavelength
         self.labeled_points = labeled_points
 
+
+        if "units" in sensitivity.attrs:
+            self.units = sensitivity.attrs["units"]
+        elif sensitivity.pint.units is not None:
+            self.units = str(sensitivity.pint.units)
+        else:
+            self.units = ""
+
+
         self.plt = pv.Plotter()
 
     def plot(self, low_th=-3, high_th=0):
@@ -73,7 +82,7 @@ class Main:
             smooth_shading=True,
             clim=(low_th, high_th),
             scalar_bar_args={
-                "title": "Sensitivity (m⁻¹): Logarithmic Scale",
-                "shadow": True,
+                "title": r"$\log_{10}$ " + f"(sensitivity / {self.units})",
+                "shadow": False,
             },
         )

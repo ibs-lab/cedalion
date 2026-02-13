@@ -6,6 +6,7 @@ from .montage import plot_montage3D
 from .optode_selector import OptodeSelector
 from .scalp_plot import scalp_plot, scalp_plot_gif
 
+import cedalion.vis.anatomy.sensitivity_matrix
 
 __all__ = [
     "plot_brain_in_axes",

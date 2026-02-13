@@ -757,7 +757,7 @@ class ForwardModel:
         dOD_tot = {}
         for wl in wavelengths:
             dOD_tot[wl] = xr.DataArray(
-                dOD[wl, chromos[0]].values + dOD[wl, chromos[1]].values,
+                dOD[wl, chromos[0]].pint.magnitude + dOD[wl, chromos[1]].pint.magnitude,
                 dims=["channel", "parcel"],
                 coords=coords,
             )

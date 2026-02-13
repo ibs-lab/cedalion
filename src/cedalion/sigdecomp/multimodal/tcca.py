@@ -13,14 +13,14 @@ Includes:
 import numpy as np
 import xarray as xr
 
-from cedalion.sigdecomp.multimodal.utils_multimodal_models import (
+from cedalion.sigdecomp.multimodal.utils import (
     validate_dimension_labels,
     validate_time_shifts,
     validate_l1_reg,
     validate_l2_reg,
 )
 
-from cedalion.sigdecomp.multimodal.cca_models import (
+from cedalion.sigdecomp.multimodal.cca import (
     MultimodalSourceDecomposition,
     estimate_filters,
 )

@@ -142,3 +142,41 @@ def test_check_units():
 
     for dim in cedalion.units._dimensions.keys(): # ["[time]", "[length]", ...]
         assert not xrutils.check_units(x_none, dim)
+
+
+def test_unit_stripping_is_error():
+
+    a = xr.DataArray([1,2,3]).pint.quantify("m")
+
+    with pytest.warns(pint.errors.UnitStrippedWarning):
+        a.values
+
+    xrutils.unit_stripping_is_error(True)
+
+    with pytest.raises(pint.errors.UnitStrippedWarning):
+        a.values
+
+    xrutils.unit_stripping_is_error(False)
+
+    with pytest.warns(pint.errors.UnitStrippedWarning):
+        a.values
+
+
+def test_unit_stripping_is_quiet(recwarn):
+
+    a = xr.DataArray([1,2,3]).pint.quantify("m")
+
+    with pytest.warns(pint.errors.UnitStrippedWarning):
+        a.values
+
+    xrutils.unit_stripping_is_quiet(True)
+    a.values
+
+    assert not any(
+        isinstance(w.message, pint.errors.UnitStrippedWarning) for w in recwarn
+    )
+
+    xrutils.unit_stripping_is_quiet(False)
+
+    with pytest.warns(pint.errors.UnitStrippedWarning):
+        a.values

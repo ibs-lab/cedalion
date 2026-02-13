@@ -15,7 +15,7 @@ preprocessing, quality control, and feature extraction.
    cedalion.nirs.td
    cedalion.sigproc.epochs
    cedalion.sigproc.frequency
-   cedalion.sigproc.motion_correct
+   cedalion.sigproc.motion
    cedalion.sigproc.quality
    cedalion.sigproc.physio
 

@@ -23,6 +23,15 @@ community/index.md
 
 ```{toctree}
 :maxdepth: 1
+:caption: ⭐ Tutorial
+
+Paper (in prep.) <https://arxiv.org/abs/2601.05923>
+Tutorial Notebooks <tutorial.rst>
+```
+
+
+```{toctree}
+:maxdepth: 1
 :caption: Package Features
 
 data_io/index

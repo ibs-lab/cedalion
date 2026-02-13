@@ -225,6 +225,12 @@ def coords_from_other(
 
 
 def unit_stripping_is_error(is_error : bool = True):
+    """Make UnitStrippedWarning an error.
+
+    This function is useful for debugging cases where UnitStrippedWarning are issued
+    in third-party libraries. By raising an exception one can use the debugger to
+    find the occurence in cedalion or user code that triggers the warning.
+    """
     if is_error:
         warnings.simplefilter("error", pint.errors.UnitStrippedWarning)
     else:
@@ -232,6 +238,22 @@ def unit_stripping_is_error(is_error : bool = True):
             if f[0] =="error" and f[2] == pint.errors.UnitStrippedWarning:
                 del warnings.filters[i]
                 break
+
+
+def unit_stripping_is_quiet(is_quiet : bool = True):
+    """Silence UnitStrippedWarnings.
+
+    It is not recommended to use this functions. Instead consider using
+    `unit_stripping_is_error` to find the code responsible for issuing the warning
+    and fix it there.
+    """
+    if is_quiet:
+        warnings.filterwarnings("ignore", category=pint.errors.UnitStrippedWarning)
+    else:
+        warnings.filters[:] = [
+            f for f in warnings.filters
+            if not (f[0] == "ignore" and f[2] is pint.errors.UnitStrippedWarning)
+        ]
 
 
 def drop_duplicate_dimensions(array : xr.DataArray) -> xr.DataArray:

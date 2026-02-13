@@ -6,7 +6,7 @@ from sklearn.cross_decomposition import CCA
 import xarray as xr
 
 
-from cedalion.sigdecomp.multimodal.utils_multimodal_models import (
+from cedalion.sigdecomp.multimodal.utils import (
     validate_dimension_labels,
     validate_time_shifts,
 )

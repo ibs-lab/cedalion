@@ -209,8 +209,11 @@ def plot_surface(
         else:
             rgb = False
 
+    if "pickable" not in kwargs:
+        kwargs["pickable"] = True
+
     plotter.add_mesh(mesh, color=color, rgb=rgb, opacity=opacity, smooth_shading=True,
-                     pickable=True, **kwargs)
+                     **kwargs)
 
 
     # Define landmark labels

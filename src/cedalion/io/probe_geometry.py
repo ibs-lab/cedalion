@@ -7,9 +7,11 @@ import numpy as np
 import pandas as pd
 import trimesh
 import xarray as xr
+import scipy.io
 
 import cedalion
 import cedalion.typing as cdt
+import cedalion.utils as utils
 from cedalion.dataclasses import PointType, TrimeshSurface, build_labeled_points
 
 
@@ -328,3 +330,31 @@ def read_fieldtrip_elc(fname : Path | str) -> cdt.LabeledPoints:
     )
 
 
+def read_sd(fname : Path | str, crs="av") -> cdt.LabeledPoints:
+    x = scipy.io.loadmat(fname, squeeze_me=True)
+    lm_pos = x["SD"]["Landmarks"][()][()][()]["pos"]
+    lm_labels = x["SD"]["Landmarks"][()][()][()]["labels"]
+    src_pos = x["SD"]["SrcPos3D"][()]
+    det_pos = x["SD"]["DetPos3D"][()]
+    units = x["SD"]["SpatialUnit"][()]
+
+    nsrc = len(src_pos)
+    ndet = len(det_pos)
+    nlm = len(lm_pos)
+
+    src_labels = utils.zero_padded_numbers(range(1, nsrc + 1), prefix="S")
+    det_labels = utils.zero_padded_numbers(range(1, ndet + 1), prefix="D")
+
+    coords = np.vstack((src_pos, det_pos, lm_pos))
+
+    return build_labeled_points(
+        coords,
+        crs=crs,
+        units=units,
+        labels=np.hstack((src_labels, det_labels, lm_labels)),
+        types=(
+            [PointType.SOURCE] * nsrc
+            + [PointType.DETECTOR] * ndet
+            + [PointType.LANDMARK] * nlm
+        ),
+    )

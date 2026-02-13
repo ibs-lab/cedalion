@@ -554,6 +554,7 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         sigma_brain: the width of the gaussians on the brain
         sigma_scalp : the width of the gaussians on the scalp
         mask_threshold: log10(sensitivity) threshold for vertices to be considered
+        verbose: controls visibility of status messages and progress bar
     """
 
     def __init__(
@@ -565,12 +566,14 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         sigma_brain: cdt.QLength,
         sigma_scalp: cdt.QLength,
         mask_threshold: float,
+        verbose: bool = True,
     ):
         self.threshold_brain = threshold_brain
         self.threshold_scalp = threshold_scalp
         self.sigma_brain = sigma_brain
         self.sigma_scalp = sigma_scalp
         self.mask_threshold = mask_threshold
+        self.verbose = verbose
 
         self._mask: xr.DataArray = None  # shape (vertex)
         self._H: xr.DataArray = None  # shape(channel, kernel, wavelength)
@@ -642,7 +645,7 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
 
         sel_indices = [0]
 
-        for vertex_index in tqdm(np.arange(1, nmasked)):
+        for vertex_index in tqdm(np.arange(1, nmasked), disable=not self.verbose):
             vv = mesh_masked[vertex_index, :]
 
             dists = np.linalg.norm(mesh_masked[sel_indices, :] - vv[None, :], axis=1)
@@ -709,7 +712,7 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         csr_indptr = [0]
         csr_ndata = 0
 
-        for i_kernel in tqdm(np.arange(n_kernel)):
+        for i_kernel in tqdm(np.arange(n_kernel), disable=not self.verbose):
             dists = np.linalg.norm(mesh_downsampled[[i_kernel],:] - mesh, axis=1)
             kernel_values = norm_pdf(dists)
             indices : np.ndarray = np.flatnonzero(kernel_values >= 1e-16)

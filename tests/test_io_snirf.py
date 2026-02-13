@@ -70,3 +70,12 @@ def test_read_snirf_crs():
 
     rec = cedalion.io.read_snirf(path, crs="another_crs")[0]
     assert rec.geo3d.points.crs == "another_crs"
+
+def test_read_snirf_time_units():
+    path = cedalion.data.get_fingertapping_snirf_path()
+
+    rec = cedalion.io.read_snirf(path)[0]
+    assert rec["amp"].time.units == cedalion.units.s
+
+    rec = cedalion.io.read_snirf(path, time_units="ms")[0]
+    assert rec["amp"].time.units == cedalion.units.ms
