@@ -85,6 +85,8 @@ class DataTypeLabel(StrEnum):
 
 CANONICAL_NAMES = {
     "unprocessed raw": "amp",
+    "unprocessed amplitude" : "amp",
+    "unprocessed phase" : "phase",
     "processed raw": "amp",
     "processed dOD": "od",
     "processed concentrations": "conc",
@@ -149,6 +151,11 @@ def assign_data_type_group(
             moment = int(nirs_element.probe.momentOrders[data_type_index - 1])
             moment_name = ("0th", "1st", "2nd", "3rd")[moment]
             return f"unprocessed {moment_name} central moment"
+
+        case (DataType.FD_AC_AMPLITUDE, None):
+            return "unprocessed amplitude"
+        case (DataType.FD_PHASE, None):
+            return "unprocessed phase"
 
         case (DataType.PROCESSED, DataTypeLabel.RAW_SATORI):
             return "processed raw"

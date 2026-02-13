@@ -5,27 +5,30 @@ matlab versions provided by the MLSP Lab at the University of Maryland, which is
 available here: https://mlsp.umbc.edu/resources.html.
 """
 
+
 import scipy as sp
 import numpy as np
-from cedalion.sigdecomp.unimodal import ica_ebm as ica_ebm
+from cedalion.sigdecomp.multimodal import arc_ebm as arc_ebm
 import cedalion.data
 
-def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
-    """ICA-ERBM: ICA by Entropy Rate Bound Minimization (real-valued version).
+def arc_erbm(X: np.ndarray, guess_mat, p: int = None , pr_guess_mat = None) -> np.ndarray:
+    """ Adaptive-reverse Constrained ICA by Entropy Rate Bound Minimization (arc-ERBM) is a spectrally constrained ICA algorithm. 
 
     Args:
-        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time
-            series with dimensionality N observations/channels and T time points
-        p (int): the filter length for the invertible filter source model, does not need
-            to be specified. Default is p = (11, T/50).
+        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
+
+        guess_mat (np.ndarray, (Time Points/2 , Referenced Channels)): Frequency reference signal for the reconstruction
+
+        p (int): the filter length for the invertible filter source model, does not need to be specified. Default is p = minimum(11, T/50).
+
+        pr_guess_mat (np.ndarray, (Time Points, Referenced Channels)):  Optional time domain reference signal for the reconstruction, however, only frequency characteristics are used. Only needed if Phase Retrieval Projection constraint should be included.
 
     Returns:
-        W (np.ndarray, (Channels, Channels)): the [N x N] demixing matrix with weights
-            for N channels/sources. To obtain the independent components,
-            the demixed signals can be calculated as S = W @ X.
+        W (np.ndarray, (Channels, Channels)): the [N x N] demixing matrix with weights for N channels/sources. To obtain the independent components,
+        the demixed signals can be calculated as S = W @ X.
 
     Initial Contributors:
-        - Jacqueline Behrendt | jacqueline.behrendt@campus.tu-berlin.de | 2024
+        - Jacqueline Behrendt | j.behrendt@tu-berlin.de | 2026
 
     References:
         This code is based on the matlab version of bss by Xi-Lin Li (:cite:t:`Li2010B`)
@@ -45,8 +48,9 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
     table = np.load(file_path, allow_pickle=True)
 
     K = 8
-    nf1, nf3, nf5, nf7 = table[0], table[2], table[4], table[6]
-
+    nf1, nf3, nf5, nf7 = table[0], table[2], table[4], table[6] 
+   
+    # Apply pre-processing to data
     N, T = X.shape
     X, P = pre_processing(X)
 
@@ -54,8 +58,117 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
     if p is None:
         p = int(np.minimum(11, T/ 50))
 
+    if pr_guess_mat is  None:
+        constraint = 'psd'
+    else: 
+        constraint = 'phase_retrieval'
+
+    # Define similarity measures and gradients for constraints
+    # normalize reference signals
+    for i in range(guess_mat.shape[1]): 
+        r_n_c = guess_mat[:, i]   
+        r_n_c = r_n_c - np.mean(r_n_c) 
+        guess_mat[:, i] = np.copy(r_n_c / np.linalg.norm(r_n_c) )
+
+    # compute psd of X 
+    X_hat = (2/T) * np.fft.rfft(X, axis = 1) 
+
+    # compute cross psd of X 
+    C_hat = np.zeros((X_hat.shape[1], N , N ), dtype=complex)
+    C_hat = (X_hat[:, None, :] * np.conjugate(X_hat[None, :, :])).transpose(2, 0, 1)
+    
+    # center C_hat  
+    C_hat_mean = np.mean(C_hat, axis = 0)   
+    C_hat = C_hat - np.reshape(C_hat_mean, (1, N, N))   
+
+    # store real matrix for gradient computation 
+    C_tilde = np.real(C_hat + np.transpose(C_hat, (0, 2, 1)) )
+    
+    # define similarity measure for psd constraint
+    def epsilon(a,b): 
+        # power spectral density 
+        # b is already a psd 
+        psd_a = (2/T) * np.abs(np.fft.rfft(a))**2  
+        psd_correlation = np.corrcoef(psd_a, b)[0,1] 
+        return psd_correlation 
+    
+    def epsilon_grad(r_n_c): 
+        # compute gradient of epsilon for the psd constraint   
+        # compute psd of estimated source
+        psd_s = (2/T) * np.abs(np.fft.rfft(w.T.dot(X)))**2 
+
+        # compute correlation between estimated and reference psd
+        current_corr = np.corrcoef(psd_s, r_n_c)[0,1]
+        sign = np.sign(current_corr) 
+
+        # compute gradient vector
+        vec = (sign / np.linalg.norm(psd_s, 2)) * r_n_c -  (np.abs(current_corr) / np.linalg.norm(psd_s, 2)**2) * psd_s 
+        vec = vec.reshape((-1, 1, 1))     
+        c_grad  = (T/2) * mu_c[n] * np.sum( np.multiply(np.dot(C_tilde,  w), vec), axis = 0  )    
+        return c_grad
+             
+    if constraint == 'phase_retrieval' : 
+        amplitude = pr_guess_mat
+
+        def pr_update(amp, y, filter, X_filtered): 
+            # this function applies a phase retrieval update step
+
+            # filter reference amplitude
+            amp_filtered =  sp.signal.lfilter(filter, 1, amp , axis = 0 )
+            amp_filtered = np.abs(np.fft.rfft(amp_filtered)) 
+
+            # compute fft of estimated source
+            y_hat = np.fft.rfft(y)
+
+            # project onto magnitude constraint
+            g_hat = amp_filtered * np.exp(1j * np.angle(y_hat))
+            g_hat = g_hat.reshape((-1, 1))
+
+            # inverse fft to time domain
+            g = np.fft.irfft(g_hat, axis = 0 , n =X_filtered.shape[1] )
+
+            # compute corresponding weights 
+            returns = np.linalg.lstsq(X_filtered.T, g.flatten())
+            v_tilde = returns[0]
+
+            return v_tilde
+
+            
     # initialize W
-    W = ica_ebm.ICA_EBM(X)
+    W = arc_ebm.arc_ebm(X, guess_mat, 'psd')
+    
+    gam = 2500
+    decaying_factor = 0.99 
+        
+    # Choose set of threshold values
+    rho = np.arange(0, 1.01, 0.01) 
+
+    
+    # Number of reference signals   
+    num_guess = guess_mat.shape[1] 
+
+    mu_c = np.ones((num_guess, 1))  
+    corr_w_guess = np.zeros((num_guess, N)) 
+    num_W = np.shape(W)[0]  
+    corr_w_guess = np.zeros((num_guess, num_W)) 
+
+    # Resort W based on correlation with reference signals 
+    for kl in range(num_guess): 
+        r_n_c = guess_mat[:, kl]    
+        for lp in range(num_W): 
+            w = W[lp, :].T
+            corr_w_guess[kl, lp] = epsilon(X.T.dot(w), r_n_c)  
+            
+    # May need auction to auction to choose order 
+    max_index = np.argmax(np.abs(corr_w_guess), axis = 1)  
+    if len(np.unique(max_index)) != num_guess: 
+        colsol, _ = auction((1- np.abs(corr_w_guess)).T)
+        max_index = colsol.T
+    c = np.arange(0, num_W) 
+    c = np.setdiff1d(c, max_index)  
+    sort_order = np.concatenate((max_index, c)) 
+    W = W[sort_order, :] 
+
 
     if p == 1:
         W = W.dot(P)
@@ -70,12 +183,13 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
     temp5 = np.zeros((T, N))
     Z = np.zeros((N,T,N))
 
-    # prepare the data used in integral
+    # Prepare the data used in integral
     calculate_cos_sin_mtx(p)
 
+        
     last_W = np.copy(W)
     best_W = np.copy(W)
-    best_a = np.copy(a)
+    best_a = np.copy(a) 
 
     #################  Part 1: #################
     for stochastic_search in range(1,-1, -1):
@@ -90,26 +204,32 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
             max_iter_north = 200
             tolerance = 1e-5
 
-        cost_increase_counter = 0
+        cost_increase_counter = 0   
+        mu_idx = np.full(mu_c.shape, False)
+
+        min_mu = 1/200  
+        mu_old = np.copy(mu_c)
+        rho_n_arr = np.zeros((max_iter_north+1, N))  
+
         W = np.copy(best_W)
         a = np.copy(best_a)
         last_W = np.copy(best_W)
-        Cost = np.zeros((max_iter_north, 1))
+        Cost = np.zeros((max_iter_north+1, 1))
         min_cost = np.inf
-        min_cost_queue = min_cost * np.ones((max_iter_north, 1))
+        min_cost_queue = min_cost * np.ones((max_iter_north+1, 1))
         negentropy_array = np.zeros((N,1))
-
+            
         for iter in range(1, max_iter_north+1):
+
             if stochastic_search == 1:
                 # estimate AR coefficients
                 Y = np.copy(np.dot(W, X) )
                 for n in range(N):
 
                     if iter%6 == 1 or iter<= 5:
-
+                        
                         a1, min_ere1  = lfc(Y[n,:], p , 'unknown', [])
                         a2, min_ere2 = lfc(Y[n, :], p, [], a[:, n])
-
 
                         # choose the best model
                         min_ere = np.inf
@@ -119,6 +239,7 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
                         if min_ere > min_ere2:
                             min_ere = min_ere2
                             a[:, n] = np.copy(a2)
+
                     elif iter%6 == 4 :
                         a3, _ = lfc(Y[n, :], p, [], a[:, n])
                         a[:, n ] = np.copy(a3)
@@ -133,9 +254,7 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
             for n in range(N):
                 temp1 = np.random.rand(N, 1)
                 temp2 = np.delete(W, n, axis = 0)
-                h = temp1 - temp2.T.dot(
-                    np.linalg.solve(np.dot(temp2, temp2.T), temp2)
-                ).dot(temp1)
+                h = temp1 - temp2.T.dot( np.linalg.solve( np.dot(temp2, temp2.T), temp2)).dot(temp1 )
                 v = np.copy(W[n, :].T )
                 sigma2 = v.T.dot(Rz[:, :, n]).dot(v)
                 Cost[iter-1] = np.copy(Cost[iter-1] + np.log(sigma2)/2 )
@@ -208,6 +327,40 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
                 negentropy_array[n] = np.copy(max_NE)
                 Cost[iter -1] = np.copy(Cost[iter-1] - max_NE)
 
+                if n < num_guess: 
+                    # choose reference signal
+                    r_n_c = guess_mat[:, n]    
+                    # compute correlation  
+                    w = np.copy(W[n, :].T ) 
+                    y_tilde = np.copy(w.T.dot(X))
+                    w = w.reshape((-1, 1))
+ 
+                    e_pair = epsilon(y_tilde.T, r_n_c )  
+                    # abs of similarity measure
+                    dis_wr = np.abs(e_pair) 
+
+                   # choose rho_n based on update scheme 
+                    if mu_idx[n] == 1: 
+                        if np.size(rho[rho < dis_wr]) != 0:
+                            rho_n = np.max(rho[rho < dis_wr])
+                    else: 
+                        if np.size(rho[rho > dis_wr]) != 0:
+                            rho_n = np.min(rho[rho > dis_wr])
+
+                    if rho.size == 0:
+                        rho_n = 0.01 
+                                
+                    # store rho 
+                    rho_n_arr[iter, n] = np.copy(e_pair)
+                    # update mu 
+                    mu_old[n] = np.copy(mu_c[n]) 
+
+                    mu_idx[n] = mu_idx[n] or (mu_c[n] >= 1)
+                    mu_idx[n] = mu_idx[n] and (mu_c[n] > 0) 
+                    mu_c[n] = np.minimum(1, mu_c[n])
+                    mu_c[n] = np.maximum(0, mu_c[n] + gam * (rho_n - dis_wr))    
+                        
+        
 
                 if stochastic_search == 1:
                     weight = np.random.rand(1, T)
@@ -227,29 +380,46 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
                     EGx[6] = np.maximum(np.minimum(EGx[6], nf7['max_EGx']), nf7['min_EGx'])
                     grad = h / (np.dot(h.T, v)) + Z[:, :, n].dot((weight*(1-yy)*inv_pabs_yy**2).T) * simplified_ppval(nf7['pp_slope'], EGx[6]) / np.sum(weight)
 
-                # constant direction
+                # Constant direction
                 cnstd = Rz[:, :, n].dot(v)
+
+                if n < num_guess:  
+                    constraint_grad = epsilon_grad(r_n_c) 
+                    grad = grad + constraint_grad
+
+
                 # projected gradient
                 grad =  grad - (cnstd.T.dot(grad) * cnstd /(np.dot(cnstd.T, cnstd))).reshape(-1, 1)
-                grad = inv_sqrtmH(Rz[:, :, n]).dot(grad)
-                # normalized gradient
+                check = inv_sqrtmH(Rz[:, :, n])
+                grad = check.dot(grad)
+
+                # Normalized gradient
                 grad = grad / np.sqrt(grad.T.dot(Rz[:, :, n].dot(grad)))
+
                 v = v.reshape(-1,1) + mu * grad
-                v = v / np.sqrt(v.T.dot(Rz[:, :, n].dot(v)))
+
+
+                if constraint == 'phase_retrieval' and stochastic_search == 1:
+                    if n < amplitude.shape[1]:
+                        v_tilde = pr_update(amplitude[:, n], y, a[:, n], Z[:, :, n])
+                        v_tilde = np.reshape(v_tilde, v.shape)
+                        v =  0.8* v +  0.2* v_tilde
+
                 W[n, :] = np.copy(v.T )
 
-
+  
+            Cost[iter] = Cost[iter] - (np.sum(np.power(mu_c, 2 ) - np.power(mu_old, 2)) / (2 * gam ))
+       
+    
             if Cost[iter-1]  < min_cost:
                 cost_increase_counter = 0
                 min_cost = np.copy(Cost[iter-1])
                 best_W = np.copy(last_W)
                 best_a = np.copy(a)
-                #max_negentropy = np.copy(negentropy_array)
             else:
                 cost_increase_counter = cost_increase_counter + 1
 
             min_cost_queue[iter-1] = np.copy(min_cost)
-
 
             if cost_increase_counter > max_cost_increase:
                 if stochastic_search == 1:
@@ -261,7 +431,7 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
                     if 1 - np.min(np.abs(np.diag(np.dot(W1, last_W1.T)))) < tolerance:
                         break
                     else:
-                        mu = mu / 2
+                        mu = np.copy(np.maximum((decaying_factor**(iter + 1)) , min_mu))
                         W = np.copy(best_W)
                         last_W = np.copy(best_W)
                         a = np.copy(best_a)
@@ -276,7 +446,7 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
                     if 1 - np.min(np.abs(np.diag(np.dot(W1, last_W1.T)))) < tolerance:
                         break
                     else:
-                        mu = mu / 2
+                        mu = np.copy(np.maximum((decaying_factor**(iter + 1)) , min_mu))
                         W = np.copy(best_W)
                         last_W = np.copy(best_W)
                         a = np.copy(best_a)
@@ -286,35 +456,32 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
             last_W = np.copy(W)
 
         W = np.copy(best_W)
-
     W = np.dot(W, P)
-    return W
+    
+    return W 
 
 
-########################################################################################
+###############################################################################################################
 # These functions are used in the ERBM algorithm.
-########################################################################################
+###############################################################################################################
 
 
 def lfc(x: np.ndarray, p: int , choice, a0) -> tuple[np.ndarray, np.ndarray]:
-    """Compute the linear filtering coefficients (LFC).
-
-    This helper function for ERBM ICA: computes the LFC with length p for entropy rate
-    estimation, and the estimated entropy rate.
+    """Helper function for ERBM ICA: computes the linear filtering coefficients (LFC) with length p for entropy rate estimation, and the estimated entropy rate.
 
     Args:
         x (np.ndarray, (Time Points, 1)): the source estimate [T x 1]
         p (int):  the filter length for the source model
-        choice :  can be 'sub', 'super' or 'unknown'; any other input is handled as
-            'unknown'
-        a0 (np.ndarray or empty list): is the intial guess [p x 1] or an empty list []
+        choice :  can be 'sub', 'super' or 'unknown'; any other input is handled as 'unknown' 
+        a0 (np.ndarray or empty list): is the intial guess [p x 1] or an empty list []     
 
     Returns:
         a (np.ndarray, (p, 1)): the filter coefficients [p x 1]
         min_cost (np.ndarray, (1, 1)): the entropy rate estimation [1 x 1]
     """
 
-    global nf1, nf3, nf5, nf7
+    global nf1, nf3, nf5, nf7, cosmtx, sinmtx, Simpson_c
+
     tolerance = 1e-4
     T = x.shape[0]
     X0 = sp.linalg.convolution_matrix(x, p, 'full').T
@@ -371,7 +538,7 @@ def lfc(x: np.ndarray, p: int , choice, a0) -> tuple[np.ndarray, np.ndarray]:
         mu = 16* min_mu
     cost_increase_counter = 0
     Cost = np.zeros((max_iter, 1))
-
+    
     for iter in range(max_iter):
         a = np.copy(np.reshape(a, (-1, 1)) )
         a_original = np.copy(P.dot(a))
@@ -456,7 +623,7 @@ def lfc(x: np.ndarray, p: int , choice, a0) -> tuple[np.ndarray, np.ndarray]:
         else:
             cost_increase_counter = cost_increase_counter + 1
 
-        if cost_increase_counter > 0:
+        if cost_increase_counter > 0: 
             if mu > min_mu:
                 mu = mu / 2
                 cost_increase_counter = 0
@@ -498,23 +665,20 @@ def lfc(x: np.ndarray, p: int , choice, a0) -> tuple[np.ndarray, np.ndarray]:
 
 def simplified_ppval(pp: dict, xs: float) -> float:
     """Helper function for ERBM ICA: simplified version of ppval.
-
-    This function evaluates a piecewise polynomial at a specific point.
-
+        This function evaluates a piecewise polynomial at a specific point. 
+    
     Args:
-        pp (dict): a dictionary containing the piecewise polynomial representation of a
-            function
+        pp (dict): a dictionary containing the piecewise polynomial representation of a function
         xs (float): the evaluation point
 
     Returns:
-        v (float): the value of the function at xs
+        v (float): the value of the function at xs   
     """
 
     b = pp['breaks'][0]
     c = pp['coefs']
     l_pieces = int(pp['pieces'] )
     k = 4
-    #dd = 1
     # find index
     index = float('nan ')
     middle_index = float('nan ')
@@ -545,26 +709,25 @@ def simplified_ppval(pp: dict, xs: float) -> float:
     return v
 
 def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Constraint direction for calculating projected gradient and gain of filter a.
-
-    Helper function for ERBM ICA.
-
+    """Helper function for ERBM ICA: returns constraint direction used for calculating projected gradient and gain of filter a.
+    
     Args:
         a (np.ndarray, (p, 1)): the filter coefficients [p x 1]
-
+    
     Returns:
         b (np.ndarray, (p, 1)): the constraint direction [p x 1]
         G (np.ndarray, (1,)): the gain of the filter a
     """
 
     global cosmtx, sinmtx, Simpson_c
+
+
     eps = np.finfo(np.float64).eps
     p = a.shape[0]
     # calculate the integral
     # sample omega from 0 to pi
     n = 10*p
     h = np.pi / n
-    #w = np.arange(0, n+1, 1) * h
 
     # calculate |A(w)|^2
     Awr = np.zeros((1, n+1))  # real part
@@ -584,7 +747,7 @@ def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     # this is the integral
     u = h * v.dot(Simpson_c/3)
-    b = sp.linalg.toeplitz(u[:p]).dot(a)
+    b = sp.linalg.toeplitz(u[:p].ravel()).dot(a)
 
     # gain
     G = u[p]
@@ -593,11 +756,11 @@ def cnstd_and_gain(a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def calculate_cos_sin_mtx(p: int) -> None :
-    """Calculate the cos and sin matrix for integral calculation in ERBM ICA.
-
+    """Helper function for ERBM ICA: calculates the cos and sin matrix for integral calculation in ERBM ICA.
+    
     Args:
-        p (int): the filter length for the invertible filter source model
-
+        p (int): the filter length for the invertible filter source model   
+    
     Returns:
         None
     """
@@ -624,15 +787,13 @@ def calculate_cos_sin_mtx(p: int) -> None :
 
 
 def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Preprocessing (removal of mean, patial pre-whitening, temporal pre-filtering).
-
+    """Helper function for ERBM ICA: Preprocessing (removal of mean, patial pre-whitening, temporal pre-filtering)
+    
     Args:
-        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time
-            series with dimensionality N observations/channels and T time points
-
+        X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
+    
     Returns:
-        X (np.ndarray, (Channels, Time Points)): the pre-processed input multivariate
-            time series.
+        X (np.ndarray, (Channels, Time Points)): the pre-processed input multivariate time series
         P (np.ndarray, (Channels, Channels)): the pre-whitening matrix
     """
     # pre-processing of the data
@@ -649,11 +810,9 @@ def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     for  p in range(q):
         r[p] = np.trace(X[:, : T-p].dot(X[:, p: T].T)) / T / N
 
-    af  = np.linalg.solve(sp.linalg.toeplitz(r[:q-1]), np.conjugate(r[1:]) )
+    af  = np.linalg.solve(sp.linalg.toeplitz(r[:q-1].ravel()), np.conjugate(r[1:]) )
     for n in range(N):
-        X[n, :] = sp.signal.lfilter(
-            np.concatenate((np.ones((1, 1)), -af), axis=0)[:, 0], 1, X[n, :]
-        )
+        X[n, :] =  sp.signal.lfilter(np.concatenate((np.ones((1,1)), -af), axis = 0)[:,0], 1 ,X[n, :])
 
     # spatio pre-whitening
     R = np.dot(X, X.T) / T
@@ -665,17 +824,96 @@ def pre_processing(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def inv_sqrtmH(B: np.ndarray) -> np.ndarray:
     """Helper function for ERBM ICA: computes the inverse square root of a matrix.
-
+    
     Args:
         B (np.ndarray): a square matrix
-
+        
     Returns:
-        A (np.ndarray): the inverse square root of B
+        A (np.ndarray): the inverse square root of B 
     """
     D, V = np.linalg.eig(B)
     order = np.argsort(D)
     D = D[order]
     V = V[:, order]
+    #print('D', D)
     d = 1/np.sqrt(D)
     A = np.dot(np.dot(V, np.diag(d)), V.T)
     return A
+
+def auction(assignCost, guard=None):
+    """
+    Performs assignment using Bertsekas' auction algorithm.
+
+    Parameters:
+    assignCost (ndarray): m x n matrix of costs for associating each row with each column. m >= n.
+    guard (float, optional): Cost of column non-assignment. All assignments will have cost < guard.
+    
+    Returns:
+    colsol (ndarray): Column assignments, where colsol[j] gives the row assigned to column j.
+    rowsol (ndarray): Row assignments, where rowsol[i] gives the column assigned to row i.
+    """
+    
+    m, n = assignCost.shape
+
+    if m < n:
+        raise ValueError('Cost matrix must have no more columns than rows.')
+
+    # Augment cost matrix with a guard row if specified.
+    m0 = m
+    if guard is not None and np.isfinite(guard):
+        m += 1
+        assignCost = np.vstack((assignCost, np.full((1, n), guard)))
+
+    # Initialize return arrays
+    colsol = np.zeros(n, dtype=int)
+    rowsol = np.zeros(m, dtype=int)
+    price = np.zeros(m)
+    EPS = np.sqrt(np.finfo(float).eps) / (n + 1)
+
+    # 1st step is a full parallel solution. Get bids for all columns
+    jp = np.arange(n)
+    f = assignCost.copy()
+    b1 = np.min(f, axis=0)  # cost of the best choice for each column
+    ip = np.argmin(f, axis=0)  # row index of the best choice for each column
+    f[ip, jp] = np.inf  # eliminate the best from contention
+
+    bids = np.min(f, axis=0) - b1  # cost of runner-up choice hence bid
+    ibid = np.argsort(bids)  # Arrange bids so highest are last
+
+    # Now assign best bids (lesser bids are overwritten by better ones).
+    price[ip[ibid]] += EPS + bids[ibid]
+    rowsol[ip[ibid]] = jp[ibid] + 1  # +1 to convert to 1-based indexing
+    iy = np.nonzero(rowsol)[0]
+    colsol[rowsol[iy] - 1] = iy + 1  # -1 to convert back to 0-based indexing for Python
+
+    # The guard row cannot be assigned (always available)
+    if m0 < m:
+        price[m - 1] = 0
+        rowsol[m - 1] = 0
+
+    # Now Continue with non-parallel code handling any contentions.
+    while not np.all(colsol):
+        for jp in np.where(colsol == 0)[0]:
+            f = assignCost[:, jp] + price  # costs
+            b1 = np.min(f)  # cost and row of the best choice
+            ip = np.argmin(f)
+            if ip >= m0:
+                colsol[jp] = m
+            else:
+                f[ip] = np.inf  # eliminate from contention
+                price[ip] += EPS + np.min(f) - b1  # runner-up choice hence bid
+                if rowsol[ip]:  # take the row away if already assigned
+                    colsol[rowsol[ip] - 1] = 0
+                rowsol[ip] = jp + 1  # +1 to convert to 1-based indexing
+                colsol[jp] = ip + 1  # +1 to convert to 1-based indexing
+
+    # Screen out infeasible assignments
+    if m > m0:
+        colsol[colsol == m] = 0
+        rowsol = rowsol[:m0]
+
+    return colsol - 1, rowsol - 1  # -1 to convert back to 0-based indexing for Python
+
+
+
+   
