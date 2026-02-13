@@ -22,66 +22,54 @@ from cedalion.typing import LabeledPoints
 
 def normalize_landmarks_labels(geo3d: LabeledPoints) -> LabeledPoints:
     """Normalize landmark labels to canonical names.
-    
-    Maps commonly used alternative landmark names to canonical names:
-    - NASION, Nasion, nasion, nas, Nas, NAS -> Nz
-    - INION, Inion, inion, ini, Ini, INI -> Iz
-    - LPA_L, lpa, left ear, Left Ear, LEFT EAR, LE, left, Left, L -> LPA
-    - RPA_R, rpa, right ear, Right Ear, RIGHT EAR, RE, right, Right, R -> RPA
-    - CZ, cz, vertex, Vertex, VERTEX -> Cz
-    
+
+    Maps commonly used alternative landmark names and capitalizations to canonical
+    names.
+
     When multiple labels normalize to the same canonical name:
-    - If the canonical name already exists, alternative forms are dropped
-    - If multiple alternatives exist without the canonical form, only the
-      first one is renamed and others are dropped
-    
+    - If the canonical name already exists, alternative forms are not altered.
+    - If multiple alternatives exist without the canonical form, a ValueError is
+      raised and the user must resolve the ambiguity.
+
     Args:
         geo3d: LabeledPoints with potentially non-canonical landmark names.
-        
+
     Returns:
-        LabeledPoints with normalized landmark labels (duplicates removed).
+        LabeledPoints with normalized landmark labels.
     """
     if len(geo3d.label) == 0:
         return geo3d
-    
+
     label_mapping = {
-        "Nz": {"NASION", "Nasion", "nasion", "nas", "Nas", "NAS"},
-        "Iz": {"INION", "Inion", "inion", "ini", "Ini", "INI"},
-        "LPA": {"LPA_L", "lpa", "left ear", "Left Ear", "LEFT EAR", "LE", "left", "Left", "L"},
-        "RPA": {"RPA_R", "rpa", "right ear", "Right Ear", "RIGHT EAR", "RE", "right", "Right", "R"},
-        "Cz": {"CZ", "cz", "vertex", "Vertex", "VERTEX"},
+        "Nz": {"nz", "nasion", "nas"},
+        "Iz": {"iz", "inion", "ini"},
+        "LPA": {"lpa", "lpa_l", "left ear", "le", "left", "l"},
+        "RPA": {"rpa", "rpa_r", "right ear", "re", "right", "r"},
+        "Cz": {"cz", "vertex"},
     }
-    
-    existing_labels = set(geo3d.label.values)
-    
-    labels_to_rename = {}  # {alternative_label: canonical_label}
-    labels_to_drop = []
-    
-    for canonical, alternatives in label_mapping.items():
-        # Find which alternative forms are present in the data
-        present_alternatives = [lbl for lbl in existing_labels if lbl in alternatives]
-        
-        if len(present_alternatives) > 0:
-            if canonical in existing_labels:
-                # drop all alternative forms if canonical already exists
-                labels_to_drop.extend(present_alternatives)
-            else:
-                # If no canonical form: rename first alternative, drop rest
-                labels_to_rename[present_alternatives[0]] = canonical
-                if len(present_alternatives) > 1:
-                    labels_to_drop.extend(present_alternatives[1:])
-    
-    # Apply transformations: first drop duplicates, then rename
-    if labels_to_drop:
-        keep_labels = [label for label in geo3d.label.values 
-                      if label not in labels_to_drop]
-        geo3d = geo3d.sel(label=keep_labels)
-    
-    # Rename alternative labels to canonical names
-    if labels_to_rename:
-        geo3d = geo3d.points.rename(labels_to_rename)
-    
-    return geo3d
+
+    # reverse mapping from aliases to canoncial
+    label_mapping_r = {v: k for k, vs in label_mapping.items() for v in vs}
+
+    labels_to_rename = {}
+
+    for lbl in geo3d.label.values:
+        lbl_lower = lbl.lower()
+        if lbl_lower in label_mapping_r:
+            canonical = label_mapping_r[lbl_lower]
+
+            if canonical not in geo3d.label.values:
+                labels_to_rename[lbl] = canonical
+
+    geo3d_renamed = geo3d.points.rename(labels_to_rename)
+
+    if len(set(geo3d_renamed.label.values)) != geo3d_renamed.sizes["label"]:
+        raise ValueError(
+            "During landmark label normalization, multiple landmarks were "
+            "mapped to the same name. Please resolve this ambiguity manually."
+        )
+
+    return geo3d_renamed
 
 
 def _sort_line_points(start_point: np.ndarray, points: np.ndarray):
