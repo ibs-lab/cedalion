@@ -5,11 +5,14 @@ from typing import Dict, Tuple
 from pathlib import Path
 
 import nibabel
+import nibabel.freesurfer
 import numpy as np
 import pandas as pd
 import xarray as xr
+import trimesh
 
-from cedalion.dataclasses import affine_transform_from_numpy
+import cedalion
+from cedalion.dataclasses import affine_transform_from_numpy, TrimeshSurface
 
 # FIXME
 AFFINE_CODES = {
@@ -171,3 +174,39 @@ def read_parcellations(parcel_file: str | Path) -> pd.DataFrame:
     parcels["Label"] = parcels["Label"].apply(lambda x: "_".join(x.split(" ")) + "H")
 
     return parcels
+
+
+def trimesh_from_freesurfer(
+    lh: str | Path,
+    rh: str | Path,
+    crs: str,
+    units: str,
+    offset_hemispheres: bool = True,
+) -> TrimeshSurface:
+    """Load freesurfer surfaces as a cdc.TrimeshSurface object.
+
+    Args:
+        lh: path of the left hemisphere surface file.
+        rh: path of the right hemisphere surface file.
+        crs: label of the coordinate reference system
+        units: units of vertex coordinates
+        offset_hemispheres: If True, offset the hemispheres along the x-axis such that
+            the left hemisphere's maximum x-coordinate aligns with the right
+            hemisphere's minimum x-coordinate, removing the overlap that occurs with
+            inflated surfaces.
+
+    Returns:
+        A single TrimeshSurface containing both hemispheres, with left-hemisphere
+        vertices preceding right-hemisphere vertices in the vertex array.
+    """
+
+    units = cedalion.units.Unit(units)
+
+    lh_v, lh_e = nibabel.freesurfer.read_geometry(lh)
+    rh_v, rh_e = nibabel.freesurfer.read_geometry(rh)
+    lh_v[:,0] -= lh_v[:,0].max()
+    rh_v[:,0] -= rh_v[:,0].min()
+    v = np.vstack((lh_v, rh_v))
+    e = np.vstack( (lh_e, rh_e+len(lh_v)))
+
+    return TrimeshSurface(trimesh.Trimesh(v, e), crs, units)
