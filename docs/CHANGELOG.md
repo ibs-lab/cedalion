@@ -40,6 +40,7 @@ coordinate system, by [Nils Harmening](https://github.com/harmening). ([#110](ht
 to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_motion_artefacts_and_correction` was improved. By [Eike Middell](https://github.com/emiddell).
 - The function `cedalion.vis.anatomy.plot_montage3D` now accepts a `landmarks` parameter to specify which landmarks should be highlighted. Pass `None` (default) to show all available canonical registration landmarks (e.g. Nz, Iz, LPA, RPA, Cz), a list of landmark names to show specific ones, or an empty list to show none, by [Mohammad Orabe](https://github.com/orabe). ([#84](https://github.com/ibs-lab/cedalion/issues/84))
 - Included t-stat thresholding in `cedalion.vis.misc.plot_probe_gui`, by [Shannon Kelley](https://github.com/shankell212). ([#131](https://github.com/ibs-lab/cedalion/pull/131))
+- Extended the GLM to work not only in channel space but also on time series with other spatial dimensions (vertices, parcels,...), by [Miray Altinkaynak](https://github.com/maltink). ([#120](https://github.com/ibs-lab/cedalion/pull/120)) 
 
 
 ### Deprecated
