@@ -14,6 +14,7 @@ from numpy.typing import ArrayLike
 
 import cedalion.dataclasses as cdc
 
+SPATIAL_DIMENSIONS = ["channel", "vertex", "parcel", "voxel"]
 
 class ValidationError(Exception):
     pass
@@ -194,3 +195,22 @@ def validate_stim_schema(df: pd.DataFrame):
 def build_stim_dataframe():
     columns = ["onset", "duration", "value", "trial_type"]
     return pd.DataFrame(columns=columns)
+
+
+def get_spatial_dimension(array : xr.DataArray) -> str:
+    """Return the name of the spatial dimension.
+
+    Args:
+        array: the array of which the spatial dimension name is searched-for
+
+    Returns:
+        The name of the identified spatial dimension.
+    """
+
+    candidates = [d for d in array.dims if d in SPATIAL_DIMENSIONS]
+    if len(candidates) == 0:
+        raise ValueError(f"no spatial dimension identified in {array.dims}")
+    elif len(candidates) > 1:
+        raise ValueError(f"more than one spatial dimension identified in {array.dims}")
+    else:
+        return candidates[0]
