@@ -16,8 +16,11 @@ import warnings
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
-from matplotlib.backends.qt_compat import QtWidgets, QtGui
+from matplotlib.backends.qt_compat import QtWidgets, QtGui, QtCore
 from matplotlib.figure import Figure
+import xarray as xr
+import matplotlib.colors as mcolors
+
 
 import cedalion
 import cedalion.typing as cdt
@@ -26,13 +29,27 @@ warnings.simplefilter("ignore")
 
 
 class _MAIN_GUI(QtWidgets.QMainWindow):
-    def __init__(self, snirfData=None, stderr=None, geo2d=None, geo3d=None):
+    def __init__(self, snirfData=None, geo2d=None, geo3d=None, stderr=None, reject=None, 
+                 chan_roi_df=None, roi_color_map=None, roi_alpha=0.25, roi_marker_size=90):
         # Initialize
         super().__init__()
         self.snirfData = snirfData
         self.stderr = stderr  
         self.geo2d = geo2d
         self.geo3d = geo3d
+        self.reject = reject  # reject parameter
+
+        # for plotting ROIs
+        self.chan_roi_df = chan_roi_df
+        self.roi_color_map = roi_color_map or {}
+        self.roi_alpha = roi_alpha
+        self.roi_marker_size = roi_marker_size
+        self.roi_scatter = None
+        self.ch_to_roi = {}
+        # allow for adjustment of ROI alpha values via sliders in the control panel
+        self.roi_alphas = {}          # e.g., {"IFG_L": 0.20, "SFG_R": 0.10, ...}
+        self.roi_alpha_sliders = {}   # roi -> slider widget
+        self.roi_alpha_widgets = {}  # roi -> (slider, spinbox, value_label)
 
         # Set central widget
         self._main = QtWidgets.QWidget()
@@ -140,6 +157,22 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         ## Add Prune Channels
         control_panel_layout.addWidget(prune_channels, stretch=1)
 
+        # Create significance filter control - only if reject is provided
+        if self.reject is not None:  
+            sig_control = QtWidgets.QGroupBox("Significance Filter")
+            sig_control_layout = QtWidgets.QVBoxLayout()
+            sig_control_layout.setSpacing(10)
+            sig_control.setLayout(sig_control_layout)
+            
+            ## Set up significance filter checkbox
+            self.show_sig_only = QtWidgets.QCheckBox("Show only channels significant in both HbO and HbR")
+            self.show_sig_only.setChecked(False)
+            self.show_sig_only.stateChanged.connect(self._sig_filter_changed)
+            sig_control_layout.addWidget(self.show_sig_only)
+            
+            ## Add significance control
+            control_panel_layout.addWidget(sig_control, stretch=1)
+
         # Create t-stat thresh control - only if standard error is provided
         if self.stderr is not None:  
             tstat_control = QtWidgets.QGroupBox("T-Stat Threshold")
@@ -162,17 +195,41 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
             ## Add T-stat control
             control_panel_layout.addWidget(tstat_control, stretch=1)
 
-        # Create Probe Control
+        ## Create Probe Control
         probe_control = QtWidgets.QGroupBox("Probe")
         probe_control_layout = QtWidgets.QVBoxLayout()
         probe_control_layout.setSpacing(5)
         probe_control.setLayout(probe_control_layout)
+
+        ## Create ROI Alpha Controls (one slider per ROI)
+        roi_alpha_group = QtWidgets.QGroupBox("ROI Alpha")
+        roi_alpha_layout = QtWidgets.QVBoxLayout()
+        roi_alpha_group.setLayout(roi_alpha_layout)
+        # A scroll area so it doesn't explode the GUI if you have lots of ROIs
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QtWidgets.QWidget()
+        scroll_layout = QtWidgets.QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(5, 5, 5, 5)
+        scroll_layout.setSpacing(6)
+        scroll.setWidget(scroll_content)
+        roi_alpha_layout.addWidget(scroll)
+        # Add ROI Alpha controls panel to the main control panel row
+        control_panel_layout.addWidget(roi_alpha_group, stretch=1)
+        self._roi_alpha_scroll_layout = scroll_layout  # store for later population
+
 
         ## Set up Probe Control controllers
         self.opt2circ = QtWidgets.QCheckBox("View optodes as circles")
         self.opt2circ.stateChanged.connect(self._toggle_circles)
         self.measline = QtWidgets.QCheckBox("Display Measurement Line")
         self.measline.stateChanged.connect(self._toggle_measline)
+
+        # toggle for ROIs
+        self.show_rois = QtWidgets.QCheckBox("Show ROI overlay")
+        self.show_rois.setChecked(True)
+        self.show_rois.stateChanged.connect(self._toggle_rois)
+        probe_control_layout.addWidget(self.show_rois)
 
         # sigact = QtWidgets.QCheckBox("Display significant activation")
         # pval = QtWidgets.QLineEdit()
@@ -294,7 +351,7 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         self.ssfade.setValue(15)
         self.ssFadeThres = 15
         self.fade_factor = 0.3  ##### Connect?
-        self.lineWidth = 0.7  ##### Connect?
+        self.lineWidth = 0.9  ##### Connect?
 
         if 'reltime' in self.snirfData.dims: # handle 'time' or 'reltime'
             self.time_dim = 'reltime'
@@ -302,6 +359,25 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
             self.time_dim = 'time'
         else:
             raise ValueError("Data must have either 'time' or 'reltime' dimension")
+
+        # Process reject data to find channels significant in BOTH HbO and HbR
+        if self.reject is not None:
+            self.sig_channels_both = {}  # Dictionary: trial_type -> list of channel indices
+            
+            for trial_idx, trial_type in enumerate(self.reject.trial_type.values):
+                # Get significance for HbO and HbR
+                sig_HbO = self.reject.sel(trial_type=trial_type, chromo='HbO').values
+                sig_HbR = self.reject.sel(trial_type=trial_type, chromo='HbR').values
+                
+                # Find channels where EITHER/AND are significant
+                sig_both = sig_HbO | sig_HbR
+                
+                # Store channel indices that are significant in both
+                self.sig_channels_both[str(trial_type)] = np.where(sig_both)[0]
+                
+                print(f"Trial {trial_type}: {len(self.sig_channels_both[str(trial_type)])} channels significant in either HbO and HbR")
+        else:
+            self.sig_channels_both = None
 
 
         # T-stat calculation
@@ -431,11 +507,11 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
 
         # Calculate the HRF plot coordinates
         self.xa = (self.sx[self.src_idx] + self.dx[self.det_idx]) / 2
-        self.ya = (self.sy[self.src_idx] + self.dy[self.det_idx]) / 2
+        self.ya_mid = (self.sy[self.src_idx] + self.dy[self.det_idx]) / 2  # <-- save this!
         self.hrf_val = [
             self.snirfData.sel(trial_type=i).values for i in self.snirfData.trial_type
         ]
-        self.ya = np.array([[[a] * len(self.t)] * self.chromophores for a in self.ya])
+        self.ya = np.array([[[a] * len(self.t)] * self.chromophores for a in self.ya_mid])
 
         self.cmin = [0] * self.trial_types
         self.cmax = [0] * self.trial_types
@@ -469,10 +545,29 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
         for tidx, trial in enumerate(self.snirfData.trial_type.values):
             self.conditions.insertItem(tidx, str(trial))
 
+
+        self.channel_ids = self.snirfData.channel.values # store channel ids # These are typically strings like "S1", "S10", and "D1", "D87"
+        self.src_labels = [str(s) for s in self.snirfData.source.values]
+        self.det_labels = [str(d) for d in self.snirfData.detector.values]
+         # Build channel->ROI lookup (only if provided)
+        self.ch_to_roi = {}
+        if self.chan_roi_df is not None:
+            df = self.chan_roi_df.copy() # Expect columns: 'channel' and 'ROI'
+            df = df.dropna(subset=["ROI"]) # drop NaN ROI rows
+            # Build mapping from channel coordinate value -> ROI
+            # (Works whether your channel labels are 0..N-1 or other ints)
+            # self.ch_to_roi = dict(zip(df["channel"].astype(int).values, df["ROI"].astype(str).values))
+            self.ch_to_roi = dict(zip(df["channel"].astype(str).values, df["ROI"].astype(str).values))
+        print("ROI overlay mapping size:", len(self.ch_to_roi))  # helpful debug
+
+        # Build ROI alpha sliders
+        self._init_roi_alpha_controls()
+
         t1 = time.time()
         print(f"Calculations complete in {t1-t0:.2f} seconds!")
         self._draw_hrf()
         self.conditions.setCurrentRow(0)
+
 
     # def _change_hrf_vis(self):  # orig
     #     for i_con in range(self.trial_types):
@@ -519,17 +614,15 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
     def _change_hrf_vis(self):
         for i_con in range(self.trial_types):
             if i_con == self.conditions.currentRow():
+                current_trial_type = str(self.snirfData.trial_type.values[i_con])
+                
                 for i_ch in range(self.channels):
-                    # Check if channel meets t-stat threshold
-                    meets_tstat = True
-                    if self.tstat_max is not None:
-                        # Check if ANY chromophore meets threshold for this channel
-                        meets_tstat = any(
-                            self.tstat_max.sel(trial_type=self.snirfData.trial_type[i_con]).values[i_ch, i_col] >= self.tstat_thresh
-                            for i_col in range(self.chromophores)
-                        )
+                    # Check if channel is significant in both HbO and HbR
+                    is_sig_both = False
+                    if self.sig_channels_both is not None:
+                        is_sig_both = i_ch in self.sig_channels_both.get(current_trial_type, [])
                     
-                    # Determine alpha based on distance and t-stat
+                    # Determine base alpha based on distance
                     if (
                         self.chan_dist[i_ch] >= self.channel_min_dist
                         and self.chan_dist[i_ch] <= self.ssFadeThres
@@ -543,9 +636,10 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
                     else:
                         base_alpha = 0
                     
-                    # Apply t-stat threshold: fade if doesn't meet threshold
-                    if not meets_tstat and base_alpha > 0:
-                        base_alpha = base_alpha * 0.5  # Further fade channels below threshold
+                    # Apply significance filter if enabled
+                    if hasattr(self, 'show_sig_only') and self.show_sig_only.isChecked():
+                        if not is_sig_both and base_alpha > 0:
+                            base_alpha = base_alpha * 0.15  # Heavily fade non-significant channels
                     
                     # Set color for each chromophore
                     for i_col in range(self.chromophores):
@@ -564,6 +658,55 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
                         ].set_color(self.chrom[i_col] + [0])
 
         self._ax.figure.canvas.draw()
+
+    # def _change_hrf_vis(self): # TSTAT
+    #     for i_con in range(self.trial_types):
+    #         if i_con == self.conditions.currentRow():
+    #             for i_ch in range(self.channels):
+    #                 # Check if channel meets t-stat threshold
+    #                 meets_tstat = True
+    #                 if self.tstat_max is not None:
+    #                     # Check if ANY chromophore meets threshold for this channel
+    #                     meets_tstat = any(
+    #                         self.tstat_max.sel(trial_type=self.snirfData.trial_type[i_con]).values[i_ch, i_col] >= self.tstat_thresh
+    #                         for i_col in range(self.chromophores)
+    #                     )
+                    
+    #                 # Determine alpha based on distance and t-stat
+    #                 if (
+    #                     self.chan_dist[i_ch] >= self.channel_min_dist
+    #                     and self.chan_dist[i_ch] <= self.ssFadeThres
+    #                 ):
+    #                     base_alpha = self.fade_factor
+    #                 elif (
+    #                     self.chan_dist[i_ch] >= self.ssFadeThres
+    #                     and self.chan_dist[i_ch] <= self.channel_max_dist
+    #                 ):
+    #                     base_alpha = 1
+    #                 else:
+    #                     base_alpha = 0
+                    
+    #                 # Apply t-stat threshold: fade if doesn't meet threshold
+    #                 if not meets_tstat and base_alpha > 0:
+    #                     base_alpha = base_alpha * 0.3  # Further fade channels below threshold
+                    
+    #                 # Set color for each chromophore
+    #                 for i_col in range(self.chromophores):
+    #                     self.hrf[
+    #                         i_con * self.channels * self.chromophores
+    #                         + i_ch * self.chromophores
+    #                         + i_col
+    #                     ].set_color(self.chrom[i_col] + [base_alpha])
+    #         else:
+    #             for i_ch in range(self.channels):
+    #                 for i_col in range(self.chromophores):
+    #                     self.hrf[
+    #                         i_con * self.channels * self.chromophores
+    #                         + i_ch * self.chromophores
+    #                         + i_col
+    #                     ].set_color(self.chrom[i_col] + [0])
+
+        # self._ax.figure.canvas.draw()
 
     def _re_draw_hrf(self):
         for i_con in range(self.trial_types):
@@ -585,6 +728,10 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
             pass
         else:
             self._change_hrf_vis()
+
+    def _sig_filter_changed(self):
+        # Toggle significance filter
+        self._change_hrf_vis()
 
     def _toggle_circles(self):
         if self.opt2circ.isChecked():
@@ -713,6 +860,8 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
             )
             self.det_label[idx2].set_color([0, 0, 1, 1])
 
+        self._draw_roi_overlay() # Draw ROI overlay if applicable
+
         print("Plotting HRFs!")
 
         for i_con in range(self.trial_types):
@@ -744,6 +893,7 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
                 zorder=0,
             )
 
+
         self._ax.set_aspect("equal")
         self._ax.axis("off")
         self._ax.figure.tight_layout()
@@ -751,6 +901,184 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
 
         t1 = time.time()
         print(f"Everything plotted in {t1-t0:.2f} seconds!")
+
+    def _toggle_rois(self):
+        # simplest: just redraw the whole probe
+        self._draw_hrf()
+        self._change_hrf_vis()  # restore HRF visibility for current condition
+
+    def _draw_roi_overlay(self):
+        """Overlay semi-transparent ROI circles at channel midpoints."""
+
+        if hasattr(self, "show_rois") and (not self.show_rois.isChecked()):
+            return
+
+        # remove old overlay if it exists
+        if self.roi_scatter is not None:
+            try:
+                self.roi_scatter.remove()
+            except Exception:
+                pass
+            self.roi_scatter = None
+
+        if not self.ch_to_roi:
+            return
+
+        xs = []
+        ys = []
+        cs = []
+
+        for i_ch in range(self.channels):
+            # ch_id = int(self.channel_ids[i_ch])  # channel coordinate value
+            # roi = self.ch_to_roi.get(ch_id, None)
+            chan_key = f"{self.src_labels[i_ch]}{self.det_labels[i_ch]}"  # e.g. "S10D87"
+            roi = self.ch_to_roi.get(chan_key, None)
+
+            if roi is None:
+                continue
+
+            color = self.roi_color_map.get(roi, None)
+            if color is None:
+                # if ROI exists but no color defined, skip (or pick a default)
+                continue
+
+            xs.append(self.xa[i_ch])
+            ys.append(self.ya_mid[i_ch])
+            # cs.append(color) # to draw one alpha 
+            rgba = mcolors.to_rgba(color)  # (r,g,b,a_base)
+            a = float(self.roi_alphas.get(roi, self.roi_alpha))  # per-ROI alpha fallback
+            cs.append((rgba[0], rgba[1], rgba[2], a))
+
+        if not xs:
+            return
+
+        # Put circles above meas lines (zorder=1) but below HRFs (your HRFs use zorder ~ 1-2)
+        # self.roi_scatter = self._ax.scatter(   # for only 1 alpha value for all rois
+        #     xs, ys,
+        #     s=self.roi_marker_size,
+        #     c=cs,
+        #     alpha=self.roi_alpha,
+        #     edgecolors="none",
+        #     zorder=1.2
+        # )
+
+        self.roi_scatter = self._ax.scatter(
+            xs, ys,
+            s=self.roi_marker_size,
+            c=cs,              # cs already includes alpha
+            edgecolors="none",
+            zorder=1.2
+        )
+
+
+    def _init_roi_alpha_controls(self):
+        """Create/refresh per-ROI alpha sliders based on roi_color_map."""
+        # Clear any existing sliders in the scroll layout
+        layout = getattr(self, "_roi_alpha_scroll_layout", None)
+        if layout is None:
+            return
+
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        self.roi_alpha_sliders.clear()
+
+        # Decide which ROIs to include:
+        # - Only those with colors AND that appear in channel mapping (recommended)
+        rois_in_data = set(self.ch_to_roi.values()) if self.ch_to_roi else set()
+        rois = [r for r in self.roi_color_map.keys() if r in rois_in_data]
+
+        # If you prefer: show all ROIs in roi_color_map regardless of whether used:
+        # rois = list(self.roi_color_map.keys())
+
+        rois = sorted(rois)
+
+        # Initialize default per-ROI alpha if missing
+        for roi in rois:
+            if roi not in self.roi_alphas:
+                self.roi_alphas[roi] = float(self.roi_alpha)  # start from global default
+
+        # Add a slider row per ROI
+        for roi in rois:
+            row = QtWidgets.QHBoxLayout()
+
+            lab = QtWidgets.QLabel(roi)
+            lab.setMinimumWidth(70)
+            row.addWidget(lab)
+
+            slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+            slider.setRange(0, 100)  # 0..100 -> 0.00..1.00
+            slider.setValue(int(round(self.roi_alphas[roi] * 100)))
+            row.addWidget(slider, stretch=1)
+
+            spin = QtWidgets.QDoubleSpinBox()
+            spin.setRange(0.0, 1.0)
+            spin.setSingleStep(0.01)
+            spin.setDecimals(2)
+            spin.setValue(float(self.roi_alphas[roi]))
+            spin.setFixedWidth(70)
+            row.addWidget(spin)
+
+            val_lab = QtWidgets.QLabel(f"{self.roi_alphas[roi]:.2f}")
+            val_lab.setMinimumWidth(40)
+            row.addWidget(val_lab)
+
+            # --- connect signals (with signal blocking to avoid recursion) ---
+            slider.valueChanged.connect(lambda v, r=roi: self._roi_alpha_changed_from_slider(r, v))
+            spin.valueChanged.connect(lambda v, r=roi: self._roi_alpha_changed_from_spinbox(r, v))
+
+            self.roi_alpha_widgets[roi] = (slider, spin, val_lab)
+
+            container = QtWidgets.QWidget()
+            container.setLayout(row)
+            self._roi_alpha_scroll_layout.addWidget(container)
+
+
+    def _roi_alpha_changed(self, roi, slider_val):
+        # Handle slider to update alpha and redraw overlay
+        a = float(slider_val) / 100.0
+        self.roi_alphas[roi] = a
+
+        # update label next to slider
+        if roi in self.roi_alpha_sliders:
+            _, val_lab = self.roi_alpha_sliders[roi]
+            val_lab.setText(f"{a:.2f}")
+
+        # redraw only overlay (fast) + canvas
+        self._draw_roi_overlay()
+        self._ax.figure.canvas.draw_idle()
+
+    def _roi_alpha_changed_from_slider(self, roi, slider_val: int):
+        a = float(slider_val) / 100.0
+        self.roi_alphas[roi] = a
+
+        if roi in self.roi_alpha_widgets:
+            slider, spin, val_lab = self.roi_alpha_widgets[roi]
+            spin.blockSignals(True)
+            spin.setValue(a)
+            spin.blockSignals(False)
+            val_lab.setText(f"{a:.2f}")
+
+        self._draw_roi_overlay()
+        self._ax.figure.canvas.draw_idle()
+
+
+    def _roi_alpha_changed_from_spinbox(self, roi, a: float):
+        a = float(np.clip(a, 0.0, 1.0))
+        self.roi_alphas[roi] = a
+
+        if roi in self.roi_alpha_widgets:
+            slider, spin, val_lab = self.roi_alpha_widgets[roi]
+            slider.blockSignals(True)
+            slider.setValue(int(round(a * 100)))
+            slider.blockSignals(False)
+            val_lab.setText(f"{a:.2f}")
+
+        self._draw_roi_overlay()
+        self._ax.figure.canvas.draw_idle()
 
 
 # if __name__ == "__main__":
@@ -760,22 +1088,47 @@ class _MAIN_GUI(QtWidgets.QMainWindow):
 #     sys.exit(app.exec())
 
 
-def run_vis(
-    blockaverage: cdt.NDTimeSeries,
-    geo2d: cdt.LabeledPoints,
-    geo3d: cdt.LabeledPoints,
-    stderr: cdt.NDTimeSeries = None,  # optional standerr input 
-):
-    """Opens the visualization GUI.
+# def run_vis(
+#     blockaverage: cdt.NDTimeSeries,
+#     geo2d: cdt.LabeledPoints,
+#     geo3d: cdt.LabeledPoints,
+#     stderr: cdt.NDTimeSeries = None,  # optional standerr input 
+#     reject: xr.DataArray = None,
+# ):
+#     """Opens the visualization GUI.
 
-    Args:
-        blockaverage: The blockaveraged HRF data.
-        geo2d: The 2d probe geometry data.
-        geo3d: The 3d probe geometry data.
-    """
+#     Args:
+#         blockaverage: The blockaveraged HRF data.
+#         geo2d: The 2d probe geometry data.
+#         geo3d: The 3d probe geometry data.
+#     """
 
-    app = QtWidgets.QApplication(sys.argv)
-    #main_gui = _MAIN_GUI(snirfData=blockaverage, geo2d=geo2d, geo3d=geo3d)
-    main_gui = _MAIN_GUI(snirfData=blockaverage, stderr=stderr, geo2d=geo2d, geo3d=geo3d)
+#     app = QtWidgets.QApplication(sys.argv)
+#     #main_gui = _MAIN_GUI(snirfData=blockaverage, geo2d=geo2d, geo3d=geo3d)
+#     main_gui = _MAIN_GUI(snirfData=blockaverage, geo2d=geo2d, geo3d=geo3d, stderr=stderr, reject=reject)
+#     main_gui.show()
+#     sys.exit(app.exec())
+
+
+
+def run_vis(blockaverage, geo2d, geo3d, stderr=None, reject=None,
+            chan_roi_df=None, roi_color_map=None, roi_alpha=0.25, roi_marker_size=90):
+
+    # app = QtWidgets.QApplication(sys.argv)
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication(sys.argv)
+    main_gui = _MAIN_GUI(
+        snirfData=blockaverage,
+        geo2d=geo2d,
+        geo3d=geo3d,
+        stderr=stderr,
+        reject=reject,
+        chan_roi_df=chan_roi_df,
+        roi_color_map=roi_color_map,
+        roi_alpha=roi_alpha,
+        roi_marker_size=roi_marker_size,
+    )
     main_gui.show()
     sys.exit(app.exec())
+

@@ -524,7 +524,8 @@ def image_recon_multi_view(
                 plot_labeled_points(p0, geo3d_plot)
 
         if SAVE and filename:
-            p0.screenshot(filename + '.png')
+            # p0.screenshot(filename + '.png')
+            p0.save_graphic(filename + '.svg')
         else:
             p0.show()
 

@@ -1,0 +1,72 @@
+[1mdiff --git a/src/cedalion/sigproc/quality.py b/src/cedalion/sigproc/quality.py[m
+[1mindex 624abff..178e3cf 100644[m
+[1m--- a/src/cedalion/sigproc/quality.py[m
+[1m+++ b/src/cedalion/sigproc/quality.py[m
+[36m@@ -444,6 +444,67 @@[m [mdef _get_gvtd_threshold([m
+     return thresh * units[m
+ [m
+ [m
+[32m+[m[32m# def make_gvtd_hist(gvtd_time_trace, plot_thresh=True, stat_type=None, n_std=None,[m[41m [m
+[32m+[m[32m#                    bin_size=None):[m
+[32m+[m[32m#     """Generate a histogram of GVTD values and optionally overlay a threshold line.[m
+[32m+[m
+[32m+[m[32m#     Code from:[m
+[32m+[m[32m#     https://github.com/sherafatia/GVTD[m
+[32m+[m[32m#     Sherafati, A., Snyder, A. Z., Eggebrecht, A. T., Bergonzi, K. M., Burns-Yocum,[m
+[32m+[m[32m#     T. M., Lugar, H. M., Ferradal, S. L., Robichaux-Viehoever, A., Smyser, C. D.,[m
+[32m+[m[32m#     Palanca, B. J., Hershey, T. & Culver, J. P. Global motion detection and censoring[m
+[32m+[m[32m#     in high-density diffuse optical tomography. Hum. Brain Mapp. 41, 4093?4112 (2020).[m
+[32m+[m[32m#     converted from matlab by chatGPT[m
+[32m+[m
+[32m+[m[32m#     Args:[m
+[32m+[m[32m#         gvtd_time_trace (array-like): GVTD time trace (1D array).[m
+[32m+[m[32m#         plot_thresh (bool): Whether to plot the threshold on the histogram. Default is[m
+[32m+[m[32m#             True.[m
+[32m+[m[32m#         stat_type (str): Statistic type for threshold calculation (e.g., from StatType).[m
+[32m+[m[32m#             Default is Histogram_Mode.[m
+[32m+[m[32m#         n_std (int or float): Number of standard deviations for threshold calculation.[m
+[32m+[m[32m#             Default is 4.[m
+[32m+[m[32m#         bin_size (float): Size of histogram bins. If None, it's calculated based on[m
+[32m+[m[32m#             data.[m
+[32m+[m
+[32m+[m[32m#     Returns:[m
+[32m+[m[32m#         float: Calculated threshold value if `plot_thresh` is True; otherwise, None.[m
+[32m+[m[32m#     """[m
+[32m+[m[32m#     # Set default values[m
+[32m+[m[32m#     if stat_type is None:[m
+[32m+[m[32m#         stat_type = gvtd_stat_type.Histogram_Mode[m
+[32m+[m[32m#     if plot_thresh is None:[m
+[32m+[m[32m#         plot_thresh = True[m
+[32m+[m[32m#     if n_std is None and plot_thresh:[m
+[32m+[m[32m#         n_std = 4[m
+[32m+[m
+[32m+[m[32m#     # Calculate bin size if not provided[m
+[32m+[m[32m#     if bin_size is None:[m
+[32m+[m[32m#         min_counts_each_bin = 5[m
+[32m+[m[32m#         n_bins = round(len(gvtd_time_trace) / min_counts_each_bin)[m
+[32m+[m[32m#         bin_size = np.max(gvtd_time_trace) / n_bins[m
+[32m+[m
+[32m+[m[32m#     f, ax = plt.subplots(1, 1, figsize=(7, 5))[m
+[32m+[m
+[32m+[m[32m#     # Create the histogram[m
+[32m+[m[32m#     bins = np.arange(0, np.max(gvtd_time_trace) + bin_size, bin_size)[m
+[32m+[m[32m#     ax.hist(gvtd_time_trace, bins=bins, edgecolor='black', alpha=0.75)[m
+[32m+[m[32m#     ax.set_title('GVTD Histogram')[m
+[32m+[m[32m#     ax.set_xlabel('GVTD')[m
+[32m+[m[32m#     ax.set_ylabel('Counts')[m
+[32m+[m
+[32m+[m[32m#     threshold = None[m
+[32m+[m[32m#     if plot_thresh:[m
+[32m+[m[32m#         # Calculate the threshold[m
+[32m+[m[32m#         threshold = find_gvtd_thresh(gvtd_time_trace, stat_type, n_std)[m
+[32m+[m
+[32m+[m[32m#         # Plot the threshold line[m
+[32m+[m[32m#         ax.axvline(threshold, color='red', linestyle='--', label=f'Threshold: {threshold:.4f}')[m
+[32m+[m[32m#         ax.legend()[m
+[32m+[m
+[32m+[m[32m#     return threshold[m
+[32m+[m
+[32m+[m
+ @cdc.validate_schemas[m
+ def sci([m
+     amplitudes: NDTimeSeries,[m
