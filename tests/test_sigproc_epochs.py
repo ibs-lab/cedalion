@@ -6,7 +6,7 @@ from numpy.testing import assert_allclose
 
 import cedalion.dataclasses as cdc
 import cedalion.datasets
-from cedalion.sigproc.epochs import to_epochs
+from cedalion.sigproc.epochs import to_epochs, exclude_events
 from cedalion import units
 
 
@@ -341,3 +341,99 @@ def test_to_epochs_dimension_independence():
     ts_vertex = ts_vertex_chromo[:, :, 0]
 
     to_epochs(ts_vertex, **kwargs)
+
+
+def test_exclude_events():
+    df_stim = pd.DataFrame(
+        {
+            "onset": [0.5, 1.3, 2.6, 4.1, 4.5, 4.7],
+            "duration": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "value": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "trial_type": ["A", "E1", "A", "E2", "B", "E1"],
+        }
+    )
+
+    df_new = exclude_events(df_stim, ["E1"], 0.3, 1.0)
+    assert df_new.shape[0] == 1
+    assert all(df_new.trial_type == "A")
+
+    df_new = exclude_events(df_stim, ["E2"], 0.3, 1.0)
+    assert df_new.shape[0] == 5
+    assert all(df_new.trial_type == ["A", "E1", "A", "B", "E1"])
+
+    df_new = exclude_events(df_stim, ["E1", "E2"], 0.3, 1.0)
+    assert df_new.shape[0] == 1
+    assert all(df_new.trial_type == ["A"])
+
+
+def test_to_epochs_exclusion(timeseries):
+    """Trial types marked for exclusion are excluded in stimulus dataframe."""
+
+    df_stim = pd.DataFrame(
+        {
+            "onset": [0.5, 1.3, 2.6, 4.1, 4.5, 4.7],
+            "duration": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "value": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "trial_type": ["A", "E1", "A", "E2", "B", "E1"],
+        }
+    )
+
+    # no exclusion
+    epochs = to_epochs(
+        timeseries, df_stim, ["A", "B"], before=0.3 * units.s, after=1 * units.s
+    )
+
+    assert epochs.sizes["epoch"] == 3
+    assert all(epochs.trial_type == ["A", "A", "B"])
+
+    # empty exclusion
+    epochs = to_epochs(
+        timeseries,
+        df_stim,
+        ["A", "B"],
+        before=0.3 * units.s,
+        after=1 * units.s,
+        exclude_trial_types=[],
+    )
+
+    assert epochs.sizes["epoch"] == 3
+    assert all(epochs.trial_type == ["A", "A", "B"])
+
+    # exclude E1
+    epochs = to_epochs(
+        timeseries,
+        df_stim,
+        ["A", "B"],
+        before=0.3 * units.s,
+        after=1 * units.s,
+        exclude_trial_types=["E1"],
+    )
+
+    assert epochs.sizes["epoch"] == 1
+    assert all(epochs.trial_type == ["A"])
+
+    # exclude E2
+    epochs = to_epochs(
+        timeseries,
+        df_stim,
+        ["A", "B"],
+        before=0.3 * units.s,
+        after=1 * units.s,
+        exclude_trial_types=["E2"],
+    )
+
+    assert epochs.sizes["epoch"] == 3
+    assert all(epochs.trial_type == ["A", "A", "B"])
+
+    # exclude E1 and E2
+    epochs = to_epochs(
+        timeseries,
+        df_stim,
+        ["A", "B"],
+        before=0.3 * units.s,
+        after=1 * units.s,
+        exclude_trial_types=["E1", "E2"],
+    )
+
+    assert epochs.sizes["epoch"] == 1
+    assert all(epochs.trial_type == ["A"])
