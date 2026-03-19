@@ -323,9 +323,11 @@ def hrf_extract_regressors(
     basis = basis_function(ts)
 
     components = basis.component.values
+    spatial_dim = xrutils.other_dim(ts, "time", "chromo")
 
     # could be "chromo" or "wavelength"
-    other_dim = xrutils.other_dim(ts, "channel", "time")
+    other_dim = xrutils.other_dim(ts, spatial_dim, "time")
+    #other_dim = xrutils.other_dim(ts, "channel", "time")
 
     n_time = basis.sizes["time"]
     n_other = ts.sizes[other_dim]
