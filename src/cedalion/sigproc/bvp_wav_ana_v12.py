@@ -15,7 +15,7 @@ from numpy.typing import ArrayLike
 from typing import Dict, Tuple, Any
 from scipy.interpolate import PchipInterpolator
 from scipy.signal import detrend
-from scipy.stats import zscore, circmean
+from scipy.stats import zscore
 from skmisc.loess import loess
 import tkinter as tk
 import xarray as xr
@@ -25,7 +25,6 @@ from pycwt.helpers import ar1
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.gridspec import GridSpec
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.ticker import MaxNLocator
 
 import cedalion.typing as cdt
@@ -411,7 +410,7 @@ def wct(
 
 # --- BVP Analysis -------------------
 
-def extract_bvp(hbo_conc_ts: cdt.NDTimeSeries, fs_new = 50) -> cdt.NDTimeSeries:
+def extract_bvp(hbo_conc_ts: cdt.NDTimeSeries, fs_new=50, request=True) -> cdt.NDTimeSeries:
     """Extracts the blood volume pulsation (BVP) time series from an
     HbO concentration time series.
 
@@ -421,6 +420,7 @@ def extract_bvp(hbo_conc_ts: cdt.NDTimeSeries, fs_new = 50) -> cdt.NDTimeSeries:
         hbo_conc_ts: HbO concentration time series from which the BVP
             signal should be extracted.
         fs_new: new sampling rate
+        request: If True user will be asked, if artefact removal has been done.
 
     Returns:
         NDTimeSeries containing:
@@ -433,10 +433,11 @@ def extract_bvp(hbo_conc_ts: cdt.NDTimeSeries, fs_new = 50) -> cdt.NDTimeSeries:
     """  # noqa: D205
 
     # --- Ask user to confirm artefact removal to avoid invalid analysis
-    choice = dialog_artefact_removal()
-    if choice == "abort":
-        print("\n\n ----- BVP analysis aborted by User -----\n\n")
-        return
+    if request:
+        choice = dialog_artefact_removal()
+        if choice == "abort":
+            print("\n\n ----- BVP analysis aborted by User -----\n\n")
+            return
 
     # --- Determine original sampling rate in Hz
     fs_qty = sampling_rate(hbo_conc_ts)
@@ -450,8 +451,7 @@ def extract_bvp(hbo_conc_ts: cdt.NDTimeSeries, fs_new = 50) -> cdt.NDTimeSeries:
     time_s_new = np.linspace(
         0,
         hbo_conc_ts.time.values[-1],
-        int((fs_new / fs) * hbo_conc_ts.sizes["time"])
-    )
+        int((fs_new / fs) * hbo_conc_ts.sizes["time"]))
 
     # --- Preallocate data array:
     #     dimensions: channel × compound × time
@@ -554,7 +554,7 @@ def extract_waveforms(
     fs = float(fs_qty.to('Hz').magnitude)
 
     # --- Parameters for diastolic minima detection ---
-    min_peak_dist = int(fs / 3)   # minimum distance between minima
+    min_peak_dist = int(fs / 2)   # minimum distance between minima
     min_peak_height = 0           # minimum height of minima
 
     wav_storage_user = {}
