@@ -9,7 +9,6 @@ import cedalion.nirs as nirs
 
 from cedalion import units
 
-
 def test_avg_short_channel(rec):
     ts_long, ts_short = nirs.split_long_short_channels(
         rec["conc"], rec.geo3d, distance_threshold=1.5 * units.cm
