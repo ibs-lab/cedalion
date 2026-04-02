@@ -12,6 +12,7 @@
 - Added `cedalion.xrutils.dot_dataarray_csr` for matrix products between `xr.DataArray` 
   and `scipy.sparse` arrays, by [Eike Middell](https://github.com/emiddell).
 - Added `cedalion.geometry.landmarks.normalize_landmarks_labels` to map alternative landmark names (e.g., "nasion", "left ear", "nz") to their canonical 10-10 system labels (e.g. Nz, LPA). The function handles now case-insensitive matching and supports common naming conventions. Usage: `geo3d = normalize_landmarks_labels(geo3d)` before calling registration or plotting functions, by [Mohammad Orabe](https://github.com/orabe). ([#84](https://github.com/ibs-lab/cedalion/issues/84))
+- Added `cedalion.dot.ImageRecon.get_image_noise_posterior`, by [Laura Carlton](https://github.com/lauracarlton). ([#134](https://github.com/ibs-lab/cedalion/pull/134))
 ### Changed
 - The package `cedalion.sigproc.motion_correct` was renamed to `cedalion.sigproc.motion`.
 - The ICA-EBM and ICA_ERBM implementations were moved into `cedalion.sigdecomp.unimodal`.
@@ -41,6 +42,7 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 - The function `cedalion.vis.anatomy.plot_montage3D` now accepts a `landmarks` parameter to specify which landmarks should be highlighted. Pass `None` (default) to show all available canonical registration landmarks (e.g. Nz, Iz, LPA, RPA, Cz), a list of landmark names to show specific ones, or an empty list to show none, by [Mohammad Orabe](https://github.com/orabe). ([#84](https://github.com/ibs-lab/cedalion/issues/84))
 - Included t-stat thresholding in `cedalion.vis.misc.plot_probe_gui`, by [Shannon Kelley](https://github.com/shankell212). ([#131](https://github.com/ibs-lab/cedalion/pull/131))
 - Extended the GLM to work not only in channel space but also on time series with other spatial dimensions (vertices, parcels,...), by [Miray Altinkaynak](https://github.com/maltink). ([#120](https://github.com/ibs-lab/cedalion/pull/120)) 
+- The normalization of the `dot.GaussianSpatialBasisFunctions` was changed to match the original implementation used in {cite:p}`Carlton2026`.
 
 
 ### Deprecated

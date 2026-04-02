@@ -7,5 +7,6 @@ from . image_recon import (
     REG_TIKHONOV_ONLY,
     REG_PAPER_MUA_SBF,
     SBF_GAUSSIANS_DENSE,
-    SBF_GAUSSIANS_SPARSE
+    SBF_GAUSSIANS_SPARSE,
+    estimate_alpha_meas,
 )
