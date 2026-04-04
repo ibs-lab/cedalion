@@ -179,6 +179,7 @@ class FluenceFile:
             shuffle=True,
             fletcher32=False,
             compression="lzf",
+            dtype=np.float32
         )
 
         f["fluence_all"].attrs["dims"] = dims
@@ -222,6 +223,7 @@ class FluenceFile:
             data=fluence_at_optodes,
             shuffle=True,
             compression="lzf",
+            dtype=np.float32,
         )
 
         f["fluence_at_optodes"].attrs["dims"] = fluence_at_optodes.dims

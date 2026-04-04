@@ -523,7 +523,7 @@ class ForwardModel:
             warnings.warn("voxel size is not 1 mm^3. Check Adot normalization.")
 
         Adot = xr.DataArray(
-            Adot,
+            Adot.astype(np.float32),
             dims=["channel", "vertex", "wavelength"],
             coords={
                 "channel": ("channel", channels),
