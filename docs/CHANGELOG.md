@@ -43,7 +43,7 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 - Included t-stat thresholding in `cedalion.vis.misc.plot_probe_gui`, by [Shannon Kelley](https://github.com/shankell212). ([#131](https://github.com/ibs-lab/cedalion/pull/131))
 - Extended the GLM to work not only in channel space but also on time series with other spatial dimensions (vertices, parcels,...), by [Miray Altinkaynak](https://github.com/maltink). ([#120](https://github.com/ibs-lab/cedalion/pull/120)) 
 - The normalization of the `dot.GaussianSpatialBasisFunctions` was changed to match the original implementation used in {cite:p}`Carlton2026`.
-
+- Higher-resolution cortex meshes for the Colin27 and ICBM152 head models, which additionally maintain a link to the freesurfer surfaces from which they were derived, by [Eike Middell](https://github.com/emiddell). ([#138](https://github.com/ibs-lab/cedalion/pull/138)).
 
 ### Deprecated
 ### Removed
