@@ -264,7 +264,10 @@ def hrf_regressors(
                 # shifted onset times this moves the basis fct. to the correct position.
                 regressor = np.convolve(stim_array, bb[:, i_comp])
                 regressor = regressor[pad_before : pad_before + n_time]
-                regressor /= regressor.max()
+
+                # basis functions are normalized to 1. don't normalize the convolved
+                # regressor again.
+                #regressor /= regressor.max()
 
                 regressors[:, i_reg, i_other] = regressor
 
