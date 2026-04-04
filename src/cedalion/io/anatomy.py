@@ -3,6 +3,7 @@
 import os
 from typing import Dict, Tuple
 from pathlib import Path
+import json
 
 import nibabel
 import nibabel.freesurfer
@@ -174,6 +175,10 @@ def read_parcellations(parcel_file: str | Path) -> pd.DataFrame:
     parcels["Label"] = parcels["Label"].apply(lambda x: "_".join(x.split(" ")) + "H")
 
     return parcels
+
+def read_parcel_colors(parcel_colors_file : str | Path) -> dict[str, list]:
+    with open(parcel_colors_file) as fin:
+        return json.load(fin)
 
 
 def trimesh_from_freesurfer(

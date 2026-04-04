@@ -7,27 +7,29 @@ from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import scipy
+import scipy.sparse
 import trimesh
 import xarray as xr
 from scipy.spatial import KDTree
 
 import cedalion
-import cedalion.dataclasses as cdc
 import cedalion.data
+import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 from cedalion import xrutils
 from cedalion.dot.utils import map_segmentation_mask_to_surface
 from cedalion.geometry.ellipsoid import get_landmarks_for_headsize
 from cedalion.geometry.registration import (
-    register_trans_rot_isoscale,
     register_general_affine,
+    register_trans_rot_isoscale,
 )
 from cedalion.geometry.segmentation import (
     surface_from_segmentation,
     voxels_from_segmentation,
 )
-from cedalion.io import read_mrk_json, read_parcellations, read_segmentation_masks
+from cedalion.io import read_mrk_json, read_segmentation_masks
 
 
 @dataclass
@@ -224,7 +226,8 @@ class TwoSurfaceHeadModel:
         brain_face_count: int | None = 180000,
         scalp_face_count: int | None = 60000,
         fill_holes: bool = False,
-        parcel_file: Path | str | None = None,
+        coordinates_file: Path | str | None = None,
+        voxel_to_vertex_mapping_file_brain : Path | None = None,
 
     ) -> "TwoSurfaceHeadModel":
         """Constructor from seg.masks, brain and head surfaces as gained from MRI scans.
@@ -245,7 +248,8 @@ class TwoSurfaceHeadModel:
             brain_face_count: Number of faces for the brain surface.
             scalp_face_count: Number of faces for the scalp surface.
             fill_holes: Whether to fill holes in the segmentation masks.
-            parcel_file: path to the json file mapping vertices to parcels.
+            coordinates_file: path to file with additional vertex coordinates.
+            voxel_to_vertex_mapping_file_brain : precomputed voxel to vertex mapping
 
         Returns:
             TwoSurfaceHeadModel: An instance of the TwoSurfaceHeadModel class.
@@ -327,17 +331,25 @@ class TwoSurfaceHeadModel:
             "segmentation_type"
         )
 
-        voxel_to_vertex_brain = map_segmentation_mask_to_surface(
-            brain_mask, t_ijk2ras, brain_ijk.apply_transform(t_ijk2ras)
-        )
+        if voxel_to_vertex_mapping_file_brain is not None:
+            voxel_to_vertex_brain = scipy.sparse.load_npz(
+                voxel_to_vertex_mapping_file_brain
+            )
+        else:
+            voxel_to_vertex_brain = map_segmentation_mask_to_surface(
+                brain_mask, t_ijk2ras, brain_ijk.apply_transform(t_ijk2ras)
+            )
+
         voxel_to_vertex_scalp = map_segmentation_mask_to_surface(
             scalp_mask, t_ijk2ras, scalp_ijk.apply_transform(t_ijk2ras)
         )
 
-        if parcel_file is not None:
-            parcels = read_parcellations(parcel_file)
-            assert len(parcels) == brain_ijk.nvertices
-            brain_ijk.vertex_coords["parcel"] = np.asarray(parcels.Label.tolist())
+        if coordinates_file is not None:
+            df = pd.read_csv(coordinates_file)
+            assert len(df) == brain_ijk.nvertices
+            for col in [i for i in df.columns if i != "vertex"]:
+                brain_ijk.vertex_coords[col] = np.asarray(df[col])
+
 
         return cls(
             segmentation_masks=segmentation_masks,
@@ -655,7 +667,7 @@ class TwoSurfaceHeadModel:
 def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
     """Create a TwoSurfaceHeadmodel for common atlases.
 
-    Onc created, this function caches a head model.
+    Once created, this function caches a head model.
 
     Args:
         model: either colin27 or icbm152
@@ -666,18 +678,16 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
     AVAILABLE_MODELS = ["colin27", "icbm152"]
 
     if model == "colin27":
-        SEG_DATADIR, mask_files, landmarks_file = (
-            cedalion.data.get_colin27_segmentation()
-        )
-        PARCEL_FILE = cedalion.data.get_colin27_parcel_file()
+        f = cedalion.data.get_colin27_headmodel_files()
 
         head_ijk = TwoSurfaceHeadModel.from_surfaces(
-            segmentation_dir=SEG_DATADIR,
-            mask_files=mask_files,
-            brain_surface_file=os.path.join(SEG_DATADIR, "mask_brain.obj"),
-            scalp_surface_file=os.path.join(SEG_DATADIR, "mask_scalp.obj"),
-            landmarks_ras_file=landmarks_file,
-            parcel_file=PARCEL_FILE,
+            segmentation_dir=f.basedir,
+            mask_files=f.mask_files,
+            brain_surface_file=f.basedir / f.brain_surface_obj,
+            scalp_surface_file=f.basedir / f.scalp_surface_obj,
+            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
+            coordinates_file=f.basedir / f.brain_vertex_coordinates,
+            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,
@@ -688,19 +698,16 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
 
 
     elif model == "icbm152":
-        SEG_DATADIR, mask_files, landmarks_file = (
-            cedalion.data.get_icbm152_segmentation()
-        )
-
-        PARCEL_FILE = cedalion.data.get_icbm152_parcel_file()
+        f = cedalion.data.get_icbm152_headmodel_files()
 
         head_ijk = TwoSurfaceHeadModel.from_surfaces(
-            segmentation_dir=SEG_DATADIR,
-            mask_files=mask_files,
-            brain_surface_file=os.path.join(SEG_DATADIR, "mask_brain.obj"),
-            scalp_surface_file=os.path.join(SEG_DATADIR, "mask_scalp.obj"),
-            landmarks_ras_file=landmarks_file,
-            parcel_file=PARCEL_FILE,
+            segmentation_dir=f.basedir,
+            mask_files=f.mask_files,
+            brain_surface_file=f.basedir / f.brain_surface_obj,
+            scalp_surface_file=f.basedir / f.scalp_surface_obj,
+            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
+            coordinates_file=f.basedir / f.brain_vertex_coordinates,
+            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,

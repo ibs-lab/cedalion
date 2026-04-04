@@ -117,3 +117,21 @@ def create_mock_activation_below_point(
     activation = func_temp * func_spat
     activation = activation.assign_coords({"time": t})
     return activation
+
+
+
+# affine transformation from MNI305 (Colin27, fsaverage) to MNI152 (ICBM-152)
+# see 8. in https://surfer.nmr.mgh.harvard.edu/fswiki/CoordinateSystems
+mni305_to_mni152 = cdc.affine_transform_from_numpy(
+    np.array([
+        [ 0.9975, -0.0073,  0.0176, -0.0429],
+        [ 0.0146,  1.0009, -0.0024,  1.5496],
+        [-0.0130, -0.0093,  0.9971,  1.1840],
+        [ 0,       0,       0,       1     ]
+    ]),
+    from_crs ="mni305",
+    to_crs="mni152",
+    from_units="mm",
+    to_units="mm"
+)
+
