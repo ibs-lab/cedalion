@@ -38,7 +38,7 @@ def xarray_from_hdfgroup(f: h5py.File, path: str):
 
     for cname, cdataset in f[f"{path}/coords"].items():
         if cdataset.dtype == h5py.string_dtype():
-            values = cdataset.astype("T")[:]
+            values = cdataset.asstr()[:]
         else:
             values = cdataset[:]
         dimname = cdataset.attrs["dim"]

@@ -38,7 +38,11 @@ class DesignMatrix:
         return result
 
     def __repr__(self):
-        cregs = ",".join([f"'{r}'" for r in self.common.regressor.values])
+        cregs = (
+            ",".join([f"'{r}'" for r in self.common.regressor.values])
+            if self.common is not None
+            else ""
+        )
         cwregs = ",".join(
             [f"'{r}'" for cw in self.channel_wise for r in cw.regressor.values]
         )
@@ -72,7 +76,7 @@ class DesignMatrix:
         """Create a copy of this design matrix."""
 
         return DesignMatrix(
-            common=self.common.copy(),
+            common=self.common.copy() if self.common is not None else None,
             channel_wise=[i.copy() for i in self.channel_wise]
         )
 
