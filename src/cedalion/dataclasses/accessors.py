@@ -386,6 +386,7 @@ class StatsModelsAccessor:
                 i,
                 (
                     statsmodels.regression.linear_model.RegressionResultsWrapper,
+                    statsmodels.regression.recursive_ls.RecursiveLSResultsWrapper,
                     statsmodels.stats.contrast.ContrastResults,
                 ),
             ):

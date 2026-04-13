@@ -15,7 +15,10 @@ from numpy.polynomial.legendre import legval
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 from cedalion.sigproc.frequency import sampling_rate
+<<<<<<< HEAD
 import cedalion.dataclasses as cdc
+=======
+>>>>>>> 5d57304 (Generalize GLM to support non-channel spatial dimensions)
 
 from .basis_functions import TemporalBasisFunction
 
@@ -210,7 +213,14 @@ def hrf_regressors(
     spatial_dim = cdc.get_spatial_dimension(ts)
 
     # could be "chromo" or "wavelength"
+<<<<<<< HEAD
     other_dim = xrutils.other_dim(ts, spatial_dim, "time")
+=======
+    # Determine spatial dimension dynamically (e.g., "channel", "parcel", ...)
+    # instead of assuming "channel", to support multiple representations.
+    spatial = xrutils.spatial_dim(ts)
+    other_dim = xrutils.other_dim(ts, spatial, "time")
+>>>>>>> 5d57304 (Generalize GLM to support non-channel spatial dimensions)
 
     n_time = ts.sizes["time"]
     n_other = ts.sizes[other_dim]
@@ -315,7 +325,13 @@ def hrf_extract_regressors(
     components = basis.component.values
 
     # could be "chromo" or "wavelength"
+<<<<<<< HEAD
     other_dim = xrutils.other_dim(ts, "channel", "time")
+=======
+    # other_dim = xrutils.other_dim(ts, "channel", "time")
+    spatial = xrutils.spatial_dim(ts)
+    other_dim = xrutils.other_dim(ts, spatial, "time")
+>>>>>>> 5d57304 (Generalize GLM to support non-channel spatial dimensions)
 
     n_time = basis.sizes["time"]
     n_other = ts.sizes[other_dim]
@@ -383,9 +399,16 @@ def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
     Returns:
         xr.DataArray: A DataArray containing the drift regressors.
     """
+<<<<<<< HEAD
     spatial_dim = cdc.get_spatial_dimension(ts)
     dim3 = xrutils.other_dim(ts, spatial_dim, "time")
+=======
+    # dim3 = xrutils.other_dim(ts, "channel", "time")
+    spatial = xrutils.spatial_dim(ts)
+    dim3 = xrutils.other_dim(ts, spatial, "time")
+>>>>>>> 5d57304 (Generalize GLM to support non-channel spatial dimensions)
     ndim3 = ts.sizes[dim3]
+
 
     nt = ts.sizes["time"]
 
@@ -394,7 +417,10 @@ def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
     for i in range(1, drift_order + 1):
         tmp = np.arange(1, nt + 1, dtype=float) ** (i)
         tmp /= tmp[-1]
-        drift_regressors[:, i, 0] = tmp
+        if i == 1: # Center linear drift to stabilize RecursiveLS.
+            #Uncentered ramp + constant can cause numerical instability in statsmodels RLS.
+            tmp -= tmp.mean()
+            drift_regressors[:, i, 0] = tmp
 
     for i in range(1, ndim3):
         drift_regressors[:, :, i] = drift_regressors[:, :, 0]
@@ -421,8 +447,14 @@ def drift_legendre_regressors(ts : cdt.NDTimeSeries, order : int) -> DesignMatri
         xr.DataArray: A DataArray containing the drift regressors.
     """
 
+<<<<<<< HEAD
     spatial_dim = cdc.get_spatial_dimension(ts)
     dim3 = xrutils.other_dim(ts, spatial_dim, "time")
+=======
+    # dim3 = xrutils.other_dim(ts, "channel", "time")
+    spatial = xrutils.spatial_dim(ts)
+    dim3 = xrutils.other_dim(ts, spatial, "time")
+>>>>>>> 5d57304 (Generalize GLM to support non-channel spatial dimensions)
     ndim3 = ts.sizes[dim3]
 
     nt = ts.sizes["time"]
@@ -460,8 +492,15 @@ def drift_cosine_regressors(ts: cdt.NDTimeSeries, fmax: cdt.QFrequency) -> Desig
     Returns:
         xr.DataArray: A DataArray containing the drift regressors.
     """
+<<<<<<< HEAD
     spatial_dim = cdc.get_spatial_dimension(ts)
     dim3 = xrutils.other_dim(ts, spatial_dim, "time")
+=======
+
+    dim3 = xrutils.other_dim(ts, "channel", "time")
+    spatial = xrutils.spatial_dim(ts)
+    dim3 = xrutils.other_dim(ts, spatial, "time")
+>>>>>>> 5d57304 (Generalize GLM to support non-channel spatial dimensions)
     ndim3 = ts.sizes[dim3]
 
     nt = ts.sizes["time"]
@@ -565,7 +604,9 @@ def _regressors_from_selected_short_channels(
 
     coords_short_channels = regressors.channel
 
-    dim3 = xrutils.other_dim(ts_long, "channel", "time")
+    # dim3 = xrutils.other_dim(ts_long, "channel", "time")
+    spatial = xrutils.spatial_dim(ts_long)
+    dim3 = xrutils.other_dim(ts_long, spatial, "time")
 
     keep_coords = ["time", "samples", dim3]
     drop_coords = [i for i in regressors.coords.keys() if i not in keep_coords]

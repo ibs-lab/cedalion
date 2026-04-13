@@ -165,6 +165,14 @@ def convolve(data_array: xr.DataArray, kernel: np.ndarray, dim: str) -> xr.DataA
     return convolved
 
 
+def spatial_dim(data_array: xr.DataArray) -> str:
+    """Return the spatial dimension name used by the DataArray."""
+    for dim in ("channel", "parcel", "vertex"):
+        if dim in data_array.dims:
+            return dim
+    raise ValueError("could not determine spatial dimension")
+
+
 def other_dim(data_array: xr.DataArray, *dims: str) -> str:
     """Get the dimension name not listed in *dims.
 

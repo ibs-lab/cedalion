@@ -38,7 +38,7 @@ def _channel_fit(y, x, noise_model="ols", ar_order=30):
     elif noise_model == "ar_irls":
         reg_result = cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=ar_order)
     elif noise_model == "gls":
-        ols_resid = statsmodels.api.OLS(y, x).fit().resid
+        ols_resid = statsmodels.api.OLS(y, x).fit().resid.values  # adding .values to convert dataframe to numpy array
         resid_fit = statsmodels.api.OLS(
             ols_resid[1:],
             statsmodels.api.add_constant(ols_resid[:-1]),
