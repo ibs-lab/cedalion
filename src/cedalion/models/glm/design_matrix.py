@@ -15,6 +15,7 @@ import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 from cedalion import cite
 
+
 from cedalion.sigproc.frequency import sampling_rate
 
 from .basis_functions import TemporalBasisFunction

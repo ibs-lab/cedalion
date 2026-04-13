@@ -37,6 +37,7 @@ def _channel_fit(y, x, noise_model="ols", ar_order=30):
     Raises:
         ValueError: If ``noise_model`` is not one of the supported options.
     """
+
     available_models = ["ols", "rls", "wls", "ar_irls", "gls", "glsar"]
 
     if noise_model not in available_models:
@@ -60,6 +61,7 @@ def _channel_fit(y, x, noise_model="ols", ar_order=30):
     elif noise_model == "ar_irls":
         reg_result = cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=ar_order)
     elif noise_model == "gls":
+
         ols_resid = statsmodels.api.OLS(y, x).fit().resid.values  # need a numpy array
         resid_fit = statsmodels.api.OLS(
             ols_resid[1:],
