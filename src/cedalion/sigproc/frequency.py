@@ -49,7 +49,7 @@ def freq_filter(
     """
 
     check_dimensionality("fmin", fmin, "[frequency]")
-    check_dimensionality("fax", fmax, "[frequency]")
+    check_dimensionality("fmax", fmax, "[frequency]")
 
     fny = sampling_rate(timeseries) / 2
     fmin = float(fmin / fny)

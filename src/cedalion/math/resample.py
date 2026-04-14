@@ -18,10 +18,10 @@ def resample(data: xr.DataArray, Fs: float = 4):
     """
 
     data2 = data.copy()
-    Fs_curr = 1 / (data2.time[1] - data2.time[0])
-
     # STrip off the units to avoid the warning as part of the interp function
     data2 = data2.pint.dequantify()
+    Fs_curr = 1 / (data2.time[1] - data2.time[0])
+
     if Fs_curr > Fs:
         # If downsampling, filter at the Nyquist
         data2 = freq.freq_filter(
