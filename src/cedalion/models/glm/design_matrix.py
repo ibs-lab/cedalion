@@ -43,9 +43,16 @@ class DesignMatrix:
 
         return result
 
-    def __repr__(self):
-        """Return a compact string representation listing common and channel-wise regressors."""  # noqa: E501
+    # def __repr__(self):
+    #     cregs = ",".join([f"'{r}'" for r in self.common.regressor.values])
+    #     cwregs = ",".join(
+    #         [f"'{r}'" for cw in self.channel_wise for r in cw.regressor.values]
+    #     )
+    #     return f"DesignMatrix(common=[{cregs}], channel_wise=[{cwregs}])"
 
+    def __repr__(self):
+
+        """Return a compact string representation listing common and channel-wise regressors."""  # noqa: E501
         cregs = (
             ",".join([f"'{r}'" for r in self.common.regressor.values])
             if self.common is not None
@@ -93,6 +100,14 @@ class DesignMatrix:
             common=common,
             channel_wise=self.channel_wise + other.channel_wise
         )
+
+    # def copy(self):
+    #     """Create a copy of this design matrix."""
+
+    #     return DesignMatrix(
+    #         common=self.common.copy(),
+    #         channel_wise=[i.copy() for i in self.channel_wise]
+    #     )
 
     def copy(self):
         """Create a copy of this design matrix."""
