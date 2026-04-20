@@ -210,7 +210,7 @@ def test_glm_recovers_known_amplitudes(synthetic_rec):
     result = glm.fit(synthetic_rec.ts,
                      synthetic_rec.dms,
                      synthetic_rec.noise_model,
-                     max_jobs = 1,
+                     max_jobs = -1,
                     )
 
 
