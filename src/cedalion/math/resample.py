@@ -18,7 +18,9 @@ def resample(data: xr.DataArray, Fs: float = 4):
     """
 
     data2 = data.copy()
-    # STrip off the units to avoid the warning as part of the interp function
+
+    # Strip off the units to avoid the warning as part of the interp function
+    # (must be done before computing Fs_curr to avoid pint unit mismatch)
     data2 = data2.pint.dequantify()
     Fs_curr = 1 / (data2.time[1] - data2.time[0])
 

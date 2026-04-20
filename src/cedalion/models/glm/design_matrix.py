@@ -13,7 +13,7 @@ from numpy.polynomial.legendre import legval
 
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-import cedalion.dataclasses as cdc
+
 from cedalion.sigproc.frequency import sampling_rate
 
 from .basis_functions import TemporalBasisFunction
@@ -37,7 +37,11 @@ class DesignMatrix:
         return result
 
     def __repr__(self):
-        cregs = ",".join([f"'{r}'" for r in self.common.regressor.values])
+        cregs = (
+            ",".join([f"'{r}'" for r in self.common.regressor.values])
+            if self.common is not None
+            else ""
+        )
         cwregs = ",".join(
             [f"'{r}'" for cw in self.channel_wise for r in cw.regressor.values]
         )
@@ -71,7 +75,7 @@ class DesignMatrix:
         """Create a copy of this design matrix."""
 
         return DesignMatrix(
-            common=self.common.copy(),
+            common=self.common.copy() if self.common is not None else None,
             channel_wise=[i.copy() for i in self.channel_wise]
         )
 
@@ -383,8 +387,9 @@ def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
     for i in range(1, drift_order + 1):
         tmp = np.arange(1, nt + 1, dtype=float) ** (i)
         tmp /= tmp[-1]
-        if i == 1: # Center linear drift to stabilize RecursiveLS.
-            #Uncentered ramp + constant can cause numerical instability in statsmodels RLS.
+        if i == 1:  # Center linear drift to stabilize RecursiveLS.
+            # Uncentered ramp + constant can cause numerical instability in
+            # statsmodels RLS.
             tmp -= tmp.mean()
             drift_regressors[:, i, 0] = tmp
 

@@ -185,3 +185,4 @@ scratch/
 # plugins
 plugins/
 
+.claude/worktrees/sharp-burnell/

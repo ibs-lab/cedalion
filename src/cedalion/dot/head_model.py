@@ -661,6 +661,23 @@ class TwoSurfaceHeadModel:
         return self.scale_to_landmarks(ellipsoid_landmarks)
 
 
+    def get_brain_mni152_coords(self) -> xr.DataArray:
+        v = self.brain.vertices
+        if not all([f"mni152_{i}" in v.coords for i in ["r", "a", "s"]]):
+            return ValueError("The cortex surface has no mni vertex coordinates")
+
+        mni_coords = (
+            xr.concat([v.mni152_r, v.mni152_a, v.mni152_s], dim="mni152")
+            .transpose("label", ...)
+            .rename("mni152")
+        )
+
+        keep_coords = ["label", "fsaverage_vertex"]
+
+        for c in [i for i in mni_coords.coords.keys() if i not in keep_coords]:
+            mni_coords = mni_coords.drop_vars(c)
+
+        return mni_coords
 
 
 @lru_cache
