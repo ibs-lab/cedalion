@@ -387,11 +387,13 @@ def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
     for i in range(1, drift_order + 1):
         tmp = np.arange(1, nt + 1, dtype=float) ** (i)
         tmp /= tmp[-1]
-        if i == 1:  # Center linear drift to stabilize RecursiveLS.
-            # Uncentered ramp + constant can cause numerical instability in
-            # statsmodels RLS.
+        # Center higher drift orders to stabilize RecursiveLS.
+        # Uncentered ramp + constant can cause numerical instability in
+        # statsmodels RLS.
+        if i > 0:
             tmp -= tmp.mean()
-            drift_regressors[:, i, 0] = tmp
+
+        drift_regressors[:, i, 0] = tmp
 
     for i in range(1, ndim3):
         drift_regressors[:, :, i] = drift_regressors[:, :, 0]
