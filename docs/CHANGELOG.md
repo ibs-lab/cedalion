@@ -47,6 +47,8 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 - The normalization of the `dot.GaussianSpatialBasisFunctions` was changed to match the original implementation used in {cite:p}`Carlton2026`.
 - Higher-resolution cortex meshes for the Colin27 and ICBM152 head models, which additionally maintain a link to the freesurfer surfaces from which they were derived, by [Eike Middell](https://github.com/emiddell). ([#138](https://github.com/ibs-lab/cedalion/pull/138)).
 - Previously, HRF regressors in the GLM where constructed from normalized basis functions and were normalized again after they were convolved over the stimulus duration. Now, only the basis functions are normalized to 1.  ([#139](https://github.com/ibs-lab/cedalion/pull/138)).
+- Several changes to GLM regressors. Generalize regressors to support non-channel spatial dimensions (i.e. parcel, vertex). Center higher-order drift regressors in `design_matrix.drift_regressors`. By [Reihaneh Taghizadegan](https://github.com/ReiGaan). ([#142](https://github.com/ibs-lab/cedalion/issues/142))
+
 
 ### Deprecated
 ### Removed
