@@ -233,4 +233,11 @@ $ apptainer run --nv --bind `pwd`/xkb:/var/lib/xkb,`pwd`/cedalion:/app cedalion.
 
 ### Docker
 
-- WIP: see [Nils' branch](https://github.com/ibs-lab/cedalion/tree/docker)
+- for Dockerfile see [Nils' branch](https://github.com/ibs-lab/cedalion/tree/docker)
+```
+$ docker build -t cedalion . 
+$ docker run -it --rm -p 8888:8888 \
+$            cedalion \
+$            conda run --no-capture-output -n cedalion \
+$            jupyter notebook --ip 0.0.0.0 --no-browser --allow-root 
+```
