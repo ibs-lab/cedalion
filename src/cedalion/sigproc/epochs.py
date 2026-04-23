@@ -40,7 +40,7 @@ def to_epochs(
     if not isinstance(before, Quantity):
         raise ValueError("please specify 'before' as a Quantity with time units.")
     if not isinstance(after, Quantity):
-        raise ValueError("please specify 'before' as a Quantity with time units.")
+        raise ValueError("please specify 'after' as a Quantity with time units.")
 
     # check if user-selected trial types are available
     available_trial_types = set(df_stim.trial_type)

@@ -6,7 +6,7 @@ import cedalion.typing as cdt
 import pandas as pd
 import numpy as np
 from typing import Protocol
-import cedalion.nirs as nirs
+import cedalion.nirs
 import cedalion.xrutils as xrutils
 
 TIMING_COLUMNS = ["onset", "duration", "trial_type", "value", "channel"]
@@ -318,7 +318,7 @@ def add_chromo_artifacts_2_od(
 ):
     """Scale artifacts by chromo amplitudes and add to OD data."""
 
-    conc = nirs.od2conc(od, geo3d, dpf)
+    conc = cedalion.nirs.cw.od2conc(od, geo3d, dpf)
     conc = add_artifacts(conc, timing, artifacts, mode="auto", scale=scale,
                          window_size=window_size)
-    return nirs.conc2od(conc, geo3d, dpf)
+    return cedalion.nirs.cw.conc2od(conc, geo3d, dpf)

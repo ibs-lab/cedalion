@@ -212,7 +212,7 @@ class PointsAccessor:
         coordinates: ArrayLike,
         type: Union[cdc.PointType, List[cdc.PointType]],
         group: Union[str, List[str]] = None,
-    ) -> cdt.LabeledPointCloud:
+    ) -> cdt.LabeledPoints:
         # Handle the single point case
         if isinstance(label, str):
             assert isinstance(
@@ -386,6 +386,7 @@ class StatsModelsAccessor:
                 i,
                 (
                     statsmodels.regression.linear_model.RegressionResultsWrapper,
+                    statsmodels.regression.recursive_ls.RecursiveLSResultsWrapper,
                     statsmodels.stats.contrast.ContrastResults,
                 ),
             ):

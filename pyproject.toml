@@ -57,6 +57,8 @@ dependencies = [
   "pmcx>=0.3.3",
   "pmcxcl==0.3.1",
   "pyxdf==1.17.0",
+  "snirf2bids @ git+https://github.com/emiddell/snirf2bids.git@v0.8.8", # FIXME
+  "seedir",
 ]
 
 
@@ -71,9 +73,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/cedalion/_version.py"
+template = "__version__ = '{version}'\n"
 
 [tool.hatch.version]
 source = "vcs"
+
+# FIXME remove after snirf2bids release
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.env]
 requires = [

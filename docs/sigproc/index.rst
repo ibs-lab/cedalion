@@ -10,9 +10,12 @@ preprocessing, quality control, and feature extraction.
    :recursive:
 
    cedalion.nirs
+   cedalion.nirs.cw
+   cedalion.nirs.fd
+   cedalion.nirs.td
    cedalion.sigproc.epochs
    cedalion.sigproc.frequency
-   cedalion.sigproc.motion_correct
+   cedalion.sigproc.motion
    cedalion.sigproc.quality
    cedalion.sigproc.physio
 

@@ -1,7 +1,6 @@
 """Module for constructing the 10-10-system on the scalp surface."""
 
 import warnings
-from typing import List, Optional
 
 import numpy as np
 import vtk
@@ -9,7 +8,8 @@ import vtk.util.numpy_support as vnp
 import xarray as xr
 import pyvista as pv
 
-import cedalion.plots
+import cedalion.vis.blocks as vbx
+
 from cedalion.dataclasses import (
     Surface,
     TrimeshSurface,
@@ -17,7 +17,59 @@ from cedalion.dataclasses import (
     validate_schemas,
     PointType,
 )
-from cedalion.typing import LabeledPointCloud
+from cedalion.typing import LabeledPoints
+
+
+def normalize_landmarks_labels(geo3d: LabeledPoints) -> LabeledPoints:
+    """Normalize landmark labels to canonical names.
+
+    Maps commonly used alternative landmark names and capitalizations to canonical
+    names.
+
+    When multiple labels normalize to the same canonical name:
+    - If the canonical name already exists, alternative forms are not altered.
+    - If multiple alternatives exist without the canonical form, a ValueError is
+      raised and the user must resolve the ambiguity.
+
+    Args:
+        geo3d: LabeledPoints with potentially non-canonical landmark names.
+
+    Returns:
+        LabeledPoints with normalized landmark labels.
+    """
+    if len(geo3d.label) == 0:
+        return geo3d
+
+    label_mapping = {
+        "Nz": {"nz", "nasion", "nas"},
+        "Iz": {"iz", "inion", "ini"},
+        "LPA": {"lpa", "lpa_l", "left ear", "le", "left", "l"},
+        "RPA": {"rpa", "rpa_r", "right ear", "re", "right", "r"},
+        "Cz": {"cz", "vertex"},
+    }
+
+    # reverse mapping from aliases to canoncial
+    label_mapping_r = {v: k for k, vs in label_mapping.items() for v in vs}
+
+    labels_to_rename = {}
+
+    for lbl in geo3d.label.values:
+        lbl_lower = lbl.lower()
+        if lbl_lower in label_mapping_r:
+            canonical = label_mapping_r[lbl_lower]
+
+            if canonical not in geo3d.label.values:
+                labels_to_rename[lbl] = canonical
+
+    geo3d_renamed = geo3d.points.rename(labels_to_rename)
+
+    if len(set(geo3d_renamed.label.values)) != geo3d_renamed.sizes["label"]:
+        raise ValueError(
+            "During landmark label normalization, multiple landmarks were "
+            "mapped to the same name. Please resolve this ambiguity manually."
+        )
+
+    return geo3d_renamed
 
 
 def _sort_line_points(start_point: np.ndarray, points: np.ndarray):
@@ -48,13 +100,27 @@ def _intersect_mesh_with_triangle(
     p0: np.ndarray,
     p1: np.ndarray,
     p2: np.ndarray,
-    select: Optional[List[float]] = None,
-):
+    select: list[float] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
     """Find the line along the mesh through three points.
 
     Construct a line on a surface meshe from p0 through p1 to p2. To that end the
     mesh is intersected with a plane defined by the triangle (p0,p1,p2). Only points
     above the p0-p2-line are kept.
+
+    Args:
+        vtk_mesh: the mesh to intersect
+        p0: 3D point
+        p1: 3D point
+        p2: 3D point
+        select: array of percentage distances along the line that define the selected
+            points
+
+    Returns:
+        points: array of `points` along the constructed line
+        dists: an array of distances for each item in points
+        indices: if `select` is not None, this array contains the position of the
+            corresponding points in `points`.
     """
     p0p2 = p2 - p0
     origin = p0 + 0.5 * p0p2
@@ -115,18 +181,18 @@ class LandmarksBuilder1010:
 
     Attributes:
         scalp_surface (Surface): a triangle-mesh representing the scalp
-        landmarks_mm (LabeledPointCloud): positions of all 10-10 landmarks in mm
+        landmarks_mm (LabeledPoints): positions of all 10-10 landmarks in mm
         vtk_mesh (vtk.vtkPolyData): the scalp surface as a VTK mesh
         lines (List[np.ndarray]): points along the lines connecting the landmarks
     """
 
     @validate_schemas
-    def __init__(self, scalp_surface: Surface, landmarks: LabeledPointCloud):
+    def __init__(self, scalp_surface: Surface, landmarks: LabeledPoints):
         """Initialize the LandmarksBuilder1010.
 
         Args:
             scalp_surface (Surface): a triangle-mesh representing the scalp
-            landmarks (LabeledPointCloud): positions of "Nz", "Iz", "LPA", "RPA"
+            landmarks (LabeledPoints): positions of "Nz", "Iz", "LPA", "RPA"
         """
         if isinstance(scalp_surface, TrimeshSurface):
             scalp_surface = VTKSurface.from_trimeshsurface(scalp_surface)
@@ -135,7 +201,12 @@ class LandmarksBuilder1010:
 
         required_landmarks = ["Nz", "Iz", "LPA", "RPA"]
         for label in required_landmarks:
-            assert label in landmarks.label
+            assert label in landmarks.label, f"missing necessary fiducial {label}"
+
+        # ignore existing landmarks, keep only fiducials
+        landmarks = landmarks.sel(
+            label=landmarks.label.isin(["Nz", "Iz", "LPA", "RPA", "Cz"])
+        )
 
         self.landmarks_mm = landmarks.pint.to("mm").pint.dequantify()
 
@@ -145,8 +216,9 @@ class LandmarksBuilder1010:
 
     def _estimate_cranial_vertex_by_height(self):
         """Find the highest point of the skull."""
-        # FIXME: this only works for coordinate systems with z-axis oriented 
+        # FIXME: this only works for coordinate systems with z-axis oriented
         # superior like in RAS or ALS coordinate systems!
+        # determine z-direction through the cross-product of (RPA-LPA) and (Nz-Iz)
 
         vertices = vnp.vtk_to_numpy(self.vtk_mesh.GetPoints().GetData())
         highest_vertices = vertices[vertices[:, 2] == vertices[:, 2].max()]
@@ -194,14 +266,14 @@ class LandmarksBuilder1010:
         return cz2
 
     def _add_landmarks_along_line(
-        self, triangle_labels: List[str], labels: List[str], dists: List[float]
+        self, triangle_labels: list[str], labels: list[str], dists: list[float]
     ):
         """Add landmarks along a line defined by three landmarks.
 
         Args:
-            triangle_labels (List[str]): Labels of the three landmarks defining the line
-            labels (List[str]): Labels for the new landmarks
-            dists (List[float]): Distances along the line where the new landmarks should
+            triangle_labels: Labels of the three landmarks defining the line
+            labels: Labels for the new landmarks
+            dists: Distances along the line in percent where the new landmarks should
                 be placed.
         """
         assert len(triangle_labels) == 3
@@ -235,6 +307,7 @@ class LandmarksBuilder1010:
 
         self.landmarks_mm = xr.concat((self.landmarks_mm, tmp), dim="label")
 
+        # add all points to allow plotting the lines
         self.lines.append(points)
 
     def build(self):
@@ -244,7 +317,7 @@ class LandmarksBuilder1010:
         cz = self._estimate_cranial_vertex_from_lines()
 
         self.landmarks_mm = self.landmarks_mm.points.add("Cz", cz, PointType.LANDMARK)
-       
+
         for _ in range(5): # converge usually after 2-4 iterations
             self._add_landmarks_along_line(["LPA", "Cz", "RPA"], ["Cz"], [0.5])
             self._add_landmarks_along_line(["Nz", "Cz", "Iz"], ["Cz"], [0.5])
@@ -316,8 +389,8 @@ class LandmarksBuilder1010:
     def plot(self):
         """Plot scalp surface with landmarks."""
         plt = pv.Plotter()
-        cedalion.plots.plot_surface(plt, self.scalp_surface)
-        cedalion.plots.plot_labeled_points(plt, self.landmarks_mm.pint.quantify())
+        vbx.plot_surface(plt, self.scalp_surface)
+        vbx.plot_labeled_points(plt, self.landmarks_mm.pint.quantify())
 
         for points in self.lines:
             lines = pv.MultipleLines(points)

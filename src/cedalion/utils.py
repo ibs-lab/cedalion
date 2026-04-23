@@ -2,6 +2,7 @@
 
 import numpy as np
 import warnings
+import functools
 
 
 def zero_padded_numbers(numbers: list[int], prefix: str = "") -> list[str]:
@@ -22,3 +23,20 @@ def deprecated_api(message):
 
     # FIXME: replace with @deprecated for python 3.13
     warnings.warn(message, DeprecationWarning)
+
+
+def deprecated(reason: str):
+    """Marks a function as deprecated by issuing a DeprecationWarning when used."""
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"'{func.__name__}' is deprecated: {reason}",
+                category=DeprecationWarning,
+                stacklevel=2
+            )
+            return func(*args, **kwargs)
+        return wrapper
+
+    return decorator

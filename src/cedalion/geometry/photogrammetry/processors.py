@@ -180,8 +180,8 @@ class ColoredStickerProcessor(ScanProcessor):
     def process(
         self, surface: cdc.TrimeshSurface, details: bool = False
     ) -> (
-        tuple[cdt.LabeledPointCloud, xr.DataArray]
-        | tuple[cdt.LabeledPointCloud, xr.DataArray, ColoredStickerProcessorDetails]
+        tuple[cdt.LabeledPoints, xr.DataArray]
+        | tuple[cdt.LabeledPoints, xr.DataArray, ColoredStickerProcessorDetails]
     ):
         """Process a scanned surface.
 
@@ -421,7 +421,7 @@ class ColoredStickerProcessor(ScanProcessor):
 
 @cdc.validate_schemas
 def geo3d_from_scan(
-    scalp_coords: cdt.LabeledPointCloud, landmarks: cdt.LabeledPointCloud
+    scalp_coords: cdt.LabeledPoints, landmarks: cdt.LabeledPoints
 ):
     """Creates a geo3D with optode and landmark positions from photogrammetric scans.
 

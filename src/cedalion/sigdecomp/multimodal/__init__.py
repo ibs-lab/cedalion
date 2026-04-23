@@ -1,0 +1,1 @@
+"""Multimodal signal decomposition methods."""

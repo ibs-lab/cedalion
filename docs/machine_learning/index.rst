@@ -21,8 +21,8 @@ Decomposition Methods
     :recursive:
     :nosignatures:
 
-    cedalion.sigdecomp.ERBM
-    cedalion.sigdecomp.ICA_EBM
+    cedalion.sigdecomp.unimodal
+    cedalion.sigdecomp.multimodal
 
 Examples
 --------

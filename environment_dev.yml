@@ -55,6 +55,8 @@ dependencies:
   - PyQt
   - ipympl
 
+  - seedir
+
   - pip:
       - mne==1.9
       - mne-bids==0.16
@@ -65,5 +67,7 @@ dependencies:
       - pmcx>=0.3.3
       - pmcxcl>=0.2.0
       - sphinxcontrib-bibtex
+      - snirf2bids @ git+https://github.com/emiddell/snirf2bids.git@v0.8.8
       - hatch-conda
+      - pymeshlab
       

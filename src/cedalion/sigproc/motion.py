@@ -1,0 +1,799 @@
+"""Various algorithms for motion correction of fNIRS data."""
+
+from __future__ import annotations
+import numpy as np
+import xarray as xr
+from scipy.interpolate import UnivariateSpline
+from scipy.linalg import svd
+from scipy.signal import savgol_filter
+import pywt
+import logging
+
+
+import cedalion.dataclasses as cdc
+import cedalion.typing as cdt
+import cedalion.xrutils as xrutils
+from cedalion.sigproc.frequency import sampling_rate
+from cedalion.utils import deprecated
+from cedalion import units, Quantity
+
+from .quality import (
+    detect_baselineshift,
+    detect_outliers,
+    id_motion,
+    id_motion_refine,
+    TAINTED,
+)
+
+logger = logging.getLogger("cedalion")
+
+@deprecated("This function was renamed to 'spline'.")
+def motion_correct_spline(
+    fNIRSdata: cdt.NDTimeSeries, tIncCh: cdt.NDTimeSeries, p: float
+) -> cdt.NDTimeSeries:
+    return spline(fNIRSdata, tIncCh, p)
+
+
+@cdc.validate_schemas
+def spline(
+    ts: cdt.NDTimeSeries, t_inc_ch: cdt.NDTimeSeries, p: float
+) -> cdt.NDTimeSeries:
+    """Apply motion correction using spline interpolation to fNIRS data.
+
+    Based on Homer3 [1] v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+    Boston University Neurophotonics Center
+    https://github.com/BUNPC/Homer3
+
+    Args:
+        ts: The time series to be motion corrected.
+        t_inc_ch: The time series indicating the presence of motion artifacts.
+        p: smoothing factor
+
+    Returns:
+        dodSpline (cdt.NDTimeSeries): The motion-corrected fNIRS data.
+    """
+    dtShort = 0.3
+    dtLong = 3
+
+    fs = ts.cd.sampling_rate
+    t = np.arange(0, len(ts.time), 1 / fs)
+    t = t[: len(ts.time)]
+
+    units = ts.pint.units
+    ts = ts.pint.dequantify()
+
+    dodSpline = ts.copy()
+
+    for ch in ts.channel.values:
+        for wl in ts.wavelength.values:
+            channel = ts.sel(channel=ch, wavelength=wl).values
+            tInc_channel = t_inc_ch.sel(channel=ch, wavelength=wl)
+            dodSpline_chan = channel.copy()
+
+            # get list of start and finish of each motion artifact segment
+            lstMA = np.where(tInc_channel == 0)[0]
+            if len(lstMA) != 0:
+                temp = np.diff(tInc_channel.values.astype(int))
+                lstMs = np.where(temp == -1)[0]
+                lstMf = np.where(temp == 1)[0]
+
+                if len(lstMs) == 0:
+                    lstMs = np.asarray([0])
+                if len(lstMf) == 0:
+                    lstMf = np.asarray([len(channel) - 1])
+                if lstMs[0] > lstMf[0]:
+                    lstMs = np.insert(lstMs, 0, 0)
+                if lstMs[-1] > lstMf[-1]:
+                    lstMf = np.append(lstMf, len(channel) - 1)
+
+                nbMA = len(lstMs)
+                lstMl = lstMf - lstMs
+
+                # apply spline interpolation to each motion artifact segment
+                for ii in range(nbMA):
+                    idx = np.arange(lstMs[ii], lstMf[ii])
+
+                    if len(idx) > 3:
+                        splInterp_obj = UnivariateSpline(
+                            t[idx], channel[idx], s=p * len(t[idx])
+                        )
+                        splInterp = splInterp_obj(t[idx])
+
+                        dodSpline_chan[idx] = channel[idx] - splInterp
+
+                # reconstruct the timeseries by shifting the motion artifact segments to
+                # the previous or next non-motion artifact segment
+                # for the first MA segment - shift to previous noMA segment if it exists
+                # otherwise shift to next noMA segment
+                idx = np.arange(lstMs[0], lstMf[0])
+                if len(idx) > 0:
+                    SegCurrLength = lstMl[0]
+                    windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
+
+                    if lstMs[0] > 0:
+                        SegPrevLength = lstMs[0]
+                        windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
+                        meanPrev = np.mean(dodSpline_chan[idx[0] - windPrev : idx[0]])
+                        meanCurr = np.mean(dodSpline_chan[idx[0] : idx[0] + windCurr])
+                        dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanPrev
+                    else:
+                        if nbMA > 1:
+                            SegNextLength = lstMs[1] - lstMf[0]
+                        else:
+                            SegNextLength = len(dodSpline_chan) - lstMf[0]
+
+                        windNext = compute_window(SegNextLength, dtShort, dtLong, fs)
+                        meanNext = np.mean(dodSpline_chan[idx[-1] : idx[-1] + windNext])
+                        meanCurr = np.mean(dodSpline_chan[idx[-1] - windCurr : idx[-1]])
+                        dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanNext
+
+                # intermediate segments
+                for kk in range(nbMA - 1):
+                    # no motion
+                    idx = np.arange(lstMf[kk], lstMs[kk + 1])
+                    SegPrevLength = lstMl[kk]
+                    SegCurrLength = len(idx)
+
+                    windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
+                    windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
+
+                    meanPrev = np.mean(dodSpline_chan[idx[0] - windPrev : idx[0]])
+                    meanCurr = np.mean(channel[idx[0] : idx[0] + windCurr])
+
+                    dodSpline_chan[idx] = channel[idx] - meanCurr + meanPrev
+
+                    # motion
+                    idx = np.arange(lstMs[kk + 1], lstMf[kk + 1])
+
+                    SegPrevLength = SegCurrLength
+                    SegCurrLength = lstMl[kk + 1]
+
+                    windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
+                    windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
+
+                    meanPrev = np.mean(dodSpline_chan[idx[0] - windPrev : idx[0]])
+                    meanCurr = np.mean(dodSpline_chan[idx[0] : idx[0] + windCurr])
+
+                    dodSpline_chan[idx] = dodSpline_chan[idx] - meanCurr + meanPrev
+
+                # last not MA segment
+                if lstMf[-1] < len(dodSpline_chan):
+                    idx = np.arange(lstMf[-1], len(dodSpline_chan))
+                    SegPrevLength = lstMl[-1]
+                    SegCurrLength = len(idx)
+
+                    windPrev = compute_window(SegPrevLength, dtShort, dtLong, fs)
+                    windCurr = compute_window(SegCurrLength, dtShort, dtLong, fs)
+
+                    meanPrev = np.mean(dodSpline_chan[idx[0] - windPrev : idx[0]])
+                    meanCurr = np.mean(channel[idx[0] : idx[0] + windCurr])
+
+                    dodSpline_chan[idx] = channel[idx] - meanCurr + meanPrev
+
+            dodSpline.loc[dict(channel=ch, wavelength=wl)] = dodSpline_chan
+
+    # dodSpline = dodSpline.unstack('measurement').pint.quantify()
+
+    if units:
+        dodSpline = dodSpline.pint.quantify(units)
+
+    return dodSpline
+
+
+# %% COMPUTE WINDOW
+def compute_window(
+    SegLength: cdt.NDTimeSeries, dtShort: Quantity, dtLong: Quantity, fs: Quantity
+):
+    """Computes the window size.
+
+    Window size is based on the segment length, short time interval, long time interval,
+    and sampling frequency.
+
+    Args:
+        SegLength (cdt.NDTimeSeries): The length of the segment.
+        dtShort (Quantity): The short time interval.
+        dtLong (Quantity): The long time interval.
+        fs (Quantity): The sampling frequency.
+
+    Returns:
+        wind: The computed window size.
+    """
+    if SegLength < dtShort * fs:
+        wind = SegLength
+    elif SegLength < dtLong * fs:
+        wind = np.floor(dtShort * fs)
+    else:
+        wind = np.floor(SegLength / 10)
+    return int(wind)
+
+
+@deprecated("This function was renamed to 'spline_sg'.")
+def motion_correct_splineSG(
+    fNIRSdata: cdt.NDTimeSeries, p: float, frame_size: Quantity = 10 * units.s
+):
+    return spline_sg(fNIRSdata, p, frame_size)
+
+
+# %% SPLINESG
+@cdc.validate_schemas
+def spline_sg(
+    ts: cdt.NDTimeSeries,
+    p: float,
+    frame_size: cdt.QTime = 10 * units.s,
+):
+    """Apply motion correction using spline interpolation and Savitzky-Golay filter.
+
+    Args:
+        ts: The time series to be motion corrected.
+        frame_size (Quantity): The size of the sliding window in seconds for the
+            Savitzky-Golay filter. Default is 10 seconds.
+        p: smoothing factor
+
+    Returns:
+        dodSplineSG (cdt.NDTimeSeries): The motion-corrected fNIRS data after applying
+        spline interpolation and Savitzky-Golay filter.
+
+    References:
+        Paper: :cite:`Jahani2018`
+    """
+
+    fs = sampling_rate(ts)
+
+    M = detect_outliers(ts, 1 * units.s)
+
+    tIncCh = detect_baselineshift(ts, M)
+
+    ts = ts.pint.dequantify()
+    fNIRSdata_lpf2 = ts.cd.freq_filter(0, 2, butter_order=4)
+
+    PADDING_TIME = 12 * units.s # FIXME configurable?
+    extend = int(np.round(PADDING_TIME  * fs))  # extension for padding
+
+    # pad fNIRSdata and tIncCh for motion correction
+    fNIRSdata_lpf2_pad = fNIRSdata_lpf2.pad(time=extend, mode="edge")
+
+    tIncCh_pad = tIncCh.pad(time=extend, mode="constant", constant_values=False)
+
+    dodSpline = spline(fNIRSdata_lpf2_pad, tIncCh_pad, p)
+
+    # remove padding
+    dodSpline = dodSpline.transpose("channel", "wavelength", "time")
+    dodSpline = dodSpline[:, :, extend:-extend]
+
+    # apply SG filter
+    if not np.isfinite(dodSpline).all():
+        # MKL (used for savgol_filter on Windows) is strict about NaNs
+        raise ValueError("time series contains nonfinite values.")
+
+    K = 3
+    framesize_samples = int(np.round(frame_size * fs))
+
+    if framesize_samples % 2 == 0:
+        framesize_samples = framesize_samples + 1
+
+    assert framesize_samples >= K
+
+    dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_samples, K).T
+
+    # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
+    dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
+    dodSplineSG = dodSplineSG.pint.quantify()
+
+    return dodSplineSG
+
+
+@deprecated("This function was renamed to 'pca'")
+def motion_correct_PCA(
+    fNIRSdata: cdt.NDTimeSeries, tInc: cdt.NDTimeSeries, nSV: Quantity = 0.97
+):
+    return pca(fNIRSdata, tInc, nSV)
+
+
+# @cdc.validate_schemas
+def pca(
+    ts: cdt.NDTimeSeries, t_inc: cdt.NDTimeSeries, n_sv: float = 0.97
+) -> tuple[cdt.NDTimeSeries, int, np.ndarray]:
+    """Apply motion correction using PCA filter identified as motion artefact segments.
+
+    Based on Homer3 [1] v1.80.2 "hmrR_MotionCorrectPCA.m"
+    Boston University Neurophotonics Center
+    https://github.com/BUNPC/Homer3
+
+    Inputs:
+        ts: The time series to be motion corrected.
+        t_inc: The time series indicating the presence of motion artifacts.
+        n_sv: Specifies the number of prinicpal components to remove from the
+            data. If n_sv < 1 then the filter removes the first n components of the data
+            that removes a fraction of the variance up to n_sv.
+
+    Returns:
+        ts_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
+        n_sv (int): the number of principal components removed from the data.
+        svs (np.array): the singular values of the PCA.
+
+
+    References:
+        Paper & Code: :cite:`Huppert2009`
+    """
+
+    # apply_mask drops time points where the provided mask is False
+    # -> keep only points with motion
+    y, m = xrutils.apply_mask(ts, t_inc == TAINTED, "drop", "none")
+
+    # stack y and od
+    y = (
+        y.stack(measurement=["channel", "wavelength"])
+        .sortby("wavelength")
+        .pint.dequantify()
+    )
+
+    y_zscore = ( y - y.mean('time') ) / y.std('time')
+
+    ts_stacked = (
+        ts.stack(measurement=["channel", "wavelength"])
+        .sortby("wavelength")
+        .pint.dequantify()
+    )
+
+    # PCA
+    yo = y_zscore.copy()
+    c = np.dot(y_zscore.T, y_zscore)
+
+    V, St, foo = svd(c)
+
+    svs = St / np.sum(St)
+
+    svsc = svs.copy()
+    for idx in range(1, svs.shape[0]):
+        svsc[idx] = svsc[idx - 1] + svs[idx]
+
+    if n_sv < 1 and n_sv > 0:
+        ev = svsc < n_sv
+        n_sv = np.where(ev == 0)[0][0]
+
+    ev = np.zeros((svs.shape[0], 1))
+    ev[:n_sv] = 1
+    ev = np.diag(np.squeeze(ev))
+
+    # remove top PCs
+    yc = yo - np.dot(np.dot(yo, V), np.dot(ev, V.T))
+
+    yc = (yc * y.std('time')) + y.mean('time')
+
+    # insert cleaned signal back into od
+    lstMs = np.where(np.diff(t_inc.values.astype(int)) == -1)[0]
+    lstMf = np.where(np.diff(t_inc.values.astype(int)) == 1)[0]
+
+    if len(lstMs) == 0:
+        lstMs = np.asarray([0])
+    if len(lstMf) == 0:
+        lstMf = np.asarray([len(t_inc) - 1])
+    if lstMs[0] > lstMf[0]:
+        lstMs = np.insert(lstMs, 0, 0)
+    if lstMs[-1] > lstMf[-1]:
+        lstMf = np.append(lstMf, len(t_inc) - 1)
+
+    lstMb = lstMf - lstMs
+
+    for ii in range(1, len(lstMb)):
+        lstMb[ii] = lstMb[ii - 1] + lstMb[ii]
+
+    lstMb = lstMb - 1
+
+    yc_ts = yc.values
+    tmp_cleaned = ts_stacked.copy().values
+    tmp_uncleaned = ts_stacked.copy().values
+
+    for jj in range(tmp_cleaned.shape[1]):
+        lst = np.arange(lstMs[0], lstMf[0])
+
+        if lstMs[0] > 0:
+            tmp_cleaned[lst, jj] = (
+                yc_ts[: lstMb[0] + 1, jj]
+                - yc_ts[0, jj]
+                + tmp_cleaned[lst[0], jj]
+            )
+        else:
+            tmp_cleaned[lst, jj] = (
+                yc_ts[: lstMb[0] + 1, jj]
+                - yc_ts[lstMb[0], jj]
+                + tmp_cleaned[lst[-1], jj]
+            )
+
+        for kk in range(len(lstMf) - 1):
+            lst = np.arange(lstMf[kk] - 1, lstMs[kk + 1] + 1)
+            tmp_cleaned[lst, jj] = (
+                tmp_uncleaned[lst, jj]
+                - tmp_uncleaned[lst[0], jj]
+                + tmp_cleaned[lst[0], jj]
+            )
+
+            lst = np.arange(lstMs[kk + 1], lstMf[kk + 1])
+            tmp_cleaned[lst, jj] = (
+                yc_ts[lstMb[kk] + 1 : lstMb[kk + 1] + 1, jj]
+                - yc_ts[lstMb[kk] + 1, jj]
+                + tmp_cleaned[lst[0], jj]
+            )
+
+        if lstMf[-1] < len(tmp_uncleaned) - 1:
+            lst = np.arange(lstMf[-1] - 1, len(tmp_uncleaned))
+            tmp_cleaned[lst, jj] = (
+                tmp_uncleaned[lst, jj]
+                - tmp_uncleaned[lst[0], jj]
+                + tmp_cleaned[lst[0], jj]
+            )
+
+    ts_cleaned = ts_stacked.copy()
+    ts_cleaned.values = tmp_cleaned
+
+    ts_cleaned = ts_cleaned.unstack("measurement").pint.quantify()
+    ts_cleaned = ts_cleaned.transpose("channel", "wavelength", "time")
+    ts_cleaned = ts_cleaned.assign_coords({"source": ts.source})
+
+    return ts_cleaned, n_sv, svs
+
+@deprecated("This function was renamed to 'pca_recurse'.")
+def motion_correct_PCA_recurse(
+    fNIRSdata: cdt.NDTimeSeries,
+    t_motion: Quantity = 0.5,
+    t_mask: Quantity = 1,
+    stdev_thresh: Quantity = 20,
+    amp_thresh: Quantity = 5,
+    nSV: Quantity = 0.97,
+    maxIter: Quantity = 5,
+):
+    return pca_recurse(
+        fNIRSdata, t_motion, t_mask, stdev_thresh, amp_thresh, nSV, maxIter
+    )
+
+
+def pca_recurse(
+    ts: cdt.NDTimeSeries,
+    t_motion: cdt.QTime = 0.5 * units.s,
+    t_mask: cdt.QTime = 1 * units.s,
+    stdev_thresh: float = 20,
+    amp_thresh: float = 5,
+    n_sv: float = 0.97,
+    max_iter: int = 5,
+) -> tuple[cdt.NDTimeSeries, np.ndarray, int]:
+    """Identify motion artefacts in input time series ts.
+
+    If any active channel exhibits signal change greater than stdev_thresh or
+    amp_thresh, then that segment of data is marked as a motion artefact. pca is
+    applied to all segments of data identified as a motion artefact. This is called
+    until max_iter is reached or there are no motion artefacts identified.
+
+    Args:
+        ts: The time series to be motion corrected.
+        t_motion: check for signal change indicative of a motion artefact over
+            time range tMotion. (units of seconds)
+        t_mask (Quantity): mark data +/- tMask seconds aroundthe identified motion
+            artefact as a motion artefact.
+        stdev_thresh (Quantity): if the signal d for any given active channel changes by
+            more than stdev_thresh * stdev(d) over the time interval tMotion then this
+            time point is marked as a motion artefact.
+        amp_thresh (Quantity): if the signal d for any given active channel changes
+            by more than amp_thresh over the time interval tMotion then this time point
+            is marked as a motion artefact.
+        n_sv: Specifies the number of prinicpal components to remove from the
+            data. If n_sv < 1 then the filter removes the first n components of the data
+            that removes a fraction of the variance up to n_sv.
+        max_iter: maximum number of iterations.
+
+    Returns:
+        ts_cleaned (cdt.NDTimeSeries): The motion-corrected fNIRS data.
+        svs (np.array): the singular values of the PCA.
+        n_sv (int): the number of principal components removed from the data.
+        t_inc (np.ndarray): remaining motion artifacts
+
+    References:
+        Paper & Code: :cite:`Huppert2009`
+    """
+
+    t_inc_ch = id_motion(
+        ts, t_motion, t_mask, stdev_thresh, amp_thresh
+    )  # unit stripped error x2
+
+    t_inc = id_motion_refine(t_inc_ch, "all")[0]
+    t_inc.values = np.hstack([t_inc.values[0], t_inc.values[:-1]])
+
+    nI = 0
+    ts_cleaned = ts.copy()
+
+    # default values for the case that ts is already clean
+    n_sv_ret = -1
+    svs = np.ndarray([])
+
+    while sum(~t_inc.values) > 0 and nI < max_iter:
+        nI = nI + 1
+
+        ts_cleaned, n_sv_ret, svs = pca(ts_cleaned, t_inc, n_sv=n_sv)
+
+        t_inc_ch = id_motion(ts_cleaned, t_motion, t_mask, stdev_thresh, amp_thresh)
+        t_inc = id_motion_refine(t_inc_ch, "all")[0]
+        t_inc.values = np.hstack([t_inc.values[0], t_inc.values[:-1]])
+
+    return ts_cleaned, svs, n_sv_ret, t_inc
+
+
+def tddr(ts: cdt.NDTimeSeries) -> cdt.NDTimeSeries:
+    """Implementation of the TDDR algorithm for motion correction.
+
+    Uses an iterative reweighting approach to reduce large fluctuations typically
+    associated with motion artifacts. Adapted for cedalion from the python
+    implementation at :cite:`Fishburn2018`, which is the reference implementation for
+    the algorithm described in :cite:`Fishburn2019`.
+
+    Arguments:
+        ts: The time series to be corrected. Should have dims channel and wavelength
+
+    Returns:
+        The corrected time series.
+
+    References:
+        Paper: :cite:`Fishburn2019`
+        Code: :cite:`Fishburn2018`
+    """
+    signal = ts.copy()
+    unit = signal.pint.units if signal.pint.units else 1
+    signal = signal.pint.dequantify()
+
+    if signal.channel.size != 1 or signal.wavelength.size != 1:
+        for ch in signal.channel.values:
+            for wl in signal.wavelength.values:
+                # Select single channel/wavelength
+                curr_signal = signal.loc[dict(channel=[ch], wavelength=[wl])]
+                # Process the single time series
+                corrected = tddr(curr_signal)
+                # Assign back ensuring coordinate consistency
+                signal.loc[dict(channel=[ch], wavelength=[wl])] = corrected
+        return signal * unit
+
+    # Early exit: signal is (nearly) constant
+    if np.allclose(np.squeeze(signal.values), np.squeeze(signal.values)[0], rtol=1e-8,
+                   atol=1e-12):
+        logger.debug(
+            f"Signal is near constant, returning original signal at "
+            f"(channel={signal.channel.values[0]}, "
+            f"wavelength={signal.wavelength.values[0]})."
+        )
+        return signal * unit
+
+    # Preprocess: Separate high and low frequencies
+    signal_mean = np.mean(signal)
+    signal -= signal_mean
+    signal_low = signal.cd.freq_filter(0, 0.5, 3)
+    signal_high = signal - signal_low
+
+    # Initialize
+    tune = 4.685
+    D = np.sqrt(np.finfo(signal.dtype).eps)
+    mu = np.inf
+    n_iter = 0
+
+    # Step 1. Compute temporal derivative of the signal
+    deriv = np.diff(signal_low)
+
+    # Step 2. Initialize observation weights
+    w = np.ones(deriv.shape)
+
+    # Step 3. Iterative estimation of robust weights
+    for n_iter in range(50):
+
+        mu0 = mu
+
+        # Step 3a. Estimate weighted mean
+        mu = np.sum(w * deriv) / np.sum(w)
+
+        # Step 3b. Calculate absolute residuals of estimate
+        dev = np.abs(deriv - mu)
+
+        # Step 3c. Robust estimate of standard deviation of the residuals
+        sigma = 1.4826 * np.median(dev)
+        if sigma < 1e-10:
+            return (signal + signal_mean) * unit
+
+        # Step 3d. Scale deviations by standard deviation and tuning parameter
+        r = dev / (sigma * tune)
+
+        # Step 3e. Calculate new weights according to Tukey's biweight function
+        w = ((1 - r**2) * (r < 1)) ** 2
+
+        # Step 3f. Terminate if new estimate is within machine-precision of old estimate
+        if abs(mu - mu0) < D * max(abs(mu), abs(mu0)):
+            break
+
+
+    # Step 4. Apply robust weights to centered derivative
+    new_deriv = w * (deriv - mu)
+
+    # Step 5. Integrate corrected derivative
+    signal_low_corrected = np.cumsum(np.insert(new_deriv, 0, 0.0))
+
+    # Postprocess: Center the corrected signal
+    signal_low_corrected = signal_low_corrected - np.mean(signal_low_corrected)
+
+    # Postprocess: Merge back with uncorrected high frequency component
+    signal_corrected = (signal_low_corrected + signal_high + signal_mean) * unit
+
+    return signal_corrected
+
+
+def _pad_to_power_2(signal : np.ndarray) -> tuple[np.ndarray, int]:
+    """Pad signal to next power of 2."""
+    n = int(np.ceil(np.log2(len(signal))))
+    padded_length = 2**n
+    padded = np.zeros(padded_length)
+    padded[:len(signal)] = signal
+
+    return padded, len(signal)
+
+
+def _clip_coeffs_to_iqr_bounds(block: np.ndarray, iqr_factor: float):
+    """Restrict coefficients to a multiple of the interquartile range."""
+
+    # Compute statistics on valid data length
+    q25, q75 = np.percentile(block, [25, 75])
+    iqr_val = q75 - q25
+
+    # Set thresholds
+    upper = q75 + iqr_factor * iqr_val
+    lower = q25 - iqr_factor * iqr_val
+
+    block[:] = np.where((block > upper) | (block < lower), 0, block)
+
+
+def _filter_wavelet_coeffs(
+    coeffs: list[tuple[np.ndarray, np.ndarray]], iqr_factor: float, signal_length: int
+):
+    """Deletes outlier coefficients based on IQR."""
+
+    n = len(coeffs[0][0]) # length of padded timeseries
+    n_levels = len(coeffs)
+
+    # coeffs contain approximation (cA) and detail (cD) coeffients in the following
+    # order: [(cAn, cDn), ..., (cA2, cD2), (cA1, cD1)] for level 1..n_levels
+
+    filtered_coeffs = []
+
+    cAf = coeffs[0][0].copy()  # approximation coeffs at the highest level
+
+    for i, (cA, cD) in enumerate(coeffs):
+        level = n_levels - i - 1  # here level = 0...n_levels-1
+        n_blocks = 2**level
+        block_length = n // n_blocks
+
+        cDf = cD.copy()
+
+        # Split time series into 2**level blocks and filter each block individually.
+        # In SWT the coefficient arrays at each level have the length of the padded
+        # time series n. The coefficients beyond signal_length relate to the padding.
+        # Don't process these.
+        for i_block in range(n_blocks):
+            block_start = i_block * block_length
+            block_end = (i_block + 1) * block_length
+            block_end = min(signal_length, block_end)
+
+            if block_end <= block_start:
+                continue
+
+            # filter detail coefficents
+            _clip_coeffs_to_iqr_bounds(cDf[block_start:block_end], iqr_factor)
+
+        filtered_coeffs.append((cAf, cDf))
+
+    return filtered_coeffs
+
+def mad(x):
+    """Compute Median Absolute Deviation."""
+    median = np.median(x)
+    return np.median(np.abs(x - median))
+
+
+def normalize_signal(signal, wavelet='db2'):
+    """Normalize signal by its noise level using MAD of downsampled coefficients.
+
+    Implements Homer3's NormalizationNoise function.
+
+    Args:
+        signal: 1D numpy array containing the signal to normalize
+        wavelet: wavelet to use (default: 'db2')
+
+    Returns:
+        normalized_signal: normalized version of input signal
+        norm_coef: normalization coefficient (multiply by this to denormalize)
+
+    References:
+        :cite:`Huppert2009`
+    """
+    # Get quadrature mirror filter
+    wavelet = pywt.Wavelet(wavelet)
+    qmf = wavelet.dec_lo
+
+    # Circular convolution (equivalent to MATLAB's cconv)
+    c = np.convolve(signal, qmf, mode='full')
+    c = c[:len(signal)]  # Truncate to original length
+
+    # Downsample by 2
+    y_downsampled = signal[::2]
+
+    # Compute median absolute deviation
+    median_abs_dev = mad(y_downsampled)
+
+    if median_abs_dev != 0:
+        norm_coef = 1 / (1.4826 * median_abs_dev)
+        normalized_signal = signal * norm_coef
+    else:
+        norm_coef = 1
+        normalized_signal = signal
+
+    return normalized_signal, norm_coef
+
+@deprecated("This function was renamed to 'wavelet'.")
+def motion_correct_wavelet(od, iqr=1.5, wavelet='db2', level=4):
+    renamed_func = globals()['wavelet']
+    return renamed_func(od, iqr, wavelet, level)
+
+
+def wavelet(od, iqr=1.5, wavelet='db2', level=4):
+    """Wavelet-based motion correction, specializing in spike correction.
+
+    Implements the wavelet-based motion correction algorithm described in
+    :cite:`Molavi2012`, closely following the MATLAB implementation found
+    in Homer3 (:cite:`Huppert2009`)
+
+    Arguments:
+        od: The time series to be corrected. Should have dims channel and wavelength
+        iqr: The interquartile range factor for outlier detection. Set to -1 to disable.
+            Increasing iqr will delete less coefficients.
+        wavelet: The wavelet to use for decomposition (default: 'db2')
+        level: The level of decomposition to use (default: 4)
+
+    Returns:
+        The corrected time series.
+
+    References:
+        Original paper: :cite:`Molavi2012`
+        Implementation based on Homer3 v1.80.2 "hmrR_MotionCorrectWavelet.m" and its
+        dependencies (:cite:`Huppert2009`).
+    """
+    if iqr < 0:
+        return od
+
+    corrected_data = od.copy()
+
+    for ch in od.channel.values:
+        for wl in od.wavelength.values:
+            signal = od.sel(channel=ch, wavelength=wl).pint.dequantify()
+
+            # Pad to power of 2
+            padded_signal, original_length = _pad_to_power_2(signal)
+
+            # Remove mean
+            dc_val = np.mean(padded_signal)
+            padded_signal = padded_signal - dc_val
+
+            # Normalize signal
+            normalized_signal, norm_coef = normalize_signal(padded_signal, wavelet)
+
+            # Use SWT for initial decomposition
+            n = int(np.log2(len(normalized_signal)))
+            actual_level = min(level, n-1)
+            coeffs = pywt.swt(normalized_signal, wavelet, level=actual_level)
+
+            # Filter coefficients
+            filtered_coeffs = _filter_wavelet_coeffs(coeffs, iqr, original_length)
+
+            # Reconstruct
+            corrected = pywt.iswt(filtered_coeffs, wavelet)
+
+            # Denormalize
+            corrected = corrected / norm_coef
+
+            # Add mean back and trim
+            corrected = corrected[:original_length] + dc_val
+
+            # Store result
+            corrected_data.loc[dict(channel=ch, wavelength=wl)] = corrected
+
+    return corrected_data

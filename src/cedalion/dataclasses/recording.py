@@ -11,7 +11,7 @@ import xarray as xr
 
 import cedalion
 import cedalion.dataclasses as cdc
-from cedalion.typing import LabeledPointCloud, NDTimeSeries
+from cedalion.typing import LabeledPoints, NDTimeSeries
 
 
 @dataclass
@@ -28,9 +28,9 @@ class Recording:
             The keys are the names of the timeseries.
         masks (OrderedDict[str, xr.DataArray]): A dictionary of masks. The keys are the
             names of the masks.
-        geo3d (LabeledPointCloud): A labeled point cloud representing the 3D geometry of
+        geo3d (LabeledPoints): A labeled point cloud representing the 3D geometry of
             the recording.
-        geo2d (LabeledPointCloud): A labeled point cloud representing the 2D geometry of
+        geo2d (LabeledPoints): A labeled point cloud representing the 2D geometry of
             the recording.
         stim (pd.DataFrame): A dataframe containing the stimulus information.
         aux_ts (OrderedDict[str, NDTimeSeries]): A dictionary of auxiliary timeseries
@@ -42,8 +42,8 @@ class Recording:
 
     timeseries: OrderedDict[str, NDTimeSeries] = field(default_factory=OrderedDict)
     masks: OrderedDict[str, xr.DataArray] = field(default_factory=OrderedDict)
-    geo3d: LabeledPointCloud = field(default_factory=cdc.build_labeled_points)
-    geo2d: LabeledPointCloud = field(default_factory=cdc.build_labeled_points)
+    geo3d: LabeledPoints = field(default_factory=cdc.build_labeled_points)
+    geo2d: LabeledPoints = field(default_factory=cdc.build_labeled_points)
     stim: pd.DataFrame = field(default_factory=cdc.build_stim_dataframe)
     aux_ts: OrderedDict[str, NDTimeSeries] = field(default_factory=OrderedDict)
     aux_obj: OrderedDict[str, Any] = field(default_factory=OrderedDict)

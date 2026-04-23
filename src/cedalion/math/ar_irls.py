@@ -5,9 +5,10 @@ import statsmodels.api as sm
 import cedalion.math.ar_model
 import scipy.signal
 import pandas as pd
+from cedalion.sigproc.frequency import sampling_rate
+from cedalion import units
 
-
-def ar_irls_GLM(y, x, pmax=40, M=sm.robust.norms.HuberT()):
+def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4.685)):
     """This function implements the AR-IRLS GLM model.
 
     The autoregressive iteratively reweighted least squares GLM model is described in
@@ -18,7 +19,8 @@ def ar_irls_GLM(y, x, pmax=40, M=sm.robust.norms.HuberT()):
     Inputs:
         y - pandas Serial
         x - pandas DataFrame
-        pmax- max AR model order (default 40)
+        pmax- max AR model order (default 40). If set to None it is set to a multiple
+            of the sampling rate
         M- statsmodel.robust.norms type (default Huber)
 
     Outputs:
@@ -75,6 +77,10 @@ def ar_irls_GLM(y, x, pmax=40, M=sm.robust.norms.HuberT()):
 
     mask = np.isfinite(y.values)
 
+    if pmax is None:
+        fs = sampling_rate(y).to(units.Hz)
+        pmax = 2 * np.ceil(fs)
+
     yorg : pd.Series = pd.Series(y.values[mask].copy())
     xorg : pd.DataFrame = x[mask].reset_index(drop=True)
 
@@ -92,20 +98,22 @@ def ar_irls_GLM(y, x, pmax=40, M=sm.robust.norms.HuberT()):
         # Update the AR whitening filter
         arcoef = cedalion.math.ar_model.bic_arfit(resid, pmax=pmax)
         wf = np.hstack([1, -arcoef.params[1:]])
+        p = len(wf) - 1
 
         # Apply the AR filter to the lhs and rhs of the model
-        a = y[0]
-        yf = pd.Series(scipy.signal.lfilter(wf, 1, y - a)) + a
+        yf = pd.Series(scipy.signal.lfilter(wf, 1, y))
+
         xf = np.zeros(x.shape)
         xx = x.to_numpy()
         for i in range(xx.shape[1]):
-            b = xx[0, i]
-            xf[:, i] = scipy.signal.lfilter(wf, 1, xx[:, i] - b) + b
+            xf[:, i] = scipy.signal.lfilter(wf, 1, xx[:, i])
 
         xf = pd.DataFrame(xf)
         xf.columns = x.columns
 
-        rlm_model = sm.RLM(yf, xf, M=M)
+        # fit the model ignoring the first p samples, for which the AR filter is not
+        # yet fully initialized.
+        rlm_model = sm.RLM(yf[p:], xf.iloc[p:], M=M)
         params = rlm_model.fit()
 
         resid = pd.Series(yorg - xorg @ params.params)

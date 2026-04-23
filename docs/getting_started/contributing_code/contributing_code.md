@@ -17,15 +17,15 @@ It is smart to make yourself aware of five resources and concepts that build the
 # get example finger tapping dataset
 import cedalion
 import cedalion.nirs
-import cedalion.datasets as datasets
+import cedalion.data
 import xarray as xr
 
-snirf_element = datasets.get_fingertapping()
+snirf_element = cedalion.data.get_fingertapping()
 amp = snirf_element[0].data[0]
 geo = snirf_element[0].geo3d
-od = cedalion.nirs.int2od(amp)
+od = cedalion.nirs.cw.int2od(amp)
 dpf = xr.DataArray([6, 6], dims="wavelength", coords={"wavelength" : amp.wavelength})
-conc = cedalion.nirs.beer_lambert(amp, geo, dpf)
+conc = cedalion.nirs.cw.beer_lambert(amp, geo, dpf)
 meas_list = snirf_element[0].measurement_lists[0]
 
 data = xr.Dataset(
@@ -102,10 +102,19 @@ how to dormat these docstrings. We will follow the Google style as described in 
 
 Please add references to the literature if you are implementing a published algorithm.
 There is a global bibtex file under `docs/references.bib` to which reference entries
-should be added with a unique bibtex label. Refer to a reference entry with:
+should be added with a unique bibtex label. In docstrings cite a reference entry with:
 ```
     :cite:t:`BIBTEXLABEL`
 ```
+
+In notebooks you can add citations in markdown cells like this:
+```
+    <cite data-cite="Barker2013">(Barker,2013)</cite>
+```
+
+If citations do not show correctly in the rendered documentation, check the Sphinx output for errors while parsing `references.bib`. Duplicate or ill-formed entries are
+often the culprit.
+
 Further options are documented in the 
 [sphinxcontrib-bibtex documentation](https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html#minimal-example).
 
@@ -144,7 +153,7 @@ Widely used general functionality is part of the files on the top level (e.g. ni
 | **data** | Look up tables and other small datasets often required for ecexuting functions. |
 | **dataclasses** | Dataclass definitions that are used in Cedalion. Example: in xrschemas.py you can find that we work with xarray objects (see more detail in the next section). For time series data these have to have at least two dimensions: "time" and "channel".  |
 | **geometry** | Functions for geometric manipulations, e.g. for optode registration, building landmarks on a 3D head, head segmentation, etc. |
-| **imagereco** | Functions for DOT image reconstruction |
+| **dot** | Functions for DOT image reconstruction |
 | **io** | Functions for reading and writing data to and from Cedalion. This includes for instance fnirs data in snirf format, probe geometries or reading anatomies (e.g. segmentation masks). |
 | **models** | Functions for data modelling, for instance the General Linear Model (GLM).|
 | **sigdecomp** | Functions for signal decomposition methods that are not part of a standard python distribution, e.g. advanced ICA methods.|
