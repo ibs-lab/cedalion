@@ -1,16 +1,25 @@
-import numpy as np
-import xarray as xr
-import pandas as pd
-from snirf import Snirf
-from snirf.pysnirf2 import MeasurementList, DataElement, NirsElement
-from enum import Enum
-import logging
-from numpy.typing import ArrayLike
+"""Contains functionality for handling .snirf files."""
 
-from typing import Dict
+from __future__ import annotations
+import logging
+import re
+from collections import OrderedDict
+from enum import Enum
+from pathlib import Path
+from typing import Any
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+import xarray as xr
+from numpy.typing import ArrayLike
+from snirf import Snirf
+from snirf.pysnirf2 import DataElement, MeasurementList, NirsElement, Stim
 from strenum import StrEnum
 
-from cedalion.dataclasses import PointType
+import cedalion.dataclasses as cdc
+from cedalion import units
+from cedalion.typing import NDTimeSeries
 
 log = logging.getLogger("cedalion")
 
@@ -64,103 +73,177 @@ class DataTypeLabel(StrEnum):
     HRF_HBT = "HRF HbT"  # Hemodynamic response function for total hemoglobin conc.
     HRF_BFI = "HRF BFi"  # Hemodynamic response function for blood flow index
 
-    # fields introduced by other vendors
+    # labels used by other vendors
     RAW_SATORI = "RAW"  # Satori CW_AMPLITUDE
     RAW_NIRX = "raw-DC"  # Satori CW_AMPLITUDE
+    MOMENTS_KERNEL = "Time Domain - Moments - Amplitude"
 
 
-# The snirf standard allows to put different data types into the same
-# data element. At least Satori does this to store processing results.
-# Define groups of data types which we would like to bundle in DataArrays.
+# This dictionary defines the canonical names used as keys in the recording container
+# for different data types. The keys in this dictionary are data_type_group labels
+# which are defined in assign_data_type_group.
 
-DATA_TYPE_GROUPINGS = {
-    (DataType.CW_AMPLITUDE, None): "unprocessed raw",
-    (DataType.CW_AMPLITUDE, DataTypeLabel.RAW_NIRX): "unprocessed raw",
-    # FIXME assume that there are not processed raw channels from different
-    # vendors in the same data element
-    (DataType.PROCESSED, DataTypeLabel.RAW_SATORI): "processed raw",
-    (DataType.PROCESSED, DataTypeLabel.RAW_NIRX): "processed raw",
-    (DataType.PROCESSED, DataTypeLabel.DOD): "processed dOD",
-    (DataType.PROCESSED, DataTypeLabel.HBO): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HBR): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HBT): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.H2O): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.LIPID): "processed concentrations",
-    (DataType.PROCESSED, DataTypeLabel.DMEAN): "processed central moments",
-    (DataType.PROCESSED, DataTypeLabel.DVAR): "processed central moments",
-    (DataType.PROCESSED, DataTypeLabel.DSKEW): "processed central moments",
-    (DataType.PROCESSED, DataTypeLabel.BFI): "processed blood flow index",
-    (DataType.PROCESSED, DataTypeLabel.HRF_DOD): "processed HRF dOD",
-    (DataType.PROCESSED, DataTypeLabel.HRF_DMEAN): "processed HRF central moments",
-    (DataType.PROCESSED, DataTypeLabel.HRF_DVAR): "processed HRF central moments",
-    (DataType.PROCESSED, DataTypeLabel.HRF_DSKEW): "processed HRF central moments",
-    (DataType.PROCESSED, DataTypeLabel.HRF_HBO): "processed HRF concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HRF_HBR): "processed HRF concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HRF_HBT): "processed HRF concentrations",
-    (DataType.PROCESSED, DataTypeLabel.HRF_BFI): "processed HRF blood flow index",
-    (DataType.PROCESSED, DataTypeLabel.MUA): "processed absorption coefficient",
-    (DataType.PROCESSED, DataTypeLabel.MUSP): "processed scattering coefficient",
+CANONICAL_NAMES = {
+    "unprocessed raw": "amp",
+    "unprocessed amplitude" : "amp",
+    "unprocessed phase" : "phase",
+    "processed raw": "amp",
+    "processed dOD": "od",
+    "processed concentrations": "conc",
+    "unprocessed 0th central moment": "amp",
+    "unprocessed 1st central moment": "mean",
+    "unprocessed 2nd central moment": "var",
+    "unprocessed 3nd central moment": "skew",
+    "processed 1st central moment": "dmean",
+    "processed 2nd central moment": "dvar",
+    "processed 3nd central moment": "dskew",
+    "processed blood flow index": "bfi",
+    "processed HRF dOD": "hrf_od",
+    "processed HRF 1st central moment": "hrf_dmean",
+    "processed HRF 2nd central moment": "hrf_dvar",
+    "processed HRF 3rd central moment": "hrf_dskew",
+    "processed HRF concentrations": "hrf_conc",
+    "processed HRF blood flow index": "hrf_bfi",
+    "processed absorption coefficient": "mua",
+    "processed scattering coefficient": "musp",
 }
 
+@dataclass
+class ReadSnirfOptions:
+    """Helper class to pass options through read_snirf subroutines.
 
-def parse_data_type(value):
+    Attrs:
+        squeeze_aux: If True, squeeze the aux data to remove dimensions of size 1.
+        crs: the name of the geo3D's coordinate reference system
+        time_units : If provided, this sets the units of the time coordinates.
+    """
+
+    squeeze_aux: bool
+    crs: str | None
+    time_units: str | None
+
+
+def assign_data_type_group(
+    data_type: DataType,
+    data_type_label: DataTypeLabel,
+    data_type_index: int,
+    nirs_element : NirsElement
+) -> str:
+    """Define groupings of data_type, data_type_label and data_type_index.
+
+    The snirf standard allows to put different data types into the same
+    data element. Satori does this to store processing results. Kernel stores different
+    moments in the same data element. When reading such data elements, their
+    content must be grouped by data type and the groups will be individually packaged
+    in DataArrays.
+
+    To this end, combinations of data_type, data_type_label and data_type_index are
+    mapped to a data_type_group string.
+    """
+
+    match (data_type, data_type_label):
+        case (DataType.CW_AMPLITUDE, None):
+            return "unprocessed raw"
+        case (DataType.CW_AMPLITUDE, DataTypeLabel.RAW_NIRX):
+            return "unprocessed raw"
+
+        case (DataType.TDM_AMPLITUDE, DataTypeLabel.MOMENTS_KERNEL):
+            moment = int(nirs_element.probe.momentOrders[data_type_index - 1])
+            moment_name = ("0th", "1st", "2nd", "3rd")[moment]
+            return f"unprocessed {moment_name} central moment"
+
+        case (DataType.FD_AC_AMPLITUDE, None):
+            return "unprocessed amplitude"
+        case (DataType.FD_PHASE, None):
+            return "unprocessed phase"
+
+        case (DataType.PROCESSED, DataTypeLabel.RAW_SATORI):
+            return "processed raw"
+        case (DataType.PROCESSED, DataTypeLabel.RAW_NIRX):
+            return "processed raw"
+
+        case (DataType.PROCESSED, DataTypeLabel.DOD):
+            return "processed dOD"
+
+        case (DataType.PROCESSED, DataTypeLabel.HBO):
+            return "processed concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.HBR):
+            return "processed concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.HBT):
+            return "processed concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.H2O):
+            return "processed concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.LIPID):
+            return "processed concentrations"
+
+        case (DataType.PROCESSED, DataTypeLabel.DMEAN):
+            return "processed 1st central moment"
+        case (DataType.PROCESSED, DataTypeLabel.DVAR):
+            return "processed 2nd central moment"
+        case (DataType.PROCESSED, DataTypeLabel.DSKEW):
+            return "processed 3rd central moment"
+
+        case (DataType.PROCESSED, DataTypeLabel.BFI):
+            return "processed blood flow index"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_DOD):
+            return "processed HRF dOD"
+
+        case (DataType.PROCESSED, DataTypeLabel.HRF_DMEAN):
+            return "processed HRF 1st central moment"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_DVAR):
+            return "processed HRF 2nd central moment"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_DSKEW):
+            return "processed HRF 3rd central moment"
+
+        case (DataType.PROCESSED, DataTypeLabel.HRF_HBO):
+            return "processed HRF concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_HBR):
+            return "processed HRF concentrations"
+        case (DataType.PROCESSED, DataTypeLabel.HRF_HBT):
+            return "processed HRF concentrations"
+
+        case (DataType.PROCESSED, DataTypeLabel.HRF_BFI):
+            return "processed HRF blood flow index"
+
+        case (DataType.PROCESSED, DataTypeLabel.MUA):
+            return "processed absorption coefficient"
+        case (DataType.PROCESSED, DataTypeLabel.MUSP):
+            return "processed scattering coefficient"
+
+        case _:
+            raise ValueError(
+                f"unexpected combination of {data_type=} "
+                f"{data_type_label=} and {data_type_index=}"
+            )
+
+
+def parse_data_type(value) -> DataType | None:
+    if value is None:
+        return None
+
+    try:
+        return DataType(value)
+    except ValueError:
+        log.warning(f"unsupported DataType '{value}'")
+        return None
+
+
+def parse_data_type_label(value) -> DataTypeLabel | None:
+    if value is None:
+        return None
+
+    try:
+        return DataTypeLabel(value)
+    except ValueError:
+        log.warning(f"unsupported DataTypeLabel '{value}'")
+        return None
+
+
+def parse_data_type_index(value) -> int | None:
     if value is None:
         return None
     else:
-        try:
-            return DataType(value)
-        except Exception:
-            raise ValueError(f"unsupported DataType '{value}'")
-
-
-def parse_data_type_label(value):
-    if value is None:
-        return None
-    else:
-        try:
-            return DataTypeLabel(value)
-        except Exception:
-            raise ValueError(f"unsupported DataTypeLabel '{value}'")
-
-
-# result container for read_snirf. Corresponds to pysnirf's NirsElement but
-# the data in the attributes have been converted to our data structures
-# FIXME: find a better name
-class Element:
-    # data: list
-
-    def __init__(
-        self,
-        data=None,
-        stim=None,
-        geo3d=None,
-        geo2d=None,
-        aux=None,
-        meta_data=None,
-        measurement_lists=None,
-    ):
-        self.data = []
-        self.stim = pd.DataFrame(columns=["onset", "duration", "value"])
-        self.geo3d = xr.DataArray(None, coords={"label": []}, dims=["label", "pos"])
-        self.geo2d = xr.DataArray(None, coords={"label": []}, dims=["label", "pos"])
-        self.aux = {}
-        self.meta_data = {}
-        self.measurement_lists = []
-
-        if data is not None:
-            self.data = data
-        if stim is not None:
-            self.stim = stim
-        if geo3d is not None:
-            self.geo3d = geo3d
-        if geo2d is not None:
-            self.geo2d = geo2d
-        if aux is not None:
-            self.aux = aux
-        if meta_data is not None:
-            self.meta_data = meta_data
-        if measurement_lists is not None:
-            self.measurement_lists = measurement_lists
+        return int(value)
 
 
 def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
@@ -168,7 +251,13 @@ def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
 
     snirf supports multidimensional source labels but we don't.
     This function tries to reduce n-dimensional source labels
-    to a unique common prefix to obtain only one label per source
+    to a unique common prefix to obtain only one label per source.
+
+    Args:
+        sourceLabels (np.ndarray): The source labels to reduce.
+
+    Returns:
+        list: The reduced source labels.
     """
     labels = []
     for i_src in range(sourceLabels.shape[0]):
@@ -194,13 +283,27 @@ def reduce_ndim_sourceLabels(sourceLabels: np.ndarray) -> list:
     return labels
 
 
-def labels_and_positions(probe):
+def labels_and_positions(probe, dim: int = 3):
+    """Extract 3D coordinates of optodes and landmarks from a nirs probe variable.
+
+    Args:
+        probe: Nirs probe geometry variable, see snirf docs (:cite:t:`Tucker2022`).
+        dim (int): Must be either 2 or 3.
+
+    Returns:
+        tuple: A tuple containing the source, detector, and landmark labels/positions.
+    """
     def convert_none(probe, attrname, default):
         attr = getattr(probe, attrname)
         if attr is None:
             return default
         else:
             return attr
+
+    if dim not in [2, 3]:
+        raise AttributeError(f"dim must be '2' or '3' but got {dim}")
+    else:
+        dim = int(dim)
 
     sourceLabels = convert_none(probe, "sourceLabels", np.asarray([], dtype=str))
     detectorLabels = convert_none(probe, "detectorLabels", np.asarray([], dtype=str))
@@ -209,34 +312,57 @@ def labels_and_positions(probe):
     if sourceLabels.ndim > 1:
         sourceLabels = reduce_ndim_sourceLabels(sourceLabels)
 
-    sourcePos3D = convert_none(probe, "sourcePos3D", np.zeros((0, 3)))
-    detectorPos3D = convert_none(probe, "detectorPos3D", np.zeros((0, 3)))
-    landmarkPos3D = convert_none(probe, "landmarkPos3D", np.zeros((0, 3)))[
-        :, :3
+    sourcePos = convert_none(probe, f"sourcePos{dim}D", np.zeros((0, dim)))
+    detectorPos = convert_none(probe, f"detectorPos{dim}D", np.zeros((0, dim)))
+    landmarkPos = convert_none(probe, f"landmarkPos{dim}D", np.zeros((0, dim + 1)))[
+        :, :dim
     ]  # FIXME we keep only the positional columns
 
-    if len(sourcePos3D) > 0 and len(sourceLabels) == 0:
+    sourcePos = sourcePos[:,0:dim]
+    detectorPos = detectorPos[:,0:dim]
+    landmarkPos = landmarkPos[:,0:dim]
+
+    if len(sourcePos) > 0 and len(sourceLabels) == 0:
         log.warning("generating generic source labels")
-        sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos3D))])
+        sourceLabels = np.asarray([f"S{i+1}" for i in range(len(sourcePos))])
 
-    if len(detectorPos3D) > 0 and len(detectorLabels) == 0:
+    if len(detectorPos) > 0 and len(detectorLabels) == 0:
         log.warning("generating generic detector labels")
-        detectorLabels = np.asarray([f"D{i+1}" for i in range(len(detectorPos3D))])
+        detectorLabels = np.asarray([f"D{i+1}" for i in range(len(detectorPos))])
 
-    if len(landmarkLabels) != len(landmarkPos3D):
-        raise ValueError("landmark positions were provided but no labels")
+    if len(landmarkPos) != len(landmarkLabels):
+        if len(landmarkPos) > 0:
+            raise ValueError("landmark positions were provided but no labels")
+        else:
+            log.warning(
+                "landmark labels were provided but not their positions. "
+                "Removing labels"
+            )
+            landmarkLabels = np.asarray([], dtype=str)
 
     return (
         sourceLabels,
         detectorLabels,
         landmarkLabels,
-        sourcePos3D,
-        detectorPos3D,
-        landmarkPos3D,
+        sourcePos,
+        detectorPos,
+        landmarkPos,
     )
 
+def geometry_from_probe(nirs_element: NirsElement, dim: int, crs : str):
+    """Extract 3D coordinates of optodes and landmarks from probe information.
 
-def geometry_from_probe(nirs_element: NirsElement):
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+        dim (int): Must be either 2 or 3.
+        crs: the name of coordinate reference system
+
+    Returns:
+        xr.DataArray: A DataArray containing the 3D coordinates of optodes and
+            landmarks, with dimensions 'label' and 'pos' and coordinates 'label' and
+            'type'.
+    """
     probe = nirs_element.probe
 
     length_unit = nirs_element.metaDataTags.LengthUnit
@@ -245,27 +371,28 @@ def geometry_from_probe(nirs_element: NirsElement):
         sourceLabels,
         detectorLabels,
         landmarkLabels,
-        sourcePos3D,
-        detectorPos3D,
-        landmarkPos3D,
-    ) = labels_and_positions(probe)
+        sourcePos,
+        detectorPos,
+        landmarkPos,
+    ) = labels_and_positions(probe, dim)
 
     types = (
-        [PointType.SOURCE] * len(sourceLabels)
-        + [PointType.DETECTOR] * len(detectorLabels)
-        + [PointType.LANDMARK] * len(landmarkLabels)
+        [cdc.PointType.SOURCE] * len(sourceLabels)
+        + [cdc.PointType.DETECTOR] * len(detectorLabels)
+        + [cdc.PointType.LANDMARK] * len(landmarkLabels)
     )
 
     labels = np.hstack([sourceLabels, detectorLabels, landmarkLabels])
-    positions = np.vstack([sourcePos3D, detectorPos3D, landmarkPos3D])
+    positions = np.vstack([sourcePos, detectorPos, landmarkPos])
 
-    coords = {"label": ("label", labels), "type": ("label", types)}
-    dims = ["label", "pos"]
+    dims = ["label", crs]
     attrs = {"units": length_unit}
 
     if len(positions) == 0:
+        coords = {"label": ("label", []), "type": ("label", [])}
         result = xr.DataArray(None, coords=coords, dims=dims, attrs=attrs)
     elif len(labels) == len(positions):
+        coords = {"label": ("label", labels), "type": ("label", types)}
         result = xr.DataArray(positions, coords=coords, dims=dims, attrs=attrs)
     else:
         raise ValueError("number of positions and labels does not match")
@@ -278,7 +405,16 @@ def geometry_from_probe(nirs_element: NirsElement):
 
 def measurement_list_to_dataframe(
     measurement_list: MeasurementList, drop_none: bool = False
-):
+) -> pd.DataFrame:
+    """Converts a snirf MeasurementList object to a pandas DataFrame.
+
+    Args:
+        measurement_list: MeasurementList object from the snirf file.
+        drop_none (bool): If True, drop columns that are None for all rows.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the measurement list information.
+    """
     fields = [
         "sourceIndex",
         "detectorIndex",
@@ -304,74 +440,173 @@ def measurement_list_to_dataframe(
     return df
 
 
-def meta_data_tags_to_dict(nirs_element: NirsElement):
+def meta_data_tags_to_dict(nirs_element: NirsElement) -> OrderedDict[str, Any]:
+    """Converts the metaDataTags of a nirs element to a dictionary.
+
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+
+    Returns:
+        OrderedDict[str, Any]: Dictionary containing the metaDataTags information.
+    """
     mdt = nirs_element.metaDataTags
 
     fields = mdt._snirf_names + mdt._unspecified_names
 
-    return {f: getattr(mdt, f) for f in fields}
+    return OrderedDict({f: getattr(mdt, f) for f in fields})
 
 
-def stim_to_dataframe(stim):
+def stim_to_dataframe(stim: Stim):
+    """Converts a snirf Stim object to a pandas DataFrame.
+
+    Args:
+        stim (Stim): Stim object as specified in the snirf documentation
+            (:cite:t:`Tucker2022`).
+
+    Returns:
+        pd.DataFrame: DataFrame containing the stimulus information.
+    """
     dfs = []
 
     if len(stim) == 0:
-        columns = ["onset", "duration", "value"]
-        return pd.DataFrame(columns=columns)
+        return cdc.build_stim_dataframe()
 
-    for st in stim:
-        columns = ["onset", "duration", "value"]
+    for i_st, st in enumerate(stim):
+        if st.data is None:
+            tmp = cdc.build_stim_dataframe()
+        elif st.data.ndim != 2:
+            log.warning(f"unexpected shape of stim element {i_st}")
+            tmp = cdc.build_stim_dataframe()
+        else:
+            columns = ["onset", "duration", "value"]
+            ncols = st.data.shape[1]
 
-        ncols = st.data.shape[1]
+            if ncols > 3:
+                if (st.dataLabels is not None) and (len(st.dataLabels) == ncols):
+                    for i in range(3, ncols):
+                        columns.append(st.dataLabels[i])
+                else:
+                    for i in range(3, ncols):
+                        columns.append(f"col{i}")
 
-        if ncols > 3:
-            if (st.dataLabels is not None) and (len(st.dataLabels) == ncols):
-                for i in range(3, ncols):
-                    columns.append(st.dataLabels[i])
-            else:
-                for i in range(3, ncols):
-                    columns.append(f"col{i}")
-
-        tmp = pd.DataFrame(st.data, columns=columns)
-        tmp["trial_type"] = st.name
+            tmp = pd.DataFrame(st.data, columns=columns)
+            tmp["trial_type"] = st.name
         dfs.append(tmp)
 
     return pd.concat(dfs, ignore_index=True)
 
 
-def read_aux(nirs_element: NirsElement):
-    result = {}
+def read_aux(
+    nirs_element: NirsElement, opts: ReadSnirfOptions
+) -> OrderedDict[str, xr.DataArray]:
+    """Reads the aux data from a nirs element into a dictionary of DataArrays.
+
+    Args:
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+        opts: options passed to read_snirf.
+
+    Returns:
+        result (OrderedDict[str, xr.DataArray]): Dictionary containing the aux data
+    """
+    result = OrderedDict()
 
     for aux in nirs_element.aux:
         name = aux.name
-        units = aux.dataUnit
+        aux_units = aux.dataUnit
         time_offset = aux.timeOffset
 
         # FIXME treat unspecified units as dimensionless quantities.
-        if units is None:
-            units = "1"
+        if aux_units is None:
+            aux_units = "1"
 
-        if aux.dataTimeSeries.ndim == 1:
+        if aux_units not in units:
+            raise ValueError(f"aux channel '{name}' has units '{aux_units}', which "
+                             "are not defined in the unit registry. Consider adding "
+                              "an alias to cedalion.units." )
+
+        ntimes = len(aux.time)
+
+        aux_data = aux.dataTimeSeries
+
+        if opts.squeeze_aux:
+            aux_data = np.squeeze(aux_data)
+
+        if aux_data.ndim == 1:
             dims = ["time"]
-        elif aux.dataTimeSeries.ndim == 2:
+        elif aux_data.ndim == 2:
             dims = ["time", "aux_channel"]
+            if aux_data.shape[1] == ntimes:
+                aux_data = aux_data.transpose()
         else:
             raise ValueError("aux.dataTimeSeries must have either 1 or 2 dimensions.")
 
+        attrs = {"units" : aux_units}
+
+        if time_offset is not None:
+            attrs["time_offset"] = time_offset
+
         x = xr.DataArray(
-            aux.dataTimeSeries,
+            aux_data,
             coords={"time": aux.time},
             dims=dims,
             name=name,
-            attrs={"units": units, "time_offset": time_offset},
+            attrs=attrs,
         )
+
         result[name] = x.pint.quantify()
 
     return result
 
 
-def read_data_elements(data_element, nirs_element):
-    time = data_element.time
+def add_number_to_name(name : str, keys : list[str]):
+    """Changes name to name_<number>.
+
+    Number appended to name is the smallest number that makes the new name unique with
+    respect to the list of keys.
+
+    Args:
+        name (str): Name to which a number should be added.
+        keys (list[str]): List of keys to which the new name should be compared.
+
+    Returns:
+        str: New name with number added.
+    """
+
+    pat = re.compile(rf"{name}(_(\d+))?")
+    max_number = 1
+    for k in keys:
+        if match := pat.match(k):
+            groups = match.groups()
+            if groups[1] is not None:
+                number = int(groups[1])
+                max_number = max(max_number, number)
+    return f"{name}_{max_number+1:02d}"
+
+
+def read_data_elements(
+    data_element: DataElement,
+    nirs_element: NirsElement,
+    stim: pd.DataFrame,
+    opts: ReadSnirfOptions,
+) -> list[tuple[str, NDTimeSeries]]:
+    """Reads the data elements from a nirs element into a list of DataArrays.
+
+    Args:
+        data_element (DataElement): DataElement obj. from the snirf file.
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+        stim (pd.DataFrame): DataFrame containing the stimulus information.
+        opts : Options passed to read_snirf.
+
+    Returns:
+        list[tuple[str, NDTimeSeries]]: List of tuples containing the canonical name
+            of the data element and the DataArray.
+    """
+    time = data_element.time[:].squeeze()
+
+    trial_types = stim["trial_type"].drop_duplicates().values
 
     samples = np.arange(len(time))
 
@@ -382,12 +617,16 @@ def read_data_elements(data_element, nirs_element):
     df_ml = denormalize_measurement_list(df_ml, nirs_element)
 
     # unique_data_types = df_ml[["dataType", "dataTypeLabel"]].drop_duplicates()
-    data_types = df_ml[["dataType", "dataTypeLabel"]]
+    data_types = df_ml[["dataType", "dataTypeLabel", "dataTypeIndex"]]
     data_types = data_types.transform(
-        {"dataType": parse_data_type, "dataTypeLabel": parse_data_type_label}
+        {
+            "dataType": parse_data_type,
+            "dataTypeLabel": parse_data_type_label,
+            "dataTypeIndex": parse_data_type_index,
+        }
     )
     df_ml["data_type_group"] = [
-        DATA_TYPE_GROUPINGS[tuple(r)] for r in data_types.to_numpy()
+        assign_data_type_group(*r, nirs_element) for r in data_types.to_numpy()
     ]
 
     if len(df_ml["data_type_group"].drop_duplicates()) > 1:
@@ -396,13 +635,22 @@ def read_data_elements(data_element, nirs_element):
     data_arrays = []
 
     for data_type_group, df in df_ml.groupby("data_type_group"):
+        canonical_name = CANONICAL_NAMES[data_type_group]
+
         has_wavelengths = not pd.isna(df.wavelength).all()
         has_chromo = not pd.isna(df.chromo).all()
+
+        is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
 
         if has_wavelengths and not has_chromo:
             other_dim = "wavelength"
         elif has_chromo and not has_wavelengths:
             other_dim = "chromo"
+        elif not has_chromo and not has_wavelengths:
+            raise ValueError(
+                "found channel for which neither wavelength nor "
+                "chromophore is defined."
+            )
         else:
             raise NotImplementedError(
                 "found channel for which both wavelength "
@@ -419,15 +667,6 @@ def read_data_elements(data_element, nirs_element):
         df["index_channel"] = [unique_channel.index(c) for c in df.channel]
         df["index_other_dim"] = [unique_other_dim.index(c) for c in df[other_dim]]
 
-        ts3d = np.zeros(
-            (len(unique_channel), len(unique_other_dim), len(time)),
-            dtype=data_element.dataTimeSeries.dtype,
-        )
-
-        ts2d = data_element.dataTimeSeries
-        for index, row in df.iterrows():
-            ts3d[row.index_channel, row.index_other_dim, :] = ts2d[:, index]
-
         coords = {}
         coords["time"] = ("time", time)
         coords["samples"] = ("time", samples)
@@ -436,33 +675,79 @@ def read_data_elements(data_element, nirs_element):
         coords["detector"] = ("channel", df_coords["channel"]["detector"])
         coords[other_dim] = (other_dim, unique_other_dim)
 
+        ts2d = data_element.dataTimeSeries
+
         units = df.dataUnit.unique().item()
         # FIXME treat unspecified units as dimensionless quantities.
         if units is None:
             units = "1"
 
-        da = xr.DataArray(
-            ts3d,
-            dims=["channel", other_dim, "time"],
-            coords=coords,
-            attrs={
-                "units": units,
-                "data_type_group": data_type_group,
-            },
-        )
+        if is_hrf:
+            channel_trial_types = trial_types[df["dataTypeIndex"].values - 1]
+            used_trial_types = np.unique(channel_trial_types).tolist()
+            df["index_trial_type"] = [
+                used_trial_types.index(i) for i in channel_trial_types
+            ]
+
+            ts4d = np.zeros(
+                (
+                    len(unique_channel),
+                    len(unique_other_dim),
+                    len(used_trial_types),
+                    len(time),
+                ),
+                dtype=data_element.dataTimeSeries.dtype,
+            )
+
+            for index, row in df.iterrows():
+                ts4d[
+                    row.index_channel, row.index_other_dim, row.index_trial_type, :
+                ] = ts2d[:, index]
+
+            coords["trial_type"] = used_trial_types
+
+            da = xr.DataArray(
+                ts4d,
+                dims=["channel", other_dim, "trial_type", "time"],
+                coords=coords,
+                attrs={
+                    "units": units,
+                    "data_type_group": data_type_group,
+                },
+            )
+
+        else:
+            ts3d = np.zeros(
+                (len(unique_channel), len(unique_other_dim), len(time)),
+                dtype=data_element.dataTimeSeries.dtype,
+            )
+
+            for index, row in df.iterrows():
+                ts3d[row.index_channel, row.index_other_dim, :] = ts2d[:, index]
+
+            da = xr.DataArray(
+                ts3d,
+                dims=["channel", other_dim, "time"],
+                coords=coords,
+                attrs={
+                    "units": units,
+                    "data_type_group": data_type_group,
+                },
+            )
+
         da = da.pint.quantify()
 
-        time_units = nirs_element.metaDataTags.TimeUnit
+        if opts.time_units is not None:
+            time_units = opts.time_units # overrides existing time units
+        else:
+            time_units = nirs_element.metaDataTags.TimeUnit  # may not be set
+
         try:
             da = da.pint.quantify({"time": time_units})
         except ValueError:
-            pass
+            pass  # if all fails return time coords without units
 
-        data_arrays.append(da)
-
-    # da = da.drop_indexes(["channel", "time"])
-    # da = da.set_xindex(["channel", "source", "detector"])
-    # da = da.set_xindex(["time", "samples"])
+        data_arrays.append((canonical_name, da))
 
     return data_arrays
 
@@ -472,6 +757,18 @@ def _get_time_coords(
     data_element: DataElement,
     df_measurement_list: pd.DataFrame,
 ) -> dict[str, ArrayLike]:
+    """Get time coordinates for the NIRS data element.
+
+    Args:
+        nirs_element (NirsElement): NIRS data element containing metadata.
+        data_element (DataElement): Data element containing time and dataTimeSeries.
+        df_measurement_list (pd.DataFrame): DataFrame containing the measurement list.
+
+    Returns:
+        tuple: A tuple containing:
+            - indices (None): Placeholder for indices.
+            - coordinates (dict[str, ArrayLike]): Dictionary with time coordinates.
+    """
     time = data_element.time
     time_unit = nirs_element.metaDataTags.TimeUnit
 
@@ -490,6 +787,17 @@ def _get_channel_coords(
     nirs_element: NirsElement,
     df_measurement_list: pd.DataFrame,
 ) -> tuple[ArrayLike, dict[str, ArrayLike]]:
+    """Get channel coordinates for the NIRS data element.
+
+    Args:
+        nirs_element (NirsElement): NIRS data element containing probe information.
+        df_measurement_list (pd.DataFrame): DataFrame containing the measurement list.
+
+    Returns:
+        tuple: A tuple containing:
+            - indices (None): Placeholder for indices.
+            - coordinates (dict[str, ArrayLike]): Dictionary with channel coordinates.
+    """
     sourceLabels, detectorLabels, landmarkLabels, _, _, _ = labels_and_positions(
         nirs_element.probe
     )
@@ -507,39 +815,110 @@ def _get_channel_coords(
     return indices, coordinates
 
 
-def read_nirs_element(nirs_element):
-    geo3d = geometry_from_probe(nirs_element)
+def read_nirs_element(nirs_element: NirsElement, opts : ReadSnirfOptions):
+    """Reads a single nirs element from a .snirf file into a Recording object.
+
+    Args:
+        nirs_element: Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+        opts: Options passed to read_snirf.
+
+    Returns:
+        rec (Recording): Recording object containing the data from the nirs element.
+    """
+
+    geo2d = geometry_from_probe(nirs_element, dim=2, crs=opts.crs)
+    geo3d = geometry_from_probe(nirs_element, dim=3, crs=opts.crs)
     stim = stim_to_dataframe(nirs_element.stim)
-    data = []
-    for data_element in nirs_element.data:
-        data.extend(read_data_elements(data_element, nirs_element))
 
-    aux = read_aux(nirs_element)
+    timeseries = OrderedDict()
+    measurement_lists = OrderedDict()
 
-    meta_data = meta_data_tags_to_dict(nirs_element)
-
-    measurement_lists = []
     for data_element in nirs_element.data:
         df_ml = measurement_list_to_dataframe(
             data_element.measurementList, drop_none=False
         )
         df_ml = denormalize_measurement_list(df_ml, nirs_element)
         df_ml.dropna(axis=1)
-        measurement_lists.append(df_ml)
 
-    ne = Element(
-        data, stim, geo3d, None, aux, meta_data, measurement_lists
-    )  # FIXME geo2d
+        if data_element.dataTimeSeries is None:
+            # data element with only a measurement list but no time series
+            # store the measurement list under key 'unknown'
+            name = "unknown"
+            if name in measurement_lists:
+                name = add_number_to_name(name, measurement_lists.keys())
+            measurement_lists[name] = df_ml
+            continue
 
-    return ne
+        for name, ts in read_data_elements(data_element, nirs_element, stim, opts):
+            if name in timeseries:
+                name = add_number_to_name(name, timeseries.keys())
+            timeseries[name] = ts
+            measurement_lists[name] = df_ml
+
+    aux = read_aux(nirs_element, opts)
+
+    meta_data = meta_data_tags_to_dict(nirs_element)
+
+    rec = cdc.Recording(
+        timeseries=timeseries,
+        geo3d=geo3d,
+        geo2d=geo2d,
+        stim=stim,
+        aux_ts=aux,
+        meta_data=meta_data,
+        _measurement_lists=measurement_lists,
+    )
+
+    return rec
 
 
-def read_snirf(fname):
+def read_snirf(
+    fname: Path | str,
+    crs: str = "pos",
+    squeeze_aux: bool = False,
+    time_units: str | None = None,
+) -> list[cdc.Recording]:
+    """Reads a .snirf file into a list of Recording objects.
+
+    Args:
+        fname: Path to .snirf file
+        crs: the name of the geo3D's coordinate reference system
+        squeeze_aux: If True, squeeze the aux data to remove dimensions of size 1.
+        time_units : If provided, this sets the units of the time coordinates. This
+            is useful, when the snirf file specifies time units incorrectly or not
+            at all.
+
+    Returns:
+        list[Recording]: List of Recording objects containing the data from the nirs
+        elements in the .snirf file.
+    """
+    opts = ReadSnirfOptions(
+        squeeze_aux=squeeze_aux,
+        crs=crs,
+        time_units=time_units,
+    )
+
+    if isinstance(fname, Path):
+        fname = str(fname)
+
     with Snirf(fname, "r") as s:
-        return [read_nirs_element(ne) for ne in s.nirs]
+        return [read_nirs_element(ne, opts) for ne in s.nirs]
 
 
 def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement):
+    """Enriches measurement list DataFrame with additional information.
+
+    Args:
+        df_ml (pd.DataFrame): DataFrame containing the measurement list information.
+        nirs_element (NirsElement): Nirs data element as specified in the snirf
+            documentation (:cite:t:`Tucker2022`).
+
+    Returns:
+        pd.DataFrame: DataFrame containing the measurement list information with
+            additional columns for channel, source, detector, wavelength and chromo.
+
+    """
     sourceLabels, detectorLabels, landmarkLabels, _, _, _ = labels_and_positions(
         nirs_element.probe
     )
@@ -557,6 +936,12 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
         DataTypeLabel.LIPID,
     ]
 
+    hrf_chromo_types = {
+        DataTypeLabel.HRF_HBO: DataTypeLabel.HBO,
+        DataTypeLabel.HRF_HBR: DataTypeLabel.HBR,
+        DataTypeLabel.HRF_HBT: DataTypeLabel.HBT,
+    }
+
     new_columns = []
     for _, row in df_ml.iterrows():
         sl = sourceLabels[int(row["sourceIndex"]) - 1]
@@ -569,6 +954,8 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
 
         if row["dataTypeLabel"] in chromo_types:
             ch = DataTypeLabel(row["dataTypeLabel"])
+        elif row["dataTypeLabel"] in hrf_chromo_types:
+            ch = hrf_chromo_types[row["dataTypeLabel"]]
         else:
             ch = None
 
@@ -583,14 +970,38 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
 
 
 def measurement_list_from_stacked(
-    stacked_array, data_type, stacked_channel="snirf_channel"
+    stacked_array,
+    data_type,
+    trial_types,
+    stacked_channel="snirf_channel",
+    source_labels=None,
+    detector_labels=None,
+    wavelengths=None,
 ):
-    source_labels = list(np.unique(stacked_array.source.values))
-    detector_labels = list(np.unique(stacked_array.detector.values))
-    wavelengths = []
+    """Create a measurement list from a stacked array.
 
-    if "wavelength" in stacked_array.coords:
-        wavelengths = list(np.unique(stacked_array.wavelength.values))
+    Args:
+        stacked_array (xr.DataArray): Stacked array containing the data.
+        data_type (str): Data type of the data.
+        trial_types (list[str]): List of trial types.
+        stacked_channel (str): Name of the channel dimension in the stacked array.
+        source_labels (list[str]): List of source labels.
+        detector_labels (list[str]): List of detector labels.
+        wavelengths (list[float]): List of wavelengths.
+
+    Returns:
+        tuple: A tuple containing the source labels, detector labels, wavelengths, and
+            the measurement list.
+    """
+    if source_labels is None:
+        source_labels = list(np.unique(stacked_array.source.values))
+    if detector_labels is None:
+        detector_labels = list(np.unique(stacked_array.detector.values))
+    if wavelengths is None:
+        wavelengths = []
+
+        if "wavelength" in stacked_array.coords:
+            wavelengths = list(np.unique(stacked_array.wavelength.values))
 
     nchannel = stacked_array.sizes[stacked_channel]
 
@@ -610,82 +1021,148 @@ def measurement_list_from_stacked(
     elif data_type == "concentration":
         ml["dataType"] = [DataType.PROCESSED.value] * nchannel
         ml["dataTypeLabel"] = stacked_array.chromo.values
+    elif data_type == "hrf":
+        ml["dataType"] = [DataType.PROCESSED.value] * nchannel
+
+        if "chromo" in stacked_array.coords:
+            dtl_map = {
+                "HbO": DataTypeLabel.HRF_HBO,
+                "HbR": DataTypeLabel.HRF_HBR,
+                "HbT": DataTypeLabel.HRF_HBT,
+            }
+            ml["dataTypeLabel"] = [dtl_map[c] for c in stacked_array.chromo.values]
+        elif "wavelength" in stacked_array.coords:
+            ml["dataTypeLabel"] = [DataTypeLabel.HRF_DOD] * nchannel
+
+        ml["dataTypeIndex"] = [
+            trial_types.index(tt) + 1 for tt in stacked_array.trial_type.values
+        ]
 
     if "wavelength" in stacked_array.coords:
         wavelengths = list(np.unique(stacked_array.wavelength.values))
         ml["wavelengthIndex"] = [
             wavelengths.index(w) + 1 for w in stacked_array.wavelength.values
         ]
-    else:
-        ml["wavelengthIndex"] = [-1] * nchannel
 
     ml["dataUnit"] = [stacked_array.attrs["units"]] * nchannel
 
-    return source_labels, detector_labels, wavelengths, pd.DataFrame(ml)
+    ml = pd.DataFrame(ml)
+
+    return source_labels, detector_labels, wavelengths, ml
 
 
-def write_snirf(
-    fname: str,
-    data_type: str,
-    timeseries: xr.DataArray,
-    geo3d: xr.DataArray,
-    stim: pd.DataFrame,
-    measurement_list: pd.DataFrame,
-    aux: Dict[str, xr.DataArray] = {},
-    meta_data: Dict = {},
-):
-    if data_type not in ["amplitude", "od", "concentration"]:
-        raise ValueError(
-            "data_type must be either 'amplitude', 'od' or 'concentration'."
-        )
+def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
+    """Write a recording to a .snirf file.
 
-    assert timeseries.ndim == 3
+    See snirf specification for details (:cite:t:`Tucker2022`)
 
-    assert "channel" in timeseries.dims
-    assert "time" in timeseries.dims
+    Args:
+        snirf_file (Snirf): Snirf object to write to.
+        rec (Recording): Recording object to write to the file.
+    """
+    # create and populate nirs element
+    snirf_file.nirs.appendGroup()
+    ne = snirf_file.nirs[-1]
 
-    other_dim = None
+    # meta data
+    for k, v in rec.meta_data.items():
+        setattr(ne.metaDataTags, k, v)
 
-    if "wavelength" in timeseries.dims:
-        other_dim = "wavelength"
-    elif "chromo" in timeseries.dims:
-        other_dim = "chromo"
+    geo3d = rec.geo3d.pint.dequantify()
+    geo2d = rec.geo2d.pint.dequantify()
+    ne.metaDataTags.LengthUnit = geo3d.attrs["units"]
+
+    if len(geo3d) > 0:
+        src_labels = geo3d[geo3d.type == cdc.PointType.SOURCE].label.values.tolist()
+        det_labels = geo3d[geo3d.type == cdc.PointType.DETECTOR].label.values.tolist()
+        lm_labels = geo3d[geo3d.type == cdc.PointType.LANDMARK].label.values.tolist()
     else:
-        raise ValueError(
-            "expect 3-dim timeseries with either 'wavelength' or 'chromo' dimensions"
+        src_labels = rec.source_labels
+        det_labels = rec.detector_labels
+        lm_labels = None
+
+    wavelengths = rec.wavelengths
+
+    # probe information
+    ne.probe.sourceLabels = src_labels
+    ne.probe.detectorLabels = det_labels
+    ne.probe.landmarkLabels = lm_labels
+    ne.probe.wavelengths = wavelengths
+
+    if len(geo3d) > 0:
+        ne.probe.sourcePos3D = geo3d.loc[src_labels]
+        ne.probe.detectorPos3D = geo3d.loc[det_labels]
+        ne.probe.landmarkPos3D = geo3d.loc[lm_labels]
+
+    if len(geo2d) > 0:
+        src_labels2D = geo2d[geo2d.type == cdc.PointType.SOURCE].label.values.tolist()
+        det_labels2D = geo2d[geo2d.type == cdc.PointType.DETECTOR].label.values.tolist()
+        lm_labels2D = geo2d[geo2d.type == cdc.PointType.LANDMARK].label.values.tolist()
+
+        ne.probe.sourcePos2D = geo2d.loc[src_labels2D]
+        ne.probe.detectorPos2D = geo2d.loc[det_labels2D]
+        ne.probe.landmarkPos2D = geo2d.loc[lm_labels2D]
+
+    trial_types = list(rec.stim["trial_type"].drop_duplicates())
+
+    for key, timeseries in rec.timeseries.items():
+        data_type = rec.get_timeseries_type(key)
+
+        if data_type not in ["amplitude", "od", "concentration", "hrf"]:
+            raise ValueError(
+                "data_type must be either 'amplitude', 'od','concentration' or 'hrf'."
+            )
+
+        other_dim = None
+
+        if "wavelength" in timeseries.dims:
+            other_dim = "wavelength"
+        elif "chromo" in timeseries.dims:
+            other_dim = "chromo"
+        else:
+            raise ValueError(
+                "expect timeseries with either 'wavelength' or 'chromo' dimensions"
+            )
+
+        if data_type == "hrf":
+            if "trial_type" not in timeseries.dims:
+                raise ValueError(
+                    "to store HRFs the timeseries needs a 'trial_type' dimension"
+                )
+            assert timeseries.ndim == 4
+            assert "channel" in timeseries.dims
+            if "reltime" in timeseries.dims:
+                timeseries = timeseries.rename({"reltime": "time"})
+            elif "time" in timeseries.dims:
+                pass
+            else:
+                raise ValueError("timeseries needs 'time' or 'reltime' dimension.")
+
+            dims_to_stack = ["trial_type", "channel", other_dim]
+        else:
+            assert timeseries.ndim == 3
+            assert "channel" in timeseries.dims
+            assert "time" in timeseries.dims
+
+            dims_to_stack = ["channel", other_dim]
+
+        stacked_array = timeseries.stack({"snirf_channel": dims_to_stack})
+        stacked_array = stacked_array.transpose("time", "snirf_channel")
+        stacked_array = stacked_array.pint.dequantify()
+
+        # FIXME refactor
+        _, _, _, df_ml = measurement_list_from_stacked(
+            stacked_array,
+            data_type,
+            trial_types,
+            source_labels=src_labels,
+            detector_labels=det_labels,
+            wavelengths=wavelengths,
         )
-
-    stacked_array = timeseries.stack({"snirf_channel": ["channel", other_dim]})
-    stacked_array = stacked_array.transpose("time", "snirf_channel")
-    stacked_array = stacked_array.pint.dequantify()
-
-    source_labels, detector_labels, wavelengths, df_ml = measurement_list_from_stacked(
-        stacked_array, data_type
-    )
-
-    geo3d = geo3d.pint.dequantify()
-
-    with Snirf(fname, "w") as fout:
-        # create and populate nirs element
-        fout.nirs.appendGroup()
-        ne = fout.nirs[0]
-
-        # set meta data
-        for k, v in meta_data.items():
-            setattr(ne.metaDataTags, k, v)
-
-        ne.metaDataTags.LengthUnit = geo3d.attrs["units"]
-
-        ne.probe.sourceLabels = source_labels
-        ne.probe.detectorLabels = detector_labels
-        ne.probe.wavelengths = wavelengths
-
-        ne.probe.sourcePos3D = geo3d.loc[source_labels]
-        ne.probe.detectorPos3D = geo3d.loc[detector_labels]
 
         # create and populate data element
         ne.data.appendGroup()
-        data = ne.data[0]
+        data = ne.data[-1]
 
         data.dataTimeSeries = stacked_array.values
         data.time = stacked_array.time.values
@@ -697,33 +1174,59 @@ def write_snirf(
             for k, v in row.items():
                 setattr(ml, k, v)
 
-        # save stimulus
-        for trial_type, df in stim.groupby("trial_type"):
-            ne.stim.appendGroup()
-            stim_group = ne.stim[-1]
-            df = df.drop(columns="trial_type")
-            assert all(df.columns[:3] == ["onset", "duration", "value"])
+    # save stimulus
+    for trial_type in trial_types:
+        df = rec.stim[rec.stim.trial_type == trial_type]
+        ne.stim.appendGroup()
+        stim_group = ne.stim[-1]
+        df = df.drop(columns="trial_type")
+        assert all(df.columns[:3] == ["onset", "duration", "value"])
 
-            stim_group.data = df.values
-            stim_group.name = trial_type
+        stim_group.data = df.values
+        stim_group.name = trial_type
 
-            if len(df.columns) > 3:
-                stim_group.dataLabels = list(df.columns[3:])
+        if len(df.columns) > 3:
+            stim_group.dataLabels = list(df.columns[3:])
 
-        # save aux
+    # save aux
 
-        for aux_name, aux_array in aux:
-            ne.aux.appendGroup()
-            aux_group = ne.aux[-1]
+    for aux_name, aux_array in rec.aux_ts.items():
+        ne.aux.appendGroup()
+        aux_group = ne.aux[-1]
 
-            aux_array = aux_array.pint.dequantify()
+        aux_array = aux_array.pint.dequantify()
 
-            aux_group.name = aux_name
-            aux_group.dataTimeSeries = aux_array
-            aux_group.dataUnit = aux_array.attrs[
-                "units"
-            ]  # FIXME add checks that time units match those in metaDataTags
-            aux_group.time = aux_array.time
+        aux_group.name = aux_name
+        aux_group.dataTimeSeries = aux_array
+
+        # FIXME add checks that time units match those in metaDataTags
+        aux_group.time = aux_array.time
+
+        if "units" in aux_array.attrs:
+            aux_group.dataUnit = aux_array.attrs["units"]
+        if "time_offset" in aux_array.attrs:
             aux_group.timeOffset = aux_array.attrs["time_offset"]
+
+
+def write_snirf(
+    fname: Path | str,
+    recordings: cdc.Recording | list[cdc.Recording],
+):
+    """Write one or more recordings to a .snirf file.
+
+    Args:
+        fname (Path | str): Path to .snirf file.
+        recordings (Recording | list[Recording]): Recording object(s) to write to the
+            file.
+    """
+    if isinstance(fname, Path):
+        fname = str(fname)
+
+    if isinstance(recordings, cdc.Recording):
+        recordings = [recordings]
+
+    with Snirf(fname, "w") as fout:
+        for rec in recordings:
+            _write_recordings(fout, rec)
 
         fout.save()

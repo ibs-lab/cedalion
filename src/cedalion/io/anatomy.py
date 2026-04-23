@@ -1,9 +1,19 @@
-import nibabel
-import xarray as xr
+"""Functions for reading and processing anatomical data."""
+
 import os
-from typing import Dict
+from typing import Dict, Tuple
+from pathlib import Path
+import json
+
+import nibabel
+import nibabel.freesurfer
 import numpy as np
-from cedalion.dataclasses import affine_transform_from_numpy
+import pandas as pd
+import xarray as xr
+import trimesh
+
+import cedalion
+from cedalion.dataclasses import affine_transform_from_numpy, TrimeshSurface
 
 # FIXME
 AFFINE_CODES = {
@@ -16,6 +26,14 @@ AFFINE_CODES = {
 
 
 def _get_affine_from_niftii(image: nibabel.nifti1.Nifti1Image):
+    """Get affine transformation matrix from NIFTI image.
+
+    Args:
+        image (nibabel.nifti1.Nifti1Image): NIFTI image object
+
+    Returns:
+        xr.DataArray: Affine transformation matrix
+    """
     transform, code = image.get_sform(coded=True)
     if code != 0:
         return affine_transform_from_numpy(
@@ -42,7 +60,20 @@ def read_segmentation_masks(
         "skull": "skull.nii",
         "wm": "wm.nii",
     },
-) -> xr.DataArray:
+) -> Tuple[xr.DataArray, np.ndarray]:
+    """Read segmentation masks from NIFTI files.
+
+    Args:
+        basedir (str): Directory containing the mask files
+        mask_files (Dict[str, str]): Dictionary mapping segmentation types to filenames
+
+    Returns:
+        Tuple[xr.DataArray, np.ndarray]:
+            - masks (xr.DataArray): Concatenated segmentation masks with a new
+              dimension `segmentation_type`.
+            - affine (np.ndarray): Affine transformation matrix associated with the
+              NIFTI files.
+    """
     mask_ids = {seg_type: i + 1 for i, seg_type in enumerate(mask_files.keys())}
     masks = []
     affines = []
@@ -62,6 +93,11 @@ def read_segmentation_masks(
                 f"values in '{fpath}'"
             )
 
+        # mask volume should contain integers stored as floating point numbers.
+        # Operations like resampling can introduce small deviations and non-integer
+        # mask ids -> round them.
+        volume = volume.round(6).astype(np.uint8)
+
         volume[volume != 0] = mask_ids[seg_type]
 
         masks.append(
@@ -79,7 +115,7 @@ def read_segmentation_masks(
     for i in range(1, len(affines)):
         assert np.all(affines[i] == affines[i])
 
-    masks = xr.concat(masks, dim="segmentation_type").astype(np.uint8)
+    masks = xr.concat(masks, dim="segmentation_type")
 
     # check for voxel that belong to more than one mask # FIXME too strict?
     if (masks > 0).sum("segmentation_type").max() > 1:
@@ -91,6 +127,16 @@ def read_segmentation_masks(
 
 
 def cell_coordinates(mask, affine, units="mm"):
+    """Get the coordinates of each voxel in the transformed mask.
+
+    Args:
+        mask (xr.DataArray): A binary mask of shape (i, j, k).
+        affine (np.ndarray): Affine transformation matrix.
+        units (str): Units of the output coordinates.
+
+    Returns:
+        xr.DataArray: Coordinates of the center of each voxel in the mask.
+    """
     # coordinates in voxel space
     i = np.arange(mask.shape[0])
     j = np.arange(mask.shape[1])
@@ -109,3 +155,63 @@ def cell_coordinates(mask, affine, units="mm"):
     transformed = transformed.pint.quantify()
 
     return transformed
+
+
+def read_parcellations(parcel_file: str | Path) -> pd.DataFrame:
+    """Read parcellation labels from a json file.
+
+    Args:
+        parcel_file: The parcels file name
+
+    Returns:
+        pd.DataFrame: Contains vertices' labels, their appropriate colors
+    """
+    parcels = pd.read_json(parcel_file)
+
+    parcels = parcels.explode("Vertices")
+    parcels["Vertices"] = parcels["Vertices"].astype(int)
+    parcels = parcels.sort_values("Vertices")
+
+    parcels["Label"] = parcels["Label"].apply(lambda x: "_".join(x.split(" ")) + "H")
+
+    return parcels
+
+def read_parcel_colors(parcel_colors_file : str | Path) -> dict[str, list]:
+    with open(parcel_colors_file) as fin:
+        return json.load(fin)
+
+
+def trimesh_from_freesurfer(
+    lh: str | Path,
+    rh: str | Path,
+    crs: str,
+    units: str,
+    offset_hemispheres: bool = True,
+) -> TrimeshSurface:
+    """Load freesurfer surfaces as a cdc.TrimeshSurface object.
+
+    Args:
+        lh: path of the left hemisphere surface file.
+        rh: path of the right hemisphere surface file.
+        crs: label of the coordinate reference system
+        units: units of vertex coordinates
+        offset_hemispheres: If True, offset the hemispheres along the x-axis such that
+            the left hemisphere's maximum x-coordinate aligns with the right
+            hemisphere's minimum x-coordinate, removing the overlap that occurs with
+            inflated surfaces.
+
+    Returns:
+        A single TrimeshSurface containing both hemispheres, with left-hemisphere
+        vertices preceding right-hemisphere vertices in the vertex array.
+    """
+
+    units = cedalion.units.Unit(units)
+
+    lh_v, lh_e = nibabel.freesurfer.read_geometry(lh)
+    rh_v, rh_e = nibabel.freesurfer.read_geometry(rh)
+    lh_v[:,0] -= lh_v[:,0].max()
+    rh_v[:,0] -= rh_v[:,0].min()
+    v = np.vstack((lh_v, rh_v))
+    e = np.vstack( (lh_e, rh_e+len(lh_v)))
+
+    return TrimeshSurface(trimesh.Trimesh(v, e), crs, units)

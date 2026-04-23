@@ -5,25 +5,27 @@ This document provides a brief getting started guide for users who would like to
 ## Where to get started?
 It is smart to make yourself aware of five resources and concepts that build the foundations for Cedalion:
 1) **Cedalion's documentation page**: For the moment the documentation can be found {{ '[here]({})'.format(docs_url) }}.
-2) **Example Notebooks**: Cedalion provides jupiter notebooks for example pipelines and to display how to apply its functionality. Here you can start to learn from examples by running, adapting and changing code until you feel more familiar. The notebooks are under /examples/ or [here](https://github.com/ibs-lab/cedalion/tree/alex_working/examples)
+2) **Example Notebooks**: Cedalion provides jupiter notebooks for example pipelines and to display how to apply its functionality. Here you can start to learn from examples by running, adapting and changing code until you feel more familiar. The notebooks are under /examples/ [here](https://github.com/ibs-lab/cedalion/tree/main/examples) and can be viewed in a rendered form on the documentation page [here](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/examples/index.html)
 3) **Xarrays** are a package that makes work with labelled mult-dimensional arrays very simple. If you develop code for Cedalion, you will youse Xarrays. To get started, make yourself acquainted with one of two key data types: *xarray.DataArray* and *xarray.DataSet*. Most functions that you write should expect an xarray DataArray as main input for the data that you want to process, alongside arguments that pass variables for additional info. You can find the official [Xarray documentation here](https://docs.xarray.dev/en/stable/).
 4) **Units**: One of the charms of Xarrays that Cedalion is taking advantage of is that functions can implicitly consider units and thus avoid typical errors from (missing) unit conversion. For example, if you work with coordinates for fNIRS optodes or landmarks, as long as they have a proper unit like "m", "cm", "mm" assigned, you do not have to explicitly take care of conversions anymore. To make use of this feature, Cedalion's functions should expect input arguments that are "Quantities" with "units" wherever possible. To assign a unit to your variable, simply import `from cedalion import Quantity, units` and multiply your variable with the right unit. For instance: `sd_distance = 3*units.cm`. Cedalion's units are based on the **pint** package, which is [documented here](https://pint.readthedocs.io/en/stable/index.html).
 5) **Data Containers and Data Structures**: The main objects to pass along your functions and processing pipelines. We are currently working on defining and documenting these. In the meantime, please work with Xarray DataArrays and variables with units as in and outputs for your functions, and be aware that the main format for fNIRS/DOT data that we read and write is the [SNIRF format](https://github.com/fNIRS/snirf). To easily get started, you can:
     1. Check out the example notebook on [Using xarray-based data structures for calculating the Beer-Lambert transformation](https://github.com/ibs-lab/cedalion/blob/main/examples/pruning_and_motion_artifacts.ipynb)
     2. Check out the example notebook on [An example finger tapping analysis](https://github.com/ibs-lab/cedalion/blob/main/examples/new_conference_example2.ipynb)
     3. Use the following code snippet to load snirf data into Xarray DataArrays (amp, geo, od, conc, ml) and combine them into an Xarray DataSet.
-```# get example finger tapping dataset
+
+```python
+# get example finger tapping dataset
 import cedalion
 import cedalion.nirs
-import cedalion.datasets as datasets
+import cedalion.data
 import xarray as xr
 
-snirf_element = datasets.get_fingertapping()
+snirf_element = cedalion.data.get_fingertapping()
 amp = snirf_element[0].data[0]
 geo = snirf_element[0].geo3d
-od = cedalion.nirs.int2od(amp)
+od = cedalion.nirs.cw.int2od(amp)
 dpf = xr.DataArray([6, 6], dims="wavelength", coords={"wavelength" : amp.wavelength})
-conc = cedalion.nirs.beer_lambert(amp, geo, dpf)
+conc = cedalion.nirs.cw.beer_lambert(amp, geo, dpf)
 meas_list = snirf_element[0].measurement_lists[0]
 
 data = xr.Dataset(
@@ -39,7 +41,6 @@ data = xr.Dataset(
 ## General Rules and Overview
 ### Style Guide for Python Code
 We follow the PEP 8 Style that is documented [here](https://peps.python.org/pep-0008/) - please try to follow it too. If you work with VS Code, you can use extensions to make your life easier:
-- [Black Formatter](https://marketplace.visualstudio.com/items?itemName=ms-python.black-formatter) that supports you in formatting your code
 - [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) is a fast Python linter that we recommend
 
 Some relevant conventions in a nutshell:
@@ -49,23 +50,17 @@ Some relevant conventions in a nutshell:
 
 ### Style Guide for docstrings
 
-Please use [documentation strings](https://docs.python.org/3/tutorial/controlflow.html#documentation-strings) to document modules, classes and functions. There exist several different conventions on how to
-format these docstrings. We will follow the Google style as described in the
+Please use [documentation strings](https://docs.python.org/3/tutorial/controlflow.html#documentation-strings) 
+to document modules, classes and functions. There exist several different conventions on 
+how to dormat these docstrings. We will follow the Google style as described in the
 [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings).
 
-
-Please add references to the literature if you are implementing a published algorithm.
-
-**Example:**
+**Example 1:**
 ```
     def func(arg1 : int, arg2 : str) -> bool:
         """One sentence description of function.
 
         Some more details on what the function does.
-
-        Reference to related work or source material [1]
-
-        [1] Authors et al., Title, Journal, Year
 
         Args:
             arg1: Description of arg1
@@ -76,6 +71,58 @@ Please add references to the literature if you are implementing a published algo
         """
         return True
 ```
+
+**Example 2:**
+```
+    def func(
+        arg1 : cdt.NDTimeSeries, 
+        arg2 : cdt.NDTimeSeries, 
+        arg3 : Quantity
+    ) -> cdt.NDTimeSeries:
+        """Implements algorithm XY based on :cite:t:`BIBTEXLABEL`.
+
+        Some more details on what the function does.
+        
+        Args:
+            arg1 (:class:`NDTimeSeries`, (channel, wavelength, time)): Description of 
+                first argument. For NDTimeSeries we can specify expected dimensions
+                like this.
+            arg2 (:class:`NDTimeSeries`, (time, *)): Some algorithms work only along
+                a given dimension (e.g. frequency filtering) and are agnostic to any
+                other dimensions in the array. This should be documentated like this.
+            arg3 (:class:`Quantity`, [time]): Parameters with physical units (e.g.
+                lengths or time intervals) should be passed as pint.Quantities. The
+                expected dimensionality should be documented like this.
+
+        Returns:
+            Description of return value. 
+        """
+        return True
+```
+
+Please add references to the literature if you are implementing a published algorithm.
+There is a global bibtex file under `docs/references.bib` to which reference entries
+should be added with a unique bibtex label. In docstrings cite a reference entry with:
+```
+    :cite:t:`BIBTEXLABEL`
+```
+
+In notebooks you can add citations in markdown cells like this:
+```
+    <cite data-cite="Barker2013">(Barker,2013)</cite>
+```
+
+If citations do not show correctly in the rendered documentation, check the Sphinx output for errors while parsing `references.bib`. Duplicate or ill-formed entries are
+often the culprit.
+
+Further options are documented in the 
+[sphinxcontrib-bibtex documentation](https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html#minimal-example).
+
+All references will be listed under [References](../../references.rst).
+
+Additional [docstring sections](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/index.html#docstring-sections)
+may be added, like for example: References, Notes, etc.
+
 
 ### Where to add my code?
 
@@ -106,7 +153,7 @@ Widely used general functionality is part of the files on the top level (e.g. ni
 | **data** | Look up tables and other small datasets often required for ecexuting functions. |
 | **dataclasses** | Dataclass definitions that are used in Cedalion. Example: in xrschemas.py you can find that we work with xarray objects (see more detail in the next section). For time series data these have to have at least two dimensions: "time" and "channel".  |
 | **geometry** | Functions for geometric manipulations, e.g. for optode registration, building landmarks on a 3D head, head segmentation, etc. |
-| **imagereco** | Functions for DOT image reconstruction |
+| **dot** | Functions for DOT image reconstruction |
 | **io** | Functions for reading and writing data to and from Cedalion. This includes for instance fnirs data in snirf format, probe geometries or reading anatomies (e.g. segmentation masks). |
 | **models** | Functions for data modelling, for instance the General Linear Model (GLM).|
 | **sigdecomp** | Functions for signal decomposition methods that are not part of a standard python distribution, e.g. advanced ICA methods.|
@@ -136,10 +183,14 @@ from cedalion import Quantity, units
 
 @cdc.validate_schemas
 def function_name(inputVar1: cdt.NDTimeSeries, inputVar2: Quantity):
+    """What this function does.
 
-    """What does this function do?.
+    Args:
+        inputVar1: ...
+        inputVar2: ...
 
-    [1] Authors et al., "title", Journal vol., year, doi:
+    Returns:
+        description of the return value
     """
 
     #
@@ -157,6 +208,14 @@ The function is wrapped by putting `@cdc.validate_schemas`in front, which will c
 The following examples are implemented in the [quality.py module](https://github.com/ibs-lab/cedalion/blob/main/src/cedalion/sigproc/quality.py)
 
 ### The helper functions
+
+```{admonition} Update needed
+:class: attention
+
+The code examples are not up to date. Please refer to the 
+[current source code](https://github.com/ibs-lab/cedalion/blob/main/src/cedalion/sigproc/quality.py)
+```
+
 Now we can create the small helper functions that calculate and check the SNR, Source-Detector Distances and Amplitudes of fNIRS channels. Using the coordinates and units from Xarrays these are effectively implemented:
 
 `def snr_range():`
@@ -169,7 +228,8 @@ def snr_range(amplitudes: cdt.NDTimeSeries, snr_thresh: Quantity):
     INPUTS:
     amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
     snr_thresh:  Quantity, SNR threshold (unitless).
-                If mean(d)/std(d) < SNRthresh then it is excluded as an active channel
+                If meaArgs:
+        inputVar1:n(d)/std(d) < SNRthresh then it is excluded as an active channel
     OUTPUTS:
     snr:        ratio betwean mean and std of the amplitude signal for all channels.
     MeasList:   list of active channels that meet the conditions
@@ -288,6 +348,9 @@ def prune(data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity,
 
     return data, drop_list
 ```
+
+### Creating example notebooks
+After adding a feature, it is a good idea to create a jupyter notebook showcasing the new functionality. Notebooks should be added to the appropriate subfolder in the examples folder. You can select the thumbnail that will appear in examples gallery by adding the tag "nbsphinx-thumbnail" to a cell that produces a plot or figure (the IBS logo is used by default if no tag is set).
 
 ## Concluding Remarks
 The example above uses Cedalion's most basic data structures. While the toolbox continues to grow, we will add containers and abstraction layers to simplify and unify usage and code contribution. Whenever possible and especially when you find that the existing environment does not (yet) provide a level of abstraction or a data structure bundling all the data that you need in one container, please develop **bottom up** and write simple functions with (multiple) simple input and output arguments. In the example, once a general container is specified that ties together timeseries data, optode information (such as the `geo3D`) or measurement lists, it is straightforward to refactor the code accordingly. The same is true for more complex processing pipelines tied together in jupyter notebooks. We are working on a mechanism to build pipelines that enables easier and more abstract use by incorporating the lower level functions. Translating a notebook to such a pipeline is then straightforward.

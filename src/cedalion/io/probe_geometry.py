@@ -1,14 +1,160 @@
+"""Module for reading and writing probe geometry files."""
+
 import json
+from pathlib import Path
 
 import numpy as np
-import xarray as xr
+import pandas as pd
 import trimesh
+import xarray as xr
+import scipy.io
 
-from cedalion.dataclasses import PointType, TrimeshSurface
 import cedalion
+import cedalion.typing as cdt
+import cedalion.utils as utils
+from cedalion.dataclasses import PointType, TrimeshSurface, build_labeled_points
+
+
+def load_tsv(tsv_fname: str, crs: str=None, units: str=None) -> xr.DataArray:
+    """Load a tsv file containing optodes or landmarks.
+
+    Parameters
+    ----------
+    tsv_fname : str
+        Path to the tsv file.
+    crs : str
+        Coordinate reference system of the points if not in the file header.
+    units : str
+        Units of the points if not in the file header.
+
+    Returns:
+    -------
+    xr.DataArray
+        Optodes or landmarks as a Data
+    """
+    # load the tsv file without header
+    data = pd.read_csv(tsv_fname, sep="\t", header=None)
+    if data.values[0][0] == 'sourceIndex':
+        # tsv file contains a meas_list (with header)
+        return pd.read_csv(tsv_fname, sep="\t")
+    elif data.values[0][0] == 'labels':
+        # tsv file contains a header
+        data = pd.read_csv(tsv_fname, sep="\t")
+    else:
+        datadict = {'labels': data.iloc[:, 0],
+                    'X': data.iloc[:, 1],
+                    'Y': data.iloc[:, 2],
+                    'Z': data.iloc[:, 3]}
+        if len(data.columns) > 4:
+            datadict['PointType'] = data.iloc[:, 4]
+        data = datadict
+
+    # parse crs and units
+    for k in data.keys():
+        if k.startswith("crs"):
+            crs = k.split("=")[1].strip()
+            data = data.drop(k, axis=1)
+        if k.startswith("units"):
+            units = k.split("=")[1].strip()
+            data = data.drop(k, axis=1)
+
+    for k in ["labels", "X", "Y", "Z"]:
+        if k not in data.keys():
+            raise ValueError(f"Missing {k} in tsv file")
+
+    # parse labels
+    labels = data["labels"].values
+
+    # parse types
+    types = []
+    if 'PointType' in data.keys():
+        for t in data.get('PointType', ''):
+            if t.endswith('SOURCE'):
+                types.append(PointType(1)) # sources
+            elif t.endswith('DETECTOR'):
+                types.append(PointType(2)) # detectors
+            elif t.endswith('LANDMARK'):
+                types.append(PointType(3)) # landmarks
+            elif t.endswith('ELECTRODE'):
+                types.append(PointType(4)) # electrodes
+            else:
+                types.append(PointType(0)) # unknown
+    else:
+        # try to detect point types if not in the file
+        for lab in labels:
+            if lab[0] == 'S':
+                types.append(PointType(1)) # sources
+            elif lab[0] == 'D':
+                types.append(PointType(2)) # detectors
+            elif lab in ['NAS', 'Nz', 'Iz', 'LPA', 'RPA']:
+                types.append(PointType(3)) # landmarks
+            elif lab[0] in ["A", "C", "F", "I", "N", "O", "P", "T"]:
+                types.append(PointType(4))  # electrodes
+            else:
+                types.append(PointType(0))  # unknown
+
+    # parse data
+    data = np.array([data["X"].values, data["Y"].values, data["Z"].values]).T
+
+    # convert to xarray DataArray
+    geo3d = build_labeled_points(data, labels=labels, crs=crs, types=types, units=units)
+    return geo3d
+
+
+def export_to_tsv(tsv_filename, points):
+    """Export optodes, fiducials, landmarks, electodes, measurement lists to a tsv file.
+
+    Parameters
+    ----------
+    tsv_filename : str
+        Path to the output file.
+
+    points : xr.DataArray, pd.DataFrame
+        Points to save.
+
+    """
+    # if measurement list, save it as tsv using pandas
+    if isinstance(points, pd.DataFrame):
+        points.to_csv(tsv_filename, sep="\t", index=False)
+        return
+    elif isinstance(points, xr.DataArray):
+        # else: types are optodes, fiducials, landmarks, electrodes
+        with open(tsv_filename, 'w') as f:
+            labels = points.label.values
+            types = points.type.values
+            header = "labels\tX\tY\tZ\tPointType"
+            if points.points.crs is not None:
+                header += "\tcrs=%s" % points.points.crs
+            if points.pint.units is not None:
+                if points.pint.units == cedalion.units.mm:
+                    header += "\tunits=mm"
+                else:
+                    header += "\tunits=%s" % points.pint.units
+            f.write(header + "\n")
+
+            points = np.array(points.to_numpy())
+            for lbl, p, t in zip(labels, points, types):
+                f.write("%s\t%f\t%f\t%f\t%s\n" % (lbl, p[0], p[1], p[2], str(t)))
+    else:
+        raise ValueError("Unknown points type: %s" % type(points))
+    return
 
 
 def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
+    """Read a JSON file containing landmarks.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the JSON file.
+    crs : str
+        Coordinate reference system of the landmarks.
+
+    Returns:
+    -------
+    xr.DataArray
+        Landmarks as a DataArray.
+    """
     with open(fname) as fin:
         x = json.load(fin)
 
@@ -48,7 +194,49 @@ def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
     return result
 
 
-def read_digpts(fname: str, units="mm") -> xr.DataArray:
+def save_mrk_json(fname: str, landmarks: xr.DataArray, crs: str):
+    """Save landmarks to a JSON file.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the output file.
+    landmarks : xr.DataArray
+        Landmarks to save.
+    crs: str
+        Coordinate system of the landmarks.
+    """
+    control_points = [{"id": i,
+                       "label": lm.label.item(),
+                       "position": list(np.array(landmarks[i])),
+                       "orientation": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                       }
+                      for i, lm in enumerate(landmarks)]
+    data_dict = {"@schema": "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.3.json",
+                 "markups": [{
+                     "type": "Fiducial",
+                     "coordinateSystem": crs,
+                     "coordinateUnits": "mm", #landmark.units,
+                     "controlPoints": control_points,
+                     }]}
+    json.dump(data_dict, open(fname, "w"), indent=2)
+
+
+def read_digpts(fname: str, units: str="mm") -> xr.DataArray:
+    """Read a file containing digitized points.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the file.
+    units : str
+        Units of the points.
+
+    Returns:
+    -------
+    xr.DataArray
+        Digitized points as a DataArray.
+    """
     with open(fname) as fin:
         lines = fin.readlines()
 
@@ -73,8 +261,100 @@ def read_digpts(fname: str, units="mm") -> xr.DataArray:
 
 
 def read_einstar_obj(fname: str) -> TrimeshSurface:
-    """Read a textured triangle mesh generated by Einstar devices."""
+    """Read a textured triangle mesh generated by Einstar devices.
 
+    Parameters
+    ----------
+    fname : str
+        Path to the file.
+
+    Returns:
+    -------
+    TrimeshSurface
+        Triangle
+    """
     mesh = trimesh.load(fname)
-
     return TrimeshSurface(mesh, crs="digitized", units=cedalion.units.mm)
+
+
+def read_fieldtrip_elc(fname : Path | str) -> cdt.LabeledPoints:
+    section = "header"
+
+    crs : str = None
+    npoints : int = 0
+    units : str = None
+    coordinates = []
+    labels = []
+
+    with open(fname, "r") as fin:
+        for line in fin:
+            line = line.strip()
+
+            if line.startswith("#"):
+                continue
+            if line == "Positions":
+                section = "positions"
+                continue
+            if line == "Labels":
+                section = "labels"
+                continue
+
+            if section == "header":
+                if line.startswith("ReferenceLabel"):
+                    crs = line.split()[1]
+                    continue
+                if line.startswith("UnitPosition"):
+                    units = line.split()[1]
+                    continue
+                if line.startswith("NumberPositions"):
+                    npoints = int(line.split()[1])
+                    continue
+            elif section == "positions":
+                coordinates.append(np.asarray([float(i) for i in line.split()]))
+            elif section == "labels":
+                labels.append(line)
+
+    assert len(coordinates) == npoints
+    assert len(labels) == npoints
+    assert crs is not None
+    assert units is not None
+
+    coordinates = np.vstack(coordinates)
+
+    return build_labeled_points(
+        coordinates,
+        crs=crs,
+        units = units,
+        labels = labels,
+        types=[PointType.LANDMARK]*npoints
+    )
+
+
+def read_sd(fname : Path | str, crs="av") -> cdt.LabeledPoints:
+    x = scipy.io.loadmat(fname, squeeze_me=True)
+    lm_pos = x["SD"]["Landmarks"][()][()][()]["pos"]
+    lm_labels = x["SD"]["Landmarks"][()][()][()]["labels"]
+    src_pos = x["SD"]["SrcPos3D"][()]
+    det_pos = x["SD"]["DetPos3D"][()]
+    units = x["SD"]["SpatialUnit"][()]
+
+    nsrc = len(src_pos)
+    ndet = len(det_pos)
+    nlm = len(lm_pos)
+
+    src_labels = utils.zero_padded_numbers(range(1, nsrc + 1), prefix="S")
+    det_labels = utils.zero_padded_numbers(range(1, ndet + 1), prefix="D")
+
+    coords = np.vstack((src_pos, det_pos, lm_pos))
+
+    return build_labeled_points(
+        coords,
+        crs=crs,
+        units=units,
+        labels=np.hstack((src_labels, det_labels, lm_labels)),
+        types=(
+            [PointType.SOURCE] * nsrc
+            + [PointType.DETECTOR] * ndet
+            + [PointType.LANDMARK] * nlm
+        ),
+    )

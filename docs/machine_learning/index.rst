@@ -1,0 +1,34 @@
+Modeling and Machine Learning
+=============================
+
+
+Models
+---------------
+
+.. autosummary::
+   :toctree: _autosummary_models
+   :nosignatures:
+   :recursive:
+
+   cedalion.models.glm
+   cedalion.math.ar_model
+   
+Decomposition Methods
+---------------------
+
+.. autosummary::
+    :toctree: _autosummary_decomp
+    :recursive:
+    :nosignatures:
+
+    cedalion.sigdecomp.unimodal
+    cedalion.sigdecomp.multimodal
+
+Examples
+--------
+
+.. nbgallery::
+   :glob:
+
+   ../examples/machine_learning/*
+   ../examples/modeling/*

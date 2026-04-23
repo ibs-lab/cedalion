@@ -1,4 +1,4 @@
-"""Common classes."""
+"""Data classes used throughout cedalion."""
 
 # FIXME for easier access classes are pulled from the sub-modules into this scope.
 # Over time this may get crowded.
@@ -9,9 +9,14 @@ from .geometry import (
     TrimeshSurface,
     VTKSurface,
     affine_transform_from_numpy,
+    Voxels,
 )
-from .xrschemas import (
+from .schemas import (
     build_labeled_points,
     build_timeseries,
     validate_schemas,
+    build_stim_dataframe,
+    SPATIAL_DIMENSIONS,
+    get_spatial_dimension
 )
+from .recording import Recording
