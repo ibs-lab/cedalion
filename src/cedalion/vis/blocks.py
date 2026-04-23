@@ -286,8 +286,6 @@ def plot_surface(
                 print("Warning: Some labels are missing")
             elif len(set(labels)) != len(landmark_labels):
                 print("Warning: Some labels are repeated!")
-            else:
-                continue
             
             landmarks = xr.DataArray(
                     np.vstack(picked_points),
@@ -300,11 +298,10 @@ def plot_surface(
                 ).pint.quantify("mm")
             return landmarks
 
-
         plotter.enable_surface_point_picking(
             callback=place_landmark,
-            show_message="Right click to place or change the landmark label.\n"\ 
-                         "Expected labels: "+str(landmark_labels)+"\n"\
+            show_message="Right click to place or change the landmark label.\n" \
+                         "Expected labels: "+str(landmark_labels)+"\n" \
                          "Close window when done.",
             show_point=False,
             tolerance=0.005,
