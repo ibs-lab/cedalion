@@ -21,7 +21,7 @@ RUN apt-get update -q && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PATH /opt/conda/bin:$PATH
+ENV PATH=/opt/conda/bin:$PATH
 
 CMD [ "/bin/bash" ]
 
@@ -71,3 +71,5 @@ SHELL ["conda", "run", "-n", "cedalion", "/bin/bash", "-c"]
 # Install cedalion
 RUN pip3 install -e /cedalion
 
+# Activate cedalion env on interactive shell startup
+RUN echo "conda activate cedalion" >> ~/.bashrc
