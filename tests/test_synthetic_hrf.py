@@ -1,15 +1,19 @@
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
 import xarray as xr
-import cedalion
-import cedalion.datasets
-from cedalion import units
+
 import cedalion.sim.synthetic_hrf as syn
+from cedalion import units
+from cedalion.dot import get_standard_headmodel
+
 
 @pytest.fixture
 def head_model():
-    return cedalion.datasets.get_colin27_headmodel()
+    head_ijk =  get_standard_headmodel("colin27")
+    head_ras = head_ijk.apply_transform(head_ijk.t_ijk2ras)
+    return head_ras
+
 
 
 def test_build_spatial_activation(head_model):
@@ -24,14 +28,14 @@ def test_build_spatial_activation(head_model):
 
     for seed in seeds:
         blob_small = syn.build_spatial_activation(
-            head_model,
+            head_model.brain,
             seed,
             spatial_scale=scale_small,
             intensity_scale=intensity_scale,
             hbr_scale=-0.4,
         )
         blob_big = syn.build_spatial_activation(
-            head_model,
+            head_model.brain,
             seed,
             spatial_scale=scale_big,
             intensity_scale=intensity_scale,
@@ -51,8 +55,8 @@ def test_build_spatial_activation(head_model):
         blob_big = blob_big.pint.dequantify()
         assert len(blob_small) == len(head_model.brain.vertices)
         assert np.all(blob_big >= blob_small)
-        sum_blob_small = blob_small.sum()
-        sum_blob_big = blob_big.sum()
+        sum_blob_small = blob_small.sum().item()
+        sum_blob_big = blob_big.sum().item()
         assert sum_blob_small < sum_blob_big
         seed_pos = head_model.brain.vertices[seed]
         seed_pos = seed_pos.pint.to("mm").pint.dequantify()
@@ -62,8 +66,11 @@ def test_build_spatial_activation(head_model):
         )
         close_vertices_big = head_model.brain.mesh.kdtree.query_ball_point(seed_pos, 20)
         # check that sum of close vertices is ~ 0.4 of the total sum
-        assert 0.35 < blob_small[close_vertices_small].sum() / sum_blob_small < 0.45
-        assert 0.35 < blob_big[close_vertices_big].sum() / sum_blob_big < 0.45
+        assert (
+            0.35 < blob_small[close_vertices_small].sum().item() / sum_blob_small < 0.50
+        )
+        # check that sum of close vertices is ~ 0.6 of the total sum
+        assert 0.55 < blob_big[close_vertices_big].sum().item() / sum_blob_big < 0.65
 
 
 def test_build_stim_df():

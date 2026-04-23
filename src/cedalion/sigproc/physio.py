@@ -1,5 +1,7 @@
 """Algorithms for handling physiogical components in fNIRS data."""
 
+from __future__ import annotations
+
 import numpy as np
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
@@ -14,34 +16,45 @@ def global_component_subtract(
     spatial_dim: str = "channel",
     spectral_dim: str = None
 ) -> tuple:
-    """Remove global (physiological) components from a time series by either weighted‐mean subtraction (if k=0) or PCA (if k>0).
+    """Remove global (physiological) components from a time series.
+
+    Two modes are available, either weighted‐mean subtraction (if k=0) or PCA (if k>0).
 
     Returns both the corrected time series and the global component that was removed:
-    the weighted‐mean regressor if k=0, or the average of backprojected  principal component time series if k>0.
+    the weighted‐mean regressor if k=0, or the average of backprojected  principal
+    component time series if k>0.
 
     Parameters:
         ts : amplitudes (:class:`NDTimeSeries`):
-            Input DataArray. Must have a "time" dimension, one dimension for space ("spatial_dim")
-            (default is "channel", can be "vertex" or "parcel") and one for spectral info ("wavelength" or "chromophore").
+            Input DataArray. Must have a "time" dimension, one dimension for space
+            ("spatial_dim")
+            (default is "channel", can be "vertex" or "parcel") and one for spectral
+            info ("wavelength" or "chromophore").
         ts_weights : xr.DataArray, optional
-            A DataArray of per‐(spatial_dim × spectral_dim) weigths. This is typically 1/(channel variance). 
-            If None, all weights = 1 (no weighting). Must have same non-time dims as ts.
+            A DataArray of per‐(spatial_dim × spectral_dim) weigths. This is typically
+            1/(channel variance). If None, all weights = 1 (no weighting). Must have
+            same non-time dims as ts.
         k : float, default=0
-            • k = 0: perform weighted‐mean subtraction (per spectral dim, e.g. HbX or wavelength).
-            • k ≥ 1: remove the first int(k) principal components per spectral dimension.
-            • 0 < k < 1: remove the minimum number of PCs whose cumulative explained variance ≥ k.
+            • k = 0: perform weighted‐mean subtraction (per spectral dim, e.g. HbX or
+                     wavelength).
+            • k ≥ 1: remove the first int(k) principal components per spectral dim.
+            • 0 < k < 1: remove the minimum number of PCs whose cumulative explained
+                         variance ≥ k.
         spatial_dim : str, default "channel"
-            Name of the spatial dimension, like channel, vertex or parcel, across PCA or averaging is performed. If absent, no subtraction is done.
+            Name of the spatial dimension, like channel, vertex or parcel, across PCA or
+            averaging is performed. If absent, no subtraction is done.
         spectral_dim : str, optional
-            Name of the spectral dimension (e.g. "wavelength" or "chromophore"). If None, inferred
-            as the dimension in ts.dims that is neither "time" nor spatial_dim. #FIXME for more dimensions
+            Name of the spectral dimension (e.g. "wavelength" or "chromophore").
+            If None, inferred as the dimension in ts.dims that is neither "time" nor
+            spatial_dim. #FIXME for more dimensions
 
     Returns:
         corrected : (:class:`NDTimeSeries`):
             The time series with global (physiological) components removed.
         global_component : (:class:`NDTimeSeries`):
             If k=0: the weighted‐mean regressor (dims: "time", spectral_dim).
-            If k>0: the reconstructed PCA component(s) averaged across all channels (dims: "time", spectral_dim).
+            If k>0: the reconstructed PCA component(s) averaged across all channels
+                    (dims: "time", spectral_dim).
 
     Initial Contributors:
         Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
@@ -69,7 +82,9 @@ def global_component_subtract(
 
     # Validate that spectral_dim is indeed in ts.dims
     if spectral_dim not in ts.dims:
-        raise ValueError(f"Spectral dimension '{spectral_dim}' not in ts.dims {ts.dims}.")
+        raise ValueError(
+            f"Spectral dimension '{spectral_dim}' not in ts.dims {{ts.dims}}."
+        )
 
     # Preserve pint‐units if present, then strip them for numeric ops
     if hasattr(ts, "pint"):
@@ -81,13 +96,17 @@ def global_component_subtract(
 
     # Build or validate ts_weights (variances)
     if ts_weights is None:
-        weights = xr.ones_like(ts_vals.isel(time=0).drop_vars("time"))
+        weights = xr.ones_like(ts_vals.isel(time=0).drop_vars(["time", "samples"]))
     else:
         if not isinstance(ts_weights, xr.DataArray):
-            raise ValueError("ts_weights must be an xarray.DataArray with dims (channel_dim, spectral_dim).")
+            raise ValueError(
+                "ts_weights must be an xarray.DataArray with dims "
+                "(channel_dim, spectral_dim)."
+            )
         if set(ts_weights.dims) != {spatial_dim, spectral_dim}:
             raise ValueError(
-                f"ts_weights must have dims ({spatial_dim},{spectral_dim}), but got {ts_weights.dims}."
+                f"ts_weights must have dims ({spatial_dim},{spectral_dim}), "
+                f"but got {ts_weights.dims}."
             )
         if hasattr(ts_weights, "pint"):
             weights = ts_weights.pint.dequantify().copy()
@@ -95,9 +114,10 @@ def global_component_subtract(
             weights = ts_weights.copy()
 
     # Pull out coords and sizes
-    time_coord = ts_vals.coords["time"]
-    chan_coord = ts_vals.coords[spatial_dim]
-    spec_coord = ts_vals.coords[spectral_dim]
+    time_coord = ts_vals.coords["time"].values
+    sample_coord = ts_vals.coords["samples"].values
+    chan_coord = ts_vals.coords[spatial_dim].values
+    spec_coord = ts_vals.coords[spectral_dim].values
 
     n_time = ts_vals.sizes["time"]
     n_chan = ts_vals.sizes[spatial_dim]
@@ -109,7 +129,11 @@ def global_component_subtract(
     global_comp = xr.DataArray(
         np.zeros((n_time, ts_vals.sizes[spectral_dim])),
         dims=("time", spectral_dim),
-        coords={"time": time_coord, spectral_dim: spec_coord},
+        coords={
+            "time": ("time", time_coord),
+            "samples": ("time", sample_coord),
+            spectral_dim: spec_coord,
+        },
     )
 
     # ──────────────────────────────────────────────────────────────────────────────
@@ -150,20 +174,21 @@ def global_component_subtract(
                 raise ValueError(f"Invalid k={k}. For PCA, int(k) must be ≥ 1.")
 
         # Loop over each spectral slice independently
-        for s in spec_coord.values:
+        for s in spec_coord:
             # Explicitly transpose so that data_matrix is (time, channel)
             ts_slice = ts_vals.sel({spectral_dim: s}).transpose("time", spatial_dim)
             data_matrix = ts_slice.values  # shape = (n_time, n_chan)
 
-            # Pull out per‐channel variance for this slice. Since weights are assumed 1/var this is straightforward.
-            # However, note that if weithts other than variance are provided, they will be treated as squared input for PCA.
-            channel_vars = 1 / weights.sel({spectral_dim: s}).values  # shape = (n_chan,)
+            # Pull out per‐channel variance for this slice. Since weights are assumed
+            # 1/var this is straightforward. However, note that if weithts other than
+            # variance are provided, they will be treated as squared input for PCA.
+            channel_vars = 1 / weights.sel({spectral_dim: s}).values  # shape=(n_chan,)
 
             # Pre‐whiten if weights provided
             if ts_weights is not None:
                 sqrt_vars = np.sqrt(channel_vars)
                 sqrt_vars = np.where(sqrt_vars == 0, 1.0, sqrt_vars)
-                data_w = data_matrix / sqrt_vars[np.newaxis, :]  # shape = (n_time, n_chan)
+                data_w = data_matrix / sqrt_vars[np.newaxis, :]  # shape=(n_time,n_chan)
             else:
                 data_w = data_matrix.copy()
 

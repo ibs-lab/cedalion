@@ -1,10 +1,13 @@
 # Cedalion
 
-A python-based framework for the data driven analysis of multimodal fNIRS and DOT in naturalistic environments. Developed by the Intelligent Biomedical Sensing (IBS) Lab with and for the community.
+A python-based framework for the data-driven analysis of multimodal fNIRS and DOT in 
+naturalistic environments. Developed by the Intelligent Biomedical Sensing (IBS) Lab 
+with and for the community.
 
 ![cedalion graphical abstract](img/cedalion_frontpage.png)
 
-You can find the [github repository for the cedalion toolbox here](https://github.com/ibs-lab/cedalion).
+You can find the 
+[github repository for the cedalion toolbox here](https://github.com/ibs-lab/cedalion).
 
 ```{toctree}
 :maxdepth: 1
@@ -20,12 +23,21 @@ community/index.md
 
 ```{toctree}
 :maxdepth: 1
+:caption: ⭐ Tutorial
+
+Paper (in prep.) <https://arxiv.org/abs/2601.05923>
+Tutorial Notebooks <tutorial.rst>
+```
+
+
+```{toctree}
+:maxdepth: 1
 :caption: Package Features
 
 data_io/index
 sigproc/index
 machine_learning/index
-image_reco/index
+dot/index
 physio/index
 plot_vis/index
 synth/index

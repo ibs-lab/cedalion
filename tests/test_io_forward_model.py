@@ -4,17 +4,22 @@ import numpy as np
 import xarray as xr
 import cedalion.io as cio
 
+
 def create_dummy_Adot():
     """Create a dummy Adot matrix for testing."""
-    channels = ['S'+str(i)+'D'+str(j) for i in range(14) for j in range(30)]
+    channels = ["S" + str(i) + "D" + str(j) for i in range(14) for j in range(30)]
     channel = np.random.choice(channels, 100)
     num_verts = np.random.randint(500, 5000)
     wavelength = np.array([760.0, 850.0])
-    Adot = xr.DataArray(np.random.rand(len(channel), num_verts, len(wavelength)),
-                        dims=["channel", "vertex", "wavelength"],
-                        coords={"channel": ("channel", channel),
-                                "is_brain": ("vertex", np.random.randint(0, 2, num_verts)),
-                                "wavelength": ("wavelength", wavelength)})
+    Adot = xr.DataArray(
+        np.random.rand(len(channel), num_verts, len(wavelength)),
+        dims=["channel", "vertex", "wavelength"],
+        coords={
+            "channel": ("channel", channel),
+            "is_brain": ("vertex", np.random.randint(0, 2, num_verts)),
+            "wavelength": ("wavelength", wavelength),
+        },
+    )
     return Adot
 
 
@@ -46,5 +51,3 @@ def test_load_Adot():
     assert np.all(Adot.channel.values == Adot2.channel.values)
     assert np.all(Adot.vertex.values == Adot2.vertex.values)
     assert np.all(Adot.wavelength.values == Adot2.wavelength.values)
-
-

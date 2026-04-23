@@ -1,12 +1,12 @@
 import pytest
-import cedalion.datasets
+import cedalion.data
 import cedalion.geometry.utils as geoutils
 from cedalion.dataclasses.geometry import affine_transform_from_numpy
 from cedalion.errors import CRSMismatchError
 
 @pytest.fixture
 def geo3d():
-    recordings = cedalion.datasets.get_snirf_test_data()
+    recordings = cedalion.data.get_snirf_test_data()
     geo3d = recordings[0].geo3d
     geo3d = geo3d.rename({"pos": "digitized"})
 

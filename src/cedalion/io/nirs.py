@@ -52,7 +52,7 @@ def _read_geo3d(sd: np.ndarray):
 
 
 def _read_timeseries(
-    file: dict[str, np.ndarray], sd: str, geo3d: cdt.LabeledPointCloud
+    file: dict[str, np.ndarray], sd: str, geo3d: cdt.LabeledPoints
 ):
     t = file["t"].squeeze()
     d = file["d"]

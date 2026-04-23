@@ -50,7 +50,8 @@ def BenjaminiHochberg(p : np.ndarray):
         pi0 = max(pi0, 0)
         pi0 = min(pi0, 1)
 
-    pi0 = 1
+    pi0 = 1 # disable adaptive FDR as it is done in Brain AnalyzIR
+
     # p = (i/m)*Q
     q = p * m / np.arange(1, m + 1) * pi0
 

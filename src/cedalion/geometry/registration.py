@@ -15,7 +15,7 @@ import cedalion.xrutils as xrutils
 from .utils import m_rot, m_scale1, m_scale3, m_trans
 
 
-def _subtract(a: cdt.LabeledPointCloud, b: cdt.LabeledPointCloud):
+def _subtract(a: cdt.LabeledPoints, b: cdt.LabeledPoints):
     """Calculate difference vectors between points and check CRS."""
 
     crs_a = a.points.crs
@@ -29,8 +29,8 @@ def _subtract(a: cdt.LabeledPointCloud, b: cdt.LabeledPointCloud):
 
 @cdc.validate_schemas
 def register_trans_rot(
-    coords_target: cdt.LabeledPointCloud,
-    coords_trafo: cdt.LabeledPointCloud,
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
 ):
     """Finds affine transformation between coords_target and coords_trafo.
 
@@ -38,8 +38,8 @@ def register_trans_rot(
     between the two point clouds.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -110,8 +110,8 @@ def register_trans_rot(
 
 @cdc.validate_schemas
 def register_general_affine(
-    coords_target: cdt.LabeledPointCloud,
-    coords_trafo: cdt.LabeledPointCloud,
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
 ):
     """Finds affine transformation between coords_target and coords_trafo.
 
@@ -121,8 +121,8 @@ def register_general_affine(
     coordinate systems.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -164,7 +164,7 @@ def register_general_affine(
 
 
 
-def _std_distance_to_cog(points: cdt.LabeledPointCloud):
+def _std_distance_to_cog(points: cdt.LabeledPoints):
     """Calculate the standard deviation of the distances to the center of gravity.
 
     Args:
@@ -180,8 +180,8 @@ def _std_distance_to_cog(points: cdt.LabeledPointCloud):
 
 @cdc.validate_schemas
 def register_trans_rot_isoscale(
-    coords_target: cdt.LabeledPointCloud,
-    coords_trafo: cdt.LabeledPointCloud,
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
 ):
     """Finds affine transformation between coords_target and coords_trafo.
 
@@ -189,8 +189,8 @@ def register_trans_rot_isoscale(
     between the two point clouds.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -249,8 +249,8 @@ def register_trans_rot_isoscale(
 
 @cdc.validate_schemas
 def register_trans_rot_scale(
-    coords_target: cdt.LabeledPointCloud,
-    coords_trafo: cdt.LabeledPointCloud,
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
 ):
     """Finds affine transformation between coords_target and coords_trafo.
 
@@ -258,8 +258,8 @@ def register_trans_rot_scale(
     between the two point clouds.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -371,8 +371,8 @@ def gen_xform_from_pts(p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
 @cdc.validate_schemas
 def register_icp(
     surface: cdc.Surface,
-    landmarks: cdt.LabeledPointCloud,
-    geo3d: cdt.LabeledPointCloud,
+    landmarks: cdt.LabeledPoints,
+    geo3d: cdt.LabeledPoints,
     niterations=1000,
     random_sample_fraction=0.5,
 ):
@@ -380,8 +380,8 @@ def register_icp(
 
     Args:
         surface (Surface): Surface mesh to which to register the points.
-        landmarks (LabeledPointCloud): Landmarks to use for registration.
-        geo3d (LabeledPointCloud): Points to register to the surface.
+        landmarks (LabeledPoints): Landmarks to use for registration.
+        geo3d (LabeledPoints): Points to register to the surface.
         niterations (int): Number of iterations for the ICP algorithm (default 1000).
         random_sample_fraction (float): Fraction of points to use in each iteration
             (default 0.5).
@@ -475,8 +475,8 @@ def register_icp(
 
 # FIXME: returns only indices?
 def icp_with_full_transform(
-    opt_centers: cdt.LabeledPointCloud,
-    montage_points: cdt.LabeledPointCloud,
+    opt_centers: cdt.LabeledPoints,
+    montage_points: cdt.LabeledPoints,
     max_iterations: int = 50,
     tolerance: float = 500.0,
 ):
@@ -628,15 +628,15 @@ def find_spread_points(points_xr: xr.DataArray) -> np.ndarray:
     ).values
 
 
-def simple_scalp_projection(geo3d: cdt.LabeledPointCloud) -> cdt.LabeledPointCloud:
+def simple_scalp_projection(geo3d: cdt.LabeledPoints) -> cdt.LabeledPoints:
     """Projects 3D coordinates onto a 2D plane using a simple scalp projection.
 
     Args:
-        geo3d (LabeledPointCloud): 3D coordinates of points to project. Requires the
+        geo3d (LabeledPoints): 3D coordinates of points to project. Requires the
             landmarks Nz, LPA, and RPA.
 
     Returns:
-        A LabeledPointCloud containing the 2D coordinates of the projected points.
+        A LabeledPoints containing the 2D coordinates of the projected points.
     """
     lpa = None
     rpa = None

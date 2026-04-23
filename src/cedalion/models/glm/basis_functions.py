@@ -223,7 +223,9 @@ class Gamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        other_dim = xrutils.other_dim(ts, "time", "channel")
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         tau = _to_dict(self.tau, other_dim_values)
@@ -290,7 +292,9 @@ class GammaDeriv(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        other_dim = xrutils.other_dim(ts, "time", "channel")
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         tau = _to_dict(self.tau, other_dim_values)
@@ -361,7 +365,9 @@ class AFNIGamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        other_dim = xrutils.other_dim(ts, "time", "channel")
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         p = _to_dict(self.p, other_dim_values)
@@ -414,7 +420,9 @@ class DiracDelta(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        other_dim = xrutils.other_dim(ts, "time", "channel")
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         n_samples = 2

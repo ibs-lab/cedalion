@@ -84,8 +84,8 @@ maximum_signature_line_length = 88
 autodoc_type_aliases = {
     "NDTimeSeries" : "cdt.NDTimeSeries",
     "cdt.NDTimeSeries" : "cdt.NDTimeSeries",
-    "LabeledPointCloud" : "cdt.LabeledPointCloud",
-    "cdt.LabeledPointCloud" : "cdt.LabeledPointCloud",
+    "LabeledPoints" : "cdt.LabeledPoints",
+    "cdt.LabeledPoints" : "cdt.LabeledPoints",
     "cedalion.Quantity" : "Quantity",
     "pint.Quantity" : "Quantity",
     "Quantity" : "Quantity",

@@ -23,7 +23,7 @@ def int2od(
     """
 
     ts = rec.get_timeseries(ts_input)
-    od = cedalion.nirs.int2od(ts)
+    od = cedalion.nirs.cw.int2od(ts)
     rec.set_timeseries(ts_output, od)
 
 
@@ -38,12 +38,12 @@ def od2conc(
     """Calculate hemoglobin concentrations from optical density data.
 
     Args:
-        rec (Recording): container of timeseries data
-        dpf (dict[float, float]): differential path length factors
-        spectrum (str): label of the extinction coefficients to use (default: "prahl")
-        ts_input (str | None): name of intensity timeseries. If None, this tasks operates
+        rec: container of timeseries data
+        dpf: differential path length factors
+        spectrum: label of the extinction coefficients to use (default: "prahl")
+        ts_input: name of intensity timeseries. If None, this tasks operates
             on the last timeseries in rec.timeseries.
-        ts_output (str): name of optical density timeseries (default: "conc").
+        ts_output: name of optical density timeseries (default: "conc").
     """
 
     ts = rec.get_timeseries(ts_input)
@@ -54,7 +54,7 @@ def od2conc(
         coords={"wavelength": list(dpf.keys())},
     )
 
-    conc = cedalion.nirs.od2conc(ts, rec.geo3d, dpf, spectrum)
+    conc = cedalion.nirs.cw.od2conc(ts, rec.geo3d, dpf, spectrum)
 
     rec.set_timeseries(ts_output, conc)
 
@@ -98,13 +98,13 @@ def sd_dist(
     """Calculate source-detector separations and mask channels outside a range.
 
     Args:
-        rec (Recording): The recording object containing the data.
-        sd_min (Annotated[Quantity, "[length]"]): The minimum source-detector separation.
-        sd_max (Annotated[Quantity, "[length]"]): The maximum source-detector separation.
-        ts_input (str | None, optional): The input time series. Defaults to None.
-        aux_obj_output (str, optional): The key for storing the source-detector distances
+        rec: The recording object containing the data.
+        sd_min: The minimum source-detector separation.
+        sd_max: The maximum source-detector separation.
+        ts_input: The input time series. Defaults to None.
+        aux_obj_output: The key for storing the source-detector distances
             in the auxiliary object. Defaults to "sd_dist".
-        mask_output (str, optional): The key for storing the mask in the recording object.
+        mask_output: The key for storing the mask in the recording object.
             Defaults to "sd_dist".
     """
     ts = rec.get_timeseries(ts_input)

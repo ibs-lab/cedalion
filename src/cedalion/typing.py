@@ -5,7 +5,7 @@ We then use type aliases and annotations to augment these data types with additi
 information about the data they carry. For DataArrays there is a basic mechanism
 to specify and validate data schemas that specify dimension and coordinate names.
 This way we can distinguish between time series DataArrays (NDTimeSeries) and DataArrays
-representing points in space (LabeledPointCloud). By using these aliases in type hints
+representing points in space (LabeledPoints). By using these aliases in type hints
 we indicate to user which kind of DataArray is expected.
 
 Parameters with physical units are represented by cedalion.Quantity. Aliases are defined
@@ -17,11 +17,11 @@ from typing import Annotated, TypeAlias
 
 import xarray as xr
 
-from cedalion.dataclasses.schemas import LabeledPointCloudSchema, NDTimeSeriesSchema
+from cedalion.dataclasses.schemas import LabeledPointsSchema, NDTimeSeriesSchema
 from cedalion import Quantity
 
 #: DataArrays representing labeled points in space.
-LabeledPointCloud: TypeAlias = Annotated[xr.DataArray, LabeledPointCloudSchema]
+LabeledPoints: TypeAlias = Annotated[xr.DataArray, LabeledPointsSchema]
 
 #: DataArrays representing time series.
 NDTimeSeries: TypeAlias = Annotated[xr.DataArray, NDTimeSeriesSchema]

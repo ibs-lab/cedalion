@@ -13,6 +13,7 @@ from numpy.polynomial.legendre import legval
 
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
+
 from cedalion.sigproc.frequency import sampling_rate
 
 from .basis_functions import TemporalBasisFunction
@@ -36,7 +37,11 @@ class DesignMatrix:
         return result
 
     def __repr__(self):
-        cregs = ",".join([f"'{r}'" for r in self.common.regressor.values])
+        cregs = (
+            ",".join([f"'{r}'" for r in self.common.regressor.values])
+            if self.common is not None
+            else ""
+        )
         cwregs = ",".join(
             [f"'{r}'" for cw in self.channel_wise for r in cw.regressor.values]
         )
@@ -64,6 +69,14 @@ class DesignMatrix:
         return DesignMatrix(
             common=common,
             channel_wise=self.channel_wise + other.channel_wise
+        )
+
+    def copy(self):
+        """Create a copy of this design matrix."""
+
+        return DesignMatrix(
+            common=self.common.copy() if self.common is not None else None,
+            channel_wise=[i.copy() for i in self.channel_wise]
         )
 
 
@@ -186,7 +199,10 @@ def hrf_regressors(
     components = basis.component.values
 
     # could be "chromo" or "wavelength"
-    other_dim = xrutils.other_dim(ts, "channel", "time")
+    # Determine spatial dimension dynamically (e.g., "channel", "parcel", ...)
+    # instead of assuming "channel", to support multiple representations.
+    spatial = xrutils.spatial_dim(ts)
+    other_dim = xrutils.other_dim(ts, spatial, "time")
 
     n_time = ts.sizes["time"]
     n_other = ts.sizes[other_dim]
@@ -288,7 +304,9 @@ def hrf_extract_regressors(
     components = basis.component.values
 
     # could be "chromo" or "wavelength"
-    other_dim = xrutils.other_dim(ts, "channel", "time")
+    # other_dim = xrutils.other_dim(ts, "channel", "time")
+    spatial = xrutils.spatial_dim(ts)
+    other_dim = xrutils.other_dim(ts, spatial, "time")
 
     n_time = basis.sizes["time"]
     n_other = ts.sizes[other_dim]
@@ -356,8 +374,11 @@ def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
     Returns:
         xr.DataArray: A DataArray containing the drift regressors.
     """
-    dim3 = xrutils.other_dim(ts, "channel", "time")
+    # dim3 = xrutils.other_dim(ts, "channel", "time")
+    spatial = xrutils.spatial_dim(ts)
+    dim3 = xrutils.other_dim(ts, spatial, "time")
     ndim3 = ts.sizes[dim3]
+
 
     nt = ts.sizes["time"]
 
@@ -366,6 +387,12 @@ def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
     for i in range(1, drift_order + 1):
         tmp = np.arange(1, nt + 1, dtype=float) ** (i)
         tmp /= tmp[-1]
+        # Center higher drift orders to stabilize RecursiveLS.
+        # Uncentered ramp + constant can cause numerical instability in
+        # statsmodels RLS.
+        if i > 0:
+            tmp -= tmp.mean()
+
         drift_regressors[:, i, 0] = tmp
 
     for i in range(1, ndim3):
@@ -393,7 +420,9 @@ def drift_legendre_regressors(ts : cdt.NDTimeSeries, order : int) -> DesignMatri
         xr.DataArray: A DataArray containing the drift regressors.
     """
 
-    dim3 = xrutils.other_dim(ts, "channel", "time")
+    # dim3 = xrutils.other_dim(ts, "channel", "time")
+    spatial = xrutils.spatial_dim(ts)
+    dim3 = xrutils.other_dim(ts, spatial, "time")
     ndim3 = ts.sizes[dim3]
 
     nt = ts.sizes["time"]
@@ -433,6 +462,8 @@ def drift_cosine_regressors(ts: cdt.NDTimeSeries, fmax: cdt.QFrequency) -> Desig
     """
 
     dim3 = xrutils.other_dim(ts, "channel", "time")
+    spatial = xrutils.spatial_dim(ts)
+    dim3 = xrutils.other_dim(ts, spatial, "time")
     ndim3 = ts.sizes[dim3]
 
     nt = ts.sizes["time"]
@@ -530,7 +561,9 @@ def _regressors_from_selected_short_channels(
 
     coords_short_channels = regressors.channel
 
-    dim3 = xrutils.other_dim(ts_long, "channel", "time")
+    # dim3 = xrutils.other_dim(ts_long, "channel", "time")
+    spatial = xrutils.spatial_dim(ts_long)
+    dim3 = xrutils.other_dim(ts_long, spatial, "time")
 
     keep_coords = ["time", "samples", dim3]
     drop_coords = [i for i in regressors.coords.keys() if i not in keep_coords]
@@ -549,14 +582,14 @@ def _regressors_from_selected_short_channels(
 
 
 def closest_short_channel_regressor(
-    ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries, geo3d: cdt.LabeledPointCloud
+    ts_long: cdt.NDTimeSeries, ts_short: cdt.NDTimeSeries, geo3d: cdt.LabeledPoints
 ):
     """Create channel-wise regressors using the closest nearby short channel.
 
     Args:
         ts_long (NDTimeSeries): Time series of long channels
         ts_short (NDTimeSeries): Time series of short channels
-        geo3d (LabeledPointCloud): Probe geometry
+        geo3d (LabeledPoints): Probe geometry
 
     Returns:
         regressors (xr.DataArray): Channel-wise regressor
