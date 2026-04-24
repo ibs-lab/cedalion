@@ -1,3 +1,5 @@
+"""Mesh decimation, voxel-to-vertex mapping, and scalar upscaling utilities."""
+
 from collections import Counter
 
 import numpy as np
@@ -15,10 +17,22 @@ def upscale_scalars(
     lowres_mesh: cdc.TrimeshSurface,
     lowres_scalars: np.ndarray,
 ):
-    """Upscale a scalar function on a low-resolution mesh to a higher-resolution.
+    """Upscale a scalar function from a low-resolution mesh to a higher-resolution one.
 
-    Operates on a triangulated surface mesh at two resolutions, where the low-res. mesh
-    is a subset of the high-res mesh.
+    Uses barycentric interpolation: for each high-res vertex, the closest point on the
+    low-res mesh is found and the scalar value is interpolated from the enclosing face's
+    three vertices.  The low-res mesh must be a spatial subset of the high-res mesh
+    (e.g. produced by :func:`decimate_mesh`).
+
+    Args:
+        highres_mesh: Target surface at higher resolution.
+        lowres_mesh: Source surface at lower resolution.
+        lowres_scalars: Scalar values defined at each vertex of ``lowres_mesh``,
+            shape ``(n_lowres_vertices,)``.
+
+    Returns:
+        NumPy array of scalar values interpolated onto ``highres_mesh`` vertices,
+        shape ``(n_highres_vertices,)``.
     """
 
     # For each high-res vertex, find the closest point on the low-res mesh
@@ -45,7 +59,28 @@ def decimate_mesh(
     selected=False,
     selection_threshold=0.5,
 ):
+    """Decimate a triangulated surface mesh to a target vertex count.
 
+    Uses PyMeshLab's quadric edge collapse algorithm.  When ``vertex_quality``
+    is provided, it is used as a per-vertex quality scalar to guide the
+    decimation.  Optionally, only vertices below a quality threshold are
+    decimated when ``selected=True``.
+
+    Args:
+        surface: Input :class:`~cedalion.dataclasses.TrimeshSurface`.
+        nvertex_target: Desired number of vertices in the output mesh.
+        vertex_quality: Optional per-vertex quality scalar array of shape
+            ``(n_vertices,)`` used to weight the decimation.
+        selected: If ``True``, only decimate vertices whose quality is below
+            ``selection_threshold``.
+        selection_threshold: Quality threshold for vertex selection when
+            ``selected=True``.
+
+    Returns:
+        New :class:`~cedalion.dataclasses.TrimeshSurface` with approximately
+        ``nvertex_target`` vertices.  Per-vertex coordinates stored in
+        ``surface.vertex_coords`` are transferred via nearest-neighbour lookup.
+    """
     if vertex_quality is not None:
         mm_before = pymeshlab.Mesh(
             surface.mesh.vertices, surface.mesh.faces, v_scalar_array=vertex_quality
@@ -98,6 +133,23 @@ def decimate_mesh(
 
 
 def map_voxels_to_vertices(surface: cdc.TrimeshSurface, cell_coords):
+    """Map voxel centres to their nearest surface vertex.
+
+    Projects each voxel coordinate onto the surface mesh and then finds the
+    nearest vertex.  Processed in chunks to limit memory use.
+
+    Args:
+        surface: Target :class:`~cedalion.dataclasses.TrimeshSurface`.
+        cell_coords: Array of voxel-centre coordinates, shape ``(N, 3)``.
+
+    Returns:
+        Tuple ``(voxel2vertex_indices, voxel_count)``:
+
+        - **voxel2vertex_indices** (np.ndarray[int], shape ``(N,)``): index of the
+          nearest vertex for each voxel.
+        - **voxel_count** (np.ndarray[int], shape ``(n_vertices,)``): number of
+          voxels mapped to each vertex.
+    """
     chunk_size = 20000
     voxel2vertex_indices = []
     pq = trimesh.proximity.ProximityQuery(surface.mesh)
@@ -130,6 +182,30 @@ def parcel_aware_voxels_to_vertices_map(
     ),
     voxel_stealing=False,
 ):
+    """Map voxel centres to surface vertices respecting parcel boundaries.
+
+    Each voxel is mapped only to vertices within the same cortical parcel,
+    preventing leakage across parcel boundaries.  Optionally, vertices that
+    would otherwise receive no voxel can "steal" the nearest voxel from a
+    neighbouring vertex (``voxel_stealing``).
+
+    Args:
+        surface: Target :class:`~cedalion.dataclasses.TrimeshSurface` whose
+            vertices carry a ``"parcel"`` coordinate.
+        cell_coords: xr.DataArray of voxel-centre coordinates with a
+            ``"parcel"`` coordinate that groups voxels by parcel.
+        skip_parcels: Parcel labels to ignore (typically medial-wall parcels).
+        voxel_stealing: If ``True``, reassign voxels to ensure every parcel
+            vertex gets at least one voxel via linear assignment.
+
+    Returns:
+        Tuple ``(voxel2vertex_indices, voxel_count)``:
+
+        - **voxel2vertex_indices** (xr.DataArray[int]): nearest vertex index for
+          each voxel (``-1`` for skipped parcels).
+        - **voxel_count** (np.ndarray[int], shape ``(n_vertices,)``): number of
+          voxels mapped to each vertex.
+    """
     voxel2vertex_indices = xr.DataArray(
         np.ones(len(cell_coords), dtype=int) * -1,
         dims="label",
@@ -147,6 +223,7 @@ def parcel_aware_voxels_to_vertices_map(
         if parcel in skip_parcels:
             continue
 
+        # mask of a all vertices with this parcel label
         surf_vertices_mask = surf_vertices.parcel.values == parcel
 
         # build a tree with vertices of only this parcel
@@ -162,7 +239,10 @@ def parcel_aware_voxels_to_vertices_map(
         # translate indices to indices of surface vertices
         vertex_indices = surf_vertices_indices_all[surf_vertices_mask][vertex_indices]
 
+        # number of vertices mapped to voxels
         nvertices_mapped = len(set(vertex_indices))
+
+        # number of vertices with the current parcel label
         nvertices_parcel = np.sum(surf_vertices_mask)
 
         voxel2vertex_indices.loc[parcel_cell_coords.label] = vertex_indices
@@ -180,15 +260,34 @@ def parcel_aware_voxels_to_vertices_map(
             ]
 
             print(
-                f"stealing {len(unassigned_vertex_indices)} voxels for parcel {parcel}"
+                f"parcel {parcel}: {nvertices_mapped}/{nvertices_parcel} verts mapped. "
+                f"reassign {len(unassigned_vertex_indices)} voxel(s) to verts "
+                "without voxels."
             )
 
+            # array of only those voxels belonging to this parcel
+            current_v2v = voxel2vertex_indices[parcel_cell_coords.label.values]
+
+            # don't reassign voxels from vertices that only have a single one
+            unique_assigned_vidx, unique_vertex_voxel_counts = np.unique(
+                current_v2v,
+                return_counts=True,
+            )
+            vidx_with_only_one_voxel = unique_assigned_vidx[
+                unique_vertex_voxel_counts == 1
+            ]
+            # flag those voxels that should not be reassigned
+            keep_mask = np.isin(current_v2v, vidx_with_only_one_voxel)
+
             # distance between all unassigned vertices and all voxels in this parcel
+            # shape (len(unassigned_vertex_positions), len(arcel_cell_coords))
             dists = scipy.spatial.distance.cdist(
                 unassigned_vertex_positions,
                 parcel_cell_coords.values,
                 metric="euclidean",
             )
+            dists[:, keep_mask] += 1000 # increase distance to make them unattractive
+
             # each vertex without voxel gets the closest voxel assigned
             i_vertices, i_voxels = scipy.optimize.linear_sum_assignment(dists)
 
@@ -196,6 +295,16 @@ def parcel_aware_voxels_to_vertices_map(
                 unassigned_vertex_indices
             )
 
+            # afterwards all vertices of this parcel should be mapped to a voxel
+
+            nvertices_mapped_after = len(
+                set(voxel2vertex_indices[parcel_cell_coords.label.values].values)
+            )
+            if nvertices_mapped_after != nvertices_parcel:
+                raise RuntimeError(
+                    "Even after voxel stealing there are still "
+                    "not all vertices assigned."
+                )
 
     voxel_count = np.zeros(surface.nvertices)
     for k, v in Counter(voxel2vertex_indices.values).items():

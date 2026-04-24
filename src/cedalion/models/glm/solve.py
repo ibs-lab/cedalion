@@ -21,6 +21,21 @@ import cedalion.math.ar_irls
 
 
 def _channel_fit(y, x, noise_model="ols", ar_order=30):
+    """Fit a single channel's time series with the specified linear noise model.
+
+    Args:
+        y: Dependent variable (pandas Series or 1-D array).
+        x: Design matrix (pandas DataFrame or 2-D array).
+        noise_model: Regression model to use.  One of ``"ols"``, ``"rls"``,
+            ``"wls"``, ``"ar_irls"``, ``"gls"``, ``"glsar"``.
+        ar_order: AR model order used by ``"ar_irls"`` and ``"glsar"``.
+
+    Returns:
+        Fitted statsmodels regression result object.
+
+    Raises:
+        ValueError: If ``noise_model`` is not one of the supported options.
+    """
     available_models = ["ols", "rls", "wls", "ar_irls", "gls", "glsar"]
 
     if noise_model not in available_models:
@@ -32,13 +47,19 @@ def _channel_fit(y, x, noise_model="ols", ar_order=30):
     if noise_model == "ols":
         reg_result = statsmodels.api.OLS(y, x).fit()
     elif noise_model == "rls":
-        reg_result = statsmodels.api.RecursiveLS(y, x).fit()
+        reg_result = statsmodels.api.RecursiveLS(
+            y,
+            x,
+            initialization="known",
+            initial_state=np.zeros(x.shape[1]),
+            initial_state_cov=np.eye(x.shape[1]) * 1e6,
+        ).fit()
     elif noise_model == "wls":
         reg_result = statsmodels.api.WLS(y, x).fit()
     elif noise_model == "ar_irls":
         reg_result = cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=ar_order)
     elif noise_model == "gls":
-        ols_resid = statsmodels.api.OLS(y, x).fit().resid
+        ols_resid = statsmodels.api.OLS(y, x).fit().resid.values  # need a numpy array
         resid_fit = statsmodels.api.OLS(
             ols_resid[1:],
             statsmodels.api.add_constant(ols_resid[:-1]),

@@ -1,3 +1,5 @@
+"""Ellipsoid head model for estimating landmark positions from head measurements."""
+
 import numpy as np
 import scipy.optimize
 import cedalion.typing as cdt
@@ -8,6 +10,23 @@ import cedalion.dataclasses as cdc
 def get_landmarks_for_headsize(
     circumference: cdt.QLength, nz_cz_iz: cdt.QLength, lpa_cz_rpa: cdt.QLength
 ) -> cdt.LabeledPoints:
+    """Estimate 10-20 landmark positions for a given head size on an ellipsoidal model.
+
+    Fits a tri-axial ellipsoid whose arc lengths match the provided head circumference
+    and two arc measurements, then returns the positions of Cz, LPA, RPA, Nz, and Iz
+    in the fitted ellipsoid coordinate system.
+
+    Args:
+        circumference: Head circumference (e.g. 560 mm).
+        nz_cz_iz: Arc length from Nz to Iz passing through Cz (anterior–posterior
+            arc, scaled by 1.2/2 internally to match the 10-20 convention).
+        lpa_cz_rpa: Arc length from LPA to RPA passing through Cz (lateral arc,
+            scaled by 1.2/2 internally).
+
+    Returns:
+        LabeledPoints with five landmarks (``Cz``, ``LPA``, ``RPA``, ``Nz``, ``Iz``)
+        in the ``"ellipsoid"`` CRS, with units of mm.
+    """
     def ellipse_1020_costfunc(
         params: np.ndarray,
         circumference: float,

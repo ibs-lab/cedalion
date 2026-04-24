@@ -8,7 +8,6 @@ import pint
 import xarray as xr
 
 import cedalion.typing as cdt
-import cedalion.dataclasses as cdc
 from cedalion import Quantity, units
 from cedalion.sigproc.frequency import sampling_rate
 import cedalion.xrutils as xrutils
@@ -224,10 +223,9 @@ class Gamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-
-        spatial_dim = cdc.get_spatial_dimension(ts)
-        other_dim = xrutils.other_dim(ts, "time", spatial_dim)
-
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         tau = _to_dict(self.tau, other_dim_values)
@@ -294,8 +292,9 @@ class GammaDeriv(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        spatial_dim = cdc.get_spatial_dimension(ts)
-        other_dim = xrutils.other_dim(ts, "time", spatial_dim)
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         tau = _to_dict(self.tau, other_dim_values)
@@ -366,9 +365,9 @@ class AFNIGamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-
-        spatial_dim = cdc.get_spatial_dimension(ts)
-        other_dim = xrutils.other_dim(ts, "time", spatial_dim)
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         p = _to_dict(self.p, other_dim_values)
@@ -421,8 +420,9 @@ class DiracDelta(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        spatial_dim = cdc.get_spatial_dimension(ts)
-        other_dim = xrutils.other_dim(ts, "time", spatial_dim)
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         n_samples = 2

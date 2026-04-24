@@ -1,5 +1,9 @@
 from . forward_model import ForwardModel
-from . head_model import TwoSurfaceHeadModel, get_standard_headmodel
+from .head_model import (
+    TwoSurfaceHeadModel,
+    get_standard_headmodel,
+    get_inflated_cortex_surface,
+)
 from . image_recon import (
     ImageRecon,
     OriginalGaussianSpatialBasisFunctions,

@@ -842,6 +842,18 @@ def apply_inv_sensitivity(
 
 
 def stack_flat_vertex(array: xr.DataArray):
+    """Stack ``chromo`` and ``vertex`` dimensions into a single ``flat_vertex`` dim.
+
+    Args:
+        array: DataArray with ``"chromo"`` and ``"vertex"`` dimensions.
+
+    Returns:
+        DataArray with a new stacked ``"flat_vertex"`` dimension.
+
+    Raises:
+        ValueError: If ``array`` is missing either the ``"chromo"`` or
+            ``"vertex"`` dimension.
+    """
     dims = ("chromo", "vertex")
 
     for dim in dims:
@@ -852,10 +864,30 @@ def stack_flat_vertex(array: xr.DataArray):
 
 
 def unstack_flat_vertex(array: xr.DataArray):
+    """Unstack the ``flat_vertex`` dimension back into ``chromo`` and ``vertex``.
+
+    Args:
+        array: DataArray with a ``"flat_vertex"`` multi-index dimension.
+
+    Returns:
+        DataArray with separate ``"chromo"`` and ``"vertex"`` dimensions.
+    """
     return xrutils.unstack(array, "flat_vertex", ("chromo", "vertex"))
 
 
 def stack_flat_channel(array: xr.DataArray):
+    """Stack ``wavelength`` and ``channel`` dimensions into a single ``flat_channel`` dim.
+
+    Args:
+        array: DataArray with ``"wavelength"`` and ``"channel"`` dimensions.
+
+    Returns:
+        DataArray with a new stacked ``"flat_channel"`` dimension.
+
+    Raises:
+        ValueError: If ``array`` is missing either the ``"wavelength"`` or
+            ``"channel"`` dimension.
+    """
     dims = ("wavelength", "channel")
 
     for dim in dims:
@@ -866,12 +898,43 @@ def stack_flat_channel(array: xr.DataArray):
 
 
 def unstack_flat_channel(array: xr.DataArray):
+    """Unstack the ``flat_channel`` dimension back into ``wavelength`` and ``channel``.
+
+    Args:
+        array: DataArray with a ``"flat_channel"`` multi-index dimension.
+
+    Returns:
+        DataArray with separate ``"wavelength"`` and ``"channel"`` dimensions.
+    """
     return xrutils.unstack(array, "flat_channel", ("wavelength", "channel"))
 
 
 def image_to_channel_space(
     Adot: xr.DataArray, img: xr.DataArray, spectrum: str | None = None
 ):
+    """Project an image-space quantity into channel (measurement) space via Adot.
+
+    Performs the forward projection ``y = Adot @ img`` where the shared vertex
+    dimension is contracted.  If ``img`` is in concentration units, the
+    chromophore-stacked sensitivity matrix is used; if it is in absorption
+    units (1/length), the raw Adot is used directly.
+
+    Args:
+        Adot: Sensitivity matrix with a ``"vertex"`` dimension.
+        img: Image DataArray with a ``"vertex"`` dimension.  Must be quantified
+            in either concentration (``"[concentration]"``) or absorption
+            (``"[1/length]"``) units.
+        spectrum: Extinction coefficient spectrum (e.g. ``"prahl"``). Required
+            when ``img`` has concentration units.
+
+    Returns:
+        DataArray in channel space with ``"wavelength"`` and ``"channel"``
+        dimensions.
+
+    Raises:
+        ValueError: If ``img`` has incompatible units or ``spectrum`` is ``None``
+            when concentration units are detected.
+    """
     common_dim = set(Adot.dims) & set (img.dims)
     assert len(common_dim) == 1
     common_dim = next(iter(common_dim))

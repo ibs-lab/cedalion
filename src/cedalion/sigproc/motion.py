@@ -299,10 +299,10 @@ def pca(
     Boston University Neurophotonics Center
     https://github.com/BUNPC/Homer3
 
-    Inputs:
+    Args:
         ts: The time series to be motion corrected.
         t_inc: The time series indicating the presence of motion artifacts.
-        n_sv: Specifies the number of prinicpal components to remove from the
+        n_sv: Specifies the number of principal components to remove from the
             data. If n_sv < 1 then the filter removes the first n components of the data
             that removes a fraction of the variance up to n_sv.
 

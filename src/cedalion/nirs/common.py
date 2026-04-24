@@ -1,3 +1,5 @@
+"""Shared NIRS utilities: extinction coefficients and channel-distance helpers."""
+
 from __future__ import annotations
 
 import numpy as np

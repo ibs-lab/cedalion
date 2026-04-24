@@ -25,7 +25,23 @@ def segmented_cmap(
     under: None | ColorType = None,
     bad: None | ColorType = None,
 ) -> tuple[Normalize, LinearSegmentedColormap]:
-    """Create a linear segmented colormap."""
+    """Create a linear segmented colormap from (value, color) breakpoints.
+
+    Args:
+        name: Name for the colormap (used by matplotlib internally).
+        vmin: Data value corresponding to the bottom of the colormap.
+        vmax: Data value corresponding to the top of the colormap.
+        segments: List of ``(value, color)`` pairs defining the colour
+            breakpoints.  Values are normalised by ``vmin``/``vmax`` before
+            being passed to :class:`~matplotlib.colors.LinearSegmentedColormap`.
+        over: Color for out-of-range values above ``vmax`` (optional).
+        under: Color for out-of-range values below ``vmin`` (optional).
+        bad: Color for masked/NaN values (optional).
+
+    Returns:
+        Tuple ``(norm, cmap)`` — a :class:`~matplotlib.colors.Normalize` instance
+        and the constructed :class:`~matplotlib.colors.LinearSegmentedColormap`.
+    """
 
     norm = Normalize(vmin, vmax)
 
@@ -68,10 +84,30 @@ def p_values_cmap() -> tuple[Normalize, LinearSegmentedColormap]:
 
 
 def threshold_cmap(
-    name, vmin, vmax, threshold, higher_is_better=True
+    name,
+    vmin,
+    vmax,
+    threshold,
+    higher_is_better=True,
+    colors=["#000000", "#DC3220", "#5D3A9B", "#0C7BDC"],
 ) -> tuple[Normalize, LinearSegmentedColormap]:
-    """A read and blue colormap with a distinctive break at a threshold value."""
-    colors = ["#000000", "#DC3220", "#5D3A9B", "#0C7BDC"]
+    """Create a red-and-blue colormap with a sharp break at a quality threshold.
+
+    Args:
+        name: Colormap name.
+        vmin: Minimum data value.
+        vmax: Maximum data value.
+        threshold: Value at which the colour transitions sharply.
+        higher_is_better: If ``True`` (default), colours below the threshold
+            are "bad" (warm) and colours above are "good" (cool).  Reversed
+            when ``False``.
+        colors: Four colours ``[vmin, threshold-, threshold+, vmax]``.
+
+    Returns:
+        Tuple ``(norm, cmap)`` — a :class:`~matplotlib.colors.Normalize` and the
+        constructed :class:`~matplotlib.colors.LinearSegmentedColormap`.
+    """
+
     values = [vmin, threshold, threshold, vmax]
 
     if not higher_is_better:
@@ -90,10 +126,23 @@ def threshold_cmap(
     return norm, cmap
 
 
-def mask_cmap(true_is_good=True) -> tuple[Normalize, LinearSegmentedColormap]:
-    """A red and blue colormap to color binary masks."""
+def mask_cmap(
+    true_is_good=True, colors=["#DC3220", "#DC3220", "#0C7BDC", "#0C7BDC"]
+) -> tuple[Normalize, LinearSegmentedColormap]:
+    """Create a binary red/blue colormap for boolean quality masks.
 
-    colors = ["#DC3220", "#DC3220", "#0C7BDC", "#0C7BDC"]
+    Args:
+        true_is_good: If ``True`` (default), ``True`` values are shown in blue
+            (good) and ``False`` values in red (bad).  Reversed when ``False``.
+        colors: Four colours defining the two-level step (``[0, 0.5, 0.5, 1]``
+            breakpoints).
+
+    Returns:
+        Tuple ``(norm, cmap)`` — a :class:`~matplotlib.colors.Normalize` for
+        ``[0, 1]`` and the constructed
+        :class:`~matplotlib.colors.LinearSegmentedColormap`.
+    """
+
     if not true_is_good:
         colors = colors[::-1]
 

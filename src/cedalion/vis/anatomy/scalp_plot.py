@@ -5,7 +5,7 @@ import matplotlib.pyplot as p
 import numpy as np
 import xarray as xr
 from matplotlib.colors import Normalize
-from matplotlib.patches import Circle, Ellipse
+from matplotlib.patches import Circle, Ellipse, FancyArrowPatch
 from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
 from PIL import Image
@@ -38,6 +38,7 @@ def scalp_plot(
     cb_ticks_labels: list[(float, str)] | None = None,
     add_colorbar: bool = True,
     zorder : str | None = None,
+    draw_arcs : bool = False,
 ):
     """Creates a 2D plot of the head with channels coloured according to a given metric.
 
@@ -67,6 +68,8 @@ def scalp_plot(
         add_colorbar: if true a colorbar is added to the plot
         zorder: 'ascending' or 'descending' or None. Controls whether channels
             with high or low metric values are plotted on top.
+        draw_arcs: if true, draw channel lines as arcs instead of straight lines to
+            avoid overlap.
 
     Initial Contributors:
         - Laura Carlton | lcarlton@bu.edu | 2024
@@ -140,11 +143,15 @@ def scalp_plot(
     extend_upper = False
     extend_lower = False
 
+    smallest_channel_dist = channel_dists.min().item()
+    channel_dist_range = channel_dists.max().item() - smallest_channel_dist
+
     for ch,src,det,dist in zip(channel, source, detector, channel_dists):
         s = geo2d.loc[src]
         d = geo2d.loc[det]
+        dist = dist.item()
 
-        if (min_dist is not None) and (dist.item() < min_dist):
+        if (min_dist is not None) and (dist < min_dist):
             continue
 
         used_sources.add(str(src))
@@ -163,12 +170,15 @@ def scalp_plot(
         if (normed_v < 0).any():
             extend_lower = True
 
+        # color
         c = cmap(normed_v)
-        line_fmt = {'c' : c, 'ls' : '-', 'lw' : channel_lw, 'alpha' : 1.0}
 
+        # opacity
+        alpha = 1.0
         if (min_metric is not None) and (v < min_metric):
-            line_fmt['alpha'] = 0.4
+            alpha = 0.4
 
+        # zorder
         if zorder is None:
             zorder_line = 0
         elif zorder == "ascending":
@@ -178,8 +188,23 @@ def scalp_plot(
         else:
             raise ValueError(f"unexpected value '{zorder}' for zorder.")
 
+        # curvature
+        if draw_arcs:
+            rad = ((dist - smallest_channel_dist) / channel_dist_range).magnitude * 0.15
+        else:
+            rad = 0.
 
-        ax.plot([s[0], d[0]], [s[1], d[1]], zorder=zorder_line, **line_fmt)
+        arrow = FancyArrowPatch(
+            posA=s.values,
+            posB=d.values,
+            connectionstyle=f"arc3,rad={rad:.3f}",
+            arrowstyle="-",
+            color=c,
+            linewidth=channel_lw,
+            alpha=alpha,
+            zorder=zorder_line,
+        )
+        ax.add_patch(arrow)
 
     # draw markers or labels for sources and detectors
     # /!\ isin with np strings and sets is tricky. probably because of the hash

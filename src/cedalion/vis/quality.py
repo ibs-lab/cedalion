@@ -13,6 +13,18 @@ def plot_quality_mask(
     true_is_good=True,
     figsize=(12, 10),
 ):
+    """Plot a boolean quality mask as a colour-coded channel × time heatmap.
+
+    Args:
+        mask: Boolean DataArray with ``"channel"`` and ``"time"`` dimensions.
+        cb_label: Label for the colorbar.
+        bool_labels: Two-element list giving the colorbar tick labels for
+            ``False`` and ``True`` values respectively (default:
+            ``["TAINTED", "CLEAN"]``).
+        true_is_good: Passed to :func:`~cedalion.vis.colors.mask_cmap`; if
+            ``True`` (default), ``True`` is rendered in blue (good).
+        figsize: Matplotlib figure size tuple.
+    """
     mask_norm, mask_cmap = colors.mask_cmap(true_is_good)
 
     # plot the binary heatmap

@@ -9,6 +9,8 @@ import xarray as xr
 
 
 class TissueType(Enum):
+    """Canonical tissue-type labels used to look up optical properties."""
+
     SKIN = auto()
     SKULL = auto()
     DM = auto()
@@ -85,7 +87,26 @@ TISSUE_PROPS_REFRACTION = {
 def get_tissue_properties(
     segmentation_masks: xr.DataArray, wavelengths: list
 ) -> np.ndarray:
-    """Return tissue properties for the given segmentation mask."""
+    """Assemble a tissue-property array for Monte Carlo light transport simulation.
+
+    For each tissue type present in ``segmentation_masks`` the absorption,
+    scattering, anisotropy, and refraction coefficients are looked up from the
+    module-level dictionaries and stored in the output array.  Index 0 is
+    reserved for the background (vacuum).
+
+    Args:
+        segmentation_masks: xr.DataArray with dimension ``"segmentation_type"``
+            whose integer values encode tissue identity.
+        wavelengths: List of wavelengths for which properties are required.
+            Currently the properties are wavelength-independent (FIXME).
+
+    Returns:
+        NumPy array of shape ``(n_tissues + 1, 4, n_wavelengths)`` where axis 1
+        encodes ``[absorption, scattering, anisotropy, refraction]``.
+
+    Raises:
+        ValueError: If a segmentation type string is not in :data:`TISSUE_LABELS`.
+    """
     ntissues = segmentation_masks.sizes["segmentation_type"] + 1
     nwavelengths = len(wavelengths)
     tissue_props = np.zeros((ntissues, 4, nwavelengths))

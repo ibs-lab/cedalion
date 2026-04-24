@@ -1,3 +1,5 @@
+"""Read Homer2/AtlasViewer ``.nirs`` MATLAB files into :class:`~cedalion.Recording` objects."""
+
 from pathlib import Path
 
 import numpy as np
@@ -186,6 +188,15 @@ def _read_aux(file : dict[str, np.ndarray]):
 
 
 def read_nirs(fname: Path | str):
+    """Read a Homer2/AtlasViewer ``.nirs`` MATLAB file into a Recording.
+
+    Args:
+        fname: Path to the ``.nirs`` file.
+
+    Returns:
+        :class:`~cedalion.dataclasses.Recording` containing the amplitude time series,
+        3-D optode geometry, stimulus events, and (if present) auxiliary channels.
+    """
     if isinstance(fname, Path):
         fname = str(fname)
 

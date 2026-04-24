@@ -40,9 +40,18 @@ def load_Adot(fn: str):
 
 
 def save_fluence(fn : str, fluence_all, fluence_at_optodes):
-    """Save forward model computation results.
+    """Save forward model computation results (deprecated).
 
-    This method uses a lossy compression algorithm to reduce file size.
+    .. deprecated::
+        Use :class:`FluenceFile` instead. This function uses a lossy compression
+        algorithm to reduce file size.
+
+    Args:
+        fn: Path to the output HDF5 file.
+        fluence_all: Full volumetric fluence DataArray
+            (dims: ``label``, ``wavelength``, ``i``, ``j``, ``k``).
+        fluence_at_optodes: Optode-pair fluence DataArray
+            (dims: ``optode1``, ``optode2``, ``wavelength``).
     """
 
     deprecated_api(
@@ -130,7 +139,39 @@ def load_fluence(fn : str):
 
 
 class FluenceFile:
+    """Context-manager for reading and writing fluence HDF5 files.
+
+    Fluence files store the output of Monte Carlo photon simulations:
+
+    - ``fluence_all``: the full volumetric fluence for each optode and wavelength,
+      shape ``(n_optodes, n_wavelengths, i, j, k)``, stored with LZF compression.
+    - ``fluence_at_optodes``: the fluence sampled at all optode positions,
+      shape ``(n_optodes, n_optodes, n_wavelengths)``.
+
+    Use as a context manager to ensure the underlying HDF5 file is flushed and
+    closed even if an exception occurs::
+
+        with FluenceFile("fluence.h5", mode="w") as ff:
+            ff.create_fluence_dataset(optodes, wavelengths, shape, units)
+            ...
+
+    Attributes:
+        file: The underlying open :class:`h5py.File` object.
+        optode_labels: List of optode label strings (populated on read/create).
+        wavelengths: List of wavelength floats (populated on read/create).
+    """
+
     def __init__(self, fname : str | Path, mode="r"):
+        """Open a fluence HDF5 file.
+
+        Args:
+            fname: Path to the HDF5 file.
+            mode: File mode — ``"r"`` (read-only) or ``"w"`` (write/create).
+
+        Raises:
+            ValueError: If opening in read mode and the file does not contain
+                the expected ``fluence_all`` and ``fluence_at_optodes`` datasets.
+        """
         self.file = h5py.File(fname, mode)
 
         f = self.file
@@ -160,6 +201,18 @@ class FluenceFile:
         fluence_shape : tuple[int, int, int],
         units : str
     ):
+        """Create and initialise the ``fluence_all`` dataset in the HDF5 file.
+
+        Must be called once after opening in write mode, before any calls to
+        :meth:`set_fluence_by_label` or :meth:`set_fluence_by_index`.
+
+        Args:
+            optode_pos: Labeled optode positions; labels and types are stored as
+                dataset attributes.
+            wavelengths: Array of wavelength values (nm).
+            fluence_shape: Voxel grid shape ``(ni, nj, nk)`` for the fluence volume.
+            units: Physical units string for the fluence values (e.g. ``"mm^-2"``).
+        """
         f = self.file
 
         dims = ["label", "wavelength", "i", "j", "k"]
@@ -189,19 +242,47 @@ class FluenceFile:
         f["fluence_all"].attrs["units"] = units
 
     def get_fluence(self, label : str, wavelength : float) -> np.ndarray:
+        """Return the volumetric fluence for one optode and wavelength.
+
+        Args:
+            label: Optode label string.
+            wavelength: Wavelength value (must match one stored in the file).
+
+        Returns:
+            NumPy array of shape ``(ni, nj, nk)``.
+        """
         i_label = self.optode_labels.index(label)
         i_wl = self.wavelengths.index(wavelength)
         return self.file["fluence_all"][i_label, i_wl, :,:,:]
 
     def set_fluence_by_label(self, label: str, wavelength: float, fluence: np.ndarray):
+        """Write the volumetric fluence for one optode and wavelength (by label).
+
+        Args:
+            label: Optode label string.
+            wavelength: Wavelength value.
+            fluence: Array of shape ``(ni, nj, nk)`` to store.
+        """
         i_label = self.optode_labels.index(label)
         i_wl = self.wavelengths.index(wavelength)
         self.set_fluence_by_index(i_label, i_wl, fluence)
 
     def set_fluence_by_index(self, i_label: int, i_wl: int, fluence: np.ndarray):
+        """Write the volumetric fluence for one optode and wavelength (by index).
+
+        Args:
+            i_label: Zero-based optode index.
+            i_wl: Zero-based wavelength index.
+            fluence: Array of shape ``(ni, nj, nk)`` to store.
+        """
         self.file["fluence_all"][i_label, i_wl, :, :, :] = fluence
 
     def get_fluence_at_optodes(self):
+        """Return the optode-pair fluence as an xr.DataArray.
+
+        Returns:
+            xr.DataArray with dims ``(optode1, optode2, wavelength)``.
+        """
         ds = self.file["fluence_at_optodes"]
         fluence_at_optodes = xr.DataArray(
             ds,
@@ -216,6 +297,12 @@ class FluenceFile:
         return fluence_at_optodes
 
     def set_fluence_at_optodes(self, fluence_at_optodes : xr.DataArray):
+        """Store the optode-pair fluence dataset.
+
+        Args:
+            fluence_at_optodes: DataArray with dims ``(optode1, optode2, wavelength)``
+                containing the fluence sampled at each optode position.
+        """
         f = self.file
 
         f.create_dataset(
@@ -237,6 +324,12 @@ class FluenceFile:
 
 
     def get_fluence_all(self):
+        """Return the full volumetric fluence as an xr.DataArray.
+
+        Returns:
+            xr.DataArray with dims ``(label, wavelength, i, j, k)`` and
+            ``label``, ``type``, and ``wavelength`` coordinates.
+        """
         ds = self.file["fluence_all"]
 
         fluence_all = xr.DataArray(

@@ -177,6 +177,15 @@ def read_parcellations(parcel_file: str | Path) -> pd.DataFrame:
     return parcels
 
 def read_parcel_colors(parcel_colors_file : str | Path) -> dict[str, list]:
+    """Read parcel RGB colors from a JSON file.
+
+    Args:
+        parcel_colors_file: Path to the JSON file mapping parcel names to
+            RGB color lists.
+
+    Returns:
+        Dictionary mapping parcel label strings to RGB color lists.
+    """
     with open(parcel_colors_file) as fin:
         return json.load(fin)
 

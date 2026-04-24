@@ -1,3 +1,5 @@
+"""Feature extraction from epoched fNIRS data for use with scikit-learn pipelines."""
+
 import numpy as np
 import xarray as xr
 from typing import Literal
@@ -11,6 +13,33 @@ def epoch_features(
     feature_types: list[EpochFeatureType],
     reltime_slices: dict[EpochFeatureType, slice] | None = None,
 ):
+    """Extract scalar features from epoched data for use in ML classifiers.
+
+    For each requested feature type, a scalar value is computed over the
+    ``"reltime"`` axis (optionally restricted to a sub-window).  All non-epoch
+    dimensions (channel, chromo, …) are then stacked into a flat ``"feature"``
+    dimension so the result is suitable as a 2-D feature matrix for
+    scikit-learn estimators (rows = epochs, columns = features).
+
+    Args:
+        epochs: DataArray with at least an ``"epoch"`` dimension and a
+            ``"reltime"`` dimension.
+        feature_types: One or more of ``"slope"``, ``"mean"``, ``"max"``,
+            ``"min"``, ``"auc"``.  A string is also accepted as a shorthand for
+            a single-element list.
+        reltime_slices: Optional mapping from feature type to a
+            :class:`slice` of relative-time values used to restrict the
+            window for that feature.  Unspecified feature types use the full
+            ``reltime`` range.
+
+    Returns:
+        xr.DataArray with dimensions ``(epoch, feature)`` where ``feature``
+        is a multi-index stacking all non-epoch, non-reltime dimensions and
+        the ``feature_type`` label.
+
+    Raises:
+        ValueError: If an unrecognised feature type is requested.
+    """
     if isinstance(feature_types, str):
         feature_types = [feature_types]
 

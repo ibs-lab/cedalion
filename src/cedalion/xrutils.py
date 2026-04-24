@@ -80,8 +80,15 @@ def norm(array: xr.DataArray, dim: str) -> xr.DataArray:
 
 
 def mask(array: xr.DataArray, initval: bool) -> xr.DataArray:
-    """Create a boolean mask array with the same shape as the input array."""
+    """Create a boolean mask DataArray with the same shape as *array*.
 
+    Args:
+        array: Template DataArray whose shape, dims, and coords are copied.
+        initval: Initial boolean value to fill the mask with (``True`` or ``False``).
+
+    Returns:
+        A boolean DataArray with the same shape and coordinates as *array*.
+    """
     return xr.full_like(array, initval, dtype=bool)
 
 
@@ -143,7 +150,22 @@ def apply_mask(
 
 
 def convolve(data_array: xr.DataArray, kernel: np.ndarray, dim: str) -> xr.DataArray:
-    """Convolve a DataArray along a given dimension "dim" with a "kernel"."""
+    """Convolve a DataArray with a 1-D kernel along the specified dimension.
+
+    Uses ``np.convolve`` in ``"same"`` mode so the output has the same length as
+    the input along *dim*. Pint units are preserved.
+
+    Args:
+        data_array: Input DataArray. May be unit-quantified.
+        kernel: 1-D convolution kernel.
+        dim: Name of the dimension along which to convolve.
+
+    Returns:
+        Convolved DataArray with the same shape, dims, and units as *data_array*.
+
+    Raises:
+        ValueError: If *dim* is not a dimension of *data_array*.
+    """
 
     if dim not in data_array.dims:
         raise ValueError(f"array does not have dimension '{dim}'")
@@ -163,6 +185,28 @@ def convolve(data_array: xr.DataArray, kernel: np.ndarray, dim: str) -> xr.DataA
         convolved = convolved.pint.quantify(units)
 
     return convolved
+
+
+def spatial_dim(data_array: xr.DataArray) -> str:
+    """Return the name of the spatial dimension present in *data_array*.
+
+    Checks for the dimensions ``"channel"``, ``"parcel"``, and ``"vertex"`` in
+    that order and returns the first one found.
+
+    Args:
+        data_array: DataArray to inspect.
+
+    Returns:
+        Name of the spatial dimension (``"channel"``, ``"parcel"``, or
+        ``"vertex"``).
+
+    Raises:
+        ValueError: If none of the known spatial dimensions are present.
+    """
+    for dim in ("channel", "parcel", "vertex"):
+        if dim in data_array.dims:
+            return dim
+    raise ValueError("could not determine spatial dimension")
 
 
 def other_dim(data_array: xr.DataArray, *dims: str) -> str:
@@ -224,12 +268,15 @@ def coords_from_other(
     return aux_coords
 
 
-def unit_stripping_is_error(is_error : bool = True):
-    """Make UnitStrippedWarning an error.
+def unit_stripping_is_error(is_error: bool = True):
+    """Promote ``UnitStrippedWarning`` to an exception (or revert that promotion).
 
-    This function is useful for debugging cases where UnitStrippedWarning are issued
-    in third-party libraries. By raising an exception one can use the debugger to
-    find the occurence in cedalion or user code that triggers the warning.
+    Useful for debugging: once raised as an error, the debugger can pinpoint the
+    exact cedalion or third-party call that silently drops pint units.
+
+    Args:
+        is_error: If ``True`` (default), convert the warning to an error. If
+            ``False``, remove the error filter so the warning is emitted normally.
     """
     if is_error:
         warnings.simplefilter("error", pint.errors.UnitStrippedWarning)
@@ -240,12 +287,15 @@ def unit_stripping_is_error(is_error : bool = True):
                 break
 
 
-def unit_stripping_is_quiet(is_quiet : bool = True):
-    """Silence UnitStrippedWarnings.
+def unit_stripping_is_quiet(is_quiet: bool = True):
+    """Suppress ``UnitStrippedWarning`` globally (or restore the default behaviour).
 
-    It is not recommended to use this functions. Instead consider using
-    `unit_stripping_is_error` to find the code responsible for issuing the warning
-    and fix it there.
+    Not recommended for production code. Prefer :func:`unit_stripping_is_error`
+    to locate and fix the source of the warning rather than silencing it.
+
+    Args:
+        is_quiet: If ``True`` (default), add an ``"ignore"`` filter for the
+            warning. If ``False``, remove any such filter.
     """
     if is_quiet:
         warnings.filterwarnings("ignore", category=pint.errors.UnitStrippedWarning)
@@ -256,12 +306,21 @@ def unit_stripping_is_quiet(is_quiet : bool = True):
         ]
 
 
-def drop_duplicate_dimensions(array : xr.DataArray) -> xr.DataArray:
-    """Remove dimensions in which all array values are identical.
+def drop_duplicate_dimensions(array: xr.DataArray) -> xr.DataArray:
+    """Remove constant dimensions from *array*, keeping only those that vary.
 
-    During stacking and unstacking of dimensions, coordinate arrays can occur that
-    are attributed to multiple dimensions although their values change only along
-    a single dimensions. This function reduces the array to that single dimension.
+    After stacking and unstacking, coordinate arrays are sometimes attributed to
+    multiple dimensions even though their values only change along a single one.
+    This function drops any dimension where all values are identical (i.e. the
+    coordinate is effectively scalar along that dimension).
+
+    Args:
+        array: DataArray that may contain constant dimensions introduced by
+            stacking/unstacking operations.
+
+    Returns:
+        DataArray with constant dimensions removed and their scalar coordinates
+        dropped.
     """
 
     drop_dims = []
@@ -353,7 +412,22 @@ def contract(a1: xr.DataArray, a2: xr.DataArray, dim: str | list[str]) -> xr.Dat
 def transpose_like(
     a: xr.DataArray, target: xr.DataArray, dim_map: dict[str, str] | None = None
 ) -> xr.DataArray:
-    """Transpose the dims in a to match the ordering in target."""
+    """Transpose *a* so its dimension order matches that of *target*.
+
+    Args:
+        a: DataArray to reorder.
+        target: DataArray whose dimension order is used as the reference.
+        dim_map: Optional mapping from dimension names in *a* to their
+            corresponding names in *target*, for dimensions that have been
+            renamed between the two arrays.
+
+    Returns:
+        View of *a* with dimensions reordered to match *target*.
+
+    Raises:
+        ValueError: If a dimension of *a* cannot be found in *target* (even
+            after applying *dim_map*).
+    """
 
     target_dims = list(target.dims)
     if not dim_map:
@@ -374,7 +448,27 @@ def transpose_like(
 def dot_dataarray_csr(
     a: xr.DataArray, b: scipy.sparse, bdims: list[str, str]
 ) -> xr.DataArray:
-    """Multiply a DataArray and sparse array along one dimension."""
+    """Multiply a dense DataArray by a sparse matrix along their shared dimension.
+
+    The shared dimension is inferred from the overlap between *a*'s dims and
+    *bdims*. All other dimensions of *a* are kept intact. The result has the
+    same non-contracted dimensions as *a* plus the remaining dimension of *b*.
+
+    Args:
+        a: Dense DataArray. Must share exactly one dimension with *bdims*.
+        b: Sparse matrix (CSR or compatible SciPy sparse format).
+        bdims: Two-element list naming the row and column dimensions of *b*,
+            e.g. ``["vertex", "channel"]``.
+
+    Returns:
+        Dense DataArray resulting from the contraction. Dimension order
+        matches the original ordering in *a* (with the contracted dim
+        replaced by the remaining dim of *b*).
+
+    Raises:
+        ValueError: If *a* and *b* do not share exactly one dimension, or if
+            the sizes along the shared dimension do not match.
+    """
 
     # figure out the common dimension along which to multiply
     common_dim = set(a.dims) & set(bdims)
@@ -414,8 +508,21 @@ def dot_dataarray_csr(
     return result
 
 
-def check_units(array : xr.DataArray, dimension : str):
-    """Check the dimensionality of quantified and dequantified DataArrays."""
+def check_units(array: xr.DataArray, dimension: str) -> bool:
+    """Return whether *array* has physical units compatible with *dimension*.
+
+    Works for both quantified DataArrays (``array.pint.units`` is set) and
+    dequantified ones (units stored in ``array.attrs["units"]``).
+
+    Args:
+        array: DataArray to check.
+        dimension: Pint dimensionality string, e.g. ``"[length]"``,
+            ``"[time]"``, ``"[concentration]"``.
+
+    Returns:
+        ``True`` if the array's units are dimensionally compatible with
+        *dimension*, ``False`` if the array carries no unit information.
+    """
 
     if array.pint.units is None:
         if (units_str := array.attrs.get("units", None)) is None:

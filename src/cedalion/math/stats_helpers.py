@@ -2,15 +2,15 @@ import numpy as np
 
 
 def BenjaminiHochberg(p : np.ndarray):
-    """Function for multiple comparision corrections.
+    """Apply Benjamini-Hochberg FDR correction for multiple comparisons.
 
     See http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3530395/
 
-    Args::
-        p: array of p-values
+    Args:
+        p: Array of uncorrected p-values, arbitrary shape.
 
     Returns:
-        q: FDR corrected p-values
+        Array of FDR-corrected q-values, same shape as ``p``, clipped to [0, 1].
     """
 
     s = p.shape

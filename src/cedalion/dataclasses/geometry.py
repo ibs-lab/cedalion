@@ -28,6 +28,12 @@ from cedalion.vtktutils import pyvista_polydata_to_trimesh, trimesh_to_vtk_polyd
 
 @total_ordering
 class PointType(Enum):
+    """Categorical label for points in a :class:`~cedalion.typing.LabeledPoints` array.
+
+    Used as the ``"type"`` coordinate to distinguish optode types, anatomical
+    landmarks, and EEG electrodes within the same point cloud.
+    """
+
     UNKNOWN = 0
     SOURCE = 1
     DETECTOR = 2
@@ -44,7 +50,20 @@ class PointType(Enum):
 
 @dataclass
 class Surface(ABC):
-    """Abstract base class for surfaces."""
+    """Abstract base class for 3-D triangulated surfaces.
+
+    Concrete subclasses (:class:`TrimeshSurface`, :class:`VTKSurface`,
+    :class:`PycortexSurface`) wrap different mesh backends while sharing a
+    common interface for coordinate access, KD-tree queries, and affine
+    transforms.
+
+    Attributes:
+        mesh: Backend mesh object (type depends on subclass).
+        crs: Name of the coordinate reference system (e.g. ``"ras"``).
+        units: Physical units of the vertex coordinates.
+        vertex_coords: Optional dict of extra per-vertex coordinate arrays
+            (e.g. parcel labels) to attach as xarray coordinates.
+    """
 
     mesh: Any
     crs: str
@@ -55,24 +74,36 @@ class Surface(ABC):
     @property
     @abstractmethod
     def vertices(self) -> cdt.LabeledPoints:
+        """Vertices of the mesh as a :class:`~cedalion.typing.LabeledPoints` array."""
         raise NotImplementedError()
 
     @property
     @abstractmethod
     def nvertices(self) -> int:
+        """Number of vertices in the mesh."""
         raise NotImplementedError()
 
     @property
     @abstractmethod
     def nfaces(self) -> int:
+        """Number of triangular faces in the mesh."""
         raise NotImplementedError()
 
     @abstractmethod
     def apply_transform(self, transform: cdt.AffineTransform):
+        """Return a new surface with all vertices transformed by *transform*.
+
+        Args:
+            transform: 4×4 affine :class:`~cedalion.typing.AffineTransform`.
+
+        Returns:
+            A new surface instance of the same concrete type.
+        """
         raise NotImplementedError()
 
     @abstractmethod
     def _build_kdtree(self):
+        """Build and cache the KD-tree for nearest-vertex queries."""
         raise NotImplementedError()
 
     def __post_init__(self):
@@ -80,13 +111,26 @@ class Surface(ABC):
 
     @property
     def kdtree(self):
+        """KD-tree built lazily from vertex coordinates for fast spatial queries."""
         if self._kdtree is None:
             self._build_kdtree()
 
         return self._kdtree
 
     def snap(self, points: cdt.LabeledPoints):
-        """Snap points to the nearest vertices on the surface."""
+        """Project *points* onto their nearest vertex on this surface.
+
+        Args:
+            points: LabeledPoints array in the same CRS and units as this surface.
+
+        Returns:
+            LabeledPoints array with the same labels as *points* but coordinates
+            replaced by those of the closest surface vertex.
+
+        Raises:
+            CRSMismatchError: If *points* are not in the same CRS as the surface.
+            ValueError: If *points* have different units from the surface.
+        """
         if self.crs != points.points.crs:
             raise CRSMismatchError.unexpected_crs(
                 expected_crs=self.crs, found_crs=points.points.crs
@@ -254,7 +298,15 @@ class TrimeshSurface(Surface):
         )
 
     def smooth(self, lamb: float) -> "TrimeshSurface":
-        """Apply a Taubin filter to smooth this surface."""
+        """Apply a Taubin smoothing filter to the mesh.
+
+        Args:
+            lamb: Taubin lambda parameter controlling the amount of smoothing
+                (typically between 0 and 1).
+
+        Returns:
+            A new :class:`TrimeshSurface` with a smoothed mesh.
+        """
 
         smoothed = trimesh.smoothing.filter_taubin(self.mesh, lamb=lamb)
         return TrimeshSurface(
@@ -262,8 +314,21 @@ class TrimeshSurface(Surface):
         )
 
     def get_vertex_normals(self, points: cdt.LabeledPoints, normalized=True):
-        """Get normals of vertices closest to the provided points."""
+        """Return vertex normals at surface vertices nearest to *points*.
 
+        Args:
+            points: LabeledPoints query positions in the same CRS and units as
+                this surface.
+            normalized: If ``True`` (default), return unit-length normals.
+
+        Returns:
+            DataArray of shape ``(n_points, 3)`` containing the normal vectors
+            at the nearest surface vertices.
+
+        Raises:
+            ValueError: If normalization is requested but any normal has zero
+                length.
+        """
         assert points.points.crs == self.crs
         assert points.pint.units == self.units
         points = points.pint.dequantify()
@@ -287,6 +352,12 @@ class TrimeshSurface(Surface):
         return normals
 
     def fix_vertex_normals(self):
+        """Flip any vertex normals that point inward (towards the mesh centroid).
+
+        Returns:
+            A new :class:`TrimeshSurface` with consistently outward-pointing
+            vertex normals.
+        """
         mesh = self.mesh
         # again make sure, that normals face outside
         cog2vert = mesh.vertices - np.mean(mesh.vertices, axis=0)
@@ -317,6 +388,14 @@ class TrimeshSurface(Surface):
 
 @dataclass
 class VTKSurface(Surface):
+    """A surface backed by a VTK ``vtkPolyData`` mesh.
+
+    Attributes:
+        mesh: The underlying ``vtk.vtkPolyData`` object.
+        crs: Name of the coordinate reference system.
+        units: Physical units of the vertex coordinates.
+    """
+
     mesh: vtk.vtkPolyData
 
     @property
@@ -386,6 +465,13 @@ class VTKSurface(Surface):
 
 @dataclass
 class SimpleMesh:
+    """Lightweight mesh container for vertex positions and face indices.
+
+    Attributes:
+        pts: Vertex positions, shape ``(n_vertices, 3)``.
+        polys: Triangle face indices, shape ``(n_faces, 3)``.
+    """
+
     pts: np.ndarray
     polys: np.ndarray
 
@@ -903,7 +989,23 @@ class PycortexSurface(Surface):
 def affine_transform_from_numpy(
     transform: np.ndarray, from_crs: str, to_crs: str, from_units: str, to_units: str
 ) -> cdt.AffineTransform:
-    """Create a AffineTransform object from a numpy array."""
+    """Wrap a 4×4 numpy array as a cedalion :class:`~cedalion.typing.AffineTransform`.
+
+    The resulting DataArray has pint units of ``to_units / from_units`` and
+    dimension names ``[to_crs, from_crs]``, matching the convention used
+    throughout cedalion for affine transforms.
+
+    Args:
+        transform: 4×4 affine transformation matrix as a numpy array.
+        from_crs: Name of the source coordinate reference system.
+        to_crs: Name of the target coordinate reference system.
+        from_units: Unit string for the source space (e.g. ``"mm"``).
+        to_units: Unit string for the target space (e.g. ``"m"``).
+
+    Returns:
+        A 4×4 :class:`~cedalion.typing.AffineTransform` DataArray with dims
+        ``[to_crs, from_crs]`` and units ``to_units / from_units``.
+    """
     units = cedalion.units.Unit(to_units) / cedalion.units.Unit(from_units)
 
     return xr.DataArray(transform, dims=[to_crs, from_crs]).pint.quantify(units)
