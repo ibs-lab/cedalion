@@ -21,8 +21,9 @@ def read_photogrammetry_einstar(fn):
             - optodes (cedalion.LabeledPoints): The optodes as a cedalion LabeledPoints
                 object.
     """
-
     fiducials, optodes = read_einstar(fn)
+    fiducials = OrderedDict((k, v) for k, v in fiducials.items() if v != [])
+    optodes = OrderedDict((k, v) for k, v in optodes.items() if v != [])
     fiducials, optodes = opt_fid_to_xr(fiducials, optodes)
     return fiducials, optodes
 

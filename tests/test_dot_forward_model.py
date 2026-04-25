@@ -352,3 +352,37 @@ def test_compute_stacked_sensitivity(monkeypatch, n_wavelength, n_chromo, vertex
     assert all(stacked.detector == np.asarray(flat_detector))
 
     assert stacked.attrs["units"] == "1 / molar"
+
+
+def test_image_to_channel_space():
+    Adot = xr.DataArray(
+        np.ones((2, 3, 2), dtype=np.float32),
+        dims=["channel", "vertex", "wavelength"],
+        coords={
+            "channel":   ("channel", ["S1D1", "S1D2"]),
+            "source":    ("channel", ["S1", "S1"]),
+            "detector":  ("channel", ["D1", "D2"]),
+            "wavelength":("wavelength", [760., 850.]),
+            "is_brain":  ("vertex", [True, True, False]),
+        },
+        attrs={"units": "mm"},
+    )
+
+    img_mua = xr.DataArray(
+        np.ones((3,5,2)),
+        dims=("vertex","time", "wavelength"),
+        attrs={"units": "1/mm"},
+    )
+
+
+    img_conc = xr.DataArray(
+        np.ones((3,5,2)),
+        dims=("vertex","time", "chromo"),
+        attrs={"units": "uM"},
+    )
+
+    for img in [img_mua, img_conc]:
+        ts = fw.image_to_channel_space(Adot, img, "prahl")
+
+        assert set(ts.dims) == {"channel", "wavelength", "time"}
+        assert cedalion.xrutils.check_units(ts, "")

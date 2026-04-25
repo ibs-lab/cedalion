@@ -441,7 +441,6 @@ class TwoSurfaceHeadModel:
                 os.path.join(foldername, "landmarks.nc")
             )
         self.t_ijk2ras.to_netcdf(os.path.join(foldername, "t_ijk2ras.nc"))
-        self.t_ras2ijk.to_netcdf(os.path.join(foldername, "t_ras2ijk.nc"))
         scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_brain.npz"),
                                            self.voxel_to_vertex_brain)
         scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_scalp.npz"),
@@ -461,7 +460,7 @@ class TwoSurfaceHeadModel:
 
         # Check if all files exist
         for fn in ["segmentation_masks.nc", "brain.ply", "scalp.ply",
-                   "t_ijk2ras.nc", "t_ras2ijk.nc", "voxel_to_vertex_brain.npz",
+                   "t_ijk2ras.nc", "voxel_to_vertex_brain.npz",
                    "voxel_to_vertex_scalp.npz"]:
             if not os.path.exists(os.path.join(foldername, fn)):
                 raise ValueError("%s does not exist." % os.path.join(foldername, fn))
@@ -487,7 +486,6 @@ class TwoSurfaceHeadModel:
         else:
             landmarks_ijk = None
         t_ijk2ras = xr.load_dataarray(os.path.join(foldername, 't_ijk2ras.nc'))
-        t_ras2ijk = xr.load_dataarray(os.path.join(foldername, 't_ras2ijk.nc'))
         voxel_to_vertex_brain = scipy.sparse.load_npz(os.path.join(foldername,
                                                      'voxel_to_vertex_brain.npz'))
         voxel_to_vertex_scalp = scipy.sparse.load_npz(os.path.join(foldername,
