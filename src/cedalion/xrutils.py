@@ -95,23 +95,24 @@ def mask(array: xr.DataArray, initval: bool) -> xr.DataArray:
 def apply_mask(
     data_array: xr.DataArray, mask: xr.DataArray, operator: str, dim_collapse: str
 ) -> xr.DataArray:
-    """Apply a boolean mask to a DataArray according to the defined "operator".
+    """Apply a boolean mask to a DataArray according to the defined ``operator``.
 
     Args:
-        data_array: NDTimeSeries, input time series data xarray
-        mask: input boolean mask array with a subset of dimensions matching data_array
-        operator: operators to apply to the mask and data_array
-            "nan": inserts NaNs in the data_array where mask is False
-            "drop": drops value in the data_array where mask is False
-        dim_collapse: Mask dimension to collapse to, merging boolean masks along all
-            other dimensions. Can be skipped with "none".
-            Example: collapsing to "channel" dimension will drop or nan a channel if it
-            is "False" along any other dimensions
+        data_array: Input NDTimeSeries (xr.DataArray).
+        mask: Boolean mask array whose dimensions must be a subset of
+            ``data_array``'s dimensions.
+        operator: How to apply the mask. ``"nan"`` inserts NaN where the mask
+            is ``False``; ``"drop"`` removes those elements entirely.
+        dim_collapse: Mask dimension to collapse to, merging boolean values
+            along all other dimensions before applying. Pass ``"none"`` to skip
+            collapsing. For example, collapsing to ``"channel"`` will drop or
+            NaN an entire channel if it is ``False`` along any other dimension.
 
     Returns:
-        masked_data_array: Input data_array with applied mask
-        masked_elements: List of elements in data_array that were masked (e.g.
-            dropped or set to NaN)
+        A tuple ``(masked_data_array, masked_elements)`` where
+        ``masked_data_array`` is the input array with the mask applied, and
+        ``masked_elements`` is a list of the masked label values (when
+        ``dim_collapse`` is not ``"none"``) or the string ``"N/A"`` otherwise.
     """
     flag_collapse = False
 
@@ -210,17 +211,21 @@ def spatial_dim(data_array: xr.DataArray) -> str:
 
 
 def other_dim(data_array: xr.DataArray, *dims: str) -> str:
-    """Get the dimension name not listed in *dims.
+    """Get the dimension name not listed in ``dims``.
 
-    Checks that there is only one more dimension than given in dims  and returns
-    its name.
+    Checks that there is exactly one more dimension in ``data_array`` than the
+    number of names supplied in ``dims`` and returns its name.
 
     Args:
-        data_array: an xr.DataArray
-        *dims: names of dimensions
+        data_array: Input DataArray.
+        *dims: Names of dimensions to exclude.
 
     Returns:
-        The name of the dimension of data_array.
+        Name of the single remaining dimension not listed in ``dims``.
+
+    Raises:
+        ValueError: If ``data_array`` does not have exactly ``len(dims) + 1``
+            dimensions, or if any of the supplied ``dims`` are not present.
     """
 
     dims = set(dims)

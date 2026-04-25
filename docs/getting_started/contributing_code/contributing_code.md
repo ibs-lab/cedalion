@@ -1,356 +1,290 @@
 # Getting started with contributing code to Cedalion
 
-This document provides a brief getting started guide for users who would like to contribute code/functionality to Cedalion. Our aim is to make the toolbox useful for both naive users, who would like to apply abstract workflows without caring too much about the details of implementation, as well as for developers that would like to build their own methods and contribute new functionality. At the current time, the toolbox is its early stage and both documentation and abstraction levels are continuously growing. For now, if you contribute code, adopt a **bottom up** development approach: write simple functions with simple input arguments and data structures, that can and will later on be wrapped by functions that add abstraction and usability. Develop and test in jupyter notebooks (which you can then contribute as examples for how to use functionality) and migrate code to Cedalion's /src/ when it is tested.
+This document is a brief guide for contributors who would like to add code or
+new functionality to Cedalion. The toolbox is designed to be useful both for
+researchers who apply existing workflows and for developers who build new methods.
+Because the codebase is still growing, we follow a **bottom-up** approach: write
+simple functions with clear inputs and outputs first, then wrap them in higher-level
+abstractions once the API has stabilised. Develop and test in Jupyter notebooks (which
+can later be contributed as examples), then migrate mature code into `src/cedalion/`.
 
-## Where to get started?
-It is smart to make yourself aware of five resources and concepts that build the foundations for Cedalion:
-1) **Cedalion's documentation page**: For the moment the documentation can be found {{ '[here]({})'.format(docs_url) }}.
-2) **Example Notebooks**: Cedalion provides jupiter notebooks for example pipelines and to display how to apply its functionality. Here you can start to learn from examples by running, adapting and changing code until you feel more familiar. The notebooks are under /examples/ [here](https://github.com/ibs-lab/cedalion/tree/main/examples) and can be viewed in a rendered form on the documentation page [here](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/examples/index.html)
-3) **Xarrays** are a package that makes work with labelled mult-dimensional arrays very simple. If you develop code for Cedalion, you will youse Xarrays. To get started, make yourself acquainted with one of two key data types: *xarray.DataArray* and *xarray.DataSet*. Most functions that you write should expect an xarray DataArray as main input for the data that you want to process, alongside arguments that pass variables for additional info. You can find the official [Xarray documentation here](https://docs.xarray.dev/en/stable/).
-4) **Units**: One of the charms of Xarrays that Cedalion is taking advantage of is that functions can implicitly consider units and thus avoid typical errors from (missing) unit conversion. For example, if you work with coordinates for fNIRS optodes or landmarks, as long as they have a proper unit like "m", "cm", "mm" assigned, you do not have to explicitly take care of conversions anymore. To make use of this feature, Cedalion's functions should expect input arguments that are "Quantities" with "units" wherever possible. To assign a unit to your variable, simply import `from cedalion import Quantity, units` and multiply your variable with the right unit. For instance: `sd_distance = 3*units.cm`. Cedalion's units are based on the **pint** package, which is [documented here](https://pint.readthedocs.io/en/stable/index.html).
-5) **Data Containers and Data Structures**: The main objects to pass along your functions and processing pipelines. We are currently working on defining and documenting these. In the meantime, please work with Xarray DataArrays and variables with units as in and outputs for your functions, and be aware that the main format for fNIRS/DOT data that we read and write is the [SNIRF format](https://github.com/fNIRS/snirf). To easily get started, you can:
-    1. Check out the example notebook on [Using xarray-based data structures for calculating the Beer-Lambert transformation](https://github.com/ibs-lab/cedalion/blob/main/examples/pruning_and_motion_artifacts.ipynb)
-    2. Check out the example notebook on [An example finger tapping analysis](https://github.com/ibs-lab/cedalion/blob/main/examples/new_conference_example2.ipynb)
-    3. Use the following code snippet to load snirf data into Xarray DataArrays (amp, geo, od, conc, ml) and combine them into an Xarray DataSet.
+## Where to get started
+
+Familiarise yourself with these five resources before contributing:
+
+1. **Documentation**: The rendered documentation is at
+   [doc.ibs.tu-berlin.de/cedalion/doc/dev/](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/).
+2. **Example notebooks**: Located in `examples/`, grouped by topic, and viewable in
+   rendered form on the documentation site. Running and modifying existing notebooks
+   is the fastest way to understand the API.
+3. **xarray**: Cedalion's primary data container. Familiarise yourself with
+   `xarray.DataArray` and `xarray.Dataset`. All processing functions accept and return
+   DataArrays. See the [xarray documentation](https://docs.xarray.dev/en/stable/).
+4. **pint units**: Cedalion tracks physical units using
+   [pint](https://pint.readthedocs.io/en/stable/index.html) via `pint-xarray`.
+   Import units with `from cedalion import Quantity, units` and attach them to
+   variables, e.g. `sd_distance = 3 * units.cm`. Functions should accept
+   `pint.Quantity` arguments wherever a physical unit is meaningful.
+5. **Data containers**: The main container is `Recording`, which holds named
+   timeseries DataArrays, optode positions, stimulus events, and optional head model
+   data. The code snippet below shows how to load a recording and access its contents:
 
 ```python
-# get example finger tapping dataset
 import cedalion
-import cedalion.nirs
-import cedalion.data
+import cedalion.nirs.cw as nirs
 import xarray as xr
+from cedalion import units
 
-snirf_element = cedalion.data.get_fingertapping()
-amp = snirf_element[0].data[0]
-geo = snirf_element[0].geo3d
-od = cedalion.nirs.cw.int2od(amp)
-dpf = xr.DataArray([6, 6], dims="wavelength", coords={"wavelength" : amp.wavelength})
-conc = cedalion.nirs.cw.beer_lambert(amp, geo, dpf)
-meas_list = snirf_element[0].measurement_lists[0]
+rec = cedalion.data.get_fingertapping()   # returns a Recording
+amp = rec.timeseries["amp"]              # raw amplitude, dims: (channel, wavelength, time)
 
-data = xr.Dataset(
-    data_vars = {
-        "amp" : amp,
-        "od"  : od,
-        "conc": conc
-        "geo3d": geo
-        "ml": meas_list
-    })
+od = nirs.int2od(amp)
+dpf = xr.DataArray(
+    [6.0, 6.0],
+    dims="wavelength",
+    coords={"wavelength": amp.wavelength},
+)
+conc = nirs.od2conc(od, rec.geo3d, dpf)  # HbO / HbR concentration, dims: (channel, chromo, time)
 ```
 
-## General Rules and Overview
-### Style Guide for Python Code
-We follow the PEP 8 Style that is documented [here](https://peps.python.org/pep-0008/) - please try to follow it too. If you work with VS Code, you can use extensions to make your life easier:
-- [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) is a fast Python linter that we recommend
+## General rules and overview
 
-Some relevant conventions in a nutshell:
-- **Function Naming Rule*: lowercase with words separated by underscores as necessary to improve readability. Example: `def example_function()`. Avoid `ExampleFunction()` or `exampleFunction()`
-- **Variable Naming Rule: Variable names follow the same convention as function names. Example: `my_variable = 1`. Avoid `MyVariable` and `myVariable`
-- **Constants Naming Rule*: Constants are usually defined on a module level and written in all capital letters with underscores separating words. Examples: `include MAX_OVERFLOW`
+### Style guide for Python code
 
-### Style Guide for docstrings
+We follow [PEP 8](https://peps.python.org/pep-0008/). The [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) linter is configured in `pyproject.toml` and enforces rules E, F, W, and D (Google docstrings). Run `ruff check src/ tests/` before committing.
 
-Please use [documentation strings](https://docs.python.org/3/tutorial/controlflow.html#documentation-strings) 
-to document modules, classes and functions. There exist several different conventions on 
-how to dormat these docstrings. We will follow the Google style as described in the
-[Google Python Style Guide](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings).
+Key conventions:
 
-**Example 1:**
-```
-    def func(arg1 : int, arg2 : str) -> bool:
-        """One sentence description of function.
+- **Functions and variables**: `snake_case` — e.g. `def example_function()`, `my_variable = 1`.
+- **Classes**: `PascalCase` — e.g. `class MyProcessor`.
+- **Module-level constants**: `UPPER_CASE` — e.g. `MAX_OVERFLOW = 100`.
+- **Max line length**: 88 characters.
 
-        Some more details on what the function does.
+### Style guide for docstrings
 
-        Args:
-            arg1: Description of arg1
-            arg2: Description of arg2
+Use [Google-style docstrings](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings)
+for all public functions, classes, and methods. Include `Args:`, `Returns:`, and
+`Raises:` sections where applicable.
 
-        Returns:
-            Description of return value
-        """
-        return True
-```
+**Example — simple function:**
 
-**Example 2:**
-```
-    def func(
-        arg1 : cdt.NDTimeSeries, 
-        arg2 : cdt.NDTimeSeries, 
-        arg3 : Quantity
-    ) -> cdt.NDTimeSeries:
-        """Implements algorithm XY based on :cite:t:`BIBTEXLABEL`.
+```python
+def func(arg1: int, arg2: str) -> bool:
+    """One sentence description of function.
 
-        Some more details on what the function does.
-        
-        Args:
-            arg1 (:class:`NDTimeSeries`, (channel, wavelength, time)): Description of 
-                first argument. For NDTimeSeries we can specify expected dimensions
-                like this.
-            arg2 (:class:`NDTimeSeries`, (time, *)): Some algorithms work only along
-                a given dimension (e.g. frequency filtering) and are agnostic to any
-                other dimensions in the array. This should be documentated like this.
-            arg3 (:class:`Quantity`, [time]): Parameters with physical units (e.g.
-                lengths or time intervals) should be passed as pint.Quantities. The
-                expected dimensionality should be documented like this.
+    Some more details on what the function does.
 
-        Returns:
-            Description of return value. 
-        """
-        return True
+    Args:
+        arg1: Description of arg1.
+        arg2: Description of arg2.
+
+    Returns:
+        Description of return value.
+    """
+    return True
 ```
 
-Please add references to the literature if you are implementing a published algorithm.
-There is a global bibtex file under `docs/references.bib` to which reference entries
-should be added with a unique bibtex label. In docstrings cite a reference entry with:
+**Example — function with typed scientific arguments:**
+
+```python
+def func(
+    arg1: cdt.NDTimeSeries,
+    arg2: cdt.NDTimeSeries,
+    arg3: Quantity,
+) -> cdt.NDTimeSeries:
+    """Implements algorithm XY based on :cite:t:`BIBTEXLABEL`.
+
+    Some more details on what the function does.
+
+    Args:
+        arg1 (:class:`NDTimeSeries`, (channel, wavelength, time)): Description of
+            first argument. For NDTimeSeries, specify expected dimensions.
+        arg2 (:class:`NDTimeSeries`, (time, *)): Algorithms that operate only along
+            one dimension (e.g. frequency filtering) are agnostic to other dimensions.
+            Document this with ``(time, *)``.
+        arg3 (:class:`Quantity`, [time]): Parameters with physical units should be
+            passed as pint Quantities. Document the expected dimensionality.
+
+    Returns:
+        Description of return value.
+    """
+    return True
 ```
-    :cite:t:`BIBTEXLABEL`
+
+#### Literature references
+
+Add references to `docs/references.bib` with a unique BibTeX label. Cite them in
+docstrings with:
+
+```
+:cite:t:`BIBTEXLABEL`
 ```
 
-In notebooks you can add citations in markdown cells like this:
+In Markdown notebook cells, cite with:
+
 ```
-    <cite data-cite="Barker2013">(Barker,2013)</cite>
+{cite:t}`BIBTEXLABEL`
 ```
 
-If citations do not show correctly in the rendered documentation, check the Sphinx output for errors while parsing `references.bib`. Duplicate or ill-formed entries are
-often the culprit.
+All references are listed on the [References](../../references.rst) page. If citations
+do not render correctly, check the Sphinx output for duplicate or malformed entries
+in `references.bib`.
 
-Further options are documented in the 
-[sphinxcontrib-bibtex documentation](https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html#minimal-example).
+### Where to add code
 
-All references will be listed under [References](../../references.rst).
+Incorporate new code into the existing module structure. Python files (modules)
+contain functions of the same category; directories (subpackages) contain related
+modules. For example:
 
-Additional [docstring sections](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/index.html#docstring-sections)
-may be added, like for example: References, Notes, etc.
+- Two artefact correction methods `SplineSG` and `tPCA` both belong in
+  `sigproc/motion.py`.
+- `motion.py` and `quality.py` both belong in `sigproc/`.
 
+Only create a new module or subpackage if the code genuinely does not fit anywhere
+existing. If in doubt, open an issue or pull request for discussion first.
 
-### Where to add my code?
+### GitHub workflow
 
-When contributing code to Cedalion (=package), try to incorporate it into the existing file and folder structure, which also defines Cedalions package and subpackages. Python files (=modules) contain functions of the same category; folders (subpackages) contain python files of the same family. Examples:
-- Two artefact correction methods "SplineSG" and "tPCA" functions should be part of the same python file (module) "artifact.py", which contains all functions of the category "artefact correction"
-- "artifact.py" and "quality.py" belong into the folder (subpackage) "sigproc", which contains all categories(modules) that belong to the"signal processing" family
+Cedalion uses GitHub for version control and code review. The `dev` branch is always
+the most up-to-date integration branch — **always branch off `dev`**, never off
+`main`.
 
-Only if your new code does semantically or functionally not belong to any existing module or subpackage should you create new ones. If you think you need to create a new one, please check back with us first. To commit new code, please create a pull-request to  @emidell or @avolu github. The code will be merged after a code review.
+1. **Fork or clone** the repository and make sure your local `dev` is up to date:
+   ```bash
+   git checkout dev
+   git pull upstream dev
+   ```
+2. **Create a feature branch** from `dev`:
+   ```bash
+   git checkout -b feature/my-new-feature
+   ```
+   Use a short, descriptive name prefixed with `feature/` for new functionality or
+   `fix/` for bug fixes.
+3. **Develop, test, and lint** your changes:
+   ```bash
+   ruff check src/ tests/
+   pytest tests/
+   ```
+4. **Open a pull request** on GitHub targeting the `dev` branch (not `main`).
+   Describe what the PR does and link any related issues. The code will be merged
+   after review.
 
+`main` reflects the latest stable release and is only updated by maintainers during
+a release process. Direct commits to `main` or `dev` are not accepted.
 
 ## File and folder structure
-The Cedalion parent directory is structured into 4 sections:
+
+The repository is organised into four top-level directories:
 
 ![parent_directories](dirs_parent.png)
-1) **doc**: documentation.
-2) **examples**: a directory with jupyter notebooks that exemplify an assembled pipeline or functionality. Should be executable in a standalone fashion and annotated to explain the code to a naive user. If you add significantly complex new functionality, you generate an example notebook here. For contributing new functions, you might want to start with a jupyter notebook, from which you then migrate matured code into functions in the source folder.
-3) **src**: the source folder that is the codebase of the toolbox. More details below.
-4) **tests**: unit tests for Cedalion code, are run upon commit on github to check code consistency.
 
-The following gives a brief overview of the **src** directory structure:
+1. **docs**: Sphinx documentation source.
+2. **examples**: Jupyter notebooks grouped by topic. Each notebook should be
+   self-contained and annotated for a researcher new to the API. Add a notebook here
+   whenever you introduce significant new functionality.
+3. **src**: The library source code under `src/cedalion/`.
+4. **tests**: pytest unit tests mirroring the `src/cedalion/` structure.
 
-![src_directories](dirs_src.png)
+The `src/cedalion/` directory is organised as follows:
 
-Widely used general functionality is part of the files on the top level (e.g. nirs.py ).
+| Directory | Purpose |
+|---|---|
+| **data** | Lookup tables and small bundled datasets. |
+| **dataclasses** | Core containers: `Recording`, `Surface`, `PointType`, xarray schemas, and the `.cd` accessor. |
+| **geometry** | 3D geometry: optode registration, head segmentation, meshing, landmarks. |
+| **dot** | DOT image reconstruction pipeline. |
+| **io** | Reading and writing SNIRF, BIDS, probe geometries, anatomies, and other formats. |
+| **models** | Data modelling, e.g. the General Linear Model (`models.glm`). |
+| **nirs** | NIRS physics: `cw` (continuous wave), `fd` (frequency domain), `td` (time domain), `common` (extinction coefficients, channel distances). |
+| **sigdecomp** | Signal decomposition methods not in standard libraries (ICA variants, CCA, mSPoC). |
+| **sigproc** | Time-series signal processing: filtering, motion artefact correction, quality assessment, epoch extraction. |
+| **sim** | Simulation and data augmentation: synthetic HRFs, artefacts, and toy datasets. |
+| **vis** | Visualisation utilities. |
 
-| **directory** | **explanation** |
-| ----------- | ----------- |
-| **data** | Look up tables and other small datasets often required for ecexuting functions. |
-| **dataclasses** | Dataclass definitions that are used in Cedalion. Example: in xrschemas.py you can find that we work with xarray objects (see more detail in the next section). For time series data these have to have at least two dimensions: "time" and "channel".  |
-| **geometry** | Functions for geometric manipulations, e.g. for optode registration, building landmarks on a 3D head, head segmentation, etc. |
-| **dot** | Functions for DOT image reconstruction |
-| **io** | Functions for reading and writing data to and from Cedalion. This includes for instance fnirs data in snirf format, probe geometries or reading anatomies (e.g. segmentation masks). |
-| **models** | Functions for data modelling, for instance the General Linear Model (GLM).|
-| **sigdecomp** | Functions for signal decomposition methods that are not part of a standard python distribution, e.g. advanced ICA methods.|
-| **sigproc** | Functions for time series signal processing, i.e. filtering, artefact rejection, signal quality assessment.|
-| **sim** | Functionality for simulation and data augmentation, for instance adding synthetic HRFs or creating toydata.|
+## Example: contributing new functionality
 
+As a worked example we will add a channel quality check and pruning step — the
+kind of thing found in `src/cedalion/sigproc/quality.py`.
 
-## Example for contributing new functionality to Cedalion
-In this example we will add a few simple functions to the toolbox: Some helper functions that use different quality thresholds to differentiate good from bad fNIRS/DOT channels. A function that combines these helper functions to  prune bad channels in a dataset. These are replicating approaches from the Homer3 "hmR_PruneChannels" function.
+### Decide where the code belongs
 
-The corresponding jupyter notebook example to showcase the resulging code is the following --> **[Pruning and Motion Artefacts Notebook Example](https://github.com/ibs-lab/cedalion/blob/main/examples/pruning_and_motion_artifacts.ipynb)**. <--
+After browsing `src/`, we decide that quality-assessment helpers belong in
+`sigproc/quality.py`. Once added, users import them with:
 
-### What functions and where do they belong?
-We will create three helper functions: `snr_range()`, `sd_range()` and `amp_range()` that use the SNR, the source-detector distance, and the signal amplitudes to assess whether they are within a desired (user-specified) range. We will then combine them in a `prune()` function. After browsing the */src/* directory we realize that all these functions should go to */siproc/quality.py* as they are dealing with assessing signal quality. To use these functions later on in our pipelines, we can
-`import cedalion.sigproc.quality as quality` and then use `quality.snr_range` to assess SNR, or `quality.prune` which will make use of the `snr_range function`, amongst others, to prune channels.
-
-Because we develop **bottom up**, we assume that all these functions just have xarray DataArrays as inputs, and variables that have quantities with units wherever possible.
-
-### Adding a new function
-The barebone structure of a function in Cedalion is the following:
-
+```python
+import cedalion.sigproc.quality as quality
 ```
+
+### Bare-bones function template
+
+```python
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 from cedalion import Quantity, units
 
 
 @cdc.validate_schemas
-def function_name(inputVar1: cdt.NDTimeSeries, inputVar2: Quantity):
-    """What this function does.
+def function_name(timeseries: cdt.NDTimeSeries, threshold: Quantity):
+    """Short one-line summary.
 
     Args:
-        inputVar1: ...
-        inputVar2: ...
+        timeseries: Input fNIRS data with at least ``channel`` and ``time`` dims.
+        threshold: Quality threshold with appropriate units.
 
     Returns:
-        description of the return value
+        Description of the return value.
     """
 
-    #
     # YOUR CODE
-    #
 
     return something
-
 ```
 
-This generates a new function *function_name* with two input arguments *inputVar1* and *inputVar2* that returns what it did as *something*.
-The input arguments should have expected data types assigned to them. Here, *inputVar1* is expected to be of the data type "NDTimeSeriesSchema", which is an xarray that contains at least two dimensions "channel" and "time". *inputVar2* is any input variable, that ideally (if applicable) should have a unit assigned to it.
-The function is wrapped by putting `@cdc.validate_schemas`in front, which will check these data types and assert an error at runtime, if the inputs do not match the expected type.
+The `@cdc.validate_schemas` decorator checks that `timeseries` matches the
+`NDTimeSeries` schema (requires at least `channel` and `time` dimensions) and raises
+a descriptive error at runtime if the input does not match.
 
-The following examples are implemented in the [quality.py module](https://github.com/ibs-lab/cedalion/blob/main/src/cedalion/sigproc/quality.py)
+### Worked example: SNR check and channel pruning
 
-### The helper functions
+The current `quality` module provides `snr`, `sci`, and `prune_ch`. Here is how
+they fit together — illustrating the pattern you should follow for new metrics:
 
-```{admonition} Update needed
-:class: attention
+```python
+import cedalion.sigproc.quality as quality
+from cedalion import units
 
-The code examples are not up to date. Please refer to the 
-[current source code](https://github.com/ibs-lab/cedalion/blob/main/src/cedalion/sigproc/quality.py)
+# 1. Compute individual quality metrics (each returns a value array and a boolean mask)
+snr, snr_mask = quality.snr(amp, snr_thresh=2.0)
+sci, sci_mask = quality.sci(amp, window_length=5 * units.s, sci_thresh=0.7)
+
+# 2. Combine masks and drop failing channels
+#    operator="all"  →  keep channel only if it passes every mask
+#    operator="any"  →  keep channel if it passes at least one mask
+amp_pruned, dropped = quality.prune_ch(amp, [snr_mask, sci_mask], operator="all")
+
+print("Dropped channels:", dropped)
 ```
 
-Now we can create the small helper functions that calculate and check the SNR, Source-Detector Distances and Amplitudes of fNIRS channels. Using the coordinates and units from Xarrays these are effectively implemented:
+Both `snr_mask` and `sci_mask` are boolean DataArrays (`True` = clean,
+`False` = tainted). `prune_ch` combines them and removes channels that fail. Add a
+new metric by writing a function that returns `(metric, mask)` with the same
+convention — it will plug directly into `prune_ch`.
 
-`def snr_range():`
-
-```
-@cdc.validate_schemas
-def snr_range(amplitudes: cdt.NDTimeSeries, snr_thresh: Quantity):
-    """Calculates channel SNR of each channel and wavelength.
-
-    INPUTS:
-    amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
-    snr_thresh:  Quantity, SNR threshold (unitless).
-                If meaArgs:
-        inputVar1:n(d)/std(d) < SNRthresh then it is excluded as an active channel
-    OUTPUTS:
-    snr:        ratio betwean mean and std of the amplitude signal for all channels.
-    MeasList:   list of active channels that meet the conditions
-
-    """
-    # calculate SNR
-    snr = amplitudes.mean("time") / amplitudes.std("time")
-    # create MeasList and threshold it
-    meas_list = list(amplitudes.coords["channel"].values)
-    # for all active channels in the MeasList check if they meet the conditions
-    # or drop them from the list
-    drop_list = snr.where(snr < snr_thresh).dropna(dim="channel").channel.values
-    meas_list = [channel for channel in meas_list if channel not in drop_list]
-
-    return snr, meas_list, drop_list
-```
-Since we do not have a defined Container for handling the results of the SNR quality check yet, we create a measurement list `meas_list` that contains all the channel names from our input xarray time series that did not fail the criterion, as well as a list of all channels that did fail the snr criterion `drop_list`. We return both, alongside the calculated SNR values stored in `snr`, which itself is also an xarray which will contain the calculated SNR for all input coordinates (here: channels and wavelenghts).
-
-We do the same for the distance thresholding to find / drop channels that are outside of a source-detector distance that we want to accept. To calculate the SD distance, we need the 3D coordinates of the optodes (named here `geo3D`), which we previoously got from our SNIRF file.
-
-`def sd_range():`
-
-```
-@cdc.validate_schemas
-def sd_range(amplitudes: cdt.NDTimeSeries, geo3D: Quantity, sd_threshs: Quantity):
-    """Identify and drop channels with a source-detector separation <sd_threshs(0) or > sd_threshs(1).
-
-    INPUTS:
-    amplitues:  NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
-    geo3D:      Quantity, 3D coordinates of the channels
-    sd_threshs: Quantity, in mm, cm or m. If source-detector separation <sd_threshs(0) or > sd_threshs(1)
-                then it is excluded as an active channel
-    OUTPUTS:
-    ch_dist:    channel distances
-    MeasList:   list of active channels that meet the conditions
-    """
-
-    # calculate channel distances
-    ch_dist = xrutils.norm(
-        geo3D.loc[amplitudes.source] - geo3D.loc[amplitudes.detector], dim="digitized"
-        ).round(3)
-    # create MeasList and threshold it
-    meas_list = list(amplitudes.coords["channel"].values)
-    # for all active channels in the MeasList check if they meet the conditions
-    # or drop them from the list
-    drop_list = ch_dist.where((ch_dist < sd_threshs[0]) | (ch_dist > sd_threshs[1])
-                              ).dropna(dim="channel").channel.values
-    meas_list = [channel for channel in meas_list if channel not in drop_list]
-
-```
-
-For the `amp_range()` to identify channels in/outside of a range of acceptable amplitudes, we repeat (not shown here) with slight modification.
-
-The actual `quality.prune()` method can now be built around these helper functions. Inputs to prune() are the time series, and all the relevant thresholds. The pruning function will now simply go through all relevant quality metrics (will be expanded in the future) and subsequently reduce the list of active channels in `meas_list` by the channels that did not pass the criteria and remove these from the input DataArray. Also, it will hand back the accumulated list of dropped channels in `drop_list` for feedback to the user.
-
-```
-@cdc.validate_schemas
-def prune(data: cdt.NDTimeSeries, geo3D: Quantity, snr_thresh: Quantity,
-          amp_threshs: Quantity, sd_threshs: Quantity):
-    """Prune channels from the measurement list.
-
-    Prunging criteria are signal strength, standard deviation (SNR), or channel distances.
-    TODO: Include SCI/PSP etc.
-
-    Based on Homer3 [1] v1.80.2 "hmR_PruneChannels.m"
-    Boston University Neurophotonics Center
-    https://github.com/BUNPC/Homer3
-
-    [1] Huppert, T. J., Diamond, S. G., Franceschini, M. A., & Boas, D. A. (2009).
-     "HomER: a review of time-series analysis methods for near-infrared spectroscopy of the brain".
-     Appl Opt, 48(10), D280–D298. https://doi.org/10.1364/ao.48.00d280
-
-    INPUTS:
-    data:       NDTimeSeries, input fNIRS data xarray with time and channel dimensions.
-    geo3D:      Quantity, 3D coordinates of the channels
-    snr_thresh:  Quantity, SNR threshold (unitless).
-                If mean(d)/std(d) < SNRthresh then it is excluded as an active channel
-    amp_threshs:  Quantity, . If mean(d) < dRange(1) or > dRange(2)
-                then it is excluded as an active channel
-    sd_threshs: Quantity, in cm. If source-detector separation <SDrange(1) or > SDrange(2)
-                then it is excluded as an active channel
-    OUTPUTS:
-    meas_list:   list of active channels that meet the conditions
-
-    DEFAULT PARAMETERS:
-    amp_threshs: [1e4, 1e7]
-    snr_thresh: 2
-    sd_threshs: [0.0, 4.5]
-    """
-
-    # create MeasList with all channels active
-    meas_list = list(data.coords["channel"].values)
-
-    # SNR thresholding
-    snr, meas_list_snr, drop_list_snr = snr_range(data, snr_thresh)
-    # keep only the channels in MeasList that are also in MeasList_snr
-    meas_list = [channel for channel in meas_list if channel in meas_list_snr]
-
-    # Source Detector Separation thresholding
-    ch_dist, meas_list_sd, drop_list_sd = sd_range(data, geo3D, sd_threshs)
-    # keep only the channels in MeasList that are also in MeasList_sd
-    meas_list = [channel for channel in meas_list if channel in meas_list_sd]
-
-    # Amplitude thresholding
-    meas_list_amp, drop_list_amp = amp_range(data, amp_threshs)
-    # keep only the channels in MeasList that are also in MeasList_amp
-    meas_list = [channel for channel in meas_list if channel in meas_list_amp]
-
-    # FIXME / TODO
-    # SCI thresholding
-
-    # drop the channels in data that are not in MeasList
-    data = data.sel(channel=meas_list)
-    # also return a list of all dropped channels
-    drop_list = list(set(drop_list_snr) | set(drop_list_sd) | set(drop_list_amp))
-
-    return data, drop_list
-```
+For the full current implementation, see
+[sigproc/quality.py](https://github.com/ibs-lab/cedalion/blob/main/src/cedalion/sigproc/quality.py).
 
 ### Creating example notebooks
-After adding a feature, it is a good idea to create a jupyter notebook showcasing the new functionality. Notebooks should be added to the appropriate subfolder in the examples folder. You can select the thumbnail that will appear in examples gallery by adding the tag "nbsphinx-thumbnail" to a cell that produces a plot or figure (the IBS logo is used by default if no tag is set).
 
-## Concluding Remarks
-The example above uses Cedalion's most basic data structures. While the toolbox continues to grow, we will add containers and abstraction layers to simplify and unify usage and code contribution. Whenever possible and especially when you find that the existing environment does not (yet) provide a level of abstraction or a data structure bundling all the data that you need in one container, please develop **bottom up** and write simple functions with (multiple) simple input and output arguments. In the example, once a general container is specified that ties together timeseries data, optode information (such as the `geo3D`) or measurement lists, it is straightforward to refactor the code accordingly. The same is true for more complex processing pipelines tied together in jupyter notebooks. We are working on a mechanism to build pipelines that enables easier and more abstract use by incorporating the lower level functions. Translating a notebook to such a pipeline is then straightforward.
+After adding a feature, create a Jupyter notebook in the appropriate subfolder of
+`examples/`. To set the thumbnail shown in the examples gallery, add the tag
+`nbsphinx-thumbnail` to the cell that produces the representative figure (the IBS
+logo is used by default if no tag is set).
+
+## Concluding remarks
+
+While the toolbox continues to grow, we will add containers and abstraction layers
+to simplify usage. Whenever the existing environment does not yet provide the level
+of abstraction you need, develop **bottom up**: write simple functions with clear
+inputs and outputs. Once a general container ties together the relevant data, it is
+straightforward to refactor. We are working on higher-level pipeline mechanisms that
+will make it easy to assemble lower-level functions into reusable workflows.
