@@ -17,6 +17,9 @@ help:
 examples:
 	make -C examples notebooks
 
+clean:
+	rm -rf $(BUILDDIR)
+
 clean_examples:
 	make -C examples clean
 

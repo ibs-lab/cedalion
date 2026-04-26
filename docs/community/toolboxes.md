@@ -7,10 +7,10 @@ This section is WIP.
 A part of the core set of Cedalion's scientific fNIRS processing functionality is based on the matlab toolboxes [Homer2/3](https://github.com/BUNPC/Homer3) and [AtlasViewer](https://github.com/BUNPC/AtlasViewer) from which we have adopted methods into the python ecosystem.
 
 ## Current toolboxes cedalion interfaces with
-- [Monte Carlo Xtreme](http://mcx.space/), for Monte-Carlo-based photon simulation
+- [Monte Carlo Xtreme](http://mcx.space/), for GPU-accelerated Monte Carlo photon simulation
 - [NIRFASTer](https://github.com/nirfaster/NIRFASTer), for FEM-based photon simulation
+- [MNE](https://mne.tools/stable/index.html), used internally for geometry operations; SNIRF files written by Cedalion are directly readable by MNE-NIRS
 
 ## Planned future toolboxes
-- [MNE](https://mne.tools/stable/index.html), for state of the art EEG/MEG processing functionality
 - [NeuroKit](https://github.com/neuropsychology/NeuroKit), for Neurophysiological Signal Processing
 - [...?](https://openfnirs.org/software/)
