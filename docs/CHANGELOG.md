@@ -29,7 +29,7 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 
 - Added `TwoSurfaceHeadmodel.scale_to_headsize` and `TwoSurfaceHeadmodel.scale_to_landmarks` to adjust the head model's size to the head circumferences or digitized landmarks, respectively. By [Eike Middell](https://github.com/emiddell).
 
-- Higher-resolution cortex meshes for the Colin27 and ICBM152 head models, which additionally maintain a link to the freesurfer surfaces from which they were derived, by [Eike Middell](https://github.com/emiddell). ([#138](https://github.com/ibs-lab/cedalion/pull/138)).
+- Higher-resolution cortex meshes for the Colin27 and ICBM152 head models, which additionally maintain a link to the freesurfer surfaces from which they were derived, by [Eike Middell](https://github.com/emiddell). ([#138](https://github.com/ibs-lab/cedalion/pull/138)). The Colin27 meshes were subsequently recomputed to remove artifacts and to fix the voxel-to-vertex mapping. Reduced meshes of the FreeSurfer inflated brains are now bundled with a 1-to-1 vertex correspondence to the pial brain meshes, and sparse voxel-to-vertex maps are stored in Matrix Market format.
 
 - The factory method `cedalion.dot.get_standard_headmodel` to construct the `TwoSurfaceHeadModel` of the standard Colin27 and ICBM-152 heads was added, by [Eike Middell](https://github.com/emiddell).
 
@@ -48,8 +48,7 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 
 - Added `cedalion.geometry.landmarks.normalize_landmarks_labels` to map alternative landmark names (e.g., "nasion", "left ear", "nz") to their canonical 10-10 system labels (e.g. Nz, LPA). The function handles now case-insensitive matching and supports common naming conventions. Usage: `geo3d = normalize_landmarks_labels(geo3d)` before calling registration or plotting functions, by [Mohammad Orabe](https://github.com/orabe). ([#84](https://github.com/ibs-lab/cedalion/issues/84), [#132](https://github.com/ibs-lab/cedalion/pull/132))
 
-- The ninja HD and UHD cap coordinates were changed from a right-handed to a left-handed
-coordinate system, by [Nils Harmening](https://github.com/harmening). ([#110](https://github.com/ibs-lab/cedalion/pull/110))
+- The ninja HD and UHD cap coordinates were changed from a left-handed to a right-handed coordinate system, by [Nils Harmening](https://github.com/harmening). ([#110](https://github.com/ibs-lab/cedalion/pull/110))
 
 #### Image Reconstruction
 
@@ -86,10 +85,16 @@ coordinate system, by [Nils Harmening](https://github.com/harmening). ([#110](ht
 
 - Added the option `draw_arcs` to `cedalion.vis.anatomy.scalp_plot`. If set to True, channels are drawn as curved lines to reduce overlap, by [Eike Middell](https://github.com/emiddell).
 
+- Added channel plotting (lines between source-detector pairs) to `cedalion.vis.blocks.plot_labeled_points`, by [Nils Harmening](https://github.com/harmening). ([#111](https://github.com/ibs-lab/cedalion/pull/111))
+
+- Enhanced landmark picking in `cedalion.vis.blocks.plot_surface`: callers can now choose which landmarks to pick, and the picked landmarks are returned as an `xr.DataArray`, by [Nils Harmening](https://github.com/harmening). ([#126](https://github.com/ibs-lab/cedalion/pull/126))
+
 #### Utilities
 
 - Added `cedalion.xrutils.dot_dataarray_csr` for matrix products between `xr.DataArray` 
   and `scipy.sparse` arrays, by [Eike Middell](https://github.com/emiddell).
+
+- Added a `Dockerfile` to build a containerised cedalion environment, by [Nils Harmening](https://github.com/harmening). ([#6](https://github.com/ibs-lab/cedalion/pull/6))
 
 
 ### Fixes
@@ -100,6 +105,10 @@ boolean mask of motion artifacts, by [Eike Middell](https://github.com/emiddell)
 - Fixed an issue with constant regressors when fitting a GLM using the AR-IRLS method. The autoregressive filter used to
 account for serial correlations was not properly applied to them. The fix ignores samples at the beginning of the time
 series until the filter is initialized, by [Eike Middell](https://github.com/emiddell).
+- Fixed the labels assigned by landmark picking in `cedalion.vis.blocks.plot_surface`, by [Nils Harmening](https://github.com/harmening). ([#126](https://github.com/ibs-lab/cedalion/pull/126))
+- Fixed `cedalion.io.read_photogrammetry_einstar` to filter out unpicked positions, by [Nils Harmening](https://github.com/harmening). ([#144](https://github.com/ibs-lab/cedalion/pull/144))
+- Removed a redundant `t_ras2ijk` transform when saving and loading `TwoSurfaceHeadModel`s, by [Nils Harmening](https://github.com/harmening). ([#143](https://github.com/ibs-lab/cedalion/pull/143))
+- Fixed `TwoSurfaceHeadModel.__repr__` raising when `landmarks` was `None`, by [Eike Middell](https://github.com/emiddell).
 
 
 
