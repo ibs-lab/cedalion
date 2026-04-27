@@ -2,10 +2,14 @@
 
 import numpy as np
 import pytest
+import trimesh
 import xarray as xr
 
 import cedalion.dataclasses as cdc
-from cedalion.geometry.landmarks import normalize_landmarks_labels
+from cedalion.geometry.landmarks import (
+    LandmarksBuilder1010,
+    normalize_landmarks_labels,
+)
 from cedalion.vis.anatomy.montage import plot_montage3D
 
 
@@ -249,6 +253,39 @@ def test_normalize_then_plot():
 
     # Plot with empty list
     plot_montage3D(amp, normalized_geo3d, landmarks=[])
+
+
+def _icosphere_scalp():
+    """Build a synthetic ellipsoid scalp + canonical Nz/Iz/LPA/RPA fiducials."""
+    sphere = trimesh.creation.icosphere(subdivisions=4, radius=90.0)
+    # squash into a vaguely head-shaped ellipsoid (a, b, c)
+    sphere.vertices = sphere.vertices * np.array([85.0, 100.0, 90.0]) / 90.0
+    surf = cdc.TrimeshSurface(sphere, crs="ras", units="mm")
+
+    landmarks = cdc.build_labeled_points(
+        [
+            [0.0, 100.0, 0.0],   # Nz  (anterior, +y)
+            [0.0, -100.0, 0.0],  # Iz  (posterior, -y)
+            [-85.0, 0.0, 0.0],   # LPA (left, -x)
+            [85.0, 0.0, 0.0],    # RPA (right, +x)
+        ],
+        crs="ras",
+        units="mm",
+        labels=["Nz", "Iz", "LPA", "RPA"],
+        types=[cdc.PointType.LANDMARK] * 4,
+    )
+    return surf, landmarks
+
+
+def test_estimate_cranial_vertex_is_at_apex():
+    """For a head-shaped ellipsoid Cz should sit near the +z apex."""
+    surf, lms = _icosphere_scalp()
+    builder = LandmarksBuilder1010(surf, lms)
+    cz = builder._estimate_cranial_vertex_from_lines()
+    # apex is (0, 0, 90); algorithm averages two close midpoints, should be near apex
+    assert abs(cz[0]) < 5.0
+    assert abs(cz[1]) < 5.0
+    assert cz[2] > 85.0
 
 
 def test_plot_no_canonical_landmarks_present(sample_amp):
