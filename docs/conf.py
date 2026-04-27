@@ -47,6 +47,8 @@ html_css_files = [
 
 myst_enable_extensions = [
     "substitution",
+    "dollarmath",
+    "amsmath",
 ]
 
 myst_heading_anchors = 2
