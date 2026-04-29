@@ -3,16 +3,17 @@ import tempfile
 
 import numpy as np
 import pytest
+import warnings as _warnings
 from scipy.sparse import find
 import sys
 import xarray as xr
 
 import cedalion.data
+import cedalion.dot as cdot
 import cedalion.dot.forward_model as fw
 import cedalion.dataclasses as cdc
 import cedalion.nirs
 import cedalion.xrutils
-
 
 
 try:
@@ -386,3 +387,85 @@ def test_image_to_channel_space():
 
         assert set(ts.dims) == {"channel", "wavelength", "time"}
         assert cedalion.xrutils.check_units(ts, "")
+
+
+def test_scale_to_landmarks():
+    """Round-trip self-consistency for TwoSurfaceHeadModel.scale_to_landmarks.
+
+    Scale colin27 onto icbm152's landmarks, then verify the resulting
+    colin27_scaled.landmarks land near icbm152.landmarks. They should agree
+    within around 5% of head extent.
+    """
+    icbm = cdot.get_standard_headmodel("icbm152")
+    colin = cdot.get_standard_headmodel("colin27")
+
+    # Bring icbm152 landmarks into mm-RAS, then rename CRS dim to avoid
+    # a collision with colin27's "mni" CRS inside register_general_affine.
+    target_lm = icbm.landmarks.points.apply_transform(icbm.t_ijk2ras).pint.to("mm")
+    target_lm = target_lm.rename({target_lm.points.crs: "subj_ras"})
+
+    scaled_colin = colin.scale_to_landmarks(target_lm)
+
+    # After scale_to_landmarks the head model's landmarks already live in the
+    # target frame ("subj_ras"); just convert units for comparison.
+    scaled_lm = scaled_colin.landmarks.pint.to("mm")
+
+    common = sorted(set(scaled_lm.label.values) & set(target_lm.label.values))
+    assert len(common) >= 4, f"need >=4 common labels, got {len(common)}: {common}"
+
+    scaled = scaled_lm.sel(label=common).pint.dequantify().values
+    target = target_lm.sel(label=common).pint.dequantify().values
+
+    diag = float(np.linalg.norm(target.max(0) - target.min(0)))
+    assert 100.0 < diag < 350.0, f"unexpected head diag: {diag} mm"
+
+    resid = np.linalg.norm(scaled - target, axis=1)
+    assert np.median(resid) < 0.05 * diag, (
+        f"median residual {np.median(resid):.2f} mm > 5% of diag {diag:.1f} mm"
+    )
+    assert resid.max() < 0.10 * diag, (
+        f"max residual {resid.max():.2f} mm > 10% of diag {diag:.1f} mm"
+    )
+
+    s_ext = scaled.max(0) - scaled.min(0)
+    t_ext = target.max(0) - target.min(0)
+    rel_err = np.abs(s_ext - t_ext) / t_ext
+    assert (rel_err < 0.05).all(), (
+        f"bbox extents differ by {rel_err} (>5%): scaled={s_ext}, target={t_ext}"
+    )
+
+
+def _icbm152_target_landmarks_subj_ras(labels):
+    """Helper: pull a subset of icbm152 landmarks into a "subj_ras" mm frame."""
+    icbm = cdot.get_standard_headmodel("icbm152")
+    lm = icbm.landmarks.points.apply_transform(icbm.t_ijk2ras).pint.to("mm")
+    lm = lm.sel(label=lm.label.isin(labels))
+    return lm.rename({lm.points.crs: "subj_ras"})
+
+
+def test_scale_to_landmarks_warns_on_coplanar_fiducials():
+    """4 nearly-coplanar fiducials trigger a coplanarity UserWarning."""
+    target = _icbm152_target_landmarks_subj_ras(["Nz", "Iz", "LPA", "RPA"])
+    colin = cdot.get_standard_headmodel("colin27")
+    with pytest.warns(UserWarning, match="coplanar"):
+        colin.scale_to_landmarks(target)
+
+
+def test_scale_to_landmarks_no_warning_with_cz_added():
+    """Adding Cz lifts the source out of the fiducial plane and silences warning."""
+    target = _icbm152_target_landmarks_subj_ras(["Nz", "Iz", "LPA", "RPA", "Cz"])
+    colin = cdot.get_standard_headmodel("colin27")
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error", UserWarning)
+        colin.scale_to_landmarks(target)
+
+
+def test_scale_to_landmarks_no_warning_full_1010():
+    """Full 10-10 landmark set is well-distributed; no coplanarity warning."""
+    icbm = cdot.get_standard_headmodel("icbm152")
+    target = icbm.landmarks.points.apply_transform(icbm.t_ijk2ras).pint.to("mm")
+    target = target.rename({target.points.crs: "subj_ras"})
+    colin = cdot.get_standard_headmodel("colin27")
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error", UserWarning)
+        colin.scale_to_landmarks(target)
