@@ -78,6 +78,7 @@ Examples
 
    ../examples/getting_started_io/10_xarray_datastructs_fnirs.ipynb
    ../examples/getting_started_io/11_recording_container.ipynb
+   ../examples/getting_started_io/12_read_snirf_files.ipynb
    ../examples/getting_started_io/13_data_structures_intro.ipynb
    ../examples/getting_started_io/14_snirf2bids.ipynb
    ../examples/getting_started_io/34_store_hrfs_in_snirf_file.ipynb
