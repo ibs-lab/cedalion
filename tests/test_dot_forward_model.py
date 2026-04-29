@@ -3,6 +3,7 @@ import tempfile
 
 import numpy as np
 import pytest
+import warnings as _warnings
 from scipy.sparse import find
 import sys
 import xarray as xr
@@ -432,3 +433,39 @@ def test_scale_to_landmarks():
     assert (rel_err < 0.05).all(), (
         f"bbox extents differ by {rel_err} (>5%): scaled={s_ext}, target={t_ext}"
     )
+
+
+def _icbm152_target_landmarks_subj_ras(labels):
+    """Helper: pull a subset of icbm152 landmarks into a "subj_ras" mm frame."""
+    icbm = cdot.get_standard_headmodel("icbm152")
+    lm = icbm.landmarks.points.apply_transform(icbm.t_ijk2ras).pint.to("mm")
+    lm = lm.sel(label=lm.label.isin(labels))
+    return lm.rename({lm.points.crs: "subj_ras"})
+
+
+def test_scale_to_landmarks_warns_on_coplanar_fiducials():
+    """4 nearly-coplanar fiducials trigger a coplanarity UserWarning."""
+    target = _icbm152_target_landmarks_subj_ras(["Nz", "Iz", "LPA", "RPA"])
+    colin = cdot.get_standard_headmodel("colin27")
+    with pytest.warns(UserWarning, match="coplanar"):
+        colin.scale_to_landmarks(target)
+
+
+def test_scale_to_landmarks_no_warning_with_cz_added():
+    """Adding Cz lifts the source out of the fiducial plane and silences warning."""
+    target = _icbm152_target_landmarks_subj_ras(["Nz", "Iz", "LPA", "RPA", "Cz"])
+    colin = cdot.get_standard_headmodel("colin27")
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error", UserWarning)
+        colin.scale_to_landmarks(target)
+
+
+def test_scale_to_landmarks_no_warning_full_1010():
+    """Full 10-10 landmark set is well-distributed; no coplanarity warning."""
+    icbm = cdot.get_standard_headmodel("icbm152")
+    target = icbm.landmarks.points.apply_transform(icbm.t_ijk2ras).pint.to("mm")
+    target = target.rename({target.points.crs: "subj_ras"})
+    colin = cdot.get_standard_headmodel("colin27")
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error", UserWarning)
+        colin.scale_to_landmarks(target)
