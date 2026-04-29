@@ -41,10 +41,12 @@ def normalize_landmarks_labels(geo3d: LabeledPoints) -> LabeledPoints:
         return geo3d
 
     label_mapping = {
-        "Nz": {"nz", "nasion", "nas"},
+        "Nz": {"nz", "nasion", "nas", "nasion fid-anchor"},
         "Iz": {"iz", "inion", "ini"},
-        "LPA": {"lpa", "lpa_l", "left ear", "le", "left", "l", "al"},
-        "RPA": {"rpa", "rpa_r", "right ear", "re", "right", "r", "ar"},
+        "LPA": {"lpa", "lpa_l", "left ear", "le", "left", "l", "al",
+                "lpa fid-anchor"},
+        "RPA": {"rpa", "rpa_r", "right ear", "re", "right", "r", "ar",
+                "rpa fid-anchor"},
         "Cz": {"cz", "vertex"},
     }
 
