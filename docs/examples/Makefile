@@ -1,6 +1,7 @@
 EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
 					getting_started_io/10_xarray_datastructs_fnirs.ipynb \
 					getting_started_io/11_recording_container.ipynb \
+					getting_started_io/12_read_snirf_files.ipynb \
 					getting_started_io/13_data_structures_intro.ipynb \
 					getting_started_io/34_store_hrfs_in_snirf_file.ipynb \
 					getting_started_io/14_snirf2bids.ipynb \
