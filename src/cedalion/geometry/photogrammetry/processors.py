@@ -196,17 +196,7 @@ class ColoredStickerProcessor(ScanProcessor):
         """
         assert surface.units == units.mm  # FIXME Einstar yields mm. Allow other units.
 
-        vertex_colors = surface.mesh.visual.to_color().vertex_colors
-
-        rgb_to_hsv = np.vectorize(colorsys.rgb_to_hsv)
-
-        # vertex colors as float HSV values. h,s in [0,1.] v in [0,255]
-        h, s, v = rgb_to_hsv(
-            vertex_colors[:, 0],
-            vertex_colors[:, 1],
-            vertex_colors[:, 2],
-        )
-        v = v / 255.0
+        vertex_colors, h, s, v = self._extract_vertex_color_data(surface)
 
         head_cog = np.mean(surface.mesh.vertices, axis=0)
         radius_mm = float(self.sticker_radius.to("mm").magnitude)
@@ -418,6 +408,39 @@ class ColoredStickerProcessor(ScanProcessor):
         else:
             return sticker_centers, sticker_normals
 
+    def _extract_vertex_color_data(
+        self, surface: cdc.TrimeshSurface
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Return vertex RGB colors together with HSV channels."""
+        vertex_colors = surface.mesh.visual.to_color().vertex_colors
+        rgb_to_hsv = np.vectorize(colorsys.rgb_to_hsv)
+
+        # vertex colors as float HSV values. h,s,v in [0, 1.]
+        h, s, v = rgb_to_hsv(
+            vertex_colors[:, 0],
+            vertex_colors[:, 1],
+            vertex_colors[:, 2],
+        )
+        v = v / 255.0
+
+        return vertex_colors, h, s, v
+
+    def inspect_colors(
+        self, surface: cdc.TrimeshSurface
+    ) -> ColoredStickerProcessorDetails:
+        """Build a details object for color-range inspection without clustering."""
+        vertex_colors, h, s, v = self._extract_vertex_color_data(surface)
+
+        return ColoredStickerProcessorDetails(
+            cluster_coords=[],
+            cluster_circles=[],
+            cluster_colors=[],
+            vertex_colors=vertex_colors,
+            vertex_hue=h,
+            vertex_value=v,
+            cfg_colors=self.colors,
+            vertex_sat=s,
+        )
 
 @cdc.validate_schemas
 def geo3d_from_scan(
