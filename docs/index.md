@@ -5,6 +5,12 @@ A Python framework for the data-driven analysis of functional near-infrared spec
 the [Intelligent Biomedical Sensing (IBS) Lab](https://www.tu.berlin/ibs) with and for
 the community.
 
+```{note}
+You are reading the documentation for the latest development version.
+Use the **version switcher** (top-left of the page) to select documentation
+for a specific release that matches your installed package.
+```
+
 ![cedalion graphical abstract](img/cedalion_frontpage.png)
 
 ## What is Cedalion?
