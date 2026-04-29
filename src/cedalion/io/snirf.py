@@ -16,6 +16,7 @@ from numpy.typing import ArrayLike
 from snirf import Snirf
 from snirf.pysnirf2 import DataElement, MeasurementList, NirsElement, Stim
 from strenum import StrEnum
+import h5py
 
 import cedalion.dataclasses as cdc
 from cedalion import units
@@ -1079,6 +1080,16 @@ def measurement_list_from_stacked(
         ml["dataTypeIndex"] = [
             trial_types.index(tt) + 1 for tt in stacked_array.trial_type.values
         ]
+    elif data_type == "td_mean":
+        ml["dataType"] = [DataType.TDM_AMPLITUDE.value] * nchannel
+        ml["dataTypeLabel"] = [DataTypeLabel.MOMENTS_KERNEL.value] * nchannel
+        ml["dataTypeIndex"] = [2] * nchannel
+    elif data_type == "td_var":
+        ml["dataType"] = [DataType.TDM_AMPLITUDE.value] * nchannel
+        ml["dataTypeLabel"] = [DataTypeLabel.MOMENTS_KERNEL.value] * nchannel
+        ml["dataTypeIndex"] = [3] * nchannel
+    else:
+        raise ValueError(f"unhandeled data_type={data_type}")
 
     if "wavelength" in stacked_array.coords:
         wavelengths = list(np.unique(stacked_array.wavelength.values))
@@ -1145,13 +1156,29 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
         ne.probe.detectorPos2D = geo2d.loc[det_labels2D]
         ne.probe.landmarkPos2D = geo2d.loc[lm_labels2D]
 
+    is_td_nirs = bool(
+        {"td_mean", "td_mean"}
+        & {rec.get_timeseries_type(key) for key in rec.timeseries.keys()}
+    )
+
+    if is_td_nirs:
+        ne.probe.momentOrders = [0,1,2]
+
     trial_types = list(rec.stim["trial_type"].drop_duplicates())
 
     for key, timeseries in rec.timeseries.items():
         data_type = rec.get_timeseries_type(key)
 
-        if data_type not in ["amplitude", "od", "concentration", "hrf"]:
+        if data_type not in [
+            "amplitude",
+            "od",
+            "concentration",
+            "hrf",
+            "td_mean",
+            "td_var",
+        ]:
             raise ValueError(
+                "Support for writing snirf files is not complete. "
                 "data_type must be either 'amplitude', 'od','concentration' or 'hrf'."
             )
 
@@ -1272,3 +1299,54 @@ def write_snirf(
             _write_recordings(fout, rec)
 
         fout.save()
+
+
+def compress_snirf(
+    input: Path | str,
+    output: Path | str,
+    compression="gzip",
+    compression_opts=6,
+    chunks=True,
+    shuffle=True,
+):
+    """Copy a SNIRF file with HDF5 compression applied where possible.
+
+    Args:
+        input: Path to the source SNIRF file.
+        output: Path for the compressed output file.
+        compression: HDF5 compression filter name (default ``"gzip"``).
+        compression_opts: Compression level; for gzip this is 0–9
+            (default ``6``).
+        chunks: Enable HDF5 chunked storage, required for compression
+            (default ``True``).
+        shuffle: Apply the byte-shuffle filter before compression to improve
+            ratio (default ``True``).
+    """
+
+    def copy_compressed(name, obj):
+        if isinstance(obj, h5py.Dataset):
+            # try copying the dataset with selected compression filters
+            try:
+                dst.create_dataset(
+                    name,
+                    data=obj[()],
+                    compression=compression,
+                    compression_opts=compression_opts,
+                    chunks=chunks,
+                    shuffle=shuffle,
+                )
+            # if it fails (e.g. for var. length string arrays) copy as is
+            except:
+                dst.create_dataset(
+                    name,
+                    data=obj[()],
+                )
+        elif isinstance(obj, h5py.Group):
+            dst.require_group(name)
+
+    with h5py.File(input, 'r') as src, h5py.File(output, 'w') as dst:
+        src.visititems(copy_compressed)
+
+        # Copy root attributes
+        for k, v in src.attrs.items():
+            dst.attrs[k] = v

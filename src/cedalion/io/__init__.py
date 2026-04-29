@@ -1,4 +1,4 @@
-from .snirf import read_snirf, write_snirf
+from .snirf import read_snirf, write_snirf, compress_snirf
 from .probe_geometry import (
     read_mrk_json,
     read_digpts,

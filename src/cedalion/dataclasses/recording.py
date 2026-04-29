@@ -158,6 +158,11 @@ class Recording:
             return "hrf"
         elif key == "conc" or key.startswith("conc_") or (q.check(["concentration"])):
             return "concentration"
+        # TD-moments
+        elif key == "mean" or key.startswith("mean_"):
+            return "td_mean"
+        elif key == "var" or key.startswith("var_"):
+            return "td_var"
         else:
             raise ValueError(f"could not infer data type of timeseries '{key}'")
 
