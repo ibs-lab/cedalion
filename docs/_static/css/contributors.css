@@ -1,0 +1,50 @@
+.contributor-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+    margin: 1.5rem 0;
+    padding: 0;
+}
+
+.contributor-card {
+    text-align: center;
+    width: 110px;
+}
+
+.contributor-card a {
+    text-decoration: none !important;
+    color: inherit !important;
+    display: block;
+}
+
+.contributor-card a:hover .contributor-name {
+    text-decoration: underline;
+}
+
+.contributor-card img {
+    border-radius: 50%;
+    width: 80px;
+    height: 80px;
+    display: block;
+    margin: 0 auto 0.4rem;
+    border: 2px solid #e8e8e8;
+}
+
+.contributor-card.maintainer img {
+    border-color: #2980b9;
+    width: 90px;
+    height: 90px;
+}
+
+.contributor-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: #333;
+    margin-bottom: 0.15rem;
+}
+
+.contributor-commits {
+    font-size: 0.72rem;
+    color: #777;
+}

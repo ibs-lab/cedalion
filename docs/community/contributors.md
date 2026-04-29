@@ -1,18 +1,28 @@
 # Contributors
 
-This section is WIP. You will find more information and detailed stats here soon. 
+Cedalion is an open-source project driven by the [IBS Lab](https://www.tu.berlin/ibs)
+with the aim of encouraging continuous use, contribution, and improvement from the
+entire community. Every code contribution is credited here and in the relevant function
+docstrings. The contributor list below is generated automatically from the
+[GitHub repository](https://github.com/ibs-lab/cedalion) and can be refreshed by
+running `python scripts/generate_contributors.py`.
 
-Cedalion is an open source project driven by the [IBS-Lab](https://ibs-lab.com/) with the aim to encourage continuous use, contribution and improvement from the whole community to make it last. Therefore, it is important to us establish a transparent system of crediting contributors.
-
-
-## Code Credit
-Here you will find a list of code contributors soon. Until then, please see:
-https://github.com/ibs-lab/cedalion/graphs/contributors
+```{include} contributors_generated.md
+```
 
 ## Scientific Credit
-This documentation contains a dedicated [section that lets you search and find references to scientific papers](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/references.html
-). Papers that introduce methods implemented in Cedalion show up here. If you contribute code to the toolbox that is based on a scientific method, please add the bibtex entries to our references.bib file and mention the paper in the function's docstring to give its inventors the visibility they deserve. 
+
+This documentation contains a dedicated
+[bibliography](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/references.html)
+where you can search for scientific papers whose methods are implemented in Cedalion.
+If you contribute code based on a published method, please add the BibTeX entry to
+`docs/references.bib` and cite it in the function's docstring — this gives the
+original authors the visibility they deserve.
 
 ## Special Mentions
-- Special thanks to members of the Bio Optical & Acoustic Spectroscopy (BOAS) Lab at Boston University's Neurophotonics Center: Laura Carlton, Sung Ahn, Meryem Yücel and David Boas. 
-- Thanks to Jiaming Cao from the University of Birmingham for actively supporting us in the adoption of [NIRFASTer](https://github.com/nirfaster/NIRFASTer) into cedailion.
+
+- Special thanks to members of the Bio Optical & Acoustic Spectroscopy (BOAS) Lab at
+  Boston University's Neurophotonics Center: Laura Carlton, Sung Min Ahn, Meryem Yücel,
+  and David Boas.
+- Thanks to Jiaming Cao from the University of Birmingham for supporting the adoption
+  of [NIRFASTer](https://github.com/nirfaster/NIRFASTer) into Cedalion.
