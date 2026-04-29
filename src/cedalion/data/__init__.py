@@ -378,7 +378,12 @@ class HeadModelFiles:
 
 
 def get_colin27_headmodel_files() -> HeadModelFiles:
-    """Retrieves the Colin27 segmentation dataset, based on :cite:t:`Holmes1998`."""
+    """Retrieve the Colin27 head model files.
+
+    The Colin27 atlas (:cite:t:`Holmes1998`) was further processed with FreeSurfer
+    (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations, and
+    voxel-to-vertex mappings used in cedalion's DOT pipeline.
+    """
 
     fnames = DATASETS.fetch("hm_colin27.zip", processor=pooch.Unzip())
 
@@ -427,12 +432,24 @@ def get_icbm152_headmodel_files() -> HeadModelFiles:
     )
 
 def get_colin27_freesurfer_directory() -> Path:
+    """Return the path to the FreeSurfer recon-all output for the Colin27 atlas.
+
+    The Colin27 MRI (:cite:t:`Holmes1998`) was processed with FreeSurfer's
+    ``recon-all`` pipeline (:cite:t:`Fischl2012`) to generate cortical surface
+    reconstructions used in cedalion's DOT head modelling.
+    """
     fnames = DATASETS.fetch("fs_reconall_colin27.zip", processor=pooch.Unzip())
     dirname = os.path.commonpath(fnames)
 
     return Path(dirname)
 
 def get_icbm152_freesurfer_directory() -> Path:
+    """Return the path to the FreeSurfer recon-all output for the ICBM-152 atlas.
+
+    The ICBM-152 MRI was processed with FreeSurfer's ``recon-all`` pipeline
+    (:cite:t:`Fischl2012`) to generate cortical surface reconstructions used in
+    cedalion's DOT head modelling.
+    """
     fnames = DATASETS.fetch("fs_reconall_icbm152.zip", processor=pooch.Unzip())
     dirname = os.path.commonpath(fnames)
 

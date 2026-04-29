@@ -42,7 +42,7 @@ class DesignMatrix:
         return result
 
     def __repr__(self):
-        """Return a compact string representation listing common and channel-wise regressors."""
+        """Return a compact string representation listing common and channel-wise regressors."""  # noqa: E501
 
         cregs = (
             ",".join([f"'{r}'" for r in self.common.regressor.values])
@@ -607,6 +607,10 @@ def closest_short_channel_regressor(
 ):
     """Create channel-wise regressors using the closest nearby short channel.
 
+    Short-separation channels measure predominantly superficial (scalp) haemodynamics
+    and are used as regressors to remove physiological noise from long channels, as
+    described in :cite:t:`Huppert2009`.
+
     Args:
         ts_long (NDTimeSeries): Time series of long channels
         ts_short (NDTimeSeries): Time series of short channels
@@ -642,8 +646,9 @@ def max_corr_short_channel_regressor(
 ):
     """Create channel-wise regressors using the most correlated short channels.
 
-    For each long channel the short channel is selected that has the highest
-    correleation coefficient in any wavelength or chromophore.
+    For each long channel the short channel with the highest correlation coefficient
+    (across any wavelength or chromophore) is selected as a physiological noise
+    regressor, as described in :cite:t:`Huppert2009`.
 
     Args:
         ts_long (NDTimeSeries): time series of long channels
@@ -683,7 +688,10 @@ def max_corr_short_channel_regressor(
 
 
 def average_short_channel_regressor(ts_short: cdt.NDTimeSeries):
-    """Create a regressor by averaging all short channels.
+    """Create a physiological noise regressor by averaging all short channels.
+
+    Computes a single global superficial noise regressor from the mean across all
+    short-separation channels, as described in :cite:t:`Huppert2009`.
 
     Args:
         ts_short (NDTimeSeries): time series of short channels

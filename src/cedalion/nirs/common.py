@@ -21,40 +21,19 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
         spectrum:
             The type of spectrum to use. Currently supported options are:
 
-            - "prahl": Extinction coefficients based on the Prahl absorption
-              spectrum (Prahl1998).
+            - ``"prahl"``: Molar extinction coefficients compiled by S. A. Prahl
+              (:cite:t:`Prahl1998`) from data by W. B. Gratzer (Med. Res. Council
+              Labs, London) and N. Kollias (Harvard Medical School). Tabulated values
+              originally distributed with Homer2/3. Units in the source file are
+              cm⁻¹/(mol/L); cedalion converts to mm⁻¹/M on load.
 
         wavelengths: An array-like object containing the wavelengths at which to
             calculate the extinction coefficients.
 
     Returns:
-        xr.DataArray: A matrix of extinction coefficients with dimensions "chromo"
-            (chromophore, e.g. HbO/HbR) and "wavelength" (e.g. 750, 850, ...) at which
-            the coefficients for each chromophore are given in units of "mm^-1 / M".
-
-    References:
-        (Prahl 1998) - taken from Homer2/3, Copyright 2004 - 2006 - The General Hospital
-        Corporation and President and Fellows of Harvard University.
-
-            "These values for the molar extinction coefficient e in [cm-1/(moles/liter)]
-            were compiled by Scott Prahl (prahl@ece.ogi.edu) using data from
-            W. B. Gratzer, Med. Res. Council Labs, Holly Hill, London
-            N. Kollias, Wellman Laboratories, Harvard Medical School, Boston
-            To convert this data to absorbance A, multiply by the molar concentration
-            and the pathlength.
-            For example, if x is the number of grams per liter and a 1 cm cuvette is
-            being used, then the absorbance is given by
-
-                  (e) [(1/cm)/(moles/liter)] (x) [g/liter] (1) [cm]
-            A =  ---------------------------------------------------
-                        66,500 [g/mole]
-
-            using 66,500 as the gram molecular weight of hemoglobin.
-            To convert this data to absorption coefficient in (cm-1), multiply by the
-            molar concentration and 2.303,
-            µa = (2.303) e (x g/liter)/(66,500 g Hb/mole)
-            where x is the number of grams per liter. A typical value of x for whole
-            blood is x=150 g Hb/liter."
+        xr.DataArray: A matrix of extinction coefficients with dimensions ``"chromo"``
+            (chromophore, e.g. HbO/HbR) and ``"wavelength"`` (e.g. 750, 850, …) in
+            units of mm⁻¹/M.
     """
     if spectrum == "prahl":
         path = cedalion.data.get("prahl_absorption_spectrum.tsv")

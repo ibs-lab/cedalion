@@ -447,7 +447,13 @@ class ForwardModel:
         fluence_fname: str | Path,
         sensitivity_fname: str | Path,
     ):
-        """Compute sensitivity matrix from fluence.
+        """Compute sensitivity matrix from fluence via the adjoint Monte Carlo method.
+
+        The sensitivity matrix (Jacobian) maps absorption changes in each voxel/vertex
+        to changes in the measured optical density. It is computed using the adjoint
+        Monte Carlo approach (:cite:t:`Boas2005`, :cite:t:`Yao2016`): the fluence
+        from source and detector optodes is multiplied element-wise and projected onto
+        the head surface.
 
         Args:
             fluence_fname : the input hdf5 file to store the fluence

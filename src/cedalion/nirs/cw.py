@@ -14,7 +14,11 @@ from cedalion import units
 from .common import get_extinction_coefficients, channel_distances
 
 def int2od(amplitudes: cdt.NDTimeSeries, return_baseline: bool = False):
-    """Calculate optical density from intensity amplitude  data.
+    """Calculate optical density from intensity amplitude data.
+
+    Computes the log-ratio of intensity relative to its temporal mean, implementing
+    the first step of the modified Beer-Lambert law
+    (:cite:t:`Delpy1988`, :cite:t:`Villringer1997`).
 
     Args:
         amplitudes (xr.DataArray, (time, channel, *)): amplitude data.
@@ -24,7 +28,7 @@ def int2od(amplitudes: cdt.NDTimeSeries, return_baseline: bool = False):
     Returns:
         od: (xr.DataArray, (time, channel,*): The optical density data.
         baseline: (xr.DataArray, (channel, *)): The intensity baseline data
-         (average time series) used for conversion to DO.
+            (average time series) used for conversion to OD.
     """
     # check negative values in amplitudes and issue an error if yes
     if np.any(amplitudes <= 0):
@@ -67,6 +71,10 @@ def od2conc(
     spectrum: str = "prahl",
 ):
     """Calculate concentration changes from optical density data.
+
+    Applies the modified Beer-Lambert law (:cite:t:`Delpy1988`,
+    :cite:t:`Villringer1997`) to convert optical density changes to haemoglobin
+    concentration changes (HbO, HbR).
 
     Args:
         od (xr.DataArray, (channel, wavelength, *)): The optical density data array
@@ -152,7 +160,10 @@ def beer_lambert(
     dpf: xr.DataArray,
     spectrum: str = "prahl",
 ):
-    """Calculate concentration changes from amplitude using the modified BL law.
+    """Calculate concentration changes from amplitude via the modified Beer-Lambert law.
+
+    Convenience wrapper combining :func:`int2od` and :func:`od2conc`. Implements the
+    modified Beer-Lambert law (:cite:t:`Delpy1988`, :cite:t:`Villringer1997`).
 
     Args:
         amplitudes (xr.DataArray, (channel, wavelength, *)): The input data array
@@ -164,7 +175,7 @@ def beer_lambert(
 
     Returns:
         conc (xr.DataArray, (channel, *)): A data array containing
-            concentration changes according to the mBLL.
+            concentration changes according to the modified Beer-Lambert law.
     """
     validators.has_channel(amplitudes)
     validators.has_wavelengths(amplitudes)

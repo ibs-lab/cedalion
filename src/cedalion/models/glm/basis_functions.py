@@ -195,16 +195,17 @@ class GaussianKernels(TemporalBasisFunction):
 class Gamma(TemporalBasisFunction):
     r"""Modified gamma function, optionally convolved with a square-wave.
 
-    The basis function has the form:
+    Canonical haemodynamic response function for fNIRS GLM analysis, as described in
+    :cite:t:`Strangman2002`. The basis function has the form:
 
     .. math::
         f(t) \sim \frac{t-\tau}{\sigma}
                   \exp \left(-\left(\frac{t - \tau}{\sigma}\right)^2\right)
 
     Args:
-        tau: Specifies a delay of the response with respect ot stimulus onset time.
-        sigma: Specifies the width of the hemodynamic reponse.
-        T : If > 0, the response is additionally convoluted by a square wave of this
+        tau: Specifies a delay of the response with respect to stimulus onset time.
+        sigma: Specifies the width of the hemodynamic response.
+        T : If > 0, the response is additionally convolved with a square wave of this
             width.
     """
 
@@ -269,7 +270,11 @@ class Gamma(TemporalBasisFunction):
 
 
 class GammaDeriv(TemporalBasisFunction):
-    """Modified gamma func. and its derivative, optionally convolved with a square-wave.
+    """Modified gamma function and its temporal derivative.
+
+    Extends :class:`Gamma` with a second component (the derivative) as in
+    :cite:t:`Strangman2002`, allowing the model to capture small latency shifts
+    in the haemodynamic response.
 
     Args:
         tau: onset time
@@ -342,7 +347,10 @@ class GammaDeriv(TemporalBasisFunction):
 
 
 class AFNIGamma(TemporalBasisFunction):
-    """AFNI gamma basis function, optionally convolved with a square-wave.
+    """AFNI gamma variate basis function, optionally convolved with a square-wave.
+
+    Implements the gamma variate HRF parameterisation from the AFNI neuroimaging
+    software (:cite:t:`Cox1996`).
 
     Args:
         p: shape parameter

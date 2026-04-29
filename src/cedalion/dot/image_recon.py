@@ -141,18 +141,24 @@ class OriginalGaussianSpatialBasisFunctions:
         sigma_scalp: cdt.QLength,
         mask_threshold: float,
     ):
-        """Gaussian Spatial Basis Functions.
+        """Gaussian Spatial Basis Functions for DOT image reconstruction.
 
-        TBD
+        Represents the unknown absorption image as a weighted sum of Gaussian
+        kernels placed on the head surface, reducing the ill-posed inverse problem
+        to a lower-dimensional one. Optimal parameter sets for this implementation
+        are given in :cite:t:`Carlton2026`.
 
         Args:
-            head_model: TBD
-            Adot : TBD
-            threshold_brain: TBD
-            threshold_scalp: TBD
-            sigma_brain: TBD
-            sigma_scalp : TBD
-            mask_threshold: TBD, mention log scale
+            head_model: TwoSurfaceHeadModel providing brain and scalp surfaces.
+            Adot: Sensitivity matrix (channel × vertex × wavelength).
+            threshold_brain: Maximum distance from a sensitivity vertex for a brain
+                kernel centre to be included (log-scale units).
+            threshold_scalp: Maximum distance from a sensitivity vertex for a scalp
+                kernel centre to be included (log-scale units).
+            sigma_brain: Spatial width of brain Gaussian kernels.
+            sigma_scalp: Spatial width of scalp Gaussian kernels.
+            mask_threshold: Log-sensitivity threshold; vertices below this value are
+                excluded from the kernel support.
         """
 
         cedalion.utils.deprecated_api(

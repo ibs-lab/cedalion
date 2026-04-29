@@ -40,9 +40,8 @@ def spline(
 ) -> cdt.NDTimeSeries:
     """Apply motion correction using spline interpolation to fNIRS data.
 
-    Based on Homer3 [1] v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
-    Boston University Neurophotonics Center
-    https://github.com/BUNPC/Homer3
+    Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
+    (:cite:t:`Huppert2009`), Boston University Neurophotonics Center.
 
     Args:
         ts: The time series to be motion corrected.
