@@ -627,7 +627,8 @@ class TwoSurfaceHeadModel:
 
     def scale_to_landmarks(
         self,
-        target_landmarks : cdt.LabeledPoints
+        target_landmarks : cdt.LabeledPoints,
+        mode = "general",
     ) -> "TwoSurfaceHeadModel":
         """Scale the head model to match a set of anatomical landmarks.
 
@@ -639,6 +640,9 @@ class TwoSurfaceHeadModel:
             target_landmarks: Target landmark positions (e.g. from a digitizer)
                 in any CRS.  Must contain the same label subset as the model's
                 landmarks.
+            mode: method to derive the affine transform. Could be either
+                'trans_rot_isoscale' or 'general'. See cedalion.geometry.registraion
+                for details.
 
         Returns:
             New :class:`TwoSurfaceHeadModel` scaled and aligned to
@@ -649,7 +653,13 @@ class TwoSurfaceHeadModel:
         else:
             landmarks_ras = self.landmarks
 
-        t_ras2scaled = register_general_affine(target_landmarks, landmarks_ras)
+        if mode == "trans_rot_isoscale":
+            t_ras2scaled = register_trans_rot_isoscale(target_landmarks, landmarks_ras)
+        elif mode == "general":
+            t_ras2scaled = register_general_affine(target_landmarks, landmarks_ras)
+        else:
+            raise ValueError(f"unexpected mode '{mode}'")
+
 
         t_ijk2scaled = t_ras2scaled @ self.t_ijk2ras
         t_scaled2ijk = xrutils.pinv(t_ijk2scaled)
