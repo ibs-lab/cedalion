@@ -37,11 +37,30 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 
+html_theme_options = {
+       "version_selector": True,
+       "language_selector": False,
+}
+
 # fix a margin problem with the rendering of xarray representations in notebooks when
 # using the RTD theme
 html_css_files = [
     "css/rtd_fixes.css",
 ]
+
+html_js_files = [
+    "rtd-version-shim.js",
+]
+
+# workaround to enable the version switcher in the sphinx_rtd_theme
+def setup(app):
+    # sphinx_rtd_theme overwrites READTHEDOCS in its own html-page-context handler
+    # (checking the env var). Re-set it at higher priority so the version selector
+    # container and versions.js are emitted for self-hosted builds too.
+    def _force_readthedocs(_app, _pagename, _templatename, context, _doctree):
+        context["READTHEDOCS"] = True
+
+    app.connect("html-page-context", _force_readthedocs, priority=600)
 
 # -- Configure MyST -----------------------------------------------------------
 

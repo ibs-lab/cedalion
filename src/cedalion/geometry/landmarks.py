@@ -43,8 +43,8 @@ def normalize_landmarks_labels(geo3d: LabeledPoints) -> LabeledPoints:
     label_mapping = {
         "Nz": {"nz", "nasion", "nas"},
         "Iz": {"iz", "inion", "ini"},
-        "LPA": {"lpa", "lpa_l", "left ear", "le", "left", "l"},
-        "RPA": {"rpa", "rpa_r", "right ear", "re", "right", "r"},
+        "LPA": {"lpa", "lpa_l", "left ear", "le", "left", "l", "al"},
+        "RPA": {"rpa", "rpa_r", "right ear", "re", "right", "r", "ar"},
         "Cz": {"cz", "vertex"},
     }
 

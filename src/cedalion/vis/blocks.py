@@ -218,7 +218,7 @@ def plot_surface(
     if "split_sharp_edges" not in kwargs:
         kwargs["split_sharp_edges"] = True
     if "feature_angle" not in kwargs:
-        kwargs["feature_angle"] = 50
+        kwargs["feature_angle"] = 90
 
     plotter.add_mesh(mesh, color=color, rgb=rgb, opacity=opacity, **kwargs)
 
@@ -291,7 +291,7 @@ def plot_surface(
                 print("Warning: Some labels are missing")
             elif len(set(labels)) != len(landmark_labels):
                 print("Warning: Some labels are repeated!")
-            
+
             landmarks = xr.DataArray(
                     np.vstack(picked_points),
                     dims=["label", "digitized"],
@@ -404,7 +404,7 @@ def plot_labeled_points(
         if show_labels and labels is not None:
             plotter.add_point_labels(point.values[np.newaxis], [str(labels[i_point])])
 
-	# If measurement list is provided, plot lines between source and detector points
+    # If measurement list is provided, plot lines between source and detector points
     if meas_list is not None:
         all_points = []
         connectivity = []
@@ -420,7 +420,7 @@ def plot_labeled_points(
             # Create connectivity array: [2, pt_id0, pt_id1]
             connectivity.append([2, idx_offset, idx_offset + 1])
 
-        # Create the combined line mesh 
+        # Create the combined line mesh
         all_points = np.array(all_points)
         connectivity = np.hstack(connectivity)
         lines = pv.PolyData()

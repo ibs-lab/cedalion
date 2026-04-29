@@ -35,6 +35,7 @@ DATASETS = pooch.create(
         "nn22_resting_state.zip": "sha256:0394347af172d906fe33403e84303435af26d82fdcf1d36dad5c7b05beb82d88",  # noqa:E501
         "snirf2bids_example_dataset.zip": "sha256:f14508e332c7d259c13b9717ac3c490ab2cabfd7b30fdf97b347d5ba59b783d1",  # noqa:E501
         "spafNIRS_example_sub179.zip": "sha256:0a247be5bfa3c7b5bc12d19203e2bd5432df964d72646945891601d0ba944141",  # noqa:E501
+        "lumo_cropped_comp.snirf" : "sha256:b06727034a484a14a66a10ebb715fad67ce9b5a53fecaab070ed880822943ff6", # # noqa:E501
 
         # head models
         #   deprecated:
@@ -72,6 +73,7 @@ DATASETS = pooch.create(
         "sensitivity_nn22_resting_icbm152.nc": "sha256:a9c577470450d7fe9b9c534a813622a195b66e82ab628d2828fe0525b0355f39",  # noqa:E501
 
         "Adot_ninjanirs_colin27.nc": "sha256:3382e6bfd62b5e1213332cc74c88cc8af04a4fd5cebe7001ebc111cf9e9b2d00",  # noqa:E501
+        "sensitivity_lumo_testdataset_colin27.nc" : "sha256:c08e83f6fd98b7038f3cbb3cc36abc0fa5a1eaad17a4115a822c250da75ab2fa", # # noqa:E501
 
         # other:
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
@@ -252,6 +254,10 @@ def get_photogrammetry_example_scan():
     fname_snirf = [i for i in fnames if i.endswith(".snirf")][0]
     fname_montage = [i for i in fnames if i.endswith(".png")][0]
     return fname_scan, fname_snirf, fname_montage
+
+def get_lumo_testdataset():
+    fname = DATASETS.fetch("lumo_cropped_comp.snirf")
+    return cedalion.io.read_snirf(fname)[0]
 
 
 def get_precomputed_fluence(dataset: str, head_model: str) -> Path:
