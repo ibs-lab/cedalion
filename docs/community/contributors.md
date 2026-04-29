@@ -1,6 +1,6 @@
 # Contributors
 
-Cedalion is an open-source project driven by the [IBS Lab](https://www.tu.berlin/ibs)
+Cedalion is an open-source project driven by the [IBS Lab](https://www.ibs-lab.com)
 with the aim of encouraging continuous use, contribution, and improvement from the
 entire community. Every code contribution is credited here and in the relevant function
 docstrings. The contributor list below is generated automatically from the

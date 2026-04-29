@@ -86,9 +86,9 @@ Accessible, Interoperable, Reusable) data principles.
 ## Project status
 
 Cedalion is developed openly at the
-[IBS Lab, TU Berlin](https://www.tu.berlin/ibs) in collaboration with Boston
+[IBS Lab, TU Berlin](https://www.ibs-lab.com) in collaboration with Boston
 University and released under the MIT licence. The project website is
-[www.cedalion.tools](https://www.cedalion.tools).
+[www.cedalion.tools](http://www.cedalion.tools).
 
 Contributions are welcome — see the [contributing guide](getting_started/contributing_code/contributing_code.md).
 If you use Cedalion in published work, please cite:

@@ -2,7 +2,7 @@
 
 A Python framework for the data-driven analysis of functional near-infrared spectroscopy
 (fNIRS) and diffuse optical tomography (DOT) in naturalistic environments. Developed by
-the [Intelligent Biomedical Sensing (IBS) Lab](https://www.tu.berlin/ibs) with and for
+the [Intelligent Biomedical Sensing (IBS) Lab](https://www.ibs-lab.com) with and for
 the community.
 
 ```{note}

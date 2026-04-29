@@ -1,7 +1,7 @@
 # Community
 
 Cedalion is an open-source project developed *from the community for the community*.
-It was initiated at the [IBS Lab](https://www.tu.berlin/ibs) at TU Berlin with the
+It was initiated at the [IBS Lab](https://www.ibs-lab.com) at TU Berlin with the
 goal of building a transparent, reproducible, and extensible fNIRS/DOT analysis
 platform that the whole community can rely on, contribute to, and improve over time.
 
