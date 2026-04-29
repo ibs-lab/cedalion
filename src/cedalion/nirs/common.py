@@ -34,6 +34,20 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
         xr.DataArray: A matrix of extinction coefficients with dimensions ``"chromo"``
             (chromophore, e.g. HbO/HbR) and ``"wavelength"`` (e.g. 750, 850, …) in
             units of mm⁻¹/M.
+
+    Note:
+        To convert this data to absorbance A, multiply by the molar concentration and
+        the pathlength. For example, if x is the number of grams per liter and a 1 cm
+        cuvette is being used, then the absorbance is given by
+
+              (e) [(1/cm)/(moles/liter)] (x) [g/liter] (1) [cm]
+        A =  ---------------------------------------------------
+                    66,500 [g/mole]
+
+        using 66,500 as the gram molecular weight of hemoglobin. To convert this data to
+        absorption coefficient in (cm⁻1), multiply by the molar concentration and 2.303,
+        µa = (2.303) e (x g/liter)/(66,500 g Hb/mole) where x is the number of grams per
+        liter. A typical value of x for whole blood is x=150 g Hb/liter.
     """
     if spectrum == "prahl":
         path = cedalion.data.get("prahl_absorption_spectrum.tsv")
