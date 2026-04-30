@@ -96,6 +96,11 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 
 - Added a `Dockerfile` to build a containerised cedalion environment, by [Nils Harmening](https://github.com/harmening). ([#6](https://github.com/ibs-lab/cedalion/pull/6))
 
+- Addded `cedalion.bibliography.Bibliography`, a container for collecting references. An
+instance of this class is instantiated as `cedalion.bib` which is used by functions
+throughout the toolbox for citing used methods. At the end of a notebook, a call to
+cedalion.bib.dump_to_notebook() produces a list of references. By [Eike Middell](https://github.com/emiddell). ([#153](https://github.com/ibs-lab/cedalion/pull/153))
+
 
 ### Fixes
 
