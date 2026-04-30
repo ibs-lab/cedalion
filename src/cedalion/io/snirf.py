@@ -19,7 +19,7 @@ from strenum import StrEnum
 import h5py
 
 import cedalion.dataclasses as cdc
-from cedalion import units
+from cedalion import cite, units
 from cedalion.typing import NDTimeSeries
 
 log = logging.getLogger("cedalion")
@@ -336,6 +336,7 @@ def labels_and_positions(probe, dim: int = 3):
     Returns:
         tuple: A tuple containing the source, detector, and landmark labels/positions.
     """
+    cite("Tucker2022", "SNIRF file format specification")
     def convert_none(probe, attrname, default):
         attr = getattr(probe, attrname)
         if attr is None:
@@ -406,6 +407,7 @@ def geometry_from_probe(nirs_element: NirsElement, dim: int, crs : str):
             landmarks, with dimensions 'label' and 'pos' and coordinates 'label' and
             'type'.
     """
+    cite("Tucker2022", "SNIRF file format specification")
     probe = nirs_element.probe
 
     length_unit = nirs_element.metaDataTags.LengthUnit
@@ -493,6 +495,7 @@ def meta_data_tags_to_dict(nirs_element: NirsElement) -> OrderedDict[str, Any]:
     Returns:
         OrderedDict[str, Any]: Dictionary containing the metaDataTags information.
     """
+    cite("Tucker2022", "SNIRF file format specification")
     mdt = nirs_element.metaDataTags
 
     fields = mdt._snirf_names + mdt._unspecified_names
@@ -510,6 +513,7 @@ def stim_to_dataframe(stim: Stim):
     Returns:
         pd.DataFrame: DataFrame containing the stimulus information.
     """
+    cite("Tucker2022", "SNIRF file format specification")
     dfs = []
 
     if len(stim) == 0:
@@ -553,6 +557,7 @@ def read_aux(
     Returns:
         result (OrderedDict[str, xr.DataArray]): Dictionary containing the aux data
     """
+    cite("Tucker2022", "SNIRF file format specification")
     result = OrderedDict()
 
     for aux in nirs_element.aux:
@@ -647,6 +652,7 @@ def read_data_elements(
         list[tuple[str, NDTimeSeries]]: List of tuples containing the canonical name
             of the data element and the DataArray.
     """
+    cite("Tucker2022", "SNIRF file format specification")
     time = data_element.time[:].squeeze()
 
     trial_types = stim["trial_type"].drop_duplicates().values
@@ -870,6 +876,7 @@ def read_nirs_element(nirs_element: NirsElement, opts : ReadSnirfOptions):
         rec (Recording): Recording object containing the data from the nirs element.
     """
 
+    cite("Tucker2022", "SNIRF file format specification")
     geo2d = geometry_from_probe(nirs_element, dim=2, crs=opts.crs)
     geo3d = geometry_from_probe(nirs_element, dim=3, crs=opts.crs)
     stim = stim_to_dataframe(nirs_element.stim)
@@ -962,6 +969,7 @@ def denormalize_measurement_list(df_ml: pd.DataFrame, nirs_element: NirsElement)
             additional columns for channel, source, detector, wavelength and chromo.
 
     """
+    cite("Tucker2022", "SNIRF file format specification")
     sourceLabels, detectorLabels, landmarkLabels, _, _, _ = labels_and_positions(
         nirs_element.probe
     )
@@ -1113,6 +1121,7 @@ def _write_recordings(snirf_file: Snirf, rec: cdc.Recording):
         snirf_file (Snirf): Snirf object to write to.
         rec (Recording): Recording object to write to the file.
     """
+    cite("Tucker2022", "SNIRF file format specification")
     # create and populate nirs element
     snirf_file.nirs.appendGroup()
     ne = snirf_file.nirs[-1]

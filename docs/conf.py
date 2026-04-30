@@ -5,6 +5,7 @@
 
 import subprocess
 from urllib.parse import quote
+from importlib.resources import files
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -75,7 +76,9 @@ myst_heading_anchors = 2
 
 # -- Configure sphinxcontrib-bibtex -------------------------------------------
 
-bibtex_bibfiles = ['references.bib']
+bibtex_bibfiles = [
+    files("cedalion.bibliography") / "references.bib"
+]
 
 
 # -- Substitutions ------------------------------------------------------------

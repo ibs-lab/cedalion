@@ -22,6 +22,7 @@ import xarray as xr
 
 import cedalion
 import cedalion.dataclasses as cdc
+from cedalion import cite
 
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
@@ -258,6 +259,9 @@ class ForwardModel:
 
         """
 
+        cite("Fang2009", "MCX GPU-accelerated Monte Carlo photon transport")
+        cite("Yu2018", "scalable Monte Carlo photon transport")
+        cite("Yan2020", "hybrid mesh-voxel Monte Carlo simulation")
         wavelengths = self.measurement_list.wavelength.unique()
         n_wavelength = len(wavelengths)
         n_optodes = len(self.optode_pos)
@@ -321,6 +325,7 @@ class ForwardModel:
             Communications in numerical methods in engineering 25.6 (2009): 711-732.
         """
 
+        cite("Dehghani2009", "NIRFASTer FEM-based light transport")
         if self._get_unitinmm() != 1.:
             warn(
                 "The current NIRFASTer implementation assumes a voxel volume of 1mm^3, "
@@ -460,6 +465,8 @@ class ForwardModel:
             sensitivity_fname : the output netcdf file for the sensitivity
         """
 
+        cite("Boas2005", "adjoint Monte Carlo sensitivity matrix")
+        cite("Yao2016", "adjoint Monte Carlo sensitivity matrix")
         unique_channels = self.measurement_list[
             ["channel", "source", "detector"]
         ].drop_duplicates()
