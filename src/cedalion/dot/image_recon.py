@@ -161,7 +161,7 @@ class OriginalGaussianSpatialBasisFunctions:
                 excluded from the kernel support.
         """
 
-        cite("Carlton2026", "Optimal regularization parameters for DOT image reconstruction")
+        cite("Carlton2026")
         cedalion.utils.deprecated_api(
             "This implementation of gaussian basis functions will be replaced."
         )

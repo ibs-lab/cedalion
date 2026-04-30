@@ -496,7 +496,7 @@ class PycortexSurface(Surface):
         self._rlfac_solvers = dict()
         self._nLC_solvers = dict()
 
-        cedalion.cite("Gao2015", "Pycortex geodesic surface functions")
+        cedalion.cite("Gao2015")
 
     @property
     def vertices(self) -> cdt.LabeledPoints:

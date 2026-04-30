@@ -36,7 +36,7 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
         The original matlab version is available at https://mlsp.umbc.edu/resources.html
         under the name "Real-valued ICA by entropy bound minimization (ICA-EBM)"
     """
-    cite("Li2010B", "ICA by entropy rate bound minimization")
+    cite("Li2010B")
 
 #################  Part 0: pre-processing #################
 

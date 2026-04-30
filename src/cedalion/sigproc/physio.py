@@ -268,7 +268,7 @@ def ampd(amplitudes: cdt.NDTimeSeries, chunk_size: int = 500, step_size: int = 2
         Isa Musisi | w.musisi@campus.tu-berlin.de | 2024
 
     """
-    cite("Scholkmann2012", "Automatic Multiscale Peak Detection (AMPD)")
+    cite("Scholkmann2012")
     # Prepare output array with the same structure as amplitudes, filled with zeros
     peaks = np.zeros_like(amplitudes, dtype=int)
     # Iterate over channels and wavelengths

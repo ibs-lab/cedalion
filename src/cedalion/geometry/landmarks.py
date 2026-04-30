@@ -197,7 +197,7 @@ class LandmarksBuilder1010:
             scalp_surface (Surface): a triangle-mesh representing the scalp
             landmarks (LabeledPoints): positions of "Nz", "Iz", "LPA", "RPA"
         """
-        cite("Oostenveld2001", "10-10 electrode placement system")
+        cite("Oostenveld2001")
         if isinstance(scalp_surface, TrimeshSurface):
             scalp_surface = VTKSurface.from_trimeshsurface(scalp_surface)
 

@@ -112,7 +112,7 @@ class mSPoC:
             featureY_name (str): Name of the feature dimension for Y.
         """
 
-        cite("Dahne2013", "multimodal Source Power Co-modulation (mSPoC)")
+        cite("Dahne2013")
         # Labels for sample and feature directions
         self.sample_name = "time"
         self.featureX_name = featureX_name

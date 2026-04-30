@@ -109,7 +109,7 @@ def fit(
 
     """
 
-    cite("Barker2013", "AR-IRLS for solving fNIRS GLMs")
+    cite("Barker2013")
     # FIXME: unit handling?
     # shoud the design matrix be dimensionless? -> thetas will have units
     ts = ts.pint.dequantify()

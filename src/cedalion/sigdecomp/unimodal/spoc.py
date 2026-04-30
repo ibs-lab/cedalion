@@ -62,7 +62,7 @@ class SPoC:
                 the corresponding covariances between P(W.T @ x) and z.
         """
 
-        cite("Dahne2014", "Source Power Co-modulation (SPoC)")
+        cite("Dahne2014")
         # Store for transformation later
         self.Nx = len(x.channel)
 

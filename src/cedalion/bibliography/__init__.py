@@ -2,6 +2,8 @@ from pathlib import Path
 from pybtex.database import parse_file, BibliographyData
 from pybtex.plugin import find_plugin
 from importlib.resources import files
+from collections import defaultdict
+import inspect
 
 BIB_FILE = files("cedalion.bibliography") / "references.bib"
 bib_data = parse_file(BIB_FILE)
@@ -14,10 +16,21 @@ class Bibliography:
     """
 
     def __init__(self):
-        self._refs: dict[str, str] = {}  # key → human label
+        self._refs = defaultdict(set)  # key → set of function names
 
-    def cite(self, bibtex_key, label):
-        self._refs.setdefault(bibtex_key, label)  # first occurrence wins
+    def cite(self, bibtex_key):
+        # figure out who call us
+        stack = inspect.stack()
+        frame = stack[1][0]  # get the calling function
+        if (
+            frame.f_globals.get("__name__") == "cedalion"
+            and frame.f_code.co_name == "cite"
+        ):
+            frame = stack[2][0]  # cedalion.cite wrapper? move up in the stack
+
+        caller_name = frame.f_globals["__name__"] + "." + frame.f_code.co_qualname
+
+        self._refs[bibtex_key].add(caller_name)
 
     def __len__(self):
         return len(self._refs)
@@ -41,9 +54,10 @@ class Bibliography:
 
     def dump_to_string(self) -> str:
         lines = ["Methods & References", "=" * 40]
-        for i, (key, label) in enumerate(self._refs.items(), 1):
+        for i, (key, fn_names) in enumerate(self._refs.items(), 1):
+            fn_names = ", ".join(sorted(fn_names))
             rendered = self.format_entry(key)
-            lines.append(f"[{i}] {key} — {label}")
+            lines.append(f"[{i}] {key} — {fn_names}")
             lines.append(f"    {rendered}")
         return "\n".join(lines)
 
@@ -55,7 +69,7 @@ class Bibliography:
         if clear:
             self.clear()
 
-    def dump_to_notebook(self, title="Methods used", clear=False):
+    def dump_to_notebook(self, title="Methods used", clear=False, show_functions=True):
         try:
             from IPython.display import HTML, display
         except ImportError:
@@ -67,16 +81,35 @@ class Bibliography:
             "font-family:monospace;color:#0d6efd;"
             "padding-right:16px;white-space:nowrap;vertical-align:top"
         )
-        _st_lbl = "padding-right:16px;white-space:nowrap;vertical-align:top"
+        _st_lbl = (
+            "padding-right:16px;vertical-align:top;word-break:break-word;width:50%"
+        )
+        _st_ref = (
+            "color:#444;vertical-align:top;word-break:break-word;"
+            + ("width:50%" if show_functions else "width:100%")
+        )
+
+        def merge_fn_names(fn_names):
+            return ", ".join(sorted(fn_names))
+
+        def make_row(i, key, fn_names):
+            fn_col = (
+                f'<td style="{_st_lbl}">{merge_fn_names(fn_names)}</td>'
+                if show_functions else ""
+            )
+            return (
+                f"<tr>"
+                f'<td style="{_st_num}">[{i}]</td>'
+                f'<td style="{_st_key}">{key}</td>'
+                f"{fn_col}"
+                f'<td style="{_st_ref}">'
+                f"{self.format_entry(key, backend_name='html')}</td>"
+                f"</tr>"
+            )
+
         rows = "".join(
-            f"<tr>"
-            f'<td style="{_st_num}">[{i}]</td>'
-            f'<td style="{_st_key}">{key}</td>'
-            f'<td style="{_st_lbl}">{label}</td>'
-            f'<td style="color:#444">'
-            f'{self.format_entry(key, backend_name="html")}</td>'
-            f"</tr>"
-            for i, (key, label) in enumerate(self._refs.items(), 1)
+            make_row(i, key, fn_names)
+            for i, (key, fn_names) in enumerate(self._refs.items(), 1)
         )
         display(
             HTML(

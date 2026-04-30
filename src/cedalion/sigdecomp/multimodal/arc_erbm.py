@@ -40,7 +40,7 @@ def arc_erbm(X: np.ndarray, guess_mat, p: int = None , pr_guess_mat = None) -> n
         under the name "Real-valued ICA by entropy bound minimization (ICA-EBM)"
     """
 
-    cite("Li2010B", "ICA by entropy rate bound minimization")
+    cite("Li2010B")
 #################  Part 0: pre-processing #################
 
     # load measuring functions as global variables

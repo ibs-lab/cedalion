@@ -45,8 +45,8 @@ def arc_ebm(X: np.ndarray, guess_mat, constraint = 'correlation') -> np.ndarray:
 
     """
 
-    cite("Li2010A", "ICA by entropy bound minimization")
-    cite("yang2025flexible", "constrained ICA for multisubject analysis")
+    cite("Li2010A")
+    cite("yang2025flexible")
     ###############################################################################################################
     # Part 0: Preprocessing
     ###############################################################################################################

@@ -42,7 +42,7 @@ def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4
         Ted Huppert | huppert1@pitt.edu | 2024
     """
 
-    cite("Barker2013", "AR-IRLS for solving fNIRS GLMs")
+    cite("Barker2013")
     mask = np.isfinite(y.values)
 
     if pmax is None:

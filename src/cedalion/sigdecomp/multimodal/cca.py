@@ -417,7 +417,7 @@ class ElasticNetCCA(MultimodalSourceDecomposition):
                 set to 'channel' by default.
         """
 
-        cite("parkhomenko_sparse_2009", "sparse CCA")
+        cite("parkhomenko_sparse_2009")
         # Labels for sample and feature directions
         self.sample_name = sample_name
         self.featureX_name = featureX_name
@@ -577,8 +577,8 @@ class StructuredSparseCCA(MultimodalSourceDecomposition):
                 set to 'channel' by default.
         """
 
-        cite("chen_structure-constrained_2013", "structure-constrained sparse CCA")
-        cite("parkhomenko_sparse_2009", "sparse CCA")
+        cite("chen_structure-constrained_2013")
+        cite("parkhomenko_sparse_2009")
         # Labels for sample and feature directions
         self.sample_name = sample_name
         self.featureX_name = featureX_name
@@ -819,7 +819,7 @@ class SparsePLS(ElasticNetCCA):
         tol: float = 1e-6,
         scale: bool = True,
     ):
-        cite("witten_penalized_2009", "penalized matrix decomposition for sparse PLS")
+        cite("witten_penalized_2009")
         super(SparsePLS, self).__init__(
             N_components=N_components,
             l1_reg=l1_reg,

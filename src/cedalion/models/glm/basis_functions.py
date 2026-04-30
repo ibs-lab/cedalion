@@ -224,7 +224,7 @@ class Gamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        cite("Strangman2002", "modified gamma HRF for fNIRS GLM")
+        cite("Strangman2002")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
         spatial = xrutils.spatial_dim(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)
@@ -298,7 +298,7 @@ class GammaDeriv(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        cite("Strangman2002", "modified gamma HRF with derivative for fNIRS GLM")
+        cite("Strangman2002")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
         spatial = xrutils.spatial_dim(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)
@@ -375,7 +375,7 @@ class AFNIGamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        cite("Cox1996", "AFNI gamma variate HRF for fNIRS GLM")
+        cite("Cox1996")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
         spatial = xrutils.spatial_dim(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)

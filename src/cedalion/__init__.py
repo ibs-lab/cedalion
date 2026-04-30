@@ -9,6 +9,6 @@ from ._version import __version__
 # singleton container that collects references
 bib = Bibliography()
 
-def cite(key: str, label: str = "") -> None:
+def cite(key: str) -> None:
     """Record that a method with this BibTeX key was used."""
-    bib.cite(key, label)
+    bib.cite(key)

@@ -61,7 +61,7 @@ def spline(
     units = ts.pint.units
     ts = ts.pint.dequantify()
 
-    cite("Huppert2009", "Homer3")
+    cite("Huppert2009")
     dodSpline = ts.copy()
 
     for ch in ts.channel.values:

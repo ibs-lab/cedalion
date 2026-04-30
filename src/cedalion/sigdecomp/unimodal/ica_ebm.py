@@ -38,7 +38,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
         rate bound minimization (ICA-ERBM)"
     """
 
-    cite("Li2010A", "ICA by entropy bound minimization")
+    cite("Li2010A")
     ####################################################################################
     # Part 0: Preprocessing
     ####################################################################################

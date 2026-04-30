@@ -308,8 +308,8 @@ class ElasticNetTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
                 set to 'channel' by default.
         """
 
-        cite("biesmann_temporal_2010", "temporal embedding CCA")
-        cite("parkhomenko_sparse_2009", "sparse CCA")
+        cite("biesmann_temporal_2010")
+        cite("parkhomenko_sparse_2009")
         # Labels for feature directions
         self.featureX_name = featureX_name
         self.featureY_name = featureY_name
@@ -497,9 +497,9 @@ class StructuredSparseTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
                 set to 'channel' by default.
         """
 
-        cite("biesmann_temporal_2010", "temporal embedding CCA")
-        cite("chen_structure-constrained_2013", "structure-constrained sparse CCA")
-        cite("parkhomenko_sparse_2009", "sparse CCA")
+        cite("biesmann_temporal_2010")
+        cite("chen_structure-constrained_2013")
+        cite("parkhomenko_sparse_2009")
         # Labels for sample and feature directions
         self.featureX_name = featureX_name
         self.featureY_name = featureY_name

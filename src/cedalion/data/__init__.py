@@ -130,7 +130,7 @@ def get_snirf_test_data():
 )
 def get_colin27_segmentation(downsampled=False):
     """Retrieves the Colin27 segmentation dataset, based on :cite:t:`Holmes1998`."""
-    cite("Holmes1998", "Colin27 standard brain atlas")
+    cite("Holmes1998")
     if downsampled:
         fnames = DATASETS.fetch(
             "colin27_segmentation_downsampled_3x3x3.zip", processor=pooch.Unzip()
@@ -158,7 +158,7 @@ def get_colin27_segmentation(downsampled=False):
 )
 def get_colin27_parcel_file():
     """Retrieves the Colin27 headmodel, based on :cite:t:`Holmes1998`."""
-    cite("Holmes1998", "Colin27 standard brain atlas")
+    cite("Holmes1998")
     fnames = DATASETS.fetch("colin27_parcellation.zip", processor=pooch.Unzip())
     parcel_file = fnames[0]
 
@@ -203,7 +203,7 @@ def get_fingertapping() -> cdc.Recording:
     Data is from :cite:t:`Luke2021`
     """
 
-    cite("Luke2021", "Fingertapping dataset in BIDS format")
+    cite("Luke2021")
 
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
 
@@ -243,7 +243,7 @@ def get_fingertappingDOT() -> cdc.Recording:
 
 
 def get_fingertapping_snirf_path() -> Path:
-    cite("Luke2021", "Fingertapping dataset in BIDS format")
+    cite("Luke2021")
 
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
     fname = [Path(i) for i in fnames if i.endswith(".snirf")][0]
@@ -251,7 +251,7 @@ def get_fingertapping_snirf_path() -> Path:
 
 
 def get_multisubject_fingertapping_snirf_paths():
-    cite("Luke2021", "Fingertapping dataset in BIDS format")
+    cite("Luke2021")
 
     fnames = DATASETS.fetch("multisubject-fingertapping.zip", processor=pooch.Unzip())
     fnames = sorted([i for i in fnames if i.endswith(".snirf")])
@@ -259,7 +259,7 @@ def get_multisubject_fingertapping_snirf_paths():
 
 
 def get_multisubject_fingertapping_path() -> Path:
-    cite("Luke2021", "Fingertapping dataset in BIDS format")
+    cite("Luke2021")
 
     fnames = DATASETS.fetch("multisubject-fingertapping.zip", processor=pooch.Unzip())
     return [Path(i).parent for i in fnames if i.endswith("README.md")][0]
@@ -417,8 +417,8 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
     voxel-to-vertex mappings used in cedalion's DOT pipeline.
     """
 
-    cite("Holmes1998", "Colin27 atlas")
-    cite("Fischl2012", "Freesurfer")
+    cite("Holmes1998")
+    cite("Fischl2012")
 
     fnames = DATASETS.fetch("hm_colin27.zip", processor=pooch.Unzip())
 
@@ -445,7 +445,7 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
 def get_icbm152_headmodel_files() -> HeadModelFiles:
     """Retrieves the ICBM-152 segmentation dataset."""
 
-    cite("Fischl2012", "Freesurfer")
+    cite("Fischl2012")
 
     fnames = DATASETS.fetch("hm_icbm152.zip", processor=pooch.Unzip())
 
@@ -475,8 +475,8 @@ def get_colin27_freesurfer_directory() -> Path:
     ``recon-all`` pipeline (:cite:t:`Fischl2012`) to generate cortical surface
     reconstructions used in cedalion's DOT head modelling.
     """
-    cite("Holmes1998", "Colin27 standard brain atlas")
-    cite("Fischl2012", "FreeSurfer cortical reconstruction")
+    cite("Holmes1998")
+    cite("Fischl2012")
     fnames = DATASETS.fetch("fs_reconall_colin27.zip", processor=pooch.Unzip())
     dirname = os.path.commonpath(fnames)
 
@@ -489,7 +489,7 @@ def get_icbm152_freesurfer_directory() -> Path:
     (:cite:t:`Fischl2012`) to generate cortical surface reconstructions used in
     cedalion's DOT head modelling.
     """
-    cite("Fischl2012", "FreeSurfer cortical reconstruction")
+    cite("Fischl2012")
     fnames = DATASETS.fetch("fs_reconall_icbm152.zip", processor=pooch.Unzip())
     dirname = os.path.commonpath(fnames)
 
