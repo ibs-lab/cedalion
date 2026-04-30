@@ -15,7 +15,7 @@ import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 from cedalion.sigproc.frequency import sampling_rate
 from cedalion.utils import deprecated
-from cedalion import units, Quantity
+from cedalion import cite, units, Quantity
 
 from .quality import (
     detect_baselineshift,
@@ -61,6 +61,7 @@ def spline(
     units = ts.pint.units
     ts = ts.pint.dequantify()
 
+    cite("Huppert2009")
     dodSpline = ts.copy()
 
     for ch in ts.channel.values:

@@ -9,6 +9,7 @@ import scipy as sp
 import numpy as np
 from cedalion.sigdecomp.unimodal import ica_ebm as ica_ebm
 import cedalion.data
+from cedalion import cite
 
 def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
     """ICA-ERBM: ICA by Entropy Rate Bound Minimization (real-valued version).
@@ -35,6 +36,7 @@ def ICA_ERBM(X: np.ndarray, p: int = None ) -> np.ndarray:
         The original matlab version is available at https://mlsp.umbc.edu/resources.html
         under the name "Real-valued ICA by entropy bound minimization (ICA-EBM)"
     """
+    cite("Li2010B")
 
 #################  Part 0: pre-processing #################
 

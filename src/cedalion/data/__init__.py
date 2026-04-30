@@ -20,6 +20,8 @@ import cedalion.io
 from cedalion.io.forward_model import load_Adot
 from cedalion.utils import deprecated
 
+from cedalion import cite
+
 DATASETS = pooch.create(
     path=pooch.os_cache("cedalion"),
     base_url="https://doc.ibs.tu-berlin.de/cedalion/datasets/{version}/",
@@ -37,7 +39,7 @@ DATASETS = pooch.create(
         "spafNIRS_example_sub179.zip": "sha256:0a247be5bfa3c7b5bc12d19203e2bd5432df964d72646945891601d0ba944141",  # noqa:E501
         "lumo_testdataset.zip" : "sha256:d7c0b74538c98b4e26e73e9606e7e8125f236cdda4c913a10c2d4db93e4357f8", # noqa:E501
         "kernel_testdataset.zip" : "sha256:cfff80c2064b2ddbb884db8aad08004b450cdd7324ee14733c3344b0706a3f18", # noqa:E501
-        "artinis_testdataset.zip" : "sha256:399fb563023e3c10abec9ff1427e925f4f24c4970865cc401ff45e06a12c73d9", # noqa:E501
+        "artinis_testdataset.zip" : "sha256:bc2b583a1d70e0997701406b8ba02b5a9f9034f30a5ae0882376055181ab453e", # noqa:E501
 
         # head models
         #   deprecated:
@@ -77,7 +79,7 @@ DATASETS = pooch.create(
         "Adot_ninjanirs_colin27.nc": "sha256:3382e6bfd62b5e1213332cc74c88cc8af04a4fd5cebe7001ebc111cf9e9b2d00",  # noqa:E501
         "sensitivity_lumo_testdataset_colin27.nc" : "sha256:c08e83f6fd98b7038f3cbb3cc36abc0fa5a1eaad17a4115a822c250da75ab2fa", # noqa:E501
         "sensitivity_kernel_testdataset_colin27.nc" : "sha256:b8e344f7e41196504b079eb5a774b79c62796360b6219b801ffd87039a0c1974", # noqa:E501
-        "sensitivity_artinis_testdataset_colin27.nc" : "sha256:ac8fe73e19e5b4a8a1d8f107163911faff1f8b3156d06fa44842facb44d8834b", # noqa:E501
+        "sensitivity_artinis_testdataset_colin27.nc" : "sha256:472557f0303151baca9c0930ec9ed1f5a03873aa0cc0e98acb04c93e692fa6db", # noqa:E501
 
         # other:
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
@@ -128,6 +130,7 @@ def get_snirf_test_data():
 )
 def get_colin27_segmentation(downsampled=False):
     """Retrieves the Colin27 segmentation dataset, based on :cite:t:`Holmes1998`."""
+    cite("Holmes1998")
     if downsampled:
         fnames = DATASETS.fetch(
             "colin27_segmentation_downsampled_3x3x3.zip", processor=pooch.Unzip()
@@ -155,6 +158,7 @@ def get_colin27_segmentation(downsampled=False):
 )
 def get_colin27_parcel_file():
     """Retrieves the Colin27 headmodel, based on :cite:t:`Holmes1998`."""
+    cite("Holmes1998")
     fnames = DATASETS.fetch("colin27_parcellation.zip", processor=pooch.Unzip())
     parcel_file = fnames[0]
 
@@ -186,7 +190,7 @@ def get_icbm152_segmentation():
     "cedalion.data.get_icbm152_headmodel_files ."
 )
 def get_icbm152_parcel_file():
-    """Retrieves the Colin27 headmodel, based on :cite:t:`Holmes1998`."""
+    """Retrieves the ICBM headmodel parcellation."""
     fnames = DATASETS.fetch("icbm152_parcellation.zip", processor=pooch.Unzip())
     parcel_file = fnames[0]
 
@@ -198,6 +202,9 @@ def get_fingertapping() -> cdc.Recording:
 
     Data is from :cite:t:`Luke2021`
     """
+
+    cite("Luke2021")
+
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
@@ -236,18 +243,24 @@ def get_fingertappingDOT() -> cdc.Recording:
 
 
 def get_fingertapping_snirf_path() -> Path:
+    cite("Luke2021")
+
     fnames = DATASETS.fetch("fingertapping.zip", processor=pooch.Unzip())
     fname = [Path(i) for i in fnames if i.endswith(".snirf")][0]
     return fname
 
 
 def get_multisubject_fingertapping_snirf_paths():
+    cite("Luke2021")
+
     fnames = DATASETS.fetch("multisubject-fingertapping.zip", processor=pooch.Unzip())
     fnames = sorted([i for i in fnames if i.endswith(".snirf")])
     return fnames
 
 
 def get_multisubject_fingertapping_path() -> Path:
+    cite("Luke2021")
+
     fnames = DATASETS.fetch("multisubject-fingertapping.zip", processor=pooch.Unzip())
     return [Path(i).parent for i in fnames if i.endswith("README.md")][0]
 
@@ -404,6 +417,9 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
     voxel-to-vertex mappings used in cedalion's DOT pipeline.
     """
 
+    cite("Holmes1998")
+    cite("Fischl2012")
+
     fnames = DATASETS.fetch("hm_colin27.zip", processor=pooch.Unzip())
 
     return HeadModelFiles(
@@ -428,6 +444,8 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
 
 def get_icbm152_headmodel_files() -> HeadModelFiles:
     """Retrieves the ICBM-152 segmentation dataset."""
+
+    cite("Fischl2012")
 
     fnames = DATASETS.fetch("hm_icbm152.zip", processor=pooch.Unzip())
 
@@ -457,6 +475,8 @@ def get_colin27_freesurfer_directory() -> Path:
     ``recon-all`` pipeline (:cite:t:`Fischl2012`) to generate cortical surface
     reconstructions used in cedalion's DOT head modelling.
     """
+    cite("Holmes1998")
+    cite("Fischl2012")
     fnames = DATASETS.fetch("fs_reconall_colin27.zip", processor=pooch.Unzip())
     dirname = os.path.commonpath(fnames)
 
@@ -469,6 +489,7 @@ def get_icbm152_freesurfer_directory() -> Path:
     (:cite:t:`Fischl2012`) to generate cortical surface reconstructions used in
     cedalion's DOT head modelling.
     """
+    cite("Fischl2012")
     fnames = DATASETS.fetch("fs_reconall_icbm152.zip", processor=pooch.Unzip())
     dirname = os.path.commonpath(fnames)
 

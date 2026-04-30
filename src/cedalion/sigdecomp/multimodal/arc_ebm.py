@@ -14,6 +14,7 @@ doi: https://doi.org/10.1155/ijbi/2064944.
 
 import numpy as np
 import cedalion.data
+from cedalion import cite
 
 def arc_ebm(X: np.ndarray, guess_mat, constraint = 'correlation') -> np.ndarray:
     """Adaptive-reverse Constrained ICA by Entropy Bound Minimization (arc-EBM) is a constrained ICA algorithm.
@@ -44,6 +45,8 @@ def arc_ebm(X: np.ndarray, guess_mat, constraint = 'correlation') -> np.ndarray:
 
     """
 
+    cite("Li2010A")
+    cite("yang2025flexible")
     ###############################################################################################################
     # Part 0: Preprocessing
     ###############################################################################################################

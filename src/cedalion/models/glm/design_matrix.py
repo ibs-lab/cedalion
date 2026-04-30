@@ -13,6 +13,7 @@ from numpy.polynomial.legendre import legval
 
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
+from cedalion import cite
 
 from cedalion.sigproc.frequency import sampling_rate
 
@@ -619,6 +620,7 @@ def closest_short_channel_regressor(
     Returns:
         regressors (xr.DataArray): Channel-wise regressor
     """
+    cite("Huppert2009")
     # calculate midpoints between channel optode pairs. dims: (channel, crs)
     long_channel_pos = (geo3d.loc[ts_long.source] + geo3d.loc[ts_long.detector]) / 2
     short_channel_pos = (geo3d.loc[ts_short.source] + geo3d.loc[ts_short.detector]) / 2
@@ -658,6 +660,7 @@ def max_corr_short_channel_regressor(
         xr.DataArray: channel-wise regressors
     """
 
+    cite("Huppert2009")
     dim3 = xrutils.other_dim(ts_long, "channel", "time")
 
     z_long = (ts_long - ts_long.mean("time")) / ts_long.std("time")
@@ -700,6 +703,7 @@ def average_short_channel_regressor(ts_short: cdt.NDTimeSeries):
         xr.DataArray: regressors
     """
 
+    cite("Huppert2009")
     ts_short = ts_short.pint.dequantify()
     regressor = ts_short.mean("channel", skipna=True).expand_dims("regressor")
     regressor = regressor.assign_coords({"regressor": ["short"]})

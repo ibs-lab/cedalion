@@ -13,6 +13,7 @@ Includes:
 import numpy as np
 import xarray as xr
 
+from cedalion import cite
 from cedalion.sigdecomp.multimodal.utils import (
     validate_dimension_labels,
     validate_dimension_sizes,
@@ -416,6 +417,7 @@ class ElasticNetCCA(MultimodalSourceDecomposition):
                 set to 'channel' by default.
         """
 
+        cite("parkhomenko_sparse_2009")
         # Labels for sample and feature directions
         self.sample_name = sample_name
         self.featureX_name = featureX_name
@@ -575,6 +577,8 @@ class StructuredSparseCCA(MultimodalSourceDecomposition):
                 set to 'channel' by default.
         """
 
+        cite("chen_structure-constrained_2013")
+        cite("parkhomenko_sparse_2009")
         # Labels for sample and feature directions
         self.sample_name = sample_name
         self.featureX_name = featureX_name
@@ -815,6 +819,7 @@ class SparsePLS(ElasticNetCCA):
         tol: float = 1e-6,
         scale: bool = True,
     ):
+        cite("witten_penalized_2009")
         super(SparsePLS, self).__init__(
             N_components=N_components,
             l1_reg=l1_reg,

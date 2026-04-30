@@ -9,6 +9,7 @@ import xarray as xr
 import cedalion.typing as cdt
 import cedalion.dataclasses as cdc
 import cedalion.xrutils as xrutils
+from cedalion import cite
 from cedalion.models.glm.design_matrix import DesignMatrix
 
 import statsmodels.api
@@ -108,6 +109,7 @@ def fit(
 
     """
 
+    cite("Barker2013")
     # FIXME: unit handling?
     # shoud the design matrix be dimensionless? -> thetas will have units
     ts = ts.pint.dequantify()

@@ -13,6 +13,7 @@ Includes:
 import numpy as np
 import xarray as xr
 
+from cedalion import cite
 from cedalion.sigdecomp.multimodal.utils import (
     validate_dimension_labels,
     validate_time_shifts,
@@ -307,6 +308,8 @@ class ElasticNetTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
                 set to 'channel' by default.
         """
 
+        cite("biesmann_temporal_2010")
+        cite("parkhomenko_sparse_2009")
         # Labels for feature directions
         self.featureX_name = featureX_name
         self.featureY_name = featureY_name
@@ -494,6 +497,9 @@ class StructuredSparseTCCA(MultimodalSourceDecompositionWithTemporalEmbedding):
                 set to 'channel' by default.
         """
 
+        cite("biesmann_temporal_2010")
+        cite("chen_structure-constrained_2013")
+        cite("parkhomenko_sparse_2009")
         # Labels for sample and feature directions
         self.featureX_name = featureX_name
         self.featureY_name = featureY_name

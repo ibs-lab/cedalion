@@ -7,6 +7,7 @@ https://mlsp.umbc.edu/resources.html.
 
 import numpy as np
 import cedalion.data
+from cedalion import cite
 
 def ICA_EBM(X: np.ndarray) -> np.ndarray:
     """Calculates the blind source separation demixing matrix corresponding to X.
@@ -37,6 +38,7 @@ def ICA_EBM(X: np.ndarray) -> np.ndarray:
         rate bound minimization (ICA-ERBM)"
     """
 
+    cite("Li2010A")
     ####################################################################################
     # Part 0: Preprocessing
     ####################################################################################

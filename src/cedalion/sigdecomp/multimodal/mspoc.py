@@ -6,6 +6,7 @@ from sklearn.cross_decomposition import CCA
 import xarray as xr
 
 
+from cedalion import cite
 from cedalion.sigdecomp.multimodal.utils import (
     validate_dimension_labels,
     validate_time_shifts,
@@ -111,6 +112,7 @@ class mSPoC:
             featureY_name (str): Name of the feature dimension for Y.
         """
 
+        cite("Dahne2013")
         # Labels for sample and feature directions
         self.sample_name = "time"
         self.featureX_name = featureX_name

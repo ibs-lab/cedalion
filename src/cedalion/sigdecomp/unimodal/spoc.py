@@ -3,6 +3,7 @@
 import numpy as np
 from scipy.linalg import eigh
 import cedalion.typing as cdt
+from cedalion import cite
 from typing import Optional
 import xarray as xr
 
@@ -61,6 +62,7 @@ class SPoC:
                 the corresponding covariances between P(W.T @ x) and z.
         """
 
+        cite("Dahne2014")
         # Store for transformation later
         self.Nx = len(x.channel)
 

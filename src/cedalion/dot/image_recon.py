@@ -20,7 +20,7 @@ import cedalion.io.utils as ioutils
 import cedalion.typing as cdt
 import cedalion.utils
 import cedalion.xrutils as xrutils
-from cedalion import nirs, units
+from cedalion import cite, nirs, units
 from cedalion.dot.head_model import TwoSurfaceHeadModel
 
 logger = logging.getLogger("cedalion")
@@ -161,6 +161,7 @@ class OriginalGaussianSpatialBasisFunctions:
                 excluded from the kernel support.
         """
 
+        cite("Carlton2026")
         cedalion.utils.deprecated_api(
             "This implementation of gaussian basis functions will be replaced."
         )

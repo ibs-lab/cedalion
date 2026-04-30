@@ -10,6 +10,7 @@ import scipy as sp
 import numpy as np
 from cedalion.sigdecomp.multimodal import arc_ebm as arc_ebm
 import cedalion.data
+from cedalion import cite
 
 def arc_erbm(X: np.ndarray, guess_mat, p: int = None , pr_guess_mat = None) -> np.ndarray:
     """ Adaptive-reverse Constrained ICA by Entropy Rate Bound Minimization (arc-ERBM) is a spectrally constrained ICA algorithm. 
@@ -39,6 +40,7 @@ def arc_erbm(X: np.ndarray, guess_mat, p: int = None , pr_guess_mat = None) -> n
         under the name "Real-valued ICA by entropy bound minimization (ICA-EBM)"
     """
 
+    cite("Li2010B")
 #################  Part 0: pre-processing #################
 
     # load measuring functions as global variables

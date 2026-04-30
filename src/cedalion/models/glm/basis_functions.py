@@ -8,7 +8,7 @@ import pint
 import xarray as xr
 
 import cedalion.typing as cdt
-from cedalion import Quantity, units
+from cedalion import cite, Quantity, units
 from cedalion.sigproc.frequency import sampling_rate
 import cedalion.xrutils as xrutils
 
@@ -224,6 +224,7 @@ class Gamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
+        cite("Strangman2002")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
         spatial = xrutils.spatial_dim(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)
@@ -297,6 +298,7 @@ class GammaDeriv(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
+        cite("Strangman2002")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
         spatial = xrutils.spatial_dim(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)
@@ -373,6 +375,7 @@ class AFNIGamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
+        cite("Cox1996")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
         spatial = xrutils.spatial_dim(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)

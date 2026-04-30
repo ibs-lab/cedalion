@@ -10,7 +10,7 @@ import cedalion.data
 import cedalion.typing as cdt
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
-from cedalion import units
+from cedalion import cite, units
 from .common import get_extinction_coefficients, channel_distances
 
 def int2od(amplitudes: cdt.NDTimeSeries, return_baseline: bool = False):
@@ -30,6 +30,8 @@ def int2od(amplitudes: cdt.NDTimeSeries, return_baseline: bool = False):
         baseline: (xr.DataArray, (channel, *)): The intensity baseline data
             (average time series) used for conversion to OD.
     """
+    cite("Delpy1988")
+    cite("Villringer1997")
     # check negative values in amplitudes and issue an error if yes
     if np.any(amplitudes <= 0):
         raise AssertionError(
@@ -87,6 +89,8 @@ def od2conc(
         conc (xr.DataArray, (channel, *)): A data array containing
         concentration changes by channel.
     """
+    cite("Delpy1988")
+    cite("Villringer1997")
     validators.has_channel(od)
     validators.has_wavelengths(od)
     validators.has_wavelengths(dpf)
@@ -177,6 +181,8 @@ def beer_lambert(
         conc (xr.DataArray, (channel, *)): A data array containing
             concentration changes according to the modified Beer-Lambert law.
     """
+    cite("Delpy1988")
+    cite("Villringer1997")
     validators.has_channel(amplitudes)
     validators.has_wavelengths(amplitudes)
     validators.has_wavelengths(dpf)

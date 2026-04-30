@@ -16,6 +16,7 @@ from functools import reduce
 
 import cedalion
 import cedalion.dataclasses as cdc
+from cedalion import cite
 
 
 def voxels_from_segmentation(
@@ -198,6 +199,8 @@ def segmentation_postprocessing(
         :cite:t:`Huang2013`, :cite:t:`Harmening2022`
     """
 
+    cite("Huang2013")
+    cite("Harmening2022")
     # Load segmented spm output files
     tissues = mask_files.keys()
     img = {tissue: nib.load(os.path.join(segmentation_dir, mask_files[tissue]))

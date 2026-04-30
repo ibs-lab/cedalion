@@ -6,7 +6,7 @@ import cedalion.math.ar_model
 import scipy.signal
 import pandas as pd
 from cedalion.sigproc.frequency import sampling_rate
-from cedalion import units
+from cedalion import cite, units
 
 def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4.685)):
     """This function implements the AR-IRLS GLM model.
@@ -42,6 +42,7 @@ def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4
         Ted Huppert | huppert1@pitt.edu | 2024
     """
 
+    cite("Barker2013")
     mask = np.isfinite(y.values)
 
     if pmax is None:

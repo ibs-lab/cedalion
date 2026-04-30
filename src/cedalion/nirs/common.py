@@ -9,6 +9,7 @@ from scipy.interpolate import interp1d
 
 import cedalion
 import cedalion.data
+from cedalion import cite
 import cedalion.typing as cdt
 import cedalion.validators as validators
 import cedalion.xrutils as xrutils
@@ -49,6 +50,7 @@ def get_extinction_coefficients(spectrum: str, wavelengths: ArrayLike):
         µa = (2.303) e (x g/liter)/(66,500 g Hb/mole) where x is the number of grams per
         liter. A typical value of x for whole blood is x=150 g Hb/liter.
     """
+    cite("Prahl1998")
     if spectrum == "prahl":
         path = cedalion.data.get("prahl_absorption_spectrum.tsv")
         with path.open("r") as fin:

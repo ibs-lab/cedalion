@@ -9,6 +9,7 @@ import xarray as xr
 import pyvista as pv
 
 import cedalion.vis.blocks as vbx
+from cedalion import cite
 
 from cedalion.dataclasses import (
     Surface,
@@ -196,6 +197,7 @@ class LandmarksBuilder1010:
             scalp_surface (Surface): a triangle-mesh representing the scalp
             landmarks (LabeledPoints): positions of "Nz", "Iz", "LPA", "RPA"
         """
+        cite("Oostenveld2001")
         if isinstance(scalp_surface, TrimeshSurface):
             scalp_surface = VTKSurface.from_trimeshsurface(scalp_surface)
 
