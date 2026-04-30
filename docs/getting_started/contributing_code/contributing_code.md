@@ -113,8 +113,8 @@ def func(
 
 #### Literature references
 
-Add references to `docs/references.bib` with a unique BibTeX label. Cite them in
-docstrings with:
+Add references to `cedalion/bibliography/references.bib` with a unique BibTeX label.
+Cite them in docstrings with:
 
 ```
 :cite:t:`BIBTEXLABEL`
@@ -126,9 +126,19 @@ In Markdown notebook cells, cite with:
 {cite:t}`BIBTEXLABEL`
 ```
 
+In functions, call:
+
+```python
+cedalion.cite(BIBTEXLABEL)
+```
+
 All references are listed on the [References](../../references.rst) page. If citations
-do not render correctly, check the Sphinx output for duplicate or malformed entries
-in `references.bib`.
+do not render correctly, check the Sphinx output for duplicate or malformed entries in
+`references.bib`. 
+
+Each call to `cedalion.cite` is recorded in the container
+`cedalion.bib`. The user can obtain references for all used methods by executing
+`cedalion.bib.dump_to_notebook` at the end of a notebook.
 
 ### Where to add code
 

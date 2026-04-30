@@ -211,11 +211,12 @@ running `python scripts/generate_contributors.py`.
 ### Scientific Credit
 
 This documentation contains a dedicated
-[bibliography](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/references.html)
-where you can search for scientific papers whose methods are implemented in
-Cedalion. If you contribute code based on a published method, please add the
-BibTeX entry to `docs/references.bib` and cite it in the function's docstring —
-this gives the original authors the visibility they deserve.
+[bibliography](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/references.html) where you
+can search for scientific papers whose methods are implemented in Cedalion. If you
+contribute code based on a published method, please add the BibTeX entry to
+`cedalion/bibliography/references.bib`, cite it in the function's docstring and call
+`cedalion.cite()` within the function itself — this gives the original authors the
+visibility they deserve.
 
 ### Special Mentions
 
