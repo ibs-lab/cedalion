@@ -259,12 +259,14 @@ def search_for_acq_time_in_snirf_files(row: pd.Series, dataset_path: str) -> dat
     """
     if pd.isna(row.acq_time):
         snirf_file = os.path.join(dataset_path, row.current_name)
-        nirs_data = Snirf(snirf_file)
-        nirs_data = next(iter(nirs_data.nirs))
-
-        if nirs_data.metaDataTags.MeasurementDate is None or nirs_data.metaDataTags.MeasurementTime is None:
-            return 'n/a'
-        datetime_str = f"{nirs_data.metaDataTags.MeasurementDate}T{nirs_data.metaDataTags.MeasurementTime}"
+        with Snirf(snirf_file) as snirf_obj:
+            nirs_group = next(iter(snirf_obj.nirs))
+            if nirs_group.metaDataTags.MeasurementDate is None or nirs_group.metaDataTags.MeasurementTime is None:
+                return 'n/a'
+            datetime_str = (
+                f"{nirs_group.metaDataTags.MeasurementDate}"
+                f"T{nirs_group.metaDataTags.MeasurementTime}"
+            )
         timestamp = datetime_str.split('.')[0]
         return timestamp
     else:
@@ -465,18 +467,32 @@ def check_coord_files(bids_dir: str) -> None:
         This function does not return any value. It directly modifies the *_coordsystem.json files.
     """
 
+    unit_mapping = {
+    "millimeter": "mm",
+    "centimeter": "cm",
+    "meter": "m",
+    }
+    valid_units = {"m", "mm", "cm"}
+
     results = find_files_with_pattern(bids_dir, "*_coordsystem.json")
     for coord_file in results:
         with open(coord_file, "r") as file:
             data = json.load(file)
-            if data["NIRSCoordinateSystem"] == "":
-                data["NIRSCoordinateSystem"] = "Other"
-                with open(coord_file, "w") as json_file:
-                    json.dump(data, json_file, indent=4)
-            if data["NIRSCoordinateUnits"] == "millimeter":
-                data["NIRSCoordinateUnits"] = "mm"
-                with open(coord_file, "w") as json_file:
-                    json.dump(data, json_file, indent=4)
+
+        if data["NIRSCoordinateSystem"] == "":
+            data["NIRSCoordinateSystem"] = "Other"
+
+        # Check if NIRSCoordinateUnits is valid
+        units = data.get("NIRSCoordinateUnits")
+
+        if units in unit_mapping:
+            data["NIRSCoordinateUnits"] = unit_mapping[units]
+
+        elif units not in valid_units:
+            data["NIRSCoordinateUnits"] = "n/a"
+
+        with open(coord_file, "w") as json_file:
+            json.dump(data, json_file, indent=4)
 
 def create_participants_tsv(bids_dir: str, mapping_df: pd.DataFrame, fields: Optional[List[str]] = None) -> None:
     """Creates a `participants.tsv` file in a BIDS-compliant directory.
