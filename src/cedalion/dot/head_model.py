@@ -511,8 +511,6 @@ class TwoSurfaceHeadModel:
         )
 
 
-    # FIXME maybe this should not be in this class, especially since the
-    # algorithm is not good.
     @cdc.validate_schemas
     def align_and_snap_to_scalp(
         self,
@@ -521,108 +519,22 @@ class TwoSurfaceHeadModel:
     ) -> cdt.LabeledPoints:
         """Align and snap optodes or points to the scalp surface.
 
-        Args:
-            points (cdt.LabeledPoints): Points to be aligned and snapped to the
-                scalp surface.
-            mode: method to derive the affine transform. Could be either
-                'trans_rot_isoscale' or 'general'. See cedalion.geometry.registraion
-                for details.
-
-        Returns:
-            cdt.LabeledPoints: Points aligned and snapped to the scalp surface.
+        Thin wrapper around the module-level :func:`align_and_snap_to_scalp`.
         """
-
-        assert self.landmarks is not None, (
-            "Please add landmarks in RAS to head instance."
-        )
-        if mode == "trans_rot_isoscale":
-            t = register_trans_rot_isoscale(self.landmarks, points)
-        elif mode == "general":
-            t = register_general_affine(self.landmarks, points)
-        else:
-            raise ValueError(f"unexpected mode '{mode}'")
-
-        transformed = points.points.apply_transform(t)
-        snapped = self.scalp.snap(transformed)
-        return snapped
+        return align_and_snap_to_scalp(self.scalp, self.landmarks, points, mode=mode)
 
 
-    # FIXME then maybe this should also not be in this class
     @cdc.validate_schemas
     def snap_to_scalp_voxels(
         self, points: cdt.LabeledPoints
     ) -> cdt.LabeledPoints:
         """Snap optodes or points to the closest scalp voxel.
 
-        Args:
-            points (cdt.LabeledPoints): Points to be snapped to the closest scalp
-                voxel.
-
-        Returns:
-            cdt.LabeledPoints: Points aligned and snapped to the closest scalp
-                voxel.
+        Thin wrapper around the module-level :func:`snap_to_scalp_voxels`.
         """
-        # Align to scalp surface
-        aligned = self.scalp.snap(points)
-
-        # Snap to closest scalp voxel
-        snapped = np.zeros(points.shape)
-        for i, a in enumerate(aligned):
-
-            # Get index of scalp surface vertex "a"
-            idx = np.argwhere(self.scalp.mesh.vertices == \
-                              np.array(a.pint.dequantify()))
-
-            # Reduce to indices with repitition of 3 (so all coordinates match)
-            if len(idx) > 3:
-                r = [rep[n] for rep in [{}] for i,n in enumerate(idx[:,0]) \
-                           if rep.setdefault(n,[]).append(i) or len(rep[n])==3]
-                idx = idx[r[0]]
-
-            # Make sure only one vertex is found
-            assert len(idx) == 3
-            assert idx[0,0] == idx[1,0] == idx[2,0]
-
-            # Get voxel indices mapping to this scalp vertex
-            vec = np.zeros(self.scalp.nvertices)
-            vec[idx[0,0]] = 1
-            voxel_idx = np.argwhere(self.voxel_to_vertex_scalp @ vec == 1)[:,0]
-
-            if len(voxel_idx) > 0:
-                # Get voxel coordinates from voxel indices
-                try:
-                    shape = self.segmentation_masks.shape[-3:]
-                except AttributeError: # FIXME should not be handled here
-                    shape = self.segmentation_masks.to_dataarray().shape[-3:]
-                voxels = np.array(np.unravel_index(voxel_idx, shape)).T
-
-                # Choose the closest voxel
-                dist = np.linalg.norm(voxels - np.array(a.pint.dequantify()), axis=1)
-                voxel_idx = np.argmin(dist)
-
-            else:
-                # If no voxel maps to that scalp surface vertex,
-                # simply choose the closest of all scalp voxels
-
-                sm = self.segmentation_masks
-
-                voxels = voxels_from_segmentation(sm, ["scalp"]).voxels
-                if len(voxels) == 0:
-                    try:
-                        scalp_mask = sm.sel(segmentation_type="scalp").to_dataarray()
-                    except AttributeError: # FIXME same as above
-                        scalp_mask = sm.sel(segmentation_type="scalp")
-                    voxels = np.argwhere(np.array(scalp_mask)[0] > 0.99)
-
-                kdtree = KDTree(voxels)
-                dist, voxel_idx = kdtree.query(self.scalp.mesh.vertices[idx[0,0]],
-                                               workers=-1)
-
-            # Snap to closest scalp voxel
-            snapped[i] = voxels[voxel_idx]
-
-        points.values = snapped
-        return points
+        return snap_to_scalp_voxels(
+            self.scalp, self.voxel_to_vertex_scalp, self.segmentation_masks, points
+        )
 
 
     def scale_to_landmarks(
@@ -729,62 +641,72 @@ class TwoSurfaceHeadModel:
 
 
 @lru_cache
-def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
-    """Create a TwoSurfaceHeadmodel for common atlases.
+def get_standard_headmodel(model: str, kind: str = "surface"):
+    """Create a head model for common atlases.
 
-    Once created, this function caches a head model.
+    Once created, head models are cached per ``(model, kind)``.
 
     Args:
-        model: either colin27 or icbm152
+        model: ``"colin27"`` or ``"icbm152"``.
+        kind: ``"surface"`` (default) returns a
+            :class:`TwoSurfaceHeadModel`; ``"voxel"`` returns a
+            :class:`~cedalion.dot.voxel_head_model.VoxelHeadModel` built
+            from the same segmentation masks (no precomputed brain mesh
+            is needed for the voxel variant).
+
     Returns:
-        The loaded head model with 1010-landmarks and parcel labels assigned.
+        The loaded head model.
     """
 
     AVAILABLE_MODELS = ["colin27", "icbm152"]
+    AVAILABLE_KINDS = ["surface", "voxel"]
 
-    if model == "colin27":
-        f = cedalion.data.get_colin27_headmodel_files()
-
-        head_ijk = TwoSurfaceHeadModel.from_surfaces(
-            segmentation_dir=f.basedir,
-            mask_files=f.mask_files,
-            brain_surface_file=f.basedir / f.brain_surface_obj,
-            scalp_surface_file=f.basedir / f.scalp_surface_obj,
-            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
-            coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
-            brain_face_count=None,
-            scalp_face_count=None,
-            smoothing=0,
+    if kind not in AVAILABLE_KINDS:
+        raise ValueError(
+            f"Unknown kind '{kind}'. Available kinds are: "
+            + ", ".join(AVAILABLE_KINDS)
         )
-
-        head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})
-        head_ijk.t_ras2ijk = head_ijk.t_ras2ijk.rename({"aligned" : "mni"})
-
-
-    elif model == "icbm152":
-        f = cedalion.data.get_icbm152_headmodel_files()
-
-        head_ijk = TwoSurfaceHeadModel.from_surfaces(
-            segmentation_dir=f.basedir,
-            mask_files=f.mask_files,
-            brain_surface_file=f.basedir / f.brain_surface_obj,
-            scalp_surface_file=f.basedir / f.scalp_surface_obj,
-            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
-            coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
-            brain_face_count=None,
-            scalp_face_count=None,
-            smoothing=0,
-        )
-
-        head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})
-        head_ijk.t_ras2ijk = head_ijk.t_ras2ijk.rename({"aligned" : "mni"})
-
-    else:
+    if model not in AVAILABLE_MODELS:
         raise ValueError(
             "Unknown head model. Available models are: " + ", ".join(AVAILABLE_MODELS)
         )
+
+    if model == "colin27":
+        f = cedalion.data.get_colin27_headmodel_files()
+    else:
+        f = cedalion.data.get_icbm152_headmodel_files()
+
+    if kind == "surface":
+        head_ijk = TwoSurfaceHeadModel.from_surfaces(
+            segmentation_dir=f.basedir,
+            mask_files=f.mask_files,
+            brain_surface_file=f.basedir / f.brain_surface_obj,
+            scalp_surface_file=f.basedir / f.scalp_surface_obj,
+            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
+            coordinates_file=f.basedir / f.brain_vertex_coordinates,
+            voxel_to_vertex_mapping_file_brain=f.basedir / f.voxel_to_vertex_mapping,
+            brain_face_count=None,
+            scalp_face_count=None,
+            smoothing=0,
+        )
+    else:
+        from cedalion.dot.voxel_head_model import VoxelHeadModel
+
+        # Standard atlases ship a typical-adult head; 25 cm comfortably
+        # contains all brain voxels.  Users can call reduce_voxels_to_probe
+        # afterwards to restrict to the region a montage actually covers.
+        head_ijk = VoxelHeadModel.from_segmentation(
+            segmentation_dir=f.basedir,
+            mask_files=f.mask_files,
+            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
+            scalp_surface_file=f.basedir / f.scalp_surface_obj,
+            scalp_face_count=None,
+            smoothing=0,
+            max_dist=250 * cedalion.units.mm,
+        )
+
+    head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned": "mni"})
+    head_ijk.t_ras2ijk = head_ijk.t_ras2ijk.rename({"aligned": "mni"})
 
     return head_ijk
 
@@ -820,3 +742,110 @@ def get_inflated_cortex_surface(model : str) -> cdc.TrimeshSurface:
         crs="inflated",
         units=cedalion.units(None).units,
     )
+
+
+def align_and_snap_to_scalp(
+    scalp: cdc.Surface,
+    landmarks: cdt.LabeledPoints | None,
+    points: cdt.LabeledPoints,
+    mode: str = "general",
+) -> cdt.LabeledPoints:
+    """Align and snap optodes/points to a scalp surface using landmarks.
+
+    Args:
+        scalp: Scalp surface to snap to.
+        landmarks: Anatomical landmarks (must contain the same labels as
+            ``points`` for the alignment step).
+        points: Points to be aligned and snapped to the scalp surface.
+        mode: ``"trans_rot_isoscale"`` or ``"general"``; see
+            :mod:`cedalion.geometry.registration`.
+
+    Returns:
+        Points aligned and snapped to the scalp surface.
+    """
+    assert landmarks is not None, "Please add landmarks in RAS to head instance."
+    if mode == "trans_rot_isoscale":
+        t = register_trans_rot_isoscale(landmarks, points)
+    elif mode == "general":
+        t = register_general_affine(landmarks, points)
+    else:
+        raise ValueError(f"unexpected mode '{mode}'")
+
+    transformed = points.points.apply_transform(t)
+    return scalp.snap(transformed)
+
+
+def snap_to_scalp_voxels(
+    scalp: cdc.Surface,
+    voxel_to_vertex_scalp: scipy.sparse.spmatrix,
+    segmentation_masks: xr.DataArray,
+    points: cdt.LabeledPoints,
+) -> cdt.LabeledPoints:
+    """Snap optodes/points to the closest scalp voxel.
+
+    Args:
+        scalp: Scalp surface mesh.
+        voxel_to_vertex_scalp: Sparse matrix mapping flat segmentation
+            cells to scalp surface vertices.
+        segmentation_masks: Full tissue segmentation masks (used to
+            determine the voxel grid shape and to fall back on direct
+            scalp-voxel queries when no voxel maps to a vertex).
+        points: Points to snap.
+
+    Returns:
+        Points snapped to the closest scalp voxel.
+    """
+    # Align to scalp surface
+    aligned = scalp.snap(points)
+
+    snapped = np.zeros(points.shape)
+    for i, a in enumerate(aligned):
+
+        idx = np.argwhere(scalp.mesh.vertices == np.array(a.pint.dequantify()))
+
+        if len(idx) > 3:
+            r = [
+                rep[n]
+                for rep in [{}]
+                for i, n in enumerate(idx[:, 0])
+                if rep.setdefault(n, []).append(i) or len(rep[n]) == 3
+            ]
+            idx = idx[r[0]]
+
+        assert len(idx) == 3
+        assert idx[0, 0] == idx[1, 0] == idx[2, 0]
+
+        vec = np.zeros(scalp.nvertices)
+        vec[idx[0, 0]] = 1
+        voxel_idx = np.argwhere(voxel_to_vertex_scalp @ vec == 1)[:, 0]
+
+        if len(voxel_idx) > 0:
+            try:
+                shape = segmentation_masks.shape[-3:]
+            except AttributeError:
+                shape = segmentation_masks.to_dataarray().shape[-3:]
+            voxels = np.array(np.unravel_index(voxel_idx, shape)).T
+
+            dist = np.linalg.norm(voxels - np.array(a.pint.dequantify()), axis=1)
+            voxel_idx = np.argmin(dist)
+
+        else:
+            voxels = voxels_from_segmentation(segmentation_masks, ["scalp"]).voxels
+            if len(voxels) == 0:
+                try:
+                    scalp_mask = segmentation_masks.sel(
+                        segmentation_type="scalp"
+                    ).to_dataarray()
+                except AttributeError:
+                    scalp_mask = segmentation_masks.sel(segmentation_type="scalp")
+                voxels = np.argwhere(np.array(scalp_mask)[0] > 0.99)
+
+            kdtree = KDTree(voxels)
+            _, voxel_idx = kdtree.query(
+                scalp.mesh.vertices[idx[0, 0]], workers=-1
+            )
+
+        snapped[i] = voxels[voxel_idx]
+
+    points.values = snapped
+    return points

@@ -9,7 +9,7 @@ import cedalion
 import cedalion.dataclasses as cdc
 import cedalion.geometry.segmentation as segm
 import cedalion.typing as cdt
-from cedalion import xrutils
+from cedalion import units, xrutils
 
 # FIXME right location?
 def map_segmentation_mask_to_surface(
@@ -57,6 +57,92 @@ def map_segmentation_mask_to_surface(
     )
 
     return map_voxel_to_vertex
+
+
+def reduce_and_map_brain_voxels(
+    brain_mask: xr.DataArray,
+    transform_vox2ras: cdt.AffineTransform,
+    scalp_surface: cdc.Surface,
+    brain_volume: cdc.Voxels,
+    max_dist: cdt.QLength = 10 * units.mm,
+) -> tuple[coo_array, cdc.Voxels, np.ndarray]:
+    """Filter brain voxels by distance to the scalp and build a sparse mapping.
+
+    For each brain voxel, the distance to the closest vertex of the scalp
+    surface is computed.  Voxels farther away than ``max_dist`` are dropped.
+    The remaining voxels form the reduced brain volume; a sparse matrix maps
+    every cell of the original segmentation grid to its index in that
+    reduced volume (or to nothing, if the voxel was dropped).
+
+    Args:
+        brain_mask: 3D boolean (or 0/1) ``xr.DataArray`` of the brain
+            segmentation in voxel space. Shape ``(i, j, k)``.
+        transform_vox2ras: Affine transform from voxel (ijk) space to the
+            CRS in which ``scalp_surface`` and ``brain_volume`` live.
+        scalp_surface: Scalp surface mesh, in the target CRS.
+        brain_volume: Brain voxels, in the target CRS, in the same row order
+            as ``np.argwhere(brain_mask.values)``.
+        max_dist: Maximum allowed scalp-to-voxel distance.
+
+    Returns:
+        Tuple ``(map_voxel_to_voxel, reduced_volume, kept_mask_3d)``:
+
+        - **map_voxel_to_voxel**: ``coo_array`` of shape
+          ``(ncells, nvoxels_reduced)`` mapping flat segmentation cells to
+          reduced voxel indices.
+        - **reduced_volume**: ``cdc.Voxels`` containing only kept brain
+          voxels, in the same CRS/units as the input ``brain_volume``.
+        - **kept_mask_3d**: 3D boolean ``np.ndarray`` aligned to
+          ``brain_mask.shape``; True where a voxel is kept.
+    """
+
+    assert scalp_surface.crs == transform_vox2ras.dims[0]
+    assert brain_volume.crs == transform_vox2ras.dims[0]
+    assert scalp_surface.units == brain_volume.units
+
+    max_dist_in_surface_units = float(max_dist.to(scalp_surface.units).magnitude)
+
+    # voxel-centre coordinates of every cell in the segmentation grid,
+    # transformed to the scalp/brain CRS and dequantified to the surface units
+    cell_coords = segm.cell_coordinates(brain_mask, flat=True)
+    cell_coords = cell_coords.points.apply_transform(transform_vox2ras)
+    cell_coords = cell_coords.pint.to(scalp_surface.units).pint.dequantify()
+
+    ncells = cell_coords.sizes["label"]
+
+    # flat indices of cells that belong to the brain mask; this is the same
+    # ordering used by `voxels_from_segmentation` (np.argwhere is row-major)
+    cell_indices_brain = np.flatnonzero(brain_mask.values)
+
+    # for each brain cell, distance to the closest scalp surface vertex
+    dists, _ = scalp_surface.kdtree.query(
+        cell_coords.values[cell_indices_brain, :], workers=-1
+    )
+
+    kept = dists < max_dist_in_surface_units
+    nvoxels_reduced = int(kept.sum())
+
+    reduced_volume = cdc.Voxels(
+        brain_volume.voxels[kept], brain_volume.crs, brain_volume.units
+    )
+
+    # build map: each kept brain cell -> its index in the reduced volume.
+    # The kdtree query is a sanity check (each kept voxel should match itself).
+    cell_indices_kept = cell_indices_brain[kept]
+    dists_self, voxel_indices = reduced_volume.kdtree.query(
+        cell_coords.values[cell_indices_kept, :], workers=-1
+    )
+    assert (dists_self.round(9) == 0.0).all()
+
+    map_voxel_to_voxel = coo_array(
+        (np.ones(len(cell_indices_kept)), (cell_indices_kept, voxel_indices)),
+        shape=(ncells, nvoxels_reduced),
+    )
+
+    kept_mask_3d = np.zeros(brain_mask.shape, dtype=bool)
+    kept_mask_3d.flat[cell_indices_kept] = True
+
+    return map_voxel_to_voxel, reduced_volume, kept_mask_3d
 
 
 def normal_hrf(t, t_peak, t_std, vmax):
