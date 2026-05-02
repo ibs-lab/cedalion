@@ -28,7 +28,11 @@ class Bibliography:
         ):
             frame = stack[2][0]  # cedalion.cite wrapper? move up in the stack
 
-        caller_name = frame.f_globals["__name__"] + "." + frame.f_code.co_qualname
+        caller_name = (
+            frame.f_globals["__name__"]
+            + "."
+            + getattr(frame.f_code, "co_qualname", frame.f_code.co_name)
+        )
 
         self._refs[bibtex_key].add(caller_name)
 
@@ -116,7 +120,9 @@ class Bibliography:
                 f"<div style='border:1px solid #dee2e6;border-radius:6px;"
                 f"padding:10px 14px;background:#f8f9fa'>"
                 f"<h4 style='margin:0 0 8px'>{title}</h4>"
-                f"<table style='border-collapse:collapse;font-size:0.9em'>{rows}</table>"
+                "<table style='border-collapse:collapse;font-size:0.9em'>"
+                f"{rows}"
+                "</table>"
                 f"</div>"
             )
         )
