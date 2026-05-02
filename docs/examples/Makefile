@@ -22,8 +22,9 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
 					head_models/40_image_reconstruction.ipynb \
 					head_models/41_photogrammetric_optode_coregistration.ipynb \
 					head_models/42_1010_system.ipynb \
-					head_models/43_crs_and_headmodel.ipynb \
-					head_models/44_head_models.ipynb \
+					head_models/43a_head_models_overview.ipynb \
+					head_models/43b_individualized_head_models.ipynb \
+					head_models/44_head_models_crs_scaling.ipynb \
 					head_models/45_parcel_sensitivity.ipynb \
 					head_models/46_precompute_fluence.ipynb \
 					head_models/48_headmodel_landmarks_verification.ipynb \
