@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Generate docs/community/contributors_generated.md from the GitHub API.
+"""Update the Contributors section of docs/community/index.md from the GitHub API.
 
 Run this script before a release or whenever the contributor list should be
 refreshed:
 
     python scripts/generate_contributors.py
+
+The script replaces the content between the sentinel comments
+``<!-- BEGIN CONTRIBUTORS -->`` and ``<!-- END CONTRIBUTORS -->`` in
+``docs/community/index.md`` and leaves everything else untouched.
 
 Requires only the Python standard library. GitHub's unauthenticated rate limit
 (60 req/hr) is sufficient for the small number of contributors in this repo.
@@ -18,9 +22,10 @@ from datetime import date
 from pathlib import Path
 
 REPO = "ibs-lab/cedalion"
-OUT_FILE = (
-    Path(__file__).parent.parent / "docs" / "community" / "contributors_generated.md"
-)
+INDEX_FILE = Path(__file__).parent.parent / "docs" / "community" / "index.md"
+
+BEGIN_SENTINEL = "<!-- BEGIN CONTRIBUTORS -->"
+END_SENTINEL = "<!-- END CONTRIBUTORS -->"
 
 # Shown first in their own "Core Maintainers" section (in this fixed order).
 MAINTAINERS = [
@@ -112,7 +117,8 @@ def _card(
     )
 
 
-def build_page(counts: dict[str, int]) -> str:
+def build_section(counts: dict[str, int]) -> str:
+    """Build the auto-generated block that goes between the sentinel comments."""
     maintainer_cards = "\n".join(
         _card(m["login"], m["name"], counts.get(m["login"]), maintainer=True)
         for m in MAINTAINERS
@@ -137,7 +143,7 @@ def build_page(counts: dict[str, int]) -> str:
         f"% Regenerate with: python scripts/generate_contributors.py\n"
         f"% Last updated: {today}\n"
         f"\n"
-        f"## Core Maintainers\n"
+        f"### Core Maintainers\n"
         f"\n"
         f"````{{raw}} html\n"
         f'<div class="contributor-grid">\n'
@@ -145,7 +151,7 @@ def build_page(counts: dict[str, int]) -> str:
         f"</div>\n"
         f"````\n"
         f"\n"
-        f"## Code Contributors\n"
+        f"### Code Contributors\n"
         f"\n"
         f"````{{raw}} html\n"
         f'<div class="contributor-grid">\n'
@@ -159,9 +165,15 @@ def main() -> None:
     print(f"Fetching contributor data from {REPO}...")
     counts = fetch_contributors()
     print(f"  Found {len(counts)} unique contributors")
-    page = build_page(counts)
-    OUT_FILE.write_text(page, encoding="utf-8")
-    print(f"Written to {OUT_FILE}")
+
+    section = build_section(counts)
+
+    text = INDEX_FILE.read_text(encoding="utf-8")
+    start = text.index(BEGIN_SENTINEL) + len(BEGIN_SENTINEL)
+    end = text.index(END_SENTINEL)
+    new_text = text[:start] + "\n" + section + text[end:]
+    INDEX_FILE.write_text(new_text, encoding="utf-8")
+    print(f"Updated contributors section in {INDEX_FILE}")
 
 
 if __name__ == "__main__":
