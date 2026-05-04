@@ -413,12 +413,13 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
     """Retrieve the Colin27 head model files.
 
     The Colin27 atlas (:cite:t:`Holmes1998`) was further processed with FreeSurfer
-    (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations, and
+    (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations (cite:t:'Schaefer2018'), and
     voxel-to-vertex mappings used in cedalion's DOT pipeline.
     """
 
     cite("Holmes1998")
     cite("Fischl2012")
+    cite("Schaefer2018")
 
     fnames = DATASETS.fetch("hm_colin27.zip", processor=pooch.Unzip())
 
@@ -443,9 +444,16 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
 
 
 def get_icbm152_headmodel_files() -> HeadModelFiles:
-    """Retrieves the ICBM-152 segmentation dataset."""
+    """Retrieves the ICBM-152 segmentation dataset.
 
+    The ICBM1-52 atlas (:cite:t:`Fonov2011`) was further processed with FreeSurfer
+    (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations (cite:t:'Schaefer2018'), and
+    voxel-to-vertex mappings used in cedalion's DOT pipeline.
+    """
+
+    cite("Fonov2011")
     cite("Fischl2012")
+    cite("Schaefer2018")
 
     fnames = DATASETS.fetch("hm_icbm152.zip", processor=pooch.Unzip())
 
@@ -489,6 +497,7 @@ def get_icbm152_freesurfer_directory() -> Path:
     (:cite:t:`Fischl2012`) to generate cortical surface reconstructions used in
     cedalion's DOT head modelling.
     """
+    cite("Fonov2011")
     cite("Fischl2012")
     fnames = DATASETS.fetch("fs_reconall_icbm152.zip", processor=pooch.Unzip())
     dirname = os.path.commonpath(fnames)
