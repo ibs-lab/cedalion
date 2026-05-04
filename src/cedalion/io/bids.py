@@ -261,11 +261,13 @@ def search_for_acq_time_in_snirf_files(row: pd.Series, dataset_path: str) -> dat
         snirf_file = os.path.join(dataset_path, row.current_name)
         with Snirf(snirf_file) as snirf_obj:
             nirs_group = next(iter(snirf_obj.nirs))
+            if nirs_group.metaDataTags.MeasurementDate is None or nirs_group.metaDataTags.MeasurementTime is None:
+                return 'n/a'
             datetime_str = (
                 f"{nirs_group.metaDataTags.MeasurementDate}"
-                f" {nirs_group.metaDataTags.MeasurementTime}"
+                f"T{nirs_group.metaDataTags.MeasurementTime}"
             )
-        timestamp = datetime.strptime(datetime_str.split('.')[0], "%Y-%m-%d %H:%M:%S")
+        timestamp = datetime_str.split('.')[0]
         return timestamp
     else:
         return row.acq_time
@@ -302,7 +304,7 @@ def search_for_sessions_acq_time(dataset_path: str) -> pd.DataFrame:
         if "acq_time" in ses_df.columns:
             ses_df = ses_df.rename(columns={"acq_time": "ses_acq_time"})
         else:
-            ses_df["ses_acq_time"] = None
+            ses_df["ses_acq_time"] = 'n/a'
 
     if len(session_dfs) != 0:
         session_df = pd.concat(session_dfs, ignore_index=True)
@@ -378,6 +380,7 @@ def create_session_files(group_df: pd.DataFrame, bids_dir: str) -> None:
     if not tsv_df["ses"].isna().all():
         tsv_df["ses"] = "ses-" + tsv_df["ses"]
         tsv_df = tsv_df.rename(columns={"ses_acq_time": "acq_time", "ses": "session_id"})
+        tsv_df['acq_time'] = tsv_df['acq_time'].fillna('n/a')
         tsv_df.drop_duplicates(subset="session_id", inplace=True)
         if not pd.isna(tsv_df["session_id"]).any():
             filename = "sub-" + str(sub) + "_sessions.tsv"
@@ -464,14 +467,32 @@ def check_coord_files(bids_dir: str) -> None:
         This function does not return any value. It directly modifies the *_coordsystem.json files.
     """
 
+    unit_mapping = {
+    "millimeter": "mm",
+    "centimeter": "cm",
+    "meter": "m",
+    }
+    valid_units = {"m", "mm", "cm"}
+
     results = find_files_with_pattern(bids_dir, "*_coordsystem.json")
     for coord_file in results:
         with open(coord_file, "r") as file:
             data = json.load(file)
-            if data["NIRSCoordinateSystem"] == "":
-                data["NIRSCoordinateSystem"] = "Other"
-                with open(coord_file, "w") as json_file:
-                    json.dump(data, json_file, indent=4)
+
+        if data["NIRSCoordinateSystem"] == "":
+            data["NIRSCoordinateSystem"] = "Other"
+
+        # Check if NIRSCoordinateUnits is valid
+        units = data.get("NIRSCoordinateUnits")
+
+        if units in unit_mapping:
+            data["NIRSCoordinateUnits"] = unit_mapping[units]
+
+        elif units not in valid_units:
+            data["NIRSCoordinateUnits"] = "n/a"
+
+        with open(coord_file, "w") as json_file:
+            json.dump(data, json_file, indent=4)
 
 def create_participants_tsv(bids_dir: str, mapping_df: pd.DataFrame, fields: Optional[List[str]] = None) -> None:
     """Creates a `participants.tsv` file in a BIDS-compliant directory.
@@ -498,7 +519,7 @@ def create_participants_tsv(bids_dir: str, mapping_df: pd.DataFrame, fields: Opt
     if fields is None:
         fields = ["species", "age", "sex", "handedness"]
     for c in fields:
-        participants_df[c] = None
+        participants_df[c] = 'n/a'
     participants_df.to_csv(
         os.path.join(bids_dir, "participants.tsv"), sep="\t", index=False
     )
