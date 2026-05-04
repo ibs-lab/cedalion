@@ -445,6 +445,7 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
 def get_icbm152_headmodel_files() -> HeadModelFiles:
     """Retrieves the ICBM-152 segmentation dataset."""
 
+    cite("Fonov2011")
     cite("Fischl2012")
 
     fnames = DATASETS.fetch("hm_icbm152.zip", processor=pooch.Unzip())
@@ -489,6 +490,7 @@ def get_icbm152_freesurfer_directory() -> Path:
     (:cite:t:`Fischl2012`) to generate cortical surface reconstructions used in
     cedalion's DOT head modelling.
     """
+    cite("Fonov2011")
     cite("Fischl2012")
     fnames = DATASETS.fetch("fs_reconall_icbm152.zip", processor=pooch.Unzip())
     dirname = os.path.commonpath(fnames)

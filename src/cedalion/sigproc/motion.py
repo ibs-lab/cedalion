@@ -236,7 +236,7 @@ def spline_sg(
     References:
         Paper: :cite:`Jahani2018`
     """
-
+    cite("Jahani2018")
     fs = sampling_rate(ts)
 
     M = detect_outliers(ts, 1 * units.s)
@@ -315,7 +315,7 @@ def pca(
     References:
         Paper & Code: :cite:`Huppert2009`
     """
-
+    cite("Huppert2009")
     # apply_mask drops time points where the provided mask is False
     # -> keep only points with motion
     y, m = xrutils.apply_mask(ts, t_inc == TAINTED, "drop", "none")
@@ -489,7 +489,7 @@ def pca_recurse(
     References:
         Paper & Code: :cite:`Huppert2009`
     """
-
+    cite("Huppert2009")
     t_inc_ch = id_motion(
         ts, t_motion, t_mask, stdev_thresh, amp_thresh
     )  # unit stripped error x2
@@ -534,6 +534,8 @@ def tddr(ts: cdt.NDTimeSeries) -> cdt.NDTimeSeries:
         Paper: :cite:`Fishburn2019`
         Code: :cite:`Fishburn2018`
     """
+    cite("Fishburn2019")
+    cite("Fishburn2018")
     signal = ts.copy()
     unit = signal.pint.units if signal.pint.units else 1
     signal = signal.pint.dequantify()
@@ -757,6 +759,8 @@ def wavelet(od, iqr=1.5, wavelet='db2', level=4):
         Implementation based on Homer3 v1.80.2 "hmrR_MotionCorrectWavelet.m" and its
         dependencies (:cite:`Huppert2009`).
     """
+    cite("Molavi2012")
+    cite("Huppert2009")
     if iqr < 0:
         return od
 
