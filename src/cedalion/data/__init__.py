@@ -424,7 +424,7 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
 
     The Colin27 atlas (:cite:t:`Holmes1998`) was further processed with FreeSurfer
     (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations
-    (cite:t:'Schaefer2018'), and voxel-to-vertex mappings used in cedalion's DOT
+    (:cite:t:`Schaefer2018`), and voxel-to-vertex mappings used in cedalion's DOT
     pipeline.
     """
 
@@ -459,7 +459,7 @@ def get_icbm152_headmodel_files() -> HeadModelFiles:
 
     The ICBM1-52 atlas (:cite:t:`Fonov2011`) was further processed with FreeSurfer
     (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations
-    (cite:t:'Schaefer2018'), and voxel-to-vertex mappings used in cedalion's DOT
+    (cite:t:`Schaefer2018`), and voxel-to-vertex mappings used in cedalion's DOT
     pipeline.
     """
 

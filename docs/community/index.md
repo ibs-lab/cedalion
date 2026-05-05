@@ -27,7 +27,7 @@ reinventing the wheel. See [Toolboxes & Integrations](#toolboxes-integrations)
 below for the full picture.
 
 More detail on the design goals and community approach can be found in the
-accompanying paper: :cite:t:`Middell2026`.
+accompanying paper: {cite:t}`Middell2026`.
 
 ## Toolboxes & Integrations
 
@@ -43,7 +43,7 @@ A substantial part of Cedalion's fNIRS & DOT signal processing and head
 modelling functionality traces its roots to the MATLAB toolboxes
 [Homer2/3](https://github.com/BUNPC/Homer3) and
 [AtlasViewer](https://github.com/BUNPC/AtlasViewer) from the Boston University
-Neurophotonics Center (:cite:t:`Huppert2009`). Methods from these toolboxes
+Neurophotonics Center ({cite:t}`Huppert2009`). Methods from these toolboxes
 have been translated into Python and integrated into the Cedalion ecosystem with
 full citation linkage.
 
