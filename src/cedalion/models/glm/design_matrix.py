@@ -51,7 +51,6 @@ class DesignMatrix:
     #     return f"DesignMatrix(common=[{cregs}], channel_wise=[{cwregs}])"
 
     def __repr__(self):
-
         """Return a compact string representation listing common and channel-wise regressors."""  # noqa: E501
         cregs = (
             ",".join([f"'{r}'" for r in self.common.regressor.values])
@@ -726,3 +725,28 @@ def average_short_channel_regressor(ts_short: cdt.NDTimeSeries):
     regressor = regressor.transpose("time", "regressor", ...)
 
     return DesignMatrix(common=regressor, channel_wise=[])
+
+
+def global_component_regressor(
+    ts: cdt.NDTimeSeries,
+    global_component: xr.DataArray,
+    regressor_name: str = "global",
+) -> DesignMatrix:
+    """Create a common GLM regressor from a precomputed global component."""
+
+    spatial = xrutils.spatial_dim(ts)
+    other_dim = xrutils.other_dim(ts, spatial, "time")
+
+    regressor = global_component.pint.dequantify()
+
+    if other_dim not in regressor.dims:
+        regressor = xr.concat(
+            [regressor] * ts.sizes[other_dim],
+            dim=ts[other_dim],
+        )
+
+    regressor = regressor.expand_dims({"regressor": [regressor_name]})
+    regressor = regressor.transpose("time", "regressor", other_dim)
+
+    return DesignMatrix(common=regressor, channel_wise=[])
+
