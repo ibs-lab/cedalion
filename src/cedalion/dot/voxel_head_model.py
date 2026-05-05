@@ -534,7 +534,7 @@ class VoxelHeadModel:
         self,
         Adot: xr.DataArray,
         sensitivity_threshold: float = 1e-4,
-    ) -> "VoxelHeadModel":
+    ) -> tuple["VoxelHeadModel", xr.DataArray]:
         """Drop brain voxels with low summed sensitivity in ``Adot``.
 
         Args:
@@ -545,10 +545,15 @@ class VoxelHeadModel:
                 below this value are dropped.
 
         Returns:
-            New :class:`VoxelHeadModel` with the reduced brain voxel set.
+            Tuple of the new :class:`VoxelHeadModel` with the reduced brain
+            voxel set and ``Adot`` sliced to the same brain-vertex axis (scalp
+            rows untouched). Both share a consistent vertex ordering, so the
+            reduced head and matrix can be saved or fed into a solver in
+            lockstep.
         """
-        Adot_brain = np.asarray(Adot.isel(vertex=Adot.is_brain.values).values)
-        per_voxel = np.abs(Adot_brain).sum(axis=2).sum(axis=0)
+        is_brain = Adot.is_brain.values
+        Adot_brain = np.asarray(Adot.isel(vertex=is_brain).values)
+        per_voxel = np.abs(Adot_brain).sum(axis=(0, 2))
 
         if per_voxel.shape[0] != self.brain.nvertices:
             raise ValueError(
@@ -558,7 +563,12 @@ class VoxelHeadModel:
             )
 
         kept = per_voxel > sensitivity_threshold
-        return self._rebuild_brain_voxel_mapping(kept)
+
+        keep_full = np.ones(Adot.sizes["vertex"], dtype=bool)
+        keep_full[is_brain] = kept
+        Adot_reduced = Adot.isel(vertex=keep_full)
+
+        return self._rebuild_brain_voxel_mapping(kept), Adot_reduced
 
     def scale_to_landmarks(
         self,

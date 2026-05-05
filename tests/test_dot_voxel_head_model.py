@@ -166,8 +166,13 @@ def test_reduce_voxels_to_sensitivity(colin27_voxel_head):
         },
     )
 
-    reduced = head.reduce_voxels_to_sensitivity(Adot, sensitivity_threshold=0.5)
+    reduced, Adot_reduced = head.reduce_voxels_to_sensitivity(
+        Adot, sensitivity_threshold=0.5
+    )
     assert reduced.brain.nvertices == len(bright)
+    assert int(Adot_reduced.is_brain.sum()) == reduced.brain.nvertices
+    assert int((~Adot_reduced.is_brain).sum()) == int((~Adot.is_brain).sum())
+    assert Adot_reduced.sizes["vertex"] == reduced.brain.nvertices + n_scalp
 
 
 def test_reduce_voxels_by_fluence(colin27_voxel_head, tmp_path):
