@@ -210,13 +210,25 @@ running `python scripts/generate_contributors.py`.
 
 ### Scientific Credit
 
-This documentation contains a dedicated
-[bibliography](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/references.html) where you
-can search for scientific papers whose methods are implemented in Cedalion. If you
-contribute code based on a published method, please add the BibTeX entry to
-`cedalion/bibliography/references.bib`, cite it in the function's docstring and call
-`cedalion.cite()` within the function itself — this gives the original authors the
-visibility they deserve.
+This toolbox's documentation includes a dedicated
+[bibliography](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/references.html__) where you
+can browse the scientific papers whose methods are implemented in Cedalion. The reference keys
+follow the [BibTeX alpha bibliography style](https://www.bibtex.com/s/bibliography-style-base-alpha/__)
+and can also be used to search the documentation for methods built on a given paper.
+
+If you contribute code based on a published method, please:
+
+1. Add the BibTeX entry to `cedalion/bibliography/references.bib`.
+2. Cite it in the function's docstring using `` :cite:`BibTexKey` ``.
+3. Call `cedalion.cite()` within the function itself.
+
+This ensures the original authors receive the visibility they deserve.
+
+Cedalion tracks every work cited via `cedalion.cite()` across the methods used in your
+processing pipeline, allowing you to export the complete reference list for your analysis.
+For example, calling `cedalion.bib.dump_to_notebook()` inside a Jupyter notebook produces:
+
+![Example References Export in Jupyter Notebook](../img/references_dump_example.png)
 
 ### Special Mentions
 
