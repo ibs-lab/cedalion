@@ -819,10 +819,11 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         self._G_vertex_is_brain = np.zeros(n_vertex, dtype=bool)
         self._G_vertex_is_brain[:self.nvertices_brain] = True
 
-        if "parcel" in head_model.brain.vertex_coords:
+        brain_vertex_coords = getattr(head_model.brain, "vertex_coords", {})
+        if "parcel" in brain_vertex_coords:
             self._G_vertex_parcel = np.hstack(
                 (
-                    head_model.brain.vertex_coords["parcel"],
+                    brain_vertex_coords["parcel"],
                     [None] * head_model.scalp.nvertices,
                 )
             )

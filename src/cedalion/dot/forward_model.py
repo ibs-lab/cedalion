@@ -28,6 +28,7 @@ import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 import cedalion.io
 from cedalion.dot.head_model import TwoSurfaceHeadModel
+from cedalion.dot.voxel_head_model import VoxelHeadModel
 
 from cedalion.io.forward_model import FluenceFile, save_Adot
 
@@ -62,15 +63,17 @@ class ForwardModel:
 
     def __init__(
         self,
-        head_model: TwoSurfaceHeadModel,
+        head_model: TwoSurfaceHeadModel | VoxelHeadModel,
         geo3d: cdt.LabeledPoints,
         measurement_list: pd.DataFrame,
     ):
         """Constructor for the forward model.
 
         Args:
-            head_model (TwoSurfaceHeadModel): Head model containing voxel projections to
-                brain and scalp surfaces.
+            head_model: Head model containing voxel projections to brain
+                (a triangulated surface or a reduced voxel set) and scalp
+                surface.  Either :class:`TwoSurfaceHeadModel` or
+                :class:`VoxelHeadModel`.
             geo3d (cdt.LabeledPoints): Optode positions and directions.
             measurement_list (pd.DataFrame): List of measurements of experiment with
                 source, detector, channel and wavelength.
