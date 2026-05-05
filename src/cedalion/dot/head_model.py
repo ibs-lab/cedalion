@@ -664,11 +664,7 @@ class TwoSurfaceHeadModel:
         t_ijk2scaled = t_ras2scaled @ self.t_ijk2ras
         t_scaled2ijk = xrutils.pinv(t_ijk2scaled)
 
-        if self.crs == "ijk":
-            result = self.apply_transform(t_ijk2scaled)
-        else:
-            result = self.apply_transform(t_ijk2scaled)
-
+        result = self.apply_transform(t_ijk2scaled)
 
         result.t_ijk2ras = t_ijk2scaled
         result.t_ras2ijk = t_scaled2ijk
