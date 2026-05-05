@@ -219,7 +219,7 @@ and can also be used to search the documentation for methods built on a given pa
 If you contribute code based on a published method, please:
 
 1. Add the BibTeX entry to `cedalion/bibliography/references.bib`.
-2. Cite it in the function's docstring using `:cite:BibTexKey`.
+2. Cite it in the function's docstring using `` :cite:`BibTexKey` ``.
 3. Call `cedalion.cite()` within the function itself.
 
 This ensures the original authors receive the visibility they deserve.
