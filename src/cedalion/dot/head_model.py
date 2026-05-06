@@ -712,7 +712,7 @@ class TwoSurfaceHeadModel:
         """
         v = self.brain.vertices
         if not all([f"mni152_{i}" in v.coords for i in ["r", "a", "s"]]):
-            return ValueError("The cortex surface has no mni vertex coordinates")
+            raise ValueError("The cortex surface has no mni vertex coordinates")
 
         mni_coords = (
             xr.concat([v.mni152_r, v.mni152_a, v.mni152_s], dim="mni152")
