@@ -621,8 +621,7 @@ class TwoSurfaceHeadModel:
             # Snap to closest scalp voxel
             snapped[i] = voxels[voxel_idx]
 
-        points.values = snapped
-        return points
+        return points.copy(data=snapped)
 
 
     def scale_to_landmarks(
