@@ -29,7 +29,10 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 
 - Added `TwoSurfaceHeadmodel.scale_to_headsize` and `TwoSurfaceHeadmodel.scale_to_landmarks` to adjust the head model's size to the head circumferences or digitized landmarks, respectively. By [Eike Middell](https://github.com/emiddell).
 
-- Higher-resolution cortex meshes for the Colin27 and ICBM152 head models, which additionally maintain a link to the freesurfer surfaces from which they were derived, by [Eike Middell](https://github.com/emiddell). ([#138](https://github.com/ibs-lab/cedalion/pull/138)). The Colin27 meshes were subsequently recomputed to remove artifacts and to fix the voxel-to-vertex mapping. Reduced meshes of the FreeSurfer inflated brains are now bundled with a 1-to-1 vertex correspondence to the pial brain meshes, and sparse voxel-to-vertex maps are stored in Matrix Market format.
+- Higher-resolution cortex meshes for the Colin27 and ICBM152 head models, which additionally maintain a link to the Freesurfer surfaces from which they were derived, by [Eike Middell](https://github.com/emiddell). ([#138](https://github.com/ibs-lab/cedalion/pull/138)). The Colin27 meshes were subsequently recomputed to remove artifacts and to fix the voxel-to-vertex mapping. Reduced meshes of the FreeSurfer inflated brains are now bundled with a 1-to-1 vertex correspondence to the pial brain meshes, and sparse voxel-to-vertex maps are stored in Matrix Market format.
+
+- Added `TwoSurfaceHeadmodel.assign_parcels_via_mni_coords` for applying other parcellation schemes to brain vertices using a volumetric atlas in MNI space, by [Eike Middell](https://github.com/emiddell).
+
 
 - The factory method `cedalion.dot.get_standard_headmodel` to construct the `TwoSurfaceHeadModel` of the standard Colin27 and ICBM-152 heads was added, by [Eike Middell](https://github.com/emiddell).
 
