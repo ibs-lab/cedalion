@@ -533,6 +533,9 @@ class PycortexSurface(Surface):
     def nfaces(self) -> int:
         return len(self.mesh.polys)
 
+    def copy(self):
+        raise NotImplementedError()
+
     def _build_kdtree(self):
         self._kdtree = KDTree(self.mesh.pts)
 

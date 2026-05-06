@@ -780,7 +780,8 @@ class TwoSurfaceHeadModel:
                 present in ``label_mapping``, to identify background voxels.
                 Defaults to ``"Background"``.
             mni_eps: Radius of the ball search around each vertex.
-                Defaults to ``10.0``.
+                Defaults to ``5.0``. Increase this value to find non-background
+                voxels for each vertex.
 
         Returns:
             A copy of the head model with parcel labels assigned as a new
