@@ -1,8 +1,10 @@
 # Changelog
 
+<!--
 ## Unreleased changes (available on the `dev` branch)
- 
-## Version 26.04.0 (in preparation)
+--> 
+
+## Version 26.5.0 (2026-05-07)
 
 ### Additions and Changes
 
