@@ -60,6 +60,7 @@ dependencies = [
   "pyxdf==1.17.0",
   "snirf2bids @ git+https://github.com/emiddell/snirf2bids.git@v0.8.8", # FIXME
   "seedir",
+  "pybtex",
 ]
 
 
