@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import gzip
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+import nibabel
 import numpy as np
 import pandas as pd
 import scipy
@@ -14,7 +16,6 @@ import scipy.sparse
 import trimesh
 import xarray as xr
 from scipy.spatial import KDTree
-import gzip
 
 import cedalion
 import cedalion.data
@@ -226,8 +227,8 @@ class TwoSurfaceHeadModel:
         brain_seg_types: list[str] | None = None,
         scalp_seg_types: list[str] | None = None,
         smoothing: float = 0.0,
-        brain_face_count: int | None = 180000,
-        scalp_face_count: int | None = 60000,
+        brain_face_count: int | None = None,
+        scalp_face_count: int | None = None,
         fill_holes: bool = False,
         coordinates_file: Path | str | None = None,
         voxel_to_vertex_mapping_file_brain : Path | None = None,
@@ -426,6 +427,30 @@ class TwoSurfaceHeadModel:
             t_ras2ijk=self.t_ras2ijk,
             voxel_to_vertex_brain=self.voxel_to_vertex_brain,
             voxel_to_vertex_scalp=self.voxel_to_vertex_scalp,
+        )
+
+    def copy(self, copy_segmasks=False):
+        """Create a copy of this head model.
+
+        Args:
+            copy_segmasks: if False, the new instance gets a reference to the existing
+                segmentation masks instead of a full copy.
+        """
+
+        if copy_segmasks:
+            segmentation_masks = self.segmentation_masks.copy()
+        else:
+            segmentation_masks = self.segmentation_masks
+
+        return TwoSurfaceHeadModel(
+            segmentation_masks=segmentation_masks,
+            brain=self.brain.copy(),
+            scalp=self.scalp.copy(),
+            landmarks=self.landmarks.copy(),
+            t_ijk2ras=self.t_ijk2ras.copy(),
+            t_ras2ijk=self.t_ras2ijk.copy(),
+            voxel_to_vertex_brain=self.voxel_to_vertex_brain.copy(),
+            voxel_to_vertex_scalp=self.voxel_to_vertex_scalp.copy(),
         )
 
     def save(self, foldername: str):
@@ -724,7 +749,9 @@ class TwoSurfaceHeadModel:
         """
         v = self.brain.vertices
         if not all([f"mni152_{i}" in v.coords for i in ["r", "a", "s"]]):
-            raise ValueError("The cortex surface has no mni vertex coordinates")
+            raise NotImplementedError(
+                "The cortex surface has no mni vertex coordinates"
+            )
 
         mni_coords = (
             xr.concat([v.mni152_r, v.mni152_a, v.mni152_s], dim="mni152")
@@ -738,6 +765,116 @@ class TwoSurfaceHeadModel:
             mni_coords = mni_coords.drop_vars(c)
 
         return mni_coords
+
+    def assign_parcels_via_mni_coords(
+        self,
+        coordinate_label: str,
+        label_mapping: dict[int, str],
+        voxel_label_niftii: Path,
+        voxel_label_crs: str = "mni152",
+        background_label = "Background",
+        mni_eps=5.
+    ) -> "TwoSurfaceHeadModel":
+        """Assign parcel labels to brain vertices using a volumetric atlas in MNI space.
+
+        For each brain vertex, the nearest non-background voxel within ``mni_eps``
+        in MNI152 space is found and its string label is assigned to the veretx.
+        Vertices with no labeled neighbor within the search radius receive
+        ``background_label``.
+
+        Args:
+            coordinate_label: Name of the new vertex coordinate.
+            label_mapping: A dictionary that maps numeric voxel labels in the NIfTI file
+                to string parcel names.
+            voxel_label_niftii: Path to the NIfTI atlas file whose voxels carry
+                numeric region labels.
+            voxel_label_crs: Coordinate reference system of the NIfTI file,
+                either ``"mni152"`` or ``"mni305"``. Defaults to ``"mni152"``.
+            background_label: String label used for unlabeled vertices and, if
+                present in ``label_mapping``, to identify background voxels.
+                Defaults to ``"Background"``.
+            mni_eps: Radius of the ball search around each vertex.
+                Defaults to ``5.0``. Increase this value to find non-background
+                voxels for each vertex.
+
+        Returns:
+            A copy of the head model with parcel labels assigned as a new
+            coordinate to brain vertices.
+        """
+
+        if voxel_label_crs not in ["mni152", "mni305"]:
+            raise ValueError(
+                "The niftii file should be either in the 'mni152' or 'mni305' space."
+            )
+
+        vertex_mni_coords = self.get_brain_mni152_coords()
+
+        # load the niftii file which contains for each voxel a numeric label
+        img = nibabel.load(voxel_label_niftii)
+        flat_voxel_numlabels = img.get_fdata().flatten().astype(int)
+
+        # figure out numeric label of background:
+        if background_label in label_mapping.values():
+            # background is specified in label_mapping
+            bg_numlabel = [k for k, v in label_mapping.items() if v == background_label]
+        else:
+            # background is not specified in label mapping. assume there is one numeric
+            # label used in the niftii, that is not in the mapping and that denotes
+            # background (often 0).
+            used_numlabels = np.unique(flat_voxel_numlabels)
+            bg_numlabel = [i for i in used_numlabels if i not in label_mapping.keys()]
+
+        assert len(bg_numlabel) == 1
+        bg_numlabel = bg_numlabel[0]
+
+        # obtain cell coordinates in the RAS space of the niftii file
+        ijk2crs = cedalion.io.anatomy._get_affine_from_niftii(img, crs=voxel_label_crs)
+
+        if voxel_label_crs == "mni152":
+            # the niftii provides already mni152 coordinates. just use its transform
+            ijk2mni152 = ijk2crs
+        elif voxel_label_crs == "mni305":
+            # if the niftii is in mni305 coordiantes apply additionally the transform
+            # that bring us from mni305 to mni152
+            ijk2mni152 = cedalion.dot.utils.mni305_to_mni152 @ ijk2crs
+
+        ijk2mni152 = ijk2mni152.pint.dequantify()  # FIXME?
+
+        voxel_coords = cedalion.io.anatomy.cell_coordinates(
+            img, ijk2mni152, center=True
+        )
+        voxel_coords = voxel_coords.pint.dequantify()
+
+        flat_voxel_coords = voxel_coords.values.reshape(-1, 3)
+
+        vertex_strlabels = []
+
+        # for all voxels within a ball of radius mni_eps around a vertice's MNI coord...
+        t = KDTree(flat_voxel_coords)
+        neighbor_list = t.query_ball_point(vertex_mni_coords.values, mni_eps)
+
+        for i, neighbors_flat_idx in enumerate(neighbor_list):
+            # ... retrieve their numeric label and distance to the MNI coord
+            vortex_numlabels = flat_voxel_numlabels[neighbors_flat_idx]
+            vortex_coords = flat_voxel_coords[neighbors_flat_idx]
+            dists = np.linalg.norm(vortex_coords - vertex_mni_coords.values[i], axis=1)
+
+            # ... create a mask of voxels that are not background
+            notbg_mask = vortex_numlabels != bg_numlabel
+
+            # .. if there are labeled voxels nearby assign the closest one
+            if np.any(notbg_mask):
+                masked_dists = np.where(notbg_mask, dists, np.inf)
+                this_vortex_numlabel = vortex_numlabels[np.argmin(masked_dists)]
+                vertex_strlabels.append(label_mapping[this_vortex_numlabel])
+            # otherwise assign background
+            else:
+                vertex_strlabels.append(background_label)
+
+        hm = self.copy()
+        hm.brain.vertex_coords[coordinate_label] = vertex_strlabels
+
+        return hm
 
 
 @lru_cache
