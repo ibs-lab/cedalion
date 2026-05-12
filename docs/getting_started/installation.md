@@ -5,6 +5,7 @@ below and then descibed in more detail in the following section.
 
 ## Summary
 
+0. **Install a Python Coding Environment** - Install any IDE of your choice, many of us are using [VSCode](https://code.visualstudio.com/). 
 1. **Install conda** – Install either Miniconda or Anaconda for environment and package 
    management.
 2. **Get the source code** – Clone the Cedalion GitHub repository. 
