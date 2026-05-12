@@ -93,7 +93,7 @@ running `python scripts/generate_contributors.py`.
 <!-- BEGIN CONTRIBUTORS -->
 % AUTO-GENERATED — do not edit by hand.
 % Regenerate with: python scripts/generate_contributors.py
-% Last updated: 2026-04-29
+% Last updated: 2026-05-12
 
 ### Core Maintainers
 
@@ -103,21 +103,21 @@ running `python scripts/generate_contributors.py`.
   <a href="https://github.com/emiddell" target="_blank" rel="noopener">
     <img src="https://avatars.githubusercontent.com/emiddell?s=100" alt="Eike Middell" loading="lazy"/>
     <div class="contributor-name">Eike Middell</div>
-    <div class="contributor-commits">304 commits</div>
+    <div class="contributor-commits">435 commits</div>
   </a>
 </div>
 <div class="contributor-card maintainer">
   <a href="https://github.com/avolu" target="_blank" rel="noopener">
     <img src="https://avatars.githubusercontent.com/avolu?s=100" alt="Alexander von Lühmann" loading="lazy"/>
     <div class="contributor-name">Alexander von Lühmann</div>
-    <div class="contributor-commits">170 commits</div>
+    <div class="contributor-commits">208 commits</div>
   </a>
 </div>
 <div class="contributor-card maintainer">
   <a href="https://github.com/dboas" target="_blank" rel="noopener">
     <img src="https://avatars.githubusercontent.com/dboas?s=100" alt="David Boas" loading="lazy"/>
     <div class="contributor-name">David Boas</div>
-    <div class="contributor-commits">15 commits</div>
+    <div class="contributor-commits">16 commits</div>
   </a>
 </div>
 </div>
@@ -131,7 +131,7 @@ running `python scripts/generate_contributors.py`.
   <a href="https://github.com/lauracarlton" target="_blank" rel="noopener">
     <img src="https://avatars.githubusercontent.com/lauracarlton?s=100" alt="Laura Carlton" loading="lazy"/>
     <div class="contributor-name">Laura Carlton</div>
-    <div class="contributor-commits">65 commits</div>
+    <div class="contributor-commits">66 commits</div>
   </a>
 </div>
 <div class="contributor-card">
@@ -142,17 +142,24 @@ running `python scripts/generate_contributors.py`.
   </a>
 </div>
 <div class="contributor-card">
-  <a href="https://github.com/shakiba93" target="_blank" rel="noopener">
-    <img src="https://avatars.githubusercontent.com/shakiba93?s=100" alt="Shakiba Moradi" loading="lazy"/>
-    <div class="contributor-name">Shakiba Moradi</div>
-    <div class="contributor-commits">27 commits</div>
-  </a>
-</div>
-<div class="contributor-card">
   <a href="https://github.com/harmening" target="_blank" rel="noopener">
     <img src="https://avatars.githubusercontent.com/harmening?s=100" alt="nils" loading="lazy"/>
     <div class="contributor-name">nils</div>
-    <div class="contributor-commits">21 commits</div>
+    <div class="contributor-commits">37 commits</div>
+  </a>
+</div>
+<div class="contributor-card">
+  <a href="https://github.com/shakiba93" target="_blank" rel="noopener">
+    <img src="https://avatars.githubusercontent.com/shakiba93?s=100" alt="Shakiba Moradi" loading="lazy"/>
+    <div class="contributor-name">Shakiba Moradi</div>
+    <div class="contributor-commits">30 commits</div>
+  </a>
+</div>
+<div class="contributor-card">
+  <a href="https://github.com/thomasfischer11" target="_blank" rel="noopener">
+    <img src="https://avatars.githubusercontent.com/thomasfischer11?s=100" alt="Thomas Fischer" loading="lazy"/>
+    <div class="contributor-name">Thomas Fischer</div>
+    <div class="contributor-commits">19 commits</div>
   </a>
 </div>
 <div class="contributor-card">
@@ -163,31 +170,31 @@ running `python scripts/generate_contributors.py`.
   </a>
 </div>
 <div class="contributor-card">
-  <a href="https://github.com/thomasfischer11" target="_blank" rel="noopener">
-    <img src="https://avatars.githubusercontent.com/thomasfischer11?s=100" alt="Thomas Fischer" loading="lazy"/>
-    <div class="contributor-name">Thomas Fischer</div>
-    <div class="contributor-commits">18 commits</div>
-  </a>
-</div>
-<div class="contributor-card">
   <a href="https://github.com/mashayu" target="_blank" rel="noopener">
     <img src="https://avatars.githubusercontent.com/mashayu?s=100" alt="Mariia" loading="lazy"/>
     <div class="contributor-name">Mariia</div>
-    <div class="contributor-commits">7 commits</div>
+    <div class="contributor-commits">8 commits</div>
   </a>
 </div>
 <div class="contributor-card">
   <a href="https://github.com/jackybehrendt12" target="_blank" rel="noopener">
     <img src="https://avatars.githubusercontent.com/jackybehrendt12?s=100" alt="Jacky Behrendt" loading="lazy"/>
     <div class="contributor-name">Jacky Behrendt</div>
-    <div class="contributor-commits">3 commits</div>
+    <div class="contributor-commits">5 commits</div>
+  </a>
+</div>
+<div class="contributor-card">
+  <a href="https://github.com/bilal-siddique6" target="_blank" rel="noopener">
+    <img src="https://avatars.githubusercontent.com/bilal-siddique6?s=100" alt="bilal-siddique6" loading="lazy"/>
+    <div class="contributor-name">bilal-siddique6</div>
+    <div class="contributor-commits">4 commits</div>
   </a>
 </div>
 <div class="contributor-card">
   <a href="https://github.com/TCodina" target="_blank" rel="noopener">
     <img src="https://avatars.githubusercontent.com/TCodina?s=100" alt="Tomás Codina" loading="lazy"/>
     <div class="contributor-name">Tomás Codina</div>
-    <div class="contributor-commits">3 commits</div>
+    <div class="contributor-commits">4 commits</div>
   </a>
 </div>
 <div class="contributor-card">
@@ -198,9 +205,44 @@ running `python scripts/generate_contributors.py`.
   </a>
 </div>
 <div class="contributor-card">
+  <a href="https://github.com/orabe" target="_blank" rel="noopener">
+    <img src="https://avatars.githubusercontent.com/orabe?s=100" alt="Mohammad Orabe" loading="lazy"/>
+    <div class="contributor-name">Mohammad Orabe</div>
+    <div class="contributor-commits">1 commit</div>
+  </a>
+</div>
+<div class="contributor-card">
   <a href="https://github.com/fangq" target="_blank" rel="noopener">
     <img src="https://avatars.githubusercontent.com/fangq?s=100" alt="Qianqian Fang" loading="lazy"/>
     <div class="contributor-name">Qianqian Fang</div>
+    <div class="contributor-commits">1 commit</div>
+  </a>
+</div>
+<div class="contributor-card">
+  <a href="https://github.com/ReiGaan" target="_blank" rel="noopener">
+    <img src="https://avatars.githubusercontent.com/ReiGaan?s=100" alt="ReiGaan" loading="lazy"/>
+    <div class="contributor-name">ReiGaan</div>
+    <div class="contributor-commits">1 commit</div>
+  </a>
+</div>
+<div class="contributor-card">
+  <a href="https://github.com/shankell212" target="_blank" rel="noopener">
+    <img src="https://avatars.githubusercontent.com/shankell212?s=100" alt="Shannon Kelley" loading="lazy"/>
+    <div class="contributor-name">Shannon Kelley</div>
+    <div class="contributor-commits">1 commit</div>
+  </a>
+</div>
+<div class="contributor-card">
+  <a href="https://github.com/maltink" target="_blank" rel="noopener">
+    <img src="https://avatars.githubusercontent.com/maltink?s=100" alt="maltink" loading="lazy"/>
+    <div class="contributor-name">maltink</div>
+    <div class="contributor-commits">1 commit</div>
+  </a>
+</div>
+<div class="contributor-card">
+  <a href="https://github.com/huppertt" target="_blank" rel="noopener">
+    <img src="https://avatars.githubusercontent.com/huppertt?s=100" alt="Theodore Huppert" loading="lazy"/>
+    <div class="contributor-name">Theodore Huppert</div>
     <div class="contributor-commits">1 commit</div>
   </a>
 </div>
