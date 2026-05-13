@@ -1,5 +1,6 @@
 """Registrating optodes to scalp surfaces."""
 
+from dataclasses import dataclass
 import numpy as np
 from numpy.linalg import pinv
 from scipy.optimize import linear_sum_assignment, minimize
@@ -12,8 +13,49 @@ import cedalion.dataclasses as cdc
 import cedalion.geometry.utils
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
+from cedalion.errors import CRSMismatchError
+
 
 from .utils import m_rot, m_scale1, m_scale3, m_trans
+
+
+@dataclass
+class SpringICPResult:
+    """Quality-control details returned by :func:`register_optodes_spring_icp`.
+
+    All distances and displacements are in the same units as the scalp surface.
+    """
+
+    optode_positions: cdt.LabeledPoints
+    """Final optode positions on the scalp surface, in the scalp CRS and units."""
+
+    initial_positions: cdt.LabeledPoints
+    """Optode positions after the initial landmark alignment, before spring relaxation."""
+
+    nominal_distances: dict
+    """Nominal channel distances ``{(src_label, det_label): float}`` used as spring
+    rest lengths.  Measured in scalp units from the phase-1 aligned positions unless
+    supplied by the caller."""
+
+    spring_errors: xr.DataArray
+    """Per-channel ``actual_distance - nominal_distance`` at convergence.
+    Dim ``channel``; auxiliary coords ``source`` and ``detector`` carry the
+    individual optode labels."""
+
+    landmark_errors: xr.DataArray
+    """Per-anchor Euclidean distance between the final optode position and the
+    target landmark position at convergence.  Dim ``label``.  Empty when no
+    optode labels overlap with ``landmarks_scalp``."""
+
+    snap_displacement_per_iter: np.ndarray
+    """Maximum surface-projection displacement (over all optodes) per iteration.
+    Shape ``(n_iterations,)``.  Use as a convergence diagnostic."""
+
+    n_iterations: int
+    """Number of iterations actually performed."""
+
+    converged: bool
+    """``True`` when the convergence criterion was met before *n_iter*."""
 
 
 def _subtract(a: cdt.LabeledPoints, b: cdt.LabeledPoints):
@@ -712,3 +754,303 @@ def simple_scalp_projection(geo3d: cdt.LabeledPoints) -> cdt.LabeledPoints:
     geo2d = geo2d.pint.dequantify()  # no units needed in this space
 
     return geo2d
+
+
+def _mesh_closest_point(
+    mesh, points: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return the closest point on *mesh* for each row of *points*.
+
+    Tries ``trimesh.proximity.closest_point`` first (requires the *rtree* package
+    for its spatial index).  When *rtree* is absent falls back to a pure-scipy
+    implementation: scipy KDTree finds the *k* nearest vertices, then
+    ``trimesh.triangles.closest_point`` checks every face adjacent to those
+    vertices and returns the best hit.
+
+    Returns:
+        closest_pts : (N, 3) float – nearest surface points
+        distances   : (N,)   float – Euclidean distances from *points*
+        triangle_ids: (N,)   int   – index of the nearest triangle
+    """
+    import trimesh.proximity
+    import trimesh.triangles
+
+    try:
+        return trimesh.proximity.closest_point(mesh, points)
+    except ModuleNotFoundError:
+        pass
+
+    # --- KDTree fallback (no rtree) -------------------------------------------
+    # Build a per-vertex KD-tree once; trimesh caches it on the mesh object.
+    kdtree = KDTree(mesh.vertices)
+
+    # k nearest vertices per query point; covers all adjacent faces for typical
+    # meshes where each vertex has ≤ 8 neighbours.
+    k = min(12, len(mesh.vertices))
+    _, vert_idxs = kdtree.query(points, k=k)          # (N, k)
+
+    # mesh.vertex_faces: (V, max_valence), -1 for unused slots
+    vf = mesh.vertex_faces                             # cached by trimesh
+
+    n_pts = len(points)
+    closest_pts = np.empty((n_pts, 3), dtype=float)
+    distances   = np.empty(n_pts, dtype=float)
+    triangle_ids = np.empty(n_pts, dtype=np.intp)
+
+    for i in range(n_pts):
+        # collect unique valid face indices around the k nearest vertices
+        raw = vf[vert_idxs[i]].ravel()
+        face_cands = np.unique(raw[raw >= 0])
+
+        tris = mesh.vertices[mesh.faces[face_cands]]      # (m, 3, 3)
+        pts_rep = np.broadcast_to(points[i], (len(tris), 3))
+        cps = trimesh.triangles.closest_point(tris, pts_rep)  # (m, 3)
+
+        dists = np.linalg.norm(cps - points[i], axis=1)
+        best  = np.argmin(dists)
+
+        closest_pts[i]  = cps[best]
+        distances[i]    = dists[best]
+        triangle_ids[i] = face_cands[best]
+
+    return closest_pts, distances, triangle_ids
+
+
+def register_optodes_spring_icp(
+    scalp: cdc.TrimeshSurface,
+    optodes: cdt.LabeledPoints,
+    channels: list[tuple[str, str]],
+    landmarks_scalp: cdt.LabeledPoints,
+    nominal_distances: dict[tuple[str, str], float] | None = None,
+    n_iter: int = 400,
+    k_spring: float = 1.0,
+    k_anchor: float = 10.0,
+    step_size: float = 0.1,
+    convergence_tol: float = 0.01,
+    initial_align_mode: str = "trans_rot_isoscale",
+) -> SpringICPResult:
+    """Register optode coordinates onto a scalp mesh via spring relaxation and ICP.
+
+    Two-phase registration:
+
+    1. **Initial alignment** — a global transform (translation + rotation +
+       optional scale) is fitted to the matched ``landmarks_probe`` /
+       ``landmarks_scalp`` pairs and applied to ``optodes`` to bring them into
+       the scalp coordinate system.
+
+    2. **Spring-relaxation ICP** — optodes are iteratively refined:
+
+       * Hooke's-law springs between each channel-forming source–detector pair,
+         with rest length equal to the nominal inter-optode distance, resist
+         distortion of channel geometry.
+       * Strong anchor springs pull any optode whose label appears in
+         ``landmarks_scalp`` toward its known anatomical position on the scalp.
+       * After each force step every optode is projected onto the nearest point
+         on the scalp triangulated surface (ICP step).
+
+    Args:
+        scalp: Triangulated scalp surface in the target coordinate system.
+        optodes: Optode coordinates (sources and detectors) in the probe
+            coordinate system.  Labels and the ``type`` coordinate are
+            preserved in the output.
+        channels: ``(source_label, detector_label)`` pairs defining which
+            optode pairs form channels and therefore get a spring.
+        landmarks_scalp: Anatomical landmark positions in the scalp CRS (same
+            CRS as ``scalp``).  Any label that also appears in ``optodes`` is
+            used as a strong anchor during the relaxation phase.
+        nominal_distances: Optional pre-specified rest lengths for each channel
+            spring, keyed by ``(src_label, det_label)``.  When *None*,
+            distances are measured from the phase-1 aligned positions.
+        n_iter: Maximum number of relaxation iterations.
+        k_spring: Spring constant for channel springs.  Force magnitude scales
+            linearly with extension from the nominal distance.
+        k_anchor: Spring constant for landmark-anchor springs.  Should exceed
+            ``k_spring`` to enforce anatomical constraints strongly.
+        step_size: Fraction of the net force vector added to each position
+            per iteration.  Reduce if the relaxation is unstable.
+        convergence_tol: Stop early when the maximum surface-projection
+            displacement across all optodes is below this value (in scalp
+            units).
+        initial_align_mode: Phase-1 transform type.  One of
+            ``"trans_rot_isoscale"`` (7 DOF, default), ``"trans_rot"``
+            (6 DOF), or ``"general"`` (12 DOF full affine).
+
+    Returns:
+        :class:`SpringICPResult` with the final optode positions and
+        per-iteration / per-channel quality-control metrics.
+
+    Raises:
+        CRSMismatchError: If ``landmarks_scalp`` is not in the same CRS as
+            ``scalp``.
+        ValueError: If ``initial_align_mode`` is not recognised, or if a
+            channel label is absent from ``optodes``.
+    """
+    if landmarks_scalp.points.crs != scalp.crs:
+        raise CRSMismatchError.unexpected_crs(
+            expected_crs=scalp.crs, found_crs=landmarks_scalp.points.crs
+        )
+
+    # --- Phase 1: global alignment from landmark correspondences ---------------
+
+    landmarks_probe = optodes[optodes.type == cdc.PointType.LANDMARK]
+
+    if initial_align_mode == "trans_rot_isoscale":
+        t_init = register_trans_rot_isoscale(landmarks_scalp, landmarks_probe)
+    elif initial_align_mode == "trans_rot":
+        t_init = register_trans_rot(landmarks_scalp, landmarks_probe)
+    elif initial_align_mode == "general":
+        t_init = register_general_affine(landmarks_scalp, landmarks_probe)
+    else:
+        raise ValueError(
+            f"Unknown initial_align_mode {initial_align_mode!r}. "
+            "Choose 'trans_rot_isoscale', 'trans_rot', or 'general'."
+        )
+
+    aligned = optodes.points.apply_transform(t_init)
+    aligned_dq = aligned.pint.dequantify()
+    # pos_np: (N, 3) float array in scalp units – the working copy
+    pos_np = aligned_dq.values.copy()
+
+    labels = list(aligned.label.values)
+    label_to_idx = {lbl: i for i, lbl in enumerate(labels)}
+
+    missing = [lbl for ch in channels for lbl in ch if lbl not in label_to_idx]
+    if missing:
+        raise ValueError(
+            f"Channel labels not found in optodes: {sorted(set(missing))}"
+        )
+
+    # Nominal rest lengths in scalp units, computed from aligned positions
+    if nominal_distances is None:
+        nominal_distances = {
+            (src, det): float(
+                np.linalg.norm(pos_np[label_to_idx[src]] - pos_np[label_to_idx[det]])
+            )
+            for src, det in channels
+        }
+
+    # Anchor targets: optodes whose label also appears in landmarks_scalp
+    lm_scalp_dq = landmarks_scalp.pint.dequantify()
+    scalp_lm_label_set = set(landmarks_scalp.label.values)
+    anchor_labels = [lbl for lbl in labels if lbl in scalp_lm_label_set]
+    anchor_targets = {
+        lbl: lm_scalp_dq.sel(label=lbl).values
+        for lbl in anchor_labels
+    }
+
+    # Pre-index pairs to keep the hot loop free of dict lookups
+    channel_pairs = [
+        (label_to_idx[src], label_to_idx[det], nominal_distances[(src, det)])
+        for src, det in channels
+    ]
+    anchor_pairs = [
+        (label_to_idx[lbl], anchor_targets[lbl])
+        for lbl in anchor_labels
+    ]
+
+    # Per-optode channel count: normalise spring contributions so that an
+    # optode connected to many channels receives the same total spring weight
+    # as one connected to few, preventing heavily-connected optodes (typically
+    # sources) from accumulating disproportionate force.
+    valence = np.zeros(len(labels), dtype=float)
+    for i_src, i_det, _ in channel_pairs:
+        valence[i_src] += 1
+        valence[i_det] += 1
+    valence = np.where(valence > 0, valence, 1.0)  # avoid division by zero
+
+    # --- Phase 2: spring-relaxation ICP ----------------------------------------
+
+    snap_displacement_per_iter: list[float] = []
+    n_iter_actual = n_iter
+    converged = False
+
+    for i_iter in range(n_iter):
+        forces = np.zeros_like(pos_np)
+
+        # Hooke's-law spring forces between channel-forming pairs,
+        # normalised by each optode's channel count so that sources and
+        # detectors with different numbers of connections experience the
+        # same total spring weight.
+        for i_src, i_det, L0 in channel_pairs:
+            delta = pos_np[i_det] - pos_np[i_src]
+            d = np.linalg.norm(delta)
+            if d > 1e-10:
+                spring_force = k_spring * (d - L0) * (delta / d)
+                forces[i_src] += spring_force / valence[i_src]
+                forces[i_det] -= spring_force / valence[i_det]
+
+        # Anchor forces pulling landmark-optodes to their scalp targets
+        for i_lm, target in anchor_pairs:
+            forces[i_lm] += k_anchor * (target - pos_np[i_lm])
+
+        # Remove the surface-normal component of every force so that the ICP
+        # projection step only has to correct numerical drift rather than
+        # fight forces that would immediately be undone by snapping.
+        _, nearest_vi = scalp.kdtree.query(pos_np)
+        normals = scalp.mesh.vertex_normals[nearest_vi]  # (N, 3)
+        normal_component = np.sum(forces * normals, axis=1, keepdims=True)
+        forces -= normal_component * normals
+
+        pos_np = pos_np + step_size * forces
+
+        # ICP step: project each optode onto the nearest point on the surface
+        proj_pts, snap_dists, _ = _mesh_closest_point(scalp.mesh, pos_np)
+        max_snap = float(np.max(snap_dists))
+        snap_displacement_per_iter.append(max_snap)
+        pos_np = proj_pts
+
+        if max_snap < convergence_tol:
+            n_iter_actual = i_iter + 1
+            converged = True
+            break
+
+    # --- Assemble result -------------------------------------------------------
+
+    # Rebuild as a quantified LabeledPoints with the same coords as aligned
+    pos_out = aligned_dq.copy(data=pos_np)
+    aligned_units = aligned.pint.units
+    if aligned_units is not None:
+        pos_out = pos_out.pint.quantify(aligned_units)
+
+    # Spring errors: signed length deviation from nominal at convergence
+    spring_errors = xr.DataArray(
+        np.array([
+            np.linalg.norm(pos_np[label_to_idx[det]] - pos_np[label_to_idx[src]])
+            - nominal_distances[(src, det)]
+            for src, det in channels
+        ]),
+        dims=["channel"],
+        coords={
+            "channel": [f"{src}-{det}" for src, det in channels],
+            "source":   ("channel", [src for src, _ in channels]),
+            "detector": ("channel", [det for _, det in channels]),
+        },
+    )
+
+    # Landmark anchor errors: distance to target position at convergence
+    if anchor_labels:
+        landmark_errors = xr.DataArray(
+            np.array([
+                np.linalg.norm(pos_np[label_to_idx[lbl]] - anchor_targets[lbl])
+                for lbl in anchor_labels
+            ]),
+            dims=["label"],
+            coords={"label": anchor_labels},
+        )
+    else:
+        landmark_errors = xr.DataArray(
+            np.empty(0, dtype=float),
+            dims=["label"],
+            coords={"label": np.array([], dtype=object)},
+        )
+
+    return SpringICPResult(
+        optode_positions=pos_out,
+        initial_positions=aligned,
+        nominal_distances=nominal_distances,
+        spring_errors=spring_errors,
+        landmark_errors=landmark_errors,
+        snap_displacement_per_iter=np.array(snap_displacement_per_iter),
+        n_iterations=n_iter_actual,
+        converged=converged,
+    )
