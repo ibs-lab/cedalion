@@ -27,6 +27,8 @@ from cedalion.geometry.ellipsoid import get_landmarks_for_headsize
 from cedalion.geometry.registration import (
     register_general_affine,
     register_trans_rot_isoscale,
+    register_optodes_spring_icp,
+    register_identity
 )
 from cedalion.geometry.segmentation import (
     surface_from_segmentation,
@@ -564,6 +566,8 @@ class TwoSurfaceHeadModel:
             t = register_trans_rot_isoscale(self.landmarks, points)
         elif mode == "general":
             t = register_general_affine(self.landmarks, points)
+        elif mode == "identity":
+            t = register_identity(self.landmarks, points)
         else:
             raise ValueError(f"unexpected mode '{mode}'")
 
@@ -571,6 +575,31 @@ class TwoSurfaceHeadModel:
         snapped = self.scalp.snap(transformed)
         return snapped
 
+    def align_and_relax_to_scalp(
+        self,
+        points: cdt.LabeledPoints,
+        channels: list[tuple[str, str]] | cdt.NDTimeSeries | pd.DataFrame,
+        nominal_distances: dict[tuple[str, str], float] | None = None,
+        n_iter: int = 400,
+        k_spring: float = 1.0,
+        k_anchor: float = 10.0,
+        step_size: float = 0.1,
+        convergence_tol: float = 0.01,
+        initial_align_mode: str = "general",
+    ):
+        return register_optodes_spring_icp(
+            self.scalp,
+            points,
+            channels,
+            self.landmarks,
+            nominal_distances=nominal_distances,
+            n_iter=n_iter,
+            k_spring=k_spring,
+            k_anchor=k_anchor,
+            step_size=step_size,
+            convergence_tol=convergence_tol,
+            initial_align_mode=initial_align_mode
+        )
 
     # FIXME then maybe this should also not be in this class
     @cdc.validate_schemas

@@ -7,6 +7,7 @@ from scipy.optimize import linear_sum_assignment, minimize
 from scipy.spatial import KDTree
 import xarray as xr
 import warnings
+import pandas as pd
 
 import cedalion
 import cedalion.dataclasses as cdc
@@ -26,11 +27,8 @@ class SpringICPResult:
     All distances and displacements are in the same units as the scalp surface.
     """
 
-    optode_positions: cdt.LabeledPoints
-    """Final optode positions on the scalp surface, in the scalp CRS and units."""
-
     initial_positions: cdt.LabeledPoints
-    """Optode positions after the initial landmark alignment, before spring relaxation."""
+    """Positions after the initial landmark alignment, before spring relaxation."""
 
     nominal_distances: dict
     """Nominal channel distances ``{(src_label, det_label): float}`` used as spring
@@ -68,6 +66,40 @@ def _subtract(a: cdt.LabeledPoints, b: cdt.LabeledPoints):
         raise ValueError("point clouds are using different coordinate systems.")
 
     return a - b
+
+@cdc.validate_schemas
+def register_identity(
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
+):
+    """Affine transformation that just adapts units.
+
+    Args:
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
+
+    Returns:
+        cdt.AffineTransform: Affine transformation between the two point clouds.
+    """
+
+    from_crs = coords_trafo.points.crs
+    from_units = coords_trafo.pint.units
+    to_crs = coords_target.points.crs
+    to_units = coords_target.pint.units
+
+    unit_scale_factor = ((1 * from_units) / (1 * to_units)).to_reduced_units()
+    assert unit_scale_factor.units == cedalion.units.Unit("1")
+    unit_scale_factor = float(unit_scale_factor)
+
+    trafo = cdc.affine_transform_from_numpy(
+        m_scale1([unit_scale_factor]),
+        from_crs=from_crs,
+        to_crs=to_crs,
+        from_units=from_units,
+        to_units=to_units,
+    )
+
+    return trafo
 
 
 @cdc.validate_schemas
@@ -185,11 +217,11 @@ def register_general_affine(
     coords_target = coords_target.sel(label=common_labels).pint.dequantify()
 
     # Warn if the source landmark cloud (restricted to common labels) is
-    # nearly coplanar — because a 12-DOF affine fit then collapses along the 
+    # nearly coplanar — because a 12-DOF affine fit then collapses along the
     # plane normal. Threshold 0.20 separates the Nz/Iz/LPA/RPA-only case
     # (ratio ~0.12, observed 32% z-collapse on colin27) from configurations
     # that include an off-plane landmark like Cz (ratio ~0.85) or the full
-    # 10-10 set (ratio ~0.7). Ratio numbers stem from experiences after 
+    # 10-10 set (ratio ~0.7). Ratio numbers stem from experiences after
     # extensive testing of different input landmarks on 15 subjects.
     src_xyz = coords_trafo.values
     src_centered = src_xyz - src_xyz.mean(axis=0, keepdims=True)
@@ -818,8 +850,8 @@ def _mesh_closest_point(
 
 def register_optodes_spring_icp(
     scalp: cdc.TrimeshSurface,
-    optodes: cdt.LabeledPoints,
-    channels: list[tuple[str, str]],
+    geo3d: cdt.LabeledPoints,
+    channels: list[tuple[str, str]] | cdt.NDTimeSeries | pd.DataFrame,
     landmarks_scalp: cdt.LabeledPoints,
     nominal_distances: dict[tuple[str, str], float] | None = None,
     n_iter: int = 400,
@@ -827,32 +859,30 @@ def register_optodes_spring_icp(
     k_anchor: float = 10.0,
     step_size: float = 0.1,
     convergence_tol: float = 0.01,
-    initial_align_mode: str = "trans_rot_isoscale",
-) -> SpringICPResult:
+    initial_align_mode: str  = "general",
+) -> tuple[cdt.LabeledPoints, SpringICPResult]:
     """Register optode coordinates onto a scalp mesh via spring relaxation and ICP.
 
     Two-phase registration:
 
     1. **Initial alignment** — a global transform (translation + rotation +
-       optional scale) is fitted to the matched ``landmarks_probe`` /
-       ``landmarks_scalp`` pairs and applied to ``optodes`` to bring them into
-       the scalp coordinate system.
+       optional scale) is fitted to the matched landmark pairs and applied to
+       ``geo3d`` to bring them into the scalp coordinate system.
 
     2. **Spring-relaxation ICP** — optodes are iteratively refined:
 
        * Hooke's-law springs between each channel-forming source–detector pair,
          with rest length equal to the nominal inter-optode distance, resist
          distortion of channel geometry.
-       * Strong anchor springs pull any optode whose label appears in
+       * Strong anchor springs pull any coordinate in geo3d whose label appears in
          ``landmarks_scalp`` toward its known anatomical position on the scalp.
        * After each force step every optode is projected onto the nearest point
          on the scalp triangulated surface (ICP step).
 
     Args:
         scalp: Triangulated scalp surface in the target coordinate system.
-        optodes: Optode coordinates (sources and detectors) in the probe
-            coordinate system.  Labels and the ``type`` coordinate are
-            preserved in the output.
+        geo3d: Probe coordinates (sources, detectors and landmarks) in the probe
+            coordinate system.
         channels: ``(source_label, detector_label)`` pairs defining which
             optode pairs form channels and therefore get a spring.
         landmarks_scalp: Anatomical landmark positions in the scalp CRS (same
@@ -873,7 +903,8 @@ def register_optodes_spring_icp(
             units).
         initial_align_mode: Phase-1 transform type.  One of
             ``"trans_rot_isoscale"`` (7 DOF, default), ``"trans_rot"``
-            (6 DOF), or ``"general"`` (12 DOF full affine).
+            (6 DOF), ``"general"`` (12 DOF full affine), or ``"identity"`` (only
+            adapt units).
 
     Returns:
         :class:`SpringICPResult` with the final optode positions and
@@ -890,9 +921,35 @@ def register_optodes_spring_icp(
             expected_crs=scalp.crs, found_crs=landmarks_scalp.points.crs
         )
 
+
+    if isinstance(channels, pd.DataFrame):
+        # measurement list
+        assert all(c in channels.columns for c in ["wavelength", "source", "detector"])
+        wavelengths = channels.wavelength.unique()
+        # restrict to single wavelength
+        channels = channels[channels.wavelength == wavelengths[0]]
+        channels = [(r.source, r.detector) for _,r in channels.iterrows()]
+    elif isinstance(channels, xr.DataArray):
+        # NDTime Series
+        assert all(c in channels.coords for c in ["source", "detector"])
+        channels = [
+            (s, d) for s, d in zip(channels.source.values, channels.detector.values)
+        ]
+    elif isinstance(channels, list):
+        # list of optode label pairs
+        pass
+    else:
+        raise ValueError(
+            "Channel definition must be either a NDTimeSeries, "
+            "a measurement list DataFrame or a list of optode label pairs."
+        )
+
+
     # --- Phase 1: global alignment from landmark correspondences ---------------
 
-    landmarks_probe = optodes[optodes.type == cdc.PointType.LANDMARK]
+    landmarks_probe = geo3d[
+        (geo3d.type == cdc.PointType.LANDMARK) | (geo3d.type == cdc.PointType.ELECTRODE)
+    ]
 
     if initial_align_mode == "trans_rot_isoscale":
         t_init = register_trans_rot_isoscale(landmarks_scalp, landmarks_probe)
@@ -900,13 +957,15 @@ def register_optodes_spring_icp(
         t_init = register_trans_rot(landmarks_scalp, landmarks_probe)
     elif initial_align_mode == "general":
         t_init = register_general_affine(landmarks_scalp, landmarks_probe)
+    elif initial_align_mode == "identity":
+        t_init = register_identity(landmarks_scalp, landmarks_probe)
     else:
         raise ValueError(
             f"Unknown initial_align_mode {initial_align_mode!r}. "
-            "Choose 'trans_rot_isoscale', 'trans_rot', or 'general'."
+            "Choose 'trans_rot_isoscale', 'trans_rot', 'general', or 'identity'."
         )
 
-    aligned = optodes.points.apply_transform(t_init)
+    aligned = geo3d.points.apply_transform(t_init)
     aligned_dq = aligned.pint.dequantify()
     # pos_np: (N, 3) float array in scalp units – the working copy
     pos_np = aligned_dq.values.copy()
@@ -979,7 +1038,7 @@ def register_optodes_spring_icp(
                 forces[i_src] += spring_force / valence[i_src]
                 forces[i_det] -= spring_force / valence[i_det]
 
-        # Anchor forces pulling landmark-optodes to their scalp targets
+        # Anchor forces pulling landmarks to their scalp targets
         for i_lm, target in anchor_pairs:
             forces[i_lm] += k_anchor * (target - pos_np[i_lm])
 
@@ -1044,8 +1103,7 @@ def register_optodes_spring_icp(
             coords={"label": np.array([], dtype=object)},
         )
 
-    return SpringICPResult(
-        optode_positions=pos_out,
+    return pos_out, SpringICPResult(
         initial_positions=aligned,
         nominal_distances=nominal_distances,
         spring_errors=spring_errors,
