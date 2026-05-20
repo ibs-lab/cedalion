@@ -916,7 +916,8 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            # FIXME: disabled while investigating the voxel parcel labels
+            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,
@@ -936,7 +937,8 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            # FIXME: disabled while investigating the voxel parcel labels
+            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,
