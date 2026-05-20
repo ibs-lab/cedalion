@@ -610,6 +610,8 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         self._compute_G_gaussian_kernels(head_model)
         self._compute_H(Adot)
 
+        cite("Carlton2026")
+
     @property
     def H(self):
         return self._H
@@ -1006,6 +1008,9 @@ class ImageRecon:
         brain_only: bool = False,
         spatial_basis_functions: SpatialBasisFunctions | None = None,
     ):
+        cite("Carlton2026")
+        cite("Markow2025")
+
         if recon_mode not in ["conc", "mua", "mua2conc"]:
             raise ValueError(
                 "recon_mode must be set to either 'conc', 'mua' or 'mua2conc'!"

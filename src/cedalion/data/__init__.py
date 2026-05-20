@@ -311,6 +311,11 @@ def get_precomputed_fluence(dataset: str, head_model: str) -> Path:
             f"'{dataset}' and head_model '{head_model}'"
         )
 
+    # precomputed fluences were calculated with MCX
+    cite("Fang2009")
+    cite("Yu2018")
+    cite("Yan2020")
+
     fname = DATASETS.fetch(fname)
 
     return Path(fname)
@@ -335,6 +340,11 @@ def get_precomputed_sensitivity(dataset: str, head_model: str) -> xr.DataArray:
             f"We don't provide precomputed sensitivity for dataset "
             f"'{dataset}' and head_model '{head_model}'"
         )
+
+    # precomputed senitivities were calculated with MCX
+    cite("Fang2009")
+    cite("Yu2018")
+    cite("Yan2020")
 
     fname = DATASETS.fetch(fname)
 
@@ -413,8 +423,9 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
     """Retrieve the Colin27 head model files.
 
     The Colin27 atlas (:cite:t:`Holmes1998`) was further processed with FreeSurfer
-    (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations (cite:t:'Schaefer2018'), and
-    voxel-to-vertex mappings used in cedalion's DOT pipeline.
+    (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations
+    (:cite:t:`Schaefer2018`), and voxel-to-vertex mappings used in cedalion's DOT
+    pipeline.
     """
 
     cite("Holmes1998")
@@ -447,8 +458,9 @@ def get_icbm152_headmodel_files() -> HeadModelFiles:
     """Retrieves the ICBM-152 segmentation dataset.
 
     The ICBM1-52 atlas (:cite:t:`Fonov2011`) was further processed with FreeSurfer
-    (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations (cite:t:'Schaefer2018'), and
-    voxel-to-vertex mappings used in cedalion's DOT pipeline.
+    (:cite:t:`Fischl2012`) to produce cortical surface meshes, parcellations
+    (cite:t:`Schaefer2018`), and voxel-to-vertex mappings used in cedalion's DOT
+    pipeline.
     """
 
     cite("Fonov2011")

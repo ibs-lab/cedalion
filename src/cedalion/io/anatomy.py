@@ -25,30 +25,31 @@ AFFINE_CODES = {
 }
 
 
-def _get_affine_from_niftii(image: nibabel.nifti1.Nifti1Image):
+def _get_affine_from_niftii(image: nibabel.nifti1.Nifti1Image, crs: str | None = None):
     """Get affine transformation matrix from NIFTI image.
 
     Args:
         image (nibabel.nifti1.Nifti1Image): NIFTI image object
+        crs: If provided this sets the the name of the CRS. Otherwise it is inferred
+            from AFFINE_CODES.
 
     Returns:
         xr.DataArray: Affine transformation matrix
     """
     transform, code = image.get_sform(coded=True)
     if code != 0:
-        return affine_transform_from_numpy(
-            transform, "ijk", AFFINE_CODES[code], "1", "mm"
-        )
+        crs_ = AFFINE_CODES[code] if crs is None else crs
+        return affine_transform_from_numpy(transform, "ijk", crs_, "1", "mm")
 
     transform, code = image.get_qform(coded=True)
     if code != 0:
-        return affine_transform_from_numpy(
-            transform, "ijk", AFFINE_CODES[code], "1", "mm"
-        )
+        crs_ = AFFINE_CODES[code] if crs is None else crs
+        return affine_transform_from_numpy(transform, "ijk", crs_, "1", "mm")
 
     transform = image.get_best_affine()
 
-    return affine_transform_from_numpy(transform, "ijk", AFFINE_CODES[0], "1", "mm")
+    crs_ = AFFINE_CODES[0] if crs is None else crs
+    return affine_transform_from_numpy(transform, "ijk", crs_, "1", "mm")
 
 
 def read_segmentation_masks(
@@ -126,13 +127,15 @@ def read_segmentation_masks(
     return masks, affine
 
 
-def cell_coordinates(mask, affine, units="mm"):
+def cell_coordinates(mask, affine, units="mm", center=False):
     """Get the coordinates of each voxel in the transformed mask.
 
     Args:
         mask (xr.DataArray): A binary mask of shape (i, j, k).
         affine (np.ndarray): Affine transformation matrix.
         units (str): Units of the output coordinates.
+        center: if true the cells' center positions are returned. Otherwise it
+            is the position of the lower-left corner of the voxel.
 
     Returns:
         xr.DataArray: Coordinates of the center of each voxel in the mask.
@@ -142,9 +145,13 @@ def cell_coordinates(mask, affine, units="mm"):
     j = np.arange(mask.shape[1])
     k = np.arange(mask.shape[2])
 
-    ii, jj, kk = np.meshgrid(i, j, k, indexing="ij")
+    if center:
+        ii, jj, kk = np.meshgrid(i + 0.5, j + 0.5, k + 0.5, indexing="ij")
+    else:
+        ii, jj, kk = np.meshgrid(i, j, k, indexing="ij")
 
     coords = np.stack((ii, jj, kk), -1)  # shape (ni,nj,nk,3)
+
     transformed = xr.DataArray(
         nibabel.affines.apply_affine(affine, coords),
         dims=["i", "j", "k", "pos"],
