@@ -8,7 +8,7 @@ import pint
 import xarray as xr
 
 import cedalion.typing as cdt
-from cedalion import Quantity, units
+from cedalion import cite, Quantity, units
 from cedalion.sigproc.frequency import sampling_rate
 import cedalion.xrutils as xrutils
 
@@ -195,16 +195,17 @@ class GaussianKernels(TemporalBasisFunction):
 class Gamma(TemporalBasisFunction):
     r"""Modified gamma function, optionally convolved with a square-wave.
 
-    The basis function has the form:
+    Canonical haemodynamic response function for fNIRS GLM analysis, as described in
+    :cite:t:`Strangman2002`. The basis function has the form:
 
     .. math::
         f(t) \sim \frac{t-\tau}{\sigma}
                   \exp \left(-\left(\frac{t - \tau}{\sigma}\right)^2\right)
 
     Args:
-        tau: Specifies a delay of the response with respect ot stimulus onset time.
-        sigma: Specifies the width of the hemodynamic reponse.
-        T : If > 0, the response is additionally convoluted by a square wave of this
+        tau: Specifies a delay of the response with respect to stimulus onset time.
+        sigma: Specifies the width of the hemodynamic response.
+        T : If > 0, the response is additionally convolved with a square wave of this
             width.
     """
 
@@ -223,7 +224,10 @@ class Gamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        other_dim = xrutils.other_dim(ts, "time", "channel")
+        cite("Strangman2002")
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         tau = _to_dict(self.tau, other_dim_values)
@@ -267,7 +271,11 @@ class Gamma(TemporalBasisFunction):
 
 
 class GammaDeriv(TemporalBasisFunction):
-    """Modified gamma func. and its derivative, optionally convolved with a square-wave.
+    """Modified gamma function and its temporal derivative.
+
+    Extends :class:`Gamma` with a second component (the derivative) as in
+    :cite:t:`Strangman2002`, allowing the model to capture small latency shifts
+    in the haemodynamic response.
 
     Args:
         tau: onset time
@@ -290,7 +298,10 @@ class GammaDeriv(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        other_dim = xrutils.other_dim(ts, "time", "channel")
+        cite("Strangman2002")
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         tau = _to_dict(self.tau, other_dim_values)
@@ -338,7 +349,10 @@ class GammaDeriv(TemporalBasisFunction):
 
 
 class AFNIGamma(TemporalBasisFunction):
-    """AFNI gamma basis function, optionally convolved with a square-wave.
+    """AFNI gamma variate basis function, optionally convolved with a square-wave.
+
+    Implements the gamma variate HRF parameterisation from the AFNI neuroimaging
+    software (:cite:t:`Cox1996`).
 
     Args:
         p: shape parameter
@@ -361,7 +375,10 @@ class AFNIGamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        other_dim = xrutils.other_dim(ts, "time", "channel")
+        cite("Cox1996")
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         p = _to_dict(self.p, other_dim_values)
@@ -414,7 +431,9 @@ class DiracDelta(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-        other_dim = xrutils.other_dim(ts, "time", "channel")
+        # other_dim = xrutils.other_dim(ts, "time", "channel")
+        spatial = xrutils.spatial_dim(ts)
+        other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
         n_samples = 2

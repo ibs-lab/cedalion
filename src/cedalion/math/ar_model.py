@@ -2,6 +2,7 @@ import numpy as np
 import statsmodels.api as sm
 import pandas as pd
 from scipy.signal import lfilter
+from warnings import warn
 
 
 def bic_arfit(dd, pmax=30):
@@ -26,6 +27,8 @@ def bic_arfit(dd, pmax=30):
             break
         else:
             last_bic = model.bic
+    else:
+        warn("pmax was reached before finding the optimal BIC.")
 
     # Select the best model order
     best_p = p - 1

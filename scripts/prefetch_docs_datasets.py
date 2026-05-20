@@ -4,21 +4,21 @@ This script retrieves datasets used in example notebooks so that notebooks can b
 rendered in parallel.
 """
 
-import cedalion.datasets as ds
+import cedalion.data as data
 
-ds.get_fingertapping()
-ds.get_fingertappingDOT()
+data.get_fingertapping()
+data.get_fingertappingDOT()
 
-ds.get_colin27_segmentation()
-ds.get_icbm152_segmentation()
-ds.get_colin27_parcel_file()
-ds.get_icbm152_parcel_file()
-ds.get_ninja_cap_probe()
-ds.get_ninja_uhd_cap_probe()
+data.get_colin27_segmentation()
+data.get_icbm152_segmentation()
+data.get_colin27_parcel_file()
+data.get_icbm152_parcel_file()
+data.get_ninja_cap_probe()
+data.get_ninja_uhd_cap_probe()
 
-ds.get_precomputed_sensitivity("fingertappingDOT", "colin27")
+data.get_precomputed_sensitivity("fingertappingDOT", "colin27")
 
-ds.get_precomputed_sensitivity("nn22_resting", "colin27")
-ds.get_nn22_resting_state()
-ds.get_photogrammetry_example_scan()
-ds.get_multisubject_fingertapping_snirf_paths()
+data.get_precomputed_sensitivity("nn22_resting", "colin27")
+data.get_nn22_resting_state()
+data.get_photogrammetry_example_scan()
+data.get_multisubject_fingertapping_snirf_paths()

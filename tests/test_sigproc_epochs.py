@@ -12,12 +12,12 @@ from cedalion import units
 
 @pytest.fixture
 def rec():
-    rec = cedalion.datasets.get_fingertapping()
+    rec = cedalion.data.get_fingertapping()
     rec.stim.cd.rename_events(
         {"1.0": "control", "2.0": "Tapping/Left", "3.0": "Tapping/Right", "15.0": "end"}
     )
 
-    rec["od"] = cedalion.nirs.int2od(rec["amp"])
+    rec["od"] = cedalion.nirs.cw.int2od(rec["amp"])
 
     # differential pathlenght factors
     dpf = xr.DataArray(
@@ -26,7 +26,7 @@ def rec():
         coords={"wavelength": rec["amp"].wavelength},
     )
 
-    rec["conc"] = cedalion.nirs.od2conc(rec["od"], rec.geo3d, dpf, spectrum="prahl")
+    rec["conc"] = cedalion.nirs.cw.od2conc(rec["od"], rec.geo3d, dpf, spectrum="prahl")
 
     return rec
 

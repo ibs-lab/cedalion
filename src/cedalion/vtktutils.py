@@ -1,3 +1,5 @@
+"""Conversion utilities between VTK, PyVista, and Trimesh mesh representations."""
+
 import vtk
 from vtk.util.numpy_support import numpy_to_vtkIdTypeArray, numpy_to_vtk
 import trimesh

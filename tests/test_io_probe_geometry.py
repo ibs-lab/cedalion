@@ -116,8 +116,8 @@ def test_load_tsv_missing_columns():
     # Missing 'Z' column
     with temporary_filename(suffix=".tsv") as tsv_path:
         content = "labels\tX\tY\nFp1\t1\t2"
-        with open(tsv_path.name, "w") as f:
+        with open(tsv_path, "w") as f:
             f.write(content)
 
         with pytest.raises(ValueError, match="Missing Z in tsv file"):
-            load_tsv(tsv_path.name)
+            load_tsv(tsv_path)

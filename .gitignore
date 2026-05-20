@@ -169,6 +169,10 @@ src/cedalion/_version.py
 docs/examples/*.ipynb
 docs/examples/*/*.ipynb
 
+# example plots
+examples/*/*.png
+examples/*/*.gif
+
 # API documentation from sphinx-apidoc
 docs/api/*
 _autosummary*/
@@ -181,3 +185,4 @@ scratch/
 # plugins
 plugins/
 
+.claude/worktrees/sharp-burnell/

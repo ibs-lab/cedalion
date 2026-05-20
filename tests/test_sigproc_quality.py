@@ -4,14 +4,14 @@ import pytest
 from numpy.testing import assert_allclose
 
 import cedalion.dataclasses as cdc
-import cedalion.datasets
+import cedalion.data
 import cedalion.sigproc.quality as quality
 from cedalion import units
 
 
 @pytest.fixture
 def rec():
-    rec = cedalion.datasets.get_snirf_test_data()[0]
+    rec = cedalion.data.get_snirf_test_data()[0]
     rec["amp"] = rec["amp"].pint.dequantify().pint.quantify(units.V)
     return rec
 
@@ -77,13 +77,13 @@ def test_sd_dist(rec):
 
 
 def test_id_motion(rec):
-    rec["od"] = cedalion.nirs.int2od(rec["amp"])
+    rec["od"] = cedalion.nirs.cw.int2od(rec["amp"])
 
     _ = quality.id_motion(rec["od"])
 
 
 def test_id_motion_refine(rec):
-    rec["od"] = cedalion.nirs.int2od(rec["amp"])
+    rec["od"] = cedalion.nirs.cw.int2od(rec["amp"])
 
     ma_mask = quality.id_motion(rec["od"])
 

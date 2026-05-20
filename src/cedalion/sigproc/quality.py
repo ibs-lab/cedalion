@@ -16,9 +16,9 @@ import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 import cedalion.sigproc.frequency as freq
-from cedalion import Quantity, units
+from cedalion import cite, Quantity, units
 from cedalion.typing import NDTimeSeries
-import cedalion.nirs as nirs
+import cedalion.nirs
 from .frequency import freq_filter, sampling_rate
 
 logger = logging.getLogger("cedalion")
@@ -115,6 +115,8 @@ def psp(
         DataArray with coords from psp, true where psp_thresh is met.
     """
 
+    cite("Pollonini2014")
+    cite("Pollonini2016")
     amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
 
     amp = amp.pint.dequantify()
@@ -165,13 +167,17 @@ def psp(
     psp = np.max(power, axis=2).T  # shape(nchannel, ntime)
 
     # keep dims channel and time
-    psp_xr = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
+    psp = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
+
+    # manually set psp for the first window because it contains only a single
+    # finite amplitude value.
+    psp[:, 0] = psp[:, 1]
 
     # Apply threshold mask
-    psp_mask = xrutils.mask(psp_xr, CLEAN)
-    psp_mask = psp_mask.where(psp_xr > psp_thresh, other=TAINTED)
+    psp_mask = xrutils.mask(psp, CLEAN)
+    psp_mask = psp_mask.where(psp > psp_thresh, other=TAINTED)
 
-    return psp_xr, psp_mask
+    return psp, psp_mask
 
 
 @cdc.validate_schemas
@@ -190,12 +196,16 @@ def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
 
     Returns:
         A DataArray with coords from the input NDTimeseries containing the GVTD metric.
+
+    References:
+        Original paper: :cite:`Sherafati2020`
     """
 
+    cite("Sherafati2020")
     fcut_min = 0.01
     fcut_max = 0.5
 
-    od = nirs.int2od(amplitudes)
+    od = cedalion.nirs.cw.int2od(amplitudes)
     od = xr.where(np.isinf(od), 0, od)
     od = xr.where(np.isnan(od), 0, od)
     od.time.attrs["units"] = units.s
@@ -260,6 +270,7 @@ def _get_gvtd_threshold(
         thresh (float): the threshold above which GVTD is considered motion.
     """
 
+    cite("Sherafati2020")
     units = GVTD.pint.units
     GVTD = GVTD.pint.dequantify()
 
@@ -472,7 +483,11 @@ def sci(
         DataArray with coords from sci, true where sci_thresh is met.
     """
 
+    cite("Pollonini2014")
+    cite("Pollonini2016")
     assert "wavelength" in amplitudes.dims  # FIXME move to validate schema
+
+    amplitudes = amplitudes.pint.dequantify()
 
     amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
 
@@ -489,7 +504,11 @@ def sci(
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
 
     sci = (windows - windows.mean("window")).prod("wavelength").sum("window") / nsamples
-    sci /= windows.std("window").prod("wavelength") # dims: channel, time
+    sci /= windows.std("window").prod("wavelength")  # dims: channel, time
+
+    # manually set sci for the first window because it contains only a single
+    # finite amplitude value.
+    sci[:,0] = sci[:,1]
 
     # create sci mask and update accoording to sci_thresh
     sci_mask = xrutils.mask(sci, CLEAN)
@@ -536,6 +555,7 @@ def snr(amplitudes: cdt.NDTimeSeries, snr_thresh: float = 2.0):
         Based on Homer3 v1.80.2 "hmR_PruneChannels.m" (:cite:t:`Huppert2009`)
     """
 
+    cite("Huppert2009")
     # calculate SNR
     snr = amplitudes.mean("time") / amplitudes.std("time")
     # create snr mask and update accoording to snr thresholds
@@ -561,6 +581,7 @@ def mean_amp(amplitudes: cdt.NDTimeSeries, amp_range: tuple[Quantity, Quantity])
     References:
         Based on Homer3 v1.80.2 "hmR_PruneChannels.m" (:cite:t:`Huppert2009`)
     """
+    cite("Huppert2009")
     # FIXME: default parameters in Homer3 were (1e4, 1e7). Adopt?
 
     # calculate mean amplitude
@@ -577,14 +598,14 @@ def mean_amp(amplitudes: cdt.NDTimeSeries, amp_range: tuple[Quantity, Quantity])
 @cdc.validate_schemas
 def sd_dist(
     amplitudes: cdt.NDTimeSeries,
-    geo3D: cdt.LabeledPointCloud,
+    geo3D: cdt.LabeledPoints,
     sd_range: tuple[Quantity, Quantity] = (0 * units.cm, 4.5 * units.cm),
 ):
     """Calculate source-detector separations and mask channels outside a distance range.
 
     Args:
         amplitudes (:class:`NDTimeSeries`, (channel, *)): input time series
-        geo3D (:class:`LabeledPointCloud`): 3D optode coordinates
+        geo3D (:class:`LabeledPoints`): 3D optode coordinates
         sd_range: if source-detector separation < sd_range[0] or > sd_range[1]
              then it is excluded as an active channelin sd_mask
 
@@ -597,6 +618,7 @@ def sd_dist(
         Based on Homer3 v1.80.2 "hmR_PruneChannels.m" (:cite:t:`Huppert2009`)
     """
 
+    cite("Huppert2009")
     # calculate channel distances
     sd_dist = xrutils.norm(
         geo3D.loc[amplitudes.source] - geo3D.loc[amplitudes.detector],
@@ -615,8 +637,8 @@ def sd_dist(
 @cdc.validate_schemas
 def id_motion(
     fNIRSdata: cdt.NDTimeSeries,
-    t_motion: Quantity = 0.5 * units.s,
-    t_mask: Quantity = 1.0 * units.s,
+    t_motion: cdt.QTime = 0.5 * units.s,
+    t_mask: cdt.QTime = 1.0 * units.s,
     stdev_thresh: float = 50.0,
     amp_thresh: float = 5.0,
 ) -> cdt.NDTimeSeries:
@@ -661,6 +683,7 @@ def id_motion(
         (:cite:t:`Huppert2009`).
     """
 
+    cite("Huppert2009")
     # TODO assert OD units, otherwise issue a warning
 
     # t_motion in samples rounded to the nearest sample
@@ -821,6 +844,7 @@ def detect_outliers_std(
         (:cite:t:`Jahani2018`)
     """
 
+    cite("Jahani2018")
     ts = ts.pint.dequantify()
     fs = freq.sampling_rate(ts)
 
@@ -868,6 +892,7 @@ def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold: float = 1.5):
         (:cite:t:`Jahani2018`)
     """
 
+    cite("Jahani2018")
     ts = ts.pint.dequantify()
 
     #ts_lowpass = ts.cd.freq_filter(0, 2, butter_order=4) # FIXME
@@ -927,6 +952,7 @@ def detect_outliers(
         Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
         (:cite:t:`Jahani2018`)
     """
+    cite("Jahani2018")
     mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
     mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
 
@@ -1035,6 +1061,7 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
         Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
         (:cite:t:`Jahani2018`)
     """
+    cite("Jahani2018")
     ts = ts.pint.dequantify()
 
     #ts = ts.stack(measurement=["channel", "wavelength"]).sortby("wavelength")
@@ -1192,6 +1219,8 @@ def repair_amp(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
         amp = amp.pint.dequantify()
         amp = amp.interpolate_na(dim="time", **kwargs)
         amp = amp.pint.quantify()
+        # replace sample 0 with sample 1 if NaN
+        amp[{"time":0}] = amp.isel(time=0).fillna(amp.isel(time=1))
 
     # Replace nonpositive values with a small value
     unit = amp.pint.units
@@ -1222,21 +1251,25 @@ def measurement_variance(
 ) -> xr.DataArray:
     """Estimate measurement variance or covariance from an fNIRS time series.
 
-    Can be used as a proxy for measurement noise, in this case it should be applied in OD or CONC domain.
-    Ideally, the input is the residual of a time series after GLM fitting, but raw data can also be used.
-    This function can be used as a helper function for weighted mean subtraction or for image recon
-    regularization, in which bad channels (noisy, with high variance) are downweighted.
+    Can be used as a proxy for measurement noise, in this case it should be applied in
+    OD or CONC domain. Ideally, the input is the residual of a time series after GLM
+    fitting, but raw data can also be used. This function can be used as a helper
+    function for weighted mean subtraction or for image recon regularization, in which
+    bad channels (noisy, with high variance) are downweighted.
 
     Args:
-    ts: Input time series with dimensions (time, channel, chromo/wavelength).
-    list_bad_channels: List of channel names (e.g. ["S2D4", "S2D10"]) to be treated as bad.
-    bad_rel_var: Multiplier for worst-case variance for bad channels if `bad_abs_var` is not provided.
-    bad_abs_var: Absolute variance to assign to bad channels. Overrides `bad_rel_var` if provided.
-    calc_covariance: If True, returns a 3D covariance matrix: (other_dim, channel, channel).
-        If False, returns a 2D variance array: (chromo, channel).
+        ts: Input time series with dimensions (time, channel, chromo/wavelength).
+        list_bad_channels: Channel names (e.g. ["S2D4", "S2D10"]) to be treated as bad.
+        bad_rel_var: Multiplier for worst-case variance for bad channels if
+            `bad_abs_var` is not provided.
+        bad_abs_var: Absolute variance to assign to bad channels. Overrides
+            `bad_rel_var` if provided.
+        calc_covariance: If True, returns a 3D covariance matrix:
+            (other_dim, channel, channel). If False, returns a 2D variance array:
+            (chromo, channel).
 
     Returns:
-    xr.DataArray: Variance array (shape: channel, chromo/wavelength) or covariance 
+    xr.DataArray: Variance array (shape: channel, chromo/wavelength) or covariance
         array (shape: chromo/wavelength, channel1, channel2)
 
     Initial Contributors:
@@ -1271,7 +1304,9 @@ def measurement_variance(
     # Compute bad variance fill value
     good_var = var.where(~bad_channel_mask)
     max_good_var = good_var.max().item() if good_var.notnull().any() else 1.0
-    var_fill_value = bad_abs_var if bad_abs_var is not None else bad_rel_var * max_good_var
+    var_fill_value = (
+        bad_abs_var if bad_abs_var is not None else bad_rel_var * max_good_var
+    )
 
     # Replace variance of bad channels
     var = var.where(~bad_channel_mask, other=var_fill_value)
@@ -1298,10 +1333,18 @@ def measurement_variance(
             good_cov_matrix[bad_ch_indices, :] = np.nan
             good_cov_matrix[:, bad_ch_indices] = np.nan
             np.fill_diagonal(good_cov_matrix, np.nan)
-            max_good_cov = np.nanmax(np.abs(good_cov_matrix)) if not np.isnan(good_cov_matrix).all() else 0
+            max_good_cov = (
+                np.nanmax(np.abs(good_cov_matrix))
+                if not np.isnan(good_cov_matrix).all()
+                else 0
+            )
 
             # Replace covariance of bad channels
-            cov_fill_value = var_fill_value if bad_abs_var is not None else bad_rel_var * max_good_cov
+            cov_fill_value = (
+                var_fill_value
+                if bad_abs_var is not None
+                else bad_rel_var * max_good_cov
+            )
             cov_matrix_2d[bad_ch_indices, :] = cov_fill_value
             cov_matrix_2d[:, bad_ch_indices] = cov_fill_value
             bad_diag_mask = np.diag(bad_ch_indices)
@@ -1323,3 +1366,36 @@ def measurement_variance(
     )
 
     return covar
+
+
+def mask_to_segments(
+    mask: cdt.NDTimeSeries, value=TAINTED
+) -> list[tuple[float, float]]:
+    """Find in 1D mask consecutive segments of a given value.
+
+    Args:
+        mask: a boolean mask with a time coordinate.
+        value: select consecutive segments of this value
+
+    Returns:
+        a list of start and stop times (inklusive) of the found segments.
+    """
+
+    if mask.ndim != 1:
+        raise ValueError("Input mask must be one-dimensional")
+
+    if len(mask) == 0:
+        return []
+
+    maskv= mask.values
+
+    change_indices = np.where(np.diff(maskv))[0]+1
+    start_indices = np.r_[0, change_indices]
+    end_indices = np.r_[change_indices, len(maskv)]
+
+    segments = [
+        (mask.time.values[start], mask.time.values[end - 1])
+        for start, end in zip(start_indices, end_indices)
+        if maskv[start] == value
+    ]
+    return segments
