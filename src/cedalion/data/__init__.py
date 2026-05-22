@@ -79,6 +79,10 @@ DATASETS = pooch.create(
         "sensitivity_kernel_testdataset_colin27.nc" : "sha256:56e9bd7bef9395dea23541c4d1eef48bee0e9a1d11f1bfe5c736e8998a1c89ac", # noqa:E501
         "sensitivity_artinis_testdataset_colin27.nc" : "sha256:9b00d69134ae6283d29ddce60f7f1818ead95b27bcd11f9ccfe2f2a1d77a7036", # noqa:E501
 
+        # atlases:
+        "atlas_aal3.zip" : "sha256:8e2dcea9c1df1cd71855584a1f6bd11b6c6f3a60d11ce85d37e6f41966474af3", # noqa:E501
+        "atlas_brodmann.zip" :"sha256:551492873096a1cd9e00fb4edbb011bdc185ab7dc9859c92c003948dc36f3da6", # noqa:E501
+
         # other:
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
 
@@ -513,3 +517,29 @@ def get_icbm152_freesurfer_directory() -> Path:
     dirname = os.path.commonpath(fnames)
 
     return Path(dirname)
+
+
+def get_atlas_files(atlas : str) -> tuple[Path, Path]:
+    """Return atlas volume and label files.
+
+    Args:
+        atlas: Name of the atlas. One of ``"aal3"`` or ``"brodmann"``.
+
+    Returns:
+        A tuple ``(fname_volume, fname_labels)`` with paths to the NIfTI volume
+        and the JSON label file.
+    """
+    AVAILABLE_ATLASES = ["aal3", "brodmann"]
+
+    if atlas == "aal3":
+        fnames = DATASETS.fetch("atlas_aal3.zip", processor=pooch.Unzip())
+        fname_volume = [Path(i) for i in fnames if i.endswith(".nii")][0]
+        fname_labels = [Path(i) for i in fnames if i.endswith(".json")][0]
+    elif atlas == "brodmann":
+        fnames = DATASETS.fetch("atlas_aal3.zip", processor=pooch.Unzip())
+        fname_volume = [Path(i) for i in fnames if i.endswith(".nii")][0]
+        fname_labels = [Path(i) for i in fnames if i.endswith(".json")][0]
+    else:
+        raise ValueError(f"atlas must be one of {AVAILABLE_ATLASES}")
+
+    return fname_volume, fname_labels
