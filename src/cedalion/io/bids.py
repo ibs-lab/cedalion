@@ -1,3 +1,14 @@
+"""Utilities for converting fNIRS datasets to the BIDS standard.
+
+Provides functions to organise raw SNIRF files into a BIDS directory tree,
+generate BIDS-compliant filenames, create required sidecar files
+(``dataset_description.json``, ``participants.tsv``/``.json``,
+``_scans.tsv``, ``_sessions.tsv``), and read/write optode positions in the
+BIDS ``_optodes.tsv`` / ``_coordsystem.json`` format.
+
+References:
+    :cite:t:`Gorgolewski2016`, :cite:t:`Luke2025`
+"""
 import os
 import shutil
 import json
@@ -13,6 +24,8 @@ from snirf import Snirf
 
 import cedalion.typing as cdt
 from cedalion.dataclasses import PointType, build_labeled_points
+
+from cedalion import cite
 
 
 def read_events_from_tsv(fname: str | Path):
@@ -147,6 +160,9 @@ def create_bids_standard_filenames(row: pd.Series) -> Tuple[str, str]:
     Returns:
         A tuple of ``(bids_filename, parent_directory_path)``.
     """
+
+    cite("Gorgolewski2016")
+    cite("Luke2025")
 
     name_str = "sub-" + str(row["sub"])
     parent_path = name_str
@@ -735,6 +751,10 @@ def export_to_bids_optodes_tsv(tsv_filename, points : cdt.LabeledPoints, units="
         units: coordinate units.
     """
 
+    cite("Gorgolewski2016")
+    cite("Luke2025")
+
+
     # BIDS optodes_tsv
     points = points[
         (points.type == PointType.SOURCE) | (points.type == PointType.DETECTOR)
@@ -769,6 +789,10 @@ def load_from_bids_optodes_tsv(tsv_filename : Path | str) -> cdt.LabeledPoints:
     Returns:
         LabeledPoints with sources, detectors, and (if present) landmarks.
     """
+
+    cite("Gorgolewski2016")
+    cite("Luke2025")
+
 
     tsv_filename = Path(tsv_filename)
 
