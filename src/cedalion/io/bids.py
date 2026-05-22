@@ -6,8 +6,13 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
+import xarray as xr
 from snirf import Snirf
+
+import cedalion.typing as cdt
+from cedalion.dataclasses import PointType, build_labeled_points
 
 
 def read_events_from_tsv(fname: str | Path):
@@ -720,3 +725,102 @@ def save_source(dataset_path: str, destination_path: str) -> None:
     else:
         shutil.copytree(dataset_path, os.path.join(destination_path, "sourcedata"))
 
+
+def export_to_bids_optodes_tsv(tsv_filename, points : cdt.LabeledPoints, units="mm"):
+    """Export to a bids-conform _optodes.tsv.
+
+    Args:
+        tsv_filename: Path to the output tsv file.
+        points: LabeledPoints to save.
+        units: coordinate units.
+    """
+
+    # BIDS optodes_tsv
+    points = points[
+        (points.type == PointType.SOURCE) | (points.type == PointType.DETECTOR)
+    ]
+
+    points = points.pint.to(units).pint.dequantify()
+
+    # else: types are optodes, fiducials, landmarks, electrodes
+    with open(tsv_filename, 'w') as f:
+        names = points.label.values
+        types = [i.name.lower() for  i in points.type.values]
+        header = "\t".join(["name", "type","x", "y", "z"])
+
+        f.write(header + "\n")
+
+        for n, t, p in zip(names, types, points.values):
+            f.write(f"{n}\t{t}\t{p[0]}\t{p[1]}\t{p[2]}\n")
+
+    return
+
+
+def load_from_bids_optodes_tsv(tsv_filename : Path | str) -> cdt.LabeledPoints:
+    """Load optodes and landmarks from a BIDS *_optodes.tsv and its *_coordsystem.json.
+
+    The coordinate system name, units, and anatomical landmarks are read from the
+    accompanying ``*_coordsystem.json`` file.  The JSON is expected at the same path
+    as the TSV, with ``_optodes.tsv`` replaced by ``_coordsystem.json``.
+
+    Args:
+        tsv_filename: Path to the BIDS ``*_optodes.tsv`` file.
+
+    Returns:
+        LabeledPoints with sources, detectors, and (if present) landmarks.
+    """
+
+    tsv_filename = Path(tsv_filename)
+
+    if str(tsv_filename).endswith("_optodes.tsv"):
+        coordsystem_filename = Path(
+            str(tsv_filename).replace("_optodes.tsv", "_coordsystem.json")
+        )
+    else:
+        coordsystem_filename = None
+
+    crs = "unknown"
+    units = "mm"
+    landmark_coords = {}
+    landmark_units = None
+
+    if (coordsystem_filename is not None) and (coordsystem_filename.exists()):
+        with open(coordsystem_filename) as f:
+            cs = json.load(f)
+        crs = cs.get("NIRSCoordinateSystem", crs)
+        units = cs.get("NIRSCoordinateUnits", units)
+        landmark_coords = cs.get("AnatomicalLandmarkCoordinates", {})
+        landmark_units = cs.get("AnatomicalLandmarkCoordinateUnits", units)
+
+    df = pd.read_csv(tsv_filename, sep="\t")
+
+    type_map = {
+        "source": PointType.SOURCE,
+        "detector": PointType.DETECTOR,
+    }
+
+    labels = list(df["name"].values)
+    types = [type_map.get(t, PointType.UNKNOWN) for t in df["type"].values]
+    coordinates = df[["x", "y", "z"]].values.tolist()
+
+    for name, xyz in landmark_coords.items():
+        labels.append(name)
+        types.append(PointType.LANDMARK)
+        coordinates.append(xyz)
+
+    if landmark_units is not None and landmark_units != units:
+        n_optodes = len(df)
+        optode_arr = build_labeled_points(
+            coordinates[:n_optodes], crs=crs, units=units,
+            labels=labels[:n_optodes], types=types[:n_optodes],
+        )
+        lm_arr = build_labeled_points(
+            coordinates[n_optodes:], crs=crs, units=landmark_units,
+            labels=labels[n_optodes:], types=types[n_optodes:],
+        )
+        lm_arr = lm_arr.pint.to(units)
+        return xr.concat([optode_arr, lm_arr], dim="label")
+
+    return build_labeled_points(
+        np.array(coordinates), crs=crs, units=units, labels=labels, types=types
+    )
