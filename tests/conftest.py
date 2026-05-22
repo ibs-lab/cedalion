@@ -1,16 +1,8 @@
 
 import pytest
 import xarray as xr
-# import numpy as np
-# import pandas as pd
-
 import cedalion
 import cedalion.data
-# import cedalion.dataclasses as cdc
-# import cedalion.models.glm as glm
-
-# from cedalion import units
-
 
 @pytest.fixture
 def rec():

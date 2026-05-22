@@ -13,6 +13,7 @@ from numpy.polynomial.legendre import legval
 
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
+import cedalion.dataclasses as cdc
 from cedalion import cite
 
 from cedalion.sigproc.frequency import sampling_rate
@@ -124,9 +125,11 @@ class DesignMatrix:
 
         dim3_name = xrutils.other_dim(self.common, "time", "regressor")
 
+        spatial_dim = cdc.get_spatial_dimension(ts)
+
         for cwreg in self.channel_wise:
             assert cwreg.sizes["regressor"] == 1
-            assert (ts.channel.values == cwreg.channel.values).all()
+            assert (ts[spatial_dim].values == cwreg[spatial_dim].values).all()
 
         comp_groups = []
         for reg in self.channel_wise:
@@ -136,7 +139,7 @@ class DesignMatrix:
                 comp_groups.append(_hash_channel_wise_regressor(reg))
 
         if channel_groups is not None:
-            assert len(channel_groups) == ts.sizes["channel"]
+            assert len(channel_groups) == ts.sizes[spatial_dim]
             comp_groups.append(channel_groups)
 
         if len(comp_groups) == 0:
@@ -145,9 +148,9 @@ class DesignMatrix:
             for dim3 in self.common[dim3_name].values:
                 dm = self.common.sel({dim3_name: dim3})
                 # group_y = ts.sel({dim3_name: dim3})
-                channels = ts.channel.values
+                spatial_dim_values = ts[spatial_dim].values
                 # yield dim3, group_y, dm
-                yield dim3, channels, dm
+                yield dim3, spatial_dim_values, dm
 
             return
         else:
@@ -155,29 +158,30 @@ class DesignMatrix:
             # the channel-wise regressors are identical, we have to assemble and yield
             # the design-matrix.
 
-            chan_idx_with_same_comp_group = defaultdict(list)
+            spatial_idx_with_same_comp_group = defaultdict(list)
 
-            for i_ch, all_comp_groups in enumerate(zip(*comp_groups)):
-                chan_idx_with_same_comp_group[all_comp_groups].append(i_ch)
+            for i_spatial, all_comp_groups in enumerate(zip(*comp_groups)):
+                spatial_idx_with_same_comp_group[all_comp_groups].append(i_spatial)
 
             for dim3 in self.common[dim3_name].values:
                 dm = self.common.sel({dim3_name: dim3})
 
-                for chan_indices in chan_idx_with_same_comp_group.values():
-                    channels = ts.channel[np.asarray(chan_indices)].values
+                for chan_indices in spatial_idx_with_same_comp_group.values():
+                    chan_indices = np.asarray(chan_indices)
+                    spatial_dim_values = ts[spatial_dim][chan_indices].values
 
                     regs = []
                     for reg in channel_wise_regressors:
                         regs.append(
-                            reg.sel({"channel": channels, dim3_name: dim3})
-                            .isel(channel=0)  # regs are identical within a group
+                            reg.sel({spatial_dim: spatial_dim_values, dim3_name: dim3})
+                            .isel({spatial_dim: 0})  # regs are identical within a group
                             .pint.dequantify()
                         )
 
                     group_design_matrix = xr.concat([dm] + regs, dim="regressor")
 
                     # yield dim3, group_y, group_design_matrix
-                    yield dim3, channels, group_design_matrix
+                    yield dim3, spatial_dim_values, group_design_matrix
 
 
 def _hash_channel_wise_regressor(regressor: xr.DataArray) -> list[int]:
@@ -191,9 +195,14 @@ def _hash_channel_wise_regressor(regressor: xr.DataArray) -> list[int]:
         A list of hash values, one hash for each channel.
     """
 
+    spatial_dim = cdc.get_spatial_dimension(regressor)
+
     tmp = regressor.pint.dequantify()
-    n_channel = regressor.sizes["channel"]
-    return [hash(tmp.isel(channel=i).values.data.tobytes()) for i in range(n_channel)]
+    n_channel = regressor.sizes[spatial_dim]
+
+    return [
+        hash(tmp.isel({spatial_dim: i}).values.data.tobytes()) for i in range(n_channel)
+    ]
 
 
 def hrf_regressors(
@@ -223,8 +232,8 @@ def hrf_regressors(
     # could be "chromo" or "wavelength"
     # Determine spatial dimension dynamically (e.g., "channel", "parcel", ...)
     # instead of assuming "channel", to support multiple representations.
-    spatial = xrutils.spatial_dim(ts)
-    other_dim = xrutils.other_dim(ts, spatial, "time")
+    spatial_dim = cdc.get_spatial_dimension(ts)
+    other_dim = xrutils.other_dim(ts, spatial_dim, "time")
 
     n_time = ts.sizes["time"]
     n_other = ts.sizes[other_dim]
@@ -278,7 +287,10 @@ def hrf_regressors(
                 # shifted onset times this moves the basis fct. to the correct position.
                 regressor = np.convolve(stim_array, bb[:, i_comp])
                 regressor = regressor[pad_before : pad_before + n_time]
-                regressor /= regressor.max()
+
+                # basis functions are normalized to 1. don't normalize the convolved
+                # regressor again.
+                # regressor /= regressor.max()
 
                 regressors[:, i_reg, i_other] = regressor
 
@@ -327,8 +339,8 @@ def hrf_extract_regressors(
 
     # could be "chromo" or "wavelength"
     # other_dim = xrutils.other_dim(ts, "channel", "time")
-    spatial = xrutils.spatial_dim(ts)
-    other_dim = xrutils.other_dim(ts, spatial, "time")
+    spatial_dim = cdc.get_spatial_dimension(ts)
+    other_dim = xrutils.other_dim(ts, spatial_dim, "time")
 
     n_time = basis.sizes["time"]
     n_other = ts.sizes[other_dim]
@@ -397,8 +409,8 @@ def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
         xr.DataArray: A DataArray containing the drift regressors.
     """
     # dim3 = xrutils.other_dim(ts, "channel", "time")
-    spatial = xrutils.spatial_dim(ts)
-    dim3 = xrutils.other_dim(ts, spatial, "time")
+    spatial_dim = cdc.get_spatial_dimension(ts)
+    dim3 = xrutils.other_dim(ts, spatial_dim, "time")
     ndim3 = ts.sizes[dim3]
 
 
@@ -443,8 +455,8 @@ def drift_legendre_regressors(ts : cdt.NDTimeSeries, order : int) -> DesignMatri
     """
 
     # dim3 = xrutils.other_dim(ts, "channel", "time")
-    spatial = xrutils.spatial_dim(ts)
-    dim3 = xrutils.other_dim(ts, spatial, "time")
+    spatial_dim = cdc.get_spatial_dimension(ts)
+    dim3 = xrutils.other_dim(ts, spatial_dim, "time")
     ndim3 = ts.sizes[dim3]
 
     nt = ts.sizes["time"]
@@ -483,9 +495,8 @@ def drift_cosine_regressors(ts: cdt.NDTimeSeries, fmax: cdt.QFrequency) -> Desig
         xr.DataArray: A DataArray containing the drift regressors.
     """
 
-    dim3 = xrutils.other_dim(ts, "channel", "time")
-    spatial = xrutils.spatial_dim(ts)
-    dim3 = xrutils.other_dim(ts, spatial, "time")
+    spatial_dim = cdc.get_spatial_dimension(ts)
+    dim3 = xrutils.other_dim(ts, spatial_dim, "time")
     ndim3 = ts.sizes[dim3]
 
     nt = ts.sizes["time"]
@@ -570,6 +581,14 @@ def _regressors_from_selected_short_channels(
 ) -> xr.DataArray:
     """Build channel-wise short-channel regressors from a selection."""
 
+    spatial_dim = cdc.get_spatial_dimension(ts_long)
+    dim3 = xrutils.other_dim(ts_long, spatial_dim, "time")
+
+    assert spatial_dim == "channel", (
+        f"Short-channel regressors only make sense in channel space, "
+        f"but got '{spatial_dim}'."
+    )
+
     # pick for each long channel from ts_short the selected closest channel
     # regressors has same dims as ts_long/ts_short and same channels as ts_long
     regressors = ts_short.isel(channel=selected_short_ch_indices)
@@ -582,10 +601,6 @@ def _regressors_from_selected_short_channels(
     # assign this as a additional coordinate to the channel dim.
 
     coords_short_channels = regressors.channel
-
-    # dim3 = xrutils.other_dim(ts_long, "channel", "time")
-    spatial = xrutils.spatial_dim(ts_long)
-    dim3 = xrutils.other_dim(ts_long, spatial, "time")
 
     keep_coords = ["time", "samples", dim3]
     drop_coords = [i for i in regressors.coords.keys() if i not in keep_coords]
@@ -710,3 +725,27 @@ def average_short_channel_regressor(ts_short: cdt.NDTimeSeries):
     regressor = regressor.transpose("time", "regressor", ...)
 
     return DesignMatrix(common=regressor, channel_wise=[])
+
+
+def global_mean_regressor(ts: cdt.NDTimeSeries) -> DesignMatrix:
+    """Create a global regressor by averaging over the spatial dimension.
+
+    Args:
+        ts (NDTimeSeries): time series data (time x spatial_dim x chromo)
+
+    Returns:
+        DesignMatrix: design matrix with one global regressor
+    """
+    # detect the spatial dimension dynamically (channel, parcel, or vertex)
+    spatial_dim = cdc.get_spatial_dimension(ts)
+
+    # regressors are dequantified
+    ts = ts.pint.dequantify()
+
+    # mean over spatial dimension → global signal
+    regressor = ts.mean(spatial_dim, skipna=True).expand_dims("regressor")
+    regressor = regressor.assign_coords({"regressor": ["global"]})
+    regressor = regressor.transpose("time", "regressor", ...)
+
+    return DesignMatrix(common=regressor, channel_wise=[])
+
