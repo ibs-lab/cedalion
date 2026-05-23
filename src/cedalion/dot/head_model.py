@@ -24,6 +24,7 @@ import cedalion.typing as cdt
 from cedalion import xrutils
 from cedalion.dot.utils import map_segmentation_mask_to_surface
 from cedalion.geometry.ellipsoid import get_landmarks_for_headsize
+from cedalion import cite
 from cedalion.geometry.registration import (
     register_general_affine,
     register_trans_rot_isoscale,
@@ -586,7 +587,76 @@ class TwoSurfaceHeadModel:
         step_size: float = 0.1,
         convergence_tol: float = 0.01,
         initial_align_mode: str = "general",
-    ):
+    ) -> tuple[cdt.LabeledPoints, "SpringICPResult"]:
+        """Align and project optodes onto the scalp using spring-relaxation ICP.
+
+        Unlike :meth:`align_and_snap_to_scalp`, which projects every optode
+        independently to its nearest scalp point, this method preserves the
+        probe geometry by coupling source–detector pairs through Hooke's-law
+        springs.  The algorithm alternates between a spring-force step —
+        attracting each pair toward its nominal channel distance — and an ICP
+        projection step that keeps every optode on the scalp surface.
+        Anatomical landmarks shared between the probe and the head model are
+        enforced as strong anchor springs.  The approach is based on the
+        spring-relaxation registration introduced in AtlasViewer
+        (:cite:t:`Aasted2015`).
+
+        Two-phase registration:
+
+        1. **Initial alignment** — a global transform (translation + rotation
+           + optional scale) fitted to matched landmark pairs brings ``points``
+           into the scalp coordinate system.
+
+        2. **Spring-relaxation ICP** — optodes are iteratively refined:
+           channel springs resist geometry distortion; anchor springs enforce
+           anatomical positions; every optode is projected back onto the scalp
+           mesh after each force step.
+
+        Args:
+            points: Probe coordinates (sources, detectors and landmarks).
+            channels: Channel definitions — accepted forms are a
+                :class:`~cedalion.typing.NDTimeSeries` DataArray (coords
+                ``source`` and ``detector``), a measurement-list
+                :class:`pandas.DataFrame` (columns ``source``, ``detector``,
+                ``wavelength``), or a list of ``(source_label,
+                detector_label)`` tuples.
+            nominal_distances: Optional pre-specified rest lengths for each
+                channel spring, keyed by ``(src_label, det_label)``.  When
+                *None*, distances are measured from the initially aligned
+                positions.
+            n_iter: Maximum number of spring-relaxation iterations.
+            k_spring: Spring constant for channel springs (Hooke's law).
+            k_anchor: Spring constant for landmark-anchor springs.  Should
+                exceed ``k_spring`` to enforce anatomical constraints
+                strongly.
+            step_size: Fraction of the net force vector applied per
+                iteration.  Reduce if the relaxation is numerically unstable.
+            convergence_tol: Early-stop threshold: halt when the maximum
+                surface-projection displacement across all optodes falls
+                below this value (in scalp units, typically mm).
+            initial_align_mode: Global alignment method applied before
+                relaxation.  One of ``"general"`` (12-DOF full affine),
+                ``"trans_rot_isoscale"`` (7-DOF), ``"trans_rot"`` (6-DOF),
+                or ``"identity"`` (unit conversion only).
+
+        Returns:
+            tuple: ``(registered_points, details)`` where
+            ``registered_points`` is a
+            :class:`~cedalion.typing.LabeledPoints` DataArray with the final
+            optode positions on the scalp, and ``details`` is a
+            :class:`~cedalion.geometry.registration.SpringICPResult`
+            containing convergence diagnostics and per-channel quality
+            metrics.
+
+        References:
+            Paper & Code: :cite:t:`Aasted2015`
+
+        See Also:
+            :meth:`align_and_snap_to_scalp` for a faster but
+            geometry-unaware alternative.
+        """
+        cite("Aasted2015")
+
         return register_optodes_spring_icp(
             self.scalp,
             points,
@@ -916,7 +986,8 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            # FIXME: disabled while investigating the voxel parcel labels
+            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,
@@ -936,7 +1007,8 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            # FIXME: disabled while investigating the voxel parcel labels
+            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,

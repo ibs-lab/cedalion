@@ -59,27 +59,29 @@ DATASETS = pooch.create(
         "fieldtrip_standard1005.elc": "sha256:1ee59197946d62de872db2ac7f2243a596662c231427366f6dc5d84ed237f853",  # noqa:E501
 
         # precomputed forward model results
-        "fluence_fingertapping_colin27.h5": "sha256:07ac3695a3b3f5782e6c8ede04b9ce620b023d8198babb7b1076fe760a726c36",  # noqa:E501
-        "fluence_fingertapping_icbm152.h5": "sha256:566fec429da99d9e966cbd225cc4bc80777d0dc08a5b195fd2cd7f154f5afcae",  # noqa:E501
-        "fluence_fingertappingDOT_colin27.h5": "sha256:8768db54ec30071bbb6d5fe4b3e986e2d94aef3cd86cbec2e3fa2b37c83d2cdb",  # noqa:E501
-        "fluence_fingertappingDOT_icbm152.h5": "sha256:583f4bcffe7f9a7874f108df4a96aaf213e1bd361e05c4f69ca3cd0dbcd33fd0",  # noqa:E501
-        "fluence_ninjanirs_colin27.h5": "sha256:89d82c4f5a985f79777fceeffab9ef90365056ccda8ea4e29bc71c4d24fb0e0a",  # noqa: E501
+        "fluence_fingertapping_colin27.h5": "sha256:2ac04296e066527805ee32281698e3a1916022b76aae7f1d2c2bfbbd8524f38e",  # noqa:E501
+        "fluence_fingertapping_icbm152.h5": "sha256:a0600ee1d51d938cf866d6b3cbd3786308ad78412255e3e71bd251634d0cbbdb",  # noqa:E501
+        "fluence_fingertappingDOT_colin27.h5": "sha256:37857936df0f632d161e213a49dc42d69fc2e69e0b67abbf72004a50c54a4830",  # noqa:E501
+        "fluence_fingertappingDOT_icbm152.h5": "sha256:1e68f217a9c43a483d4280f02087bb3f2a6bd39fe60003c76fbdfac744711a4e",  # noqa:E501
 
-        "sensitivity_fingertapping_colin27.nc": "sha256:abda3b0cb93ce79a8e5e867875d9f181289206a6db445826e8dc3a231a082298",  # noqa:E501
-        "sensitivity_fingertapping_icbm152.nc": "sha256:3ead570f53b276f9b876954a95501b73ae22cee10583b6d67b1380e13afec3c5",  # noqa:E501
-        "sensitivity_fingertappingDOT_colin27.nc": "sha256:e9cfbc9fb34cb4898467dd8a8fdd84510c91cc413499f4ccd11d72e8a1a3a2c8",  # noqa:E501
-        "sensitivity_fingertappingDOT_icbm152.nc": "sha256:f6dcd84e7330849ba84621a41939b51e8b6fa596e31c2da96ccca2bb979212a8",  # noqa:E501
-        "sensitivity_ninja_cap_56x144_colin27.nc": "sha256:c892df3400747c3ec010006241c457a67a003b4672bf98caf89a91976cdea6d4",  # noqa:E501
-        "sensitivity_ninja_cap_56x144_icbm152.nc": "sha256:fcc06e81d5cb3732cbb0df6df0045a835c899cad79ae952fa0ca20af4212a7c9",  # noqa:E501
-        "sensitivity_ninja_uhd_cap_164x496_colin27.nc": "sha256:4c8d456a0a7f829353e4f58d9249e183fc5fdb349cf0e113c7387ec2b14ec224",  # noqa:E501
-        "sensitivity_ninja_uhd_cap_164x496_icbm152.nc": "sha256:411ef97ba9d4f6a46d94c78f3febf508397d9e3538d31cbabb4e6cf682c1866b",  # noqa:E501
-        "sensitivity_nn22_resting_colin27.nc": "sha256:1954f466a7103e9e3ad379af86d3148b78c6e5f778db78972300715d52db342b",  # noqa:E501
-        "sensitivity_nn22_resting_icbm152.nc": "sha256:a9c577470450d7fe9b9c534a813622a195b66e82ab628d2828fe0525b0355f39",  # noqa:E501
+        "sensitivity_fingertapping_colin27.nc": "sha256:f0ed07ba0e18e8eafdd5e023fb8cf3710b321bfe291d67a6ad4252cb7cad0b3c",  # noqa:E501
+        "sensitivity_fingertapping_icbm152.nc": "sha256:6192571b0d343de330af8672690dfa94a18dc6d01e189de59e80dfa894419f2d",  # noqa:E501
+        "sensitivity_fingertappingDOT_colin27.nc": "sha256:0cf9f3b9ec84ed3833ad544555629059f447c2e8836f045c6dac871bdaf933e7",  # noqa:E501
+        "sensitivity_fingertappingDOT_icbm152.nc": "sha256:d62ca54688c0f29c0f13abd8c6ee6d194be7694a7efb12f2ce062ae338194755",  # noqa:E501
+        "sensitivity_ninja_cap_56x144_colin27.nc": "sha256:356d63fb7c8325574155e2c20753e9357ed00caa7aef6d3e70d1347f22bc1288",  # noqa:E501
+        "sensitivity_ninja_cap_56x144_icbm152.nc": "sha256:f739eef082982244a17b3cf588c2cb76d7279b8c7a306f4f3dfdfe9b1138f64f",  # noqa:E501
+        "sensitivity_ninja_uhd_cap_164x496_colin27.nc": "sha256:349c5d92783068bbe3427eac33142052d61c0c7097af8ea1682760b60699f0ff",  # noqa:E501
+        "sensitivity_ninja_uhd_cap_164x496_icbm152.nc": "sha256:1bbd17155617326f19bd25dbdda62956af7c5f20e1aa56d56d72bf6cfb38e2d3",  # noqa:E501
+        "sensitivity_nn22_resting_colin27.nc": "sha256:75f5842f86c6feed2018b3f5a161c57088f862de852e14a5c710839009af14fe",  # noqa:E501
+        "sensitivity_nn22_resting_icbm152.nc": "sha256:bed9c80973d8525510829c1ba36bb7766eb47f580bdfebef504bb60d8e79d623",  # noqa:E501
 
-        "Adot_ninjanirs_colin27.nc": "sha256:3382e6bfd62b5e1213332cc74c88cc8af04a4fd5cebe7001ebc111cf9e9b2d00",  # noqa:E501
-        "sensitivity_lumo_testdataset_colin27.nc" : "sha256:c08e83f6fd98b7038f3cbb3cc36abc0fa5a1eaad17a4115a822c250da75ab2fa", # noqa:E501
-        "sensitivity_kernel_testdataset_colin27.nc" : "sha256:b8e344f7e41196504b079eb5a774b79c62796360b6219b801ffd87039a0c1974", # noqa:E501
-        "sensitivity_artinis_testdataset_colin27.nc" : "sha256:472557f0303151baca9c0930ec9ed1f5a03873aa0cc0e98acb04c93e692fa6db", # noqa:E501
+        "sensitivity_lumo_testdataset_colin27.nc" : "sha256:4608ba838a775f981059d736054e5d476b8e3fe24badb11fc813799c12d29d09", # noqa:E501
+        "sensitivity_kernel_testdataset_colin27.nc" : "sha256:56e9bd7bef9395dea23541c4d1eef48bee0e9a1d11f1bfe5c736e8998a1c89ac", # noqa:E501
+        "sensitivity_artinis_testdataset_colin27.nc" : "sha256:9b00d69134ae6283d29ddce60f7f1818ead95b27bcd11f9ccfe2f2a1d77a7036", # noqa:E501
+
+        # atlases:
+        "atlas_aal3.zip" : "sha256:8e2dcea9c1df1cd71855584a1f6bd11b6c6f3a60d11ce85d37e6f41966474af3", # noqa:E501
+        "atlas_brodmann.zip" :"sha256:551492873096a1cd9e00fb4edbb011bdc185ab7dc9859c92c003948dc36f3da6", # noqa:E501
 
         # other:
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
@@ -515,3 +517,29 @@ def get_icbm152_freesurfer_directory() -> Path:
     dirname = os.path.commonpath(fnames)
 
     return Path(dirname)
+
+
+def get_atlas_files(atlas : str) -> tuple[Path, Path]:
+    """Return atlas volume and label files.
+
+    Args:
+        atlas: Name of the atlas. One of ``"aal3"`` or ``"brodmann"``.
+
+    Returns:
+        A tuple ``(fname_volume, fname_labels)`` with paths to the NIfTI volume
+        and the JSON label file.
+    """
+    AVAILABLE_ATLASES = ["aal3", "brodmann"]
+
+    if atlas == "aal3":
+        fnames = DATASETS.fetch("atlas_aal3.zip", processor=pooch.Unzip())
+        fname_volume = [Path(i) for i in fnames if i.endswith(".nii")][0]
+        fname_labels = [Path(i) for i in fnames if i.endswith(".json")][0]
+    elif atlas == "brodmann":
+        fnames = DATASETS.fetch("atlas_aal3.zip", processor=pooch.Unzip())
+        fname_volume = [Path(i) for i in fnames if i.endswith(".nii")][0]
+        fname_labels = [Path(i) for i in fnames if i.endswith(".json")][0]
+    else:
+        raise ValueError(f"atlas must be one of {AVAILABLE_ATLASES}")
+
+    return fname_volume, fname_labels
