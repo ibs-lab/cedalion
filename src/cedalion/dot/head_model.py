@@ -97,16 +97,10 @@ class TwoSurfaceHeadModel:
     def from_segmentation(
         cls,
         segmentation_dir: str,
-        mask_files: dict[str, str] = {
-            "csf": "csf.nii",
-            "gm": "gm.nii",
-            "scalp": "scalp.nii",
-            "skull": "skull.nii",
-            "wm": "wm.nii",
-        },
+        mask_files: dict[str, str] | None = None,
         landmarks_ras_file: str | None = None,
-        brain_seg_types: list[str] = ["gm", "wm"],
-        scalp_seg_types: list[str] = ["scalp"],
+        brain_seg_types: list[str] | None = None,
+        scalp_seg_types: list[str] | None = None,
         smoothing: float = 0.,
         brain_face_count: int | None = 180000,
         scalp_face_count: int | None = 60000,
@@ -128,6 +122,19 @@ class TwoSurfaceHeadModel:
             scalp_face_count: Number of faces for the scalp surface.
             fill_holes: Whether to fill holes in the segmentation masks.
         """
+
+        if mask_files is None:
+            mask_files = {
+                "csf": "csf.nii",
+                "gm": "gm.nii",
+                "scalp": "scalp.nii",
+                "skull": "skull.nii",
+                "wm": "wm.nii",
+            }
+        if brain_seg_types is None:
+            brain_seg_types = ["gm", "wm"]
+        if scalp_seg_types is None:
+            scalp_seg_types = ["scalp"]
 
         # load segmentation mask
         segmentation_masks, t_ijk2ras = read_segmentation_masks(
@@ -218,18 +225,12 @@ class TwoSurfaceHeadModel:
     def from_surfaces(
         cls,
         segmentation_dir: str,
-        mask_files: dict[str, str] = {
-            "csf": "csf.nii",
-            "gm": "gm.nii",
-            "scalp": "scalp.nii",
-            "skull": "skull.nii",
-            "wm": "wm.nii",
-        },
+        mask_files: dict[str, str] | None = None,
         brain_surface_file: str = None,
         scalp_surface_file: str = None,
         landmarks_ras_file: str | None = None,
-        brain_seg_types: list[str] = ["gm", "wm"],
-        scalp_seg_types: list[str] = ["scalp"],
+        brain_seg_types: list[str] | None = None,
+        scalp_seg_types: list[str] | None = None,
         smoothing: float = 0.0,
         brain_face_count: int | None = None,
         scalp_face_count: int | None = None,
@@ -262,6 +263,19 @@ class TwoSurfaceHeadModel:
         Returns:
             TwoSurfaceHeadModel: An instance of the TwoSurfaceHeadModel class.
         """
+
+        if mask_files is None:
+            mask_files = {
+                "csf": "csf.nii",
+                "gm": "gm.nii",
+                "scalp": "scalp.nii",
+                "skull": "skull.nii",
+                "wm": "wm.nii",
+            }
+        if brain_seg_types is None:
+            brain_seg_types = ["gm", "wm"]
+        if scalp_seg_types is None:
+            scalp_seg_types = ["scalp"]
 
         # load segmentation mask
         segmentation_masks, t_ijk2ras = read_segmentation_masks(
