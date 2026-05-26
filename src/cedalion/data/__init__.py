@@ -83,8 +83,9 @@ DATASETS = pooch.create(
         "atlas_aal3.zip" : "sha256:8e2dcea9c1df1cd71855584a1f6bd11b6c6f3a60d11ce85d37e6f41966474af3", # noqa:E501
         "atlas_brodmann.zip" :"sha256:551492873096a1cd9e00fb4edbb011bdc185ab7dc9859c92c003948dc36f3da6", # noqa:E501
 
-        # other:
+        # photogrammetry scans:
         "photogrammetry_example_scan.zip": "sha256:f4e4beb32a8217ba9f821edd8b5917a79ee88805a75a84a2aea9fac7b38ccbab",  # noqa: E501
+        "fingertappingDOT_photogrammetry.zip" : "sha256:2d0372902f49500dda8e8d3ef037e613286eda403cf4e8afd53820916353052f", # noqa: E501
 
         # fmt: on
     },
@@ -224,17 +225,17 @@ def get_fingertapping() -> cdc.Recording:
     return rec
 
 
-def get_fingertappingDOT() -> cdc.Recording:
+def get_fingertappingDOT(crs : str = "digitized") -> cdc.Recording:
     """Retrieves a finger tapping DOT example dataset from the IBS Lab."""
 
     fnames = DATASETS.fetch("fingertappingDOT.zip", processor=pooch.Unzip())
 
     fname = [i for i in fnames if i.endswith(".snirf")][0]
 
-    rec = cedalion.io.read_snirf(fname)[0]
+    rec = cedalion.io.read_snirf(fname, crs=crs)[0]
 
     geo3d = rec.geo3d.points.rename({"NASION": "Nz"})
-    geo3d = geo3d.rename({"pos": "digitized"})
+
     rec.geo3d = geo3d
 
     amp = rec.get_timeseries("amp")
@@ -274,6 +275,14 @@ def get_photogrammetry_example_scan():
     fname_montage = [i for i in fnames if i.endswith(".png")][0]
     return fname_scan, fname_snirf, fname_montage
 
+
+def get_fingertappingDOT_photogrammetry_scan():
+    fnames = DATASETS.fetch(
+        "fingertappingDOT_photogrammetry.zip", processor=pooch.Unzip()
+    )
+    fname_scan = [i for i in fnames if i.endswith(".obj")][0]
+    fname_montage = [i for i in fnames if i.endswith(".png")][0]
+    return fname_scan, fname_montage
 
 
 def get_lumo_testdataset():

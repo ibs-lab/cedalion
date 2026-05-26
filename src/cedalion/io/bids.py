@@ -742,13 +742,16 @@ def save_source(dataset_path: str, destination_path: str) -> None:
         shutil.copytree(dataset_path, os.path.join(destination_path, "sourcedata"))
 
 
-def export_to_bids_optodes_tsv(tsv_filename, points : cdt.LabeledPoints, units="mm"):
+def export_to_bids_optodes_tsv(
+    tsv_filename, points: cdt.LabeledPoints, units="mm", float_format: str | None = None
+):
     """Export to a bids-conform _optodes.tsv.
 
     Args:
         tsv_filename: Path to the output tsv file.
         points: LabeledPoints to save.
         units: coordinate units.
+        float_format : Format string for floating point numbers.
     """
 
     cite("Gorgolewski2016")
@@ -771,7 +774,14 @@ def export_to_bids_optodes_tsv(tsv_filename, points : cdt.LabeledPoints, units="
         f.write(header + "\n")
 
         for n, t, p in zip(names, types, points.values):
-            f.write(f"{n}\t{t}\t{p[0]}\t{p[1]}\t{p[2]}\n")
+            if float_format:
+                ff = float_format
+                f.write(
+                    f"{n}\t{t}\t"
+                    f"{format(p[0], ff)}\t{format(p[1], ff)}\t{format(p[2], ff)}\n"
+                )
+            else:
+                f.write(f"{n}\t{t}\t{p[0]}\t{p[1]}\t{p[2]}\n")
 
     return
 
