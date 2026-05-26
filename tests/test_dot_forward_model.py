@@ -469,3 +469,28 @@ def test_scale_to_landmarks_no_warning_full_1010():
     with _warnings.catch_warnings():
         _warnings.simplefilter("error", UserWarning)
         colin.scale_to_landmarks(target)
+
+
+def test_scale_to_landmarks_with_colliding_crs_name():
+    """Regression for CRS-name collision in scale_to_landmarks.
+
+    Target_landmarks with a CRS name that collides with the head model's
+    t_ijk2ras dims (e.g. crs="ijk" against an atlas whose t_ijk2ras has dims
+    ["mni","ijk"]) must succeed end-to-end.
+    scale_to_landmarks now internally renames the colliding CRS to a unique
+    placeholder so the result is unambiguous.
+    """
+    colin = cdot.get_standard_headmodel("colin27")
+
+    # Reuse colin's own landmarks (so registration is well-conditioned) but
+    # force the CRS dim name to "ijk" so it collides with colin.t_ijk2ras.dims.
+    target = colin.landmarks.points.apply_transform(colin.t_ijk2ras).pint.to("mm")
+    target = target.rename({target.points.crs: "ijk"})
+    assert "ijk" in colin.t_ijk2ras.dims  # precondition for the collision
+
+    scaled = colin.scale_to_landmarks(target)
+
+    assert scaled.t_ijk2ras.ndim == 2
+    assert scaled.t_ijk2ras.shape == (4, 4)
+    assert scaled.t_ras2ijk.shape == (4, 4)
+    assert len(set(scaled.t_ijk2ras.dims)) == 2  # no duplicate dim names

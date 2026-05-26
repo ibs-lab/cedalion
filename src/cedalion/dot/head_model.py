@@ -762,7 +762,7 @@ class TwoSurfaceHeadModel:
         Args:
             target_landmarks: Target landmark positions (e.g. from a digitizer)
                 in any CRS.  Must contain the same label subset as the model's
-                landmarks.
+                landmarks. 
             mode: method to derive the affine transform. Could be either
                 'trans_rot_isoscale' or 'general'. See cedalion.geometry.registraion
                 for details.
@@ -771,6 +771,20 @@ class TwoSurfaceHeadModel:
             New :class:`TwoSurfaceHeadModel` scaled and aligned to
             ``target_landmarks``.
         """
+        # Avoid CRS-name collisions with self's transform dims. If we don't
+        # rename, the composed t_ijk2scaled ends up with duplicate dim names
+        # (e.g. ["ijk","ijk"]) which xarray cannot broadcast over downstream.
+        # The placeholder is derived from the caller's CRS so the resulting
+        # head model's CRS still points back to the source name.
+        target_crs = target_landmarks.points.crs
+        if target_crs in self.t_ijk2ras.dims:
+            placeholder = f"{target_crs}_scaled"
+            i = 0
+            while placeholder in self.t_ijk2ras.dims:
+                i += 1
+                placeholder = f"{target_crs}_scaled{i}"
+            target_landmarks = target_landmarks.rename({target_crs: placeholder})
+
         if self.crs == "ijk":
             landmarks_ras = self.landmarks.points.apply_transform(self.t_ijk2ras)
         else:
@@ -784,7 +798,7 @@ class TwoSurfaceHeadModel:
             raise ValueError(f"unexpected mode '{mode}'")
 
 
-        t_ijk2scaled = t_ras2scaled @ self.t_ijk2ras
+        t_ijk2scaled = xrutils.compose_affine(t_ras2scaled, self.t_ijk2ras)
         t_scaled2ijk = xrutils.pinv(t_ijk2scaled)
 
         if self.crs == "ijk":
@@ -921,7 +935,9 @@ class TwoSurfaceHeadModel:
         elif voxel_label_crs == "mni305":
             # if the niftii is in mni305 coordiantes apply additionally the transform
             # that bring us from mni305 to mni152
-            ijk2mni152 = cedalion.dot.utils.mni305_to_mni152 @ ijk2crs
+            ijk2mni152 = xrutils.compose_affine(
+                cedalion.dot.utils.mni305_to_mni152, ijk2crs
+            )
 
         ijk2mni152 = ijk2mni152.pint.dequantify()  # FIXME?
 

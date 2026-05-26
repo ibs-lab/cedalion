@@ -51,6 +51,59 @@ def pinv(array: xr.DataArray) -> xr.DataArray:
     return array_inv
 
 
+def compose_affine(A: xr.DataArray, B: xr.DataArray) -> xr.DataArray:
+    """Compose two affine transforms using the ``[to_crs, from_crs]`` convention.
+
+    Equivalent to numpy ``A @ B``: contracts ``A``'s ``from_crs`` against ``B``'s
+    ``to_crs`` and returns a transform with dims ``[A.dims[0], B.dims[1]]``.
+
+    Using xarray's ``@`` / ``xr.dot`` directly is unsafe here because it
+    contracts over *every* shared dim name, so e.g. composing
+    ``["ijk","mni"]`` with ``["mni","ijk"]`` collapses both dims and returns
+    a scalar instead of a 4x4 matrix.
+
+    Args:
+        A: 4x4 affine transform with dims ``[to_crs_A, from_crs_A]``.
+        B: 4x4 affine transform with dims ``[to_crs_B, from_crs_B]``.
+
+    Returns:
+        4x4 affine transform with dims ``[A.dims[0], B.dims[1]]``. Units are
+        the product of ``A``'s and ``B``'s pint units (so the inner unit
+        cancels for the ``to/from`` convention).
+
+    Raises:
+        ValueError: If either operand is not 2D / 4x4, or if the inner-dim
+            names don't chain (``A.dims[1] != B.dims[0]``).
+    """
+    if A.ndim != 2 or B.ndim != 2:
+        raise ValueError("compose_affine requires 2D DataArrays")
+    if A.shape != (4, 4) or B.shape != (4, 4):
+        raise ValueError(
+            f"compose_affine requires 4x4 transforms, got {A.shape} and {B.shape}"
+        )
+    if A.dims[1] != B.dims[0]:
+        raise ValueError(
+            f"inner dims don't chain: A.dims={A.dims}, B.dims={B.dims}; "
+            f"expected A.dims[1] == B.dims[0]"
+        )
+
+    units_A = A.pint.units
+    units_B = B.pint.units
+    A_vals = A.pint.dequantify().values if units_A is not None else A.values
+    B_vals = B.pint.dequantify().values if units_B is not None else B.values
+
+    result = xr.DataArray(np.matmul(A_vals, B_vals), dims=[A.dims[0], B.dims[1]])
+
+    if units_A is not None and units_B is not None:
+        result = result.pint.quantify(units_A * units_B)
+    elif units_A is not None:
+        result = result.pint.quantify(units_A)
+    elif units_B is not None:
+        result = result.pint.quantify(units_B)
+
+    return result
+
+
 def norm(array: xr.DataArray, dim: str) -> xr.DataArray:
     """Calculate the vector norm along a given dimension.
 
