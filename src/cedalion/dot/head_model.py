@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import gzip
+import json
 import os
+import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -473,6 +475,20 @@ class TwoSurfaceHeadModel:
                                            self.voxel_to_vertex_brain)
         scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_scalp.npz"),
                                            self.voxel_to_vertex_scalp)
+
+        # PLY drops CRS/units; netCDF doesn't preserve pint units
+        metadata = {
+            "format_version": 1,
+            "brain": {"crs": self.brain.crs, "units": str(self.brain.units)},
+            "scalp": {"crs": self.scalp.crs, "units": str(self.scalp.units)},
+            "t_ijk2ras": {
+                "to_crs":   self.t_ijk2ras.dims[0],
+                "from_crs": self.t_ijk2ras.dims[1],
+                "units":    str(self.t_ijk2ras.pint.units),
+            },
+        }
+        with open(os.path.join(foldername, "metadata.json"), "w") as f:
+            json.dump(metadata, f, indent=2)
         return
 
     @classmethod
@@ -519,12 +535,41 @@ class TwoSurfaceHeadModel:
         voxel_to_vertex_scalp = scipy.sparse.load_npz(os.path.join(foldername,
                                                       'voxel_to_vertex_scalp.npz'))
 
-        # Construct TwoSurfaceHeadModel
-        brain_ijk = cdc.TrimeshSurface(brain, 'ijk', cedalion.units.Unit("1"))
-        scalp_ijk = cdc.TrimeshSurface(scalp, 'ijk', cedalion.units.Unit("1"))
-        t_ijk2ras = cdc.affine_transform_from_numpy(
-            np.array(t_ijk2ras), "ijk", "unknown", "1", "mm"
-        )
+        # PLY drops CRS/units and netCDF doesn't preserve pint units, so the
+        # critical attributes are read from metadata.json written by save().
+        # Alternatively if metadata.json is missing, throw a warning and try to
+        # fall back to inferring the surface CRS from landmarks and assuming
+        # dimensionless units. This is not ideal, since landmarks are optional.
+        metadata_path = os.path.join(foldername, "metadata.json")
+        if os.path.exists(metadata_path):
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+            brain_crs   = metadata["brain"]["crs"]
+            scalp_crs   = metadata["scalp"]["crs"]
+            brain_units = cedalion.units.Unit(metadata["brain"]["units"])
+            scalp_units = cedalion.units.Unit(metadata["scalp"]["units"])
+            t_to_crs    = metadata["t_ijk2ras"]["to_crs"]
+            t_from_crs  = metadata["t_ijk2ras"]["from_crs"]
+            t_units     = cedalion.units.Unit(metadata["t_ijk2ras"]["units"])
+        else:
+            warnings.warn(
+                "Loading head model without metadata.json; "
+                "inferring CRS from landmarks, units assumed dimensionless."
+            )
+            lm_crs = None
+            if landmarks_ijk is not None:
+                lm_crs = next(d for d in landmarks_ijk.dims if d != "label")
+            brain_crs = scalp_crs = lm_crs or "ijk"
+            brain_units = scalp_units = cedalion.units.Unit("1")
+            t_to_crs   = t_ijk2ras.dims[0]
+            t_from_crs = t_ijk2ras.dims[1]
+            t_units    = cedalion.units.Unit("mm")
+
+        brain_ijk = cdc.TrimeshSurface(brain, brain_crs, brain_units)
+        scalp_ijk = cdc.TrimeshSurface(scalp, scalp_crs, scalp_units)
+        t_ijk2ras = xr.DataArray(
+            np.array(t_ijk2ras), dims=[t_to_crs, t_from_crs]
+        ).pint.quantify(t_units)
         t_ras2ijk = xrutils.pinv(t_ijk2ras)
 
         return cls(

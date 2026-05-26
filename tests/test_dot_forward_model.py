@@ -91,6 +91,50 @@ def test_TwoSurfaceHeadModel():
         assert allclose(head.voxel_to_vertex_scalp, head2.voxel_to_vertex_scalp)
 
 
+def test_TwoSurfaceHeadModel_scaled_roundtrip():
+    """save/load must round-trip a head whose CRS is no longer 'ijk'."""
+    (
+        SEG_DATADIR,
+        mask_files,
+        landmarks_file,
+    ) = cedalion.data.get_colin27_segmentation(downsampled=True)
+    head = fw.TwoSurfaceHeadModel.from_segmentation(
+        segmentation_dir=SEG_DATADIR,
+        mask_files=mask_files,
+        landmarks_ras_file=landmarks_file,
+        smoothing=0,
+        brain_face_count=None,
+        scalp_face_count=None,
+    )
+    landmarks_ras = head.landmarks.points.apply_transform(head.t_ijk2ras)
+    # Rename the CRS dim so register_general_affine doesn't see duplicates.
+    target_lm = (landmarks_ras * 1.05).rename(
+        {landmarks_ras.points.crs: "subj_ras"}
+    )
+    scaled = head.scale_to_landmarks(target_lm)
+    assert scaled.crs != "ijk"  # sanity: we actually left ijk
+
+    def iu(x):
+        return x.pint.dequantify().values
+
+    with tempfile.TemporaryDirectory() as dirpath:
+        tmp = os.path.join(dirpath, "scaled_head")
+        scaled.save(tmp)
+        reloaded = fw.TwoSurfaceHeadModel.load(tmp)
+        # Used to raise AssertionError via the crs property.
+        assert reloaded.crs == scaled.crs
+        assert reloaded.brain.crs == scaled.brain.crs
+        assert reloaded.brain.units == scaled.brain.units
+        assert reloaded.scalp.crs == scaled.scalp.crs
+        assert reloaded.scalp.units == scaled.scalp.units
+        assert reloaded.t_ijk2ras.dims == scaled.t_ijk2ras.dims
+        assert (iu(reloaded.t_ijk2ras) == iu(scaled.t_ijk2ras)).all()
+        # landmarks: compare unit-stripped values (netCDF doesn't preserve
+        # pint units, an orthogonal latent issue).
+        assert np.allclose(iu(reloaded.landmarks), iu(scaled.landmarks))
+        repr(reloaded)
+
+
 @skip_if_nirfaster_unavailable
 def test_run_nirfaster():
     """A minimal setup to run nirfaster."""
