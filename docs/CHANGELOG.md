@@ -4,7 +4,9 @@
 ## Unreleased changes (available on the `dev` branch)
 --> 
 
-## Version 26.5.0 (2026-05-27)
+## Version 26.5.1 (2026-05-27)
+
+This is the shipping build of the 26.5 release announced on May 27th 2026; in 26.5.0 an issue with vertex-to-voxel mapping of the `TwoSurfaceHeadModel` was found.
 
 ### Additions and Changes
 
