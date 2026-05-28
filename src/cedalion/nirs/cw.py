@@ -50,6 +50,40 @@ def int2od(amplitudes: cdt.NDTimeSeries, return_baseline: bool = False):
         return od, baseline
     else:
         return od
+    
+
+def int2od_rt(chunk_amplitudes: cdt.NDTimeSeries):
+    """Calculate optical density from intensity amplitude data.
+
+    Computes the log-ratio of intensity relative to its temporal mean, implementing
+    the first step of the modified Beer-Lambert law
+    (:cite:t:`Delpy1988`, :cite:t:`Villringer1997`).
+
+    Args:
+        chunk_amplitudes (xr.DataArray, (time, channel, *)): amplitude data.
+
+    Returns:
+        od: (xr.DataArray, (time, channel,*): The optical density data.
+        baseline: (xr.DataArray, (channel, *)): The intensity baseline data
+            (average time series) used for conversion to OD.
+    """
+    cite("Delpy1988")
+    cite("Villringer1997")
+    # check negative values in amplitudes and issue an error if yes
+    if np.any(chunk_amplitudes <= 0):
+        raise AssertionError(
+            "Error: DataArray contains negative values. Please fix, for example by "
+            "setting them to NaN with "
+            "'chunk_amplitudes = chunk_amplitudes.where(chunk_amplitudes >= 0, np.nan)'"
+        )
+
+    # calculate baseline
+    baseline = chunk_amplitudes.mean("time")
+
+    # conversion to optical density
+    od = -np.log(chunk_amplitudes / baseline)
+
+    return od, baseline
 
 
 def od2int(od: cdt.NDTimeSeries, baseline: cdt.NDTimeSeries):
