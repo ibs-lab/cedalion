@@ -23,6 +23,7 @@ def to_epochs(
     trial_types: list[str],
     before: cdt.QTime,
     after: cdt.QTime,
+    exclude_trial_types: list[str] | None = None,
 ):
     """Extract epochs from the time series based on stimulus events.
 
@@ -32,6 +33,7 @@ def to_epochs(
         trial_types: List of trial types to include in the epochs.
         before: Time before stimulus event to include in epoch.
         after: Time after stimulus event to include in epoch.
+        exclude_trial_types: Exclude epochs containing any of the events in this list.
 
     Returns:
         xarray.DataArray: Array containing the extracted epochs.
@@ -48,6 +50,14 @@ def to_epochs(
         if trial_type not in available_trial_types:
             raise ValueError(f"df_stim does not contain trial_type '{trial_type}'")
 
+    before = before.to("s").magnitude.item()
+    after = after.to("s").magnitude.item()
+    fs = sampling_rate(ts).to("Hz")
+
+    # exclude events if necessary
+    if exclude_trial_types:
+        df_stim = exclude_events(df_stim, exclude_trial_types, before, after)
+
     # reduce df_stim to only the selected trial types
     df_stim = df_stim[df_stim.trial_type.isin(trial_types)]
 
@@ -57,10 +67,6 @@ def to_epochs(
     else:
         # assume time coords are already in seconds
         time = ts.time.values
-
-    before = before.to("s").magnitude.item()
-    after = after.to("s").magnitude.item()
-    fs = sampling_rate(ts).to("Hz")
 
     # the time stamps of the sampled time series and the events can have different
     # precision. Be explicit about how timestamps are assigned to samples in ts.
@@ -152,3 +158,39 @@ def to_epochs(
     epochs = epochs.pint.quantify(units)
 
     return epochs
+
+
+def exclude_events(
+    df_stim: pd.DataFrame, exclude: list[str], before: float, after: float
+) -> pd.DataFrame:
+    """Exclude marked events or events that contain marked events within their epoch.
+
+    An event is excluded if:
+    1. It's 'trial_type' is in the `exclude` list.
+    2. Contains an event inside its time window that is marked for exclusion.
+
+    Args:
+        df_stim: DataFrame containing stimulus events.
+        exclude: List of trial type labels to mark for exclusion.
+        before: Time duration before the stimulus onset to include in the window.
+        after: Time duration after the stimulus onset to include in the window.
+
+    Returns:
+        Updated dataframe with only included events.
+    """
+    exc_idx = []
+    for idx, onset, *_, trial_type in df_stim.itertuples():
+        # if event is marked for exclusion, add to list and go to next iteration
+        if trial_type in exclude:
+            exc_idx.append(idx)
+            continue
+
+        # get events whose onset is included in the event's time span
+        times = onset - before, onset + after
+        next_events = df_stim[df_stim.onset.between(*times)]
+
+        # if any of next_events is marked for exclusion, mark this even for exclusion
+        if any(ne in exclude for ne in next_events.trial_type):
+            exc_idx.append(idx)
+
+    return df_stim[~df_stim.index.isin(exc_idx)]
