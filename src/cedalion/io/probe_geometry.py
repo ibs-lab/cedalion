@@ -18,6 +18,9 @@ from cedalion.dataclasses import PointType, TrimeshSurface, build_labeled_points
 def load_tsv(tsv_fname: str, crs: str=None, units: str=None) -> xr.DataArray:
     """Load a tsv file containing optodes or landmarks.
 
+    This function reads tsv-files with a column layout that differs from the
+    NIRS-BIDS standard.
+
     Args:
         tsv_fname: Path to the tsv file.
         crs: Coordinate reference system of the points if not in the file header.
@@ -99,6 +102,9 @@ def load_tsv(tsv_fname: str, crs: str=None, units: str=None) -> xr.DataArray:
 def export_to_tsv(tsv_filename, points):
     """Export optodes, fiducials, landmarks, electrodes, or measurement lists to tsv.
 
+    This function writes tsv-files with a column layout that differs from the
+    NIRS-BIDS standard.
+
     Args:
         tsv_filename: Path to the output tsv file.
         points: Points to save. Either an :class:`xr.DataArray` (optodes /
@@ -129,6 +135,9 @@ def export_to_tsv(tsv_filename, points):
     else:
         raise ValueError("Unknown points type: %s" % type(points))
     return
+
+
+
 
 
 def read_mrk_json(fname: str, crs: str) -> xr.DataArray:

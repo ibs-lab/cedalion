@@ -9,7 +9,9 @@ directory.
 """
 
 from __future__ import annotations
+import contextlib
 import logging
+import os
 import os.path
 import sys
 from pathlib import Path
@@ -28,6 +30,7 @@ import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 import cedalion.io
 from cedalion.dot.head_model import TwoSurfaceHeadModel
+from tqdm import tqdm
 
 from cedalion.io.forward_model import FluenceFile, save_Adot
 
@@ -35,6 +38,37 @@ from .tissue_properties import get_tissue_properties
 
 logger = logging.getLogger("cedalion")
 
+
+@contextlib.contextmanager
+def _redirect_mcx_output(log_file: Path | None):
+    """Redirect pmcx output to a log_file at both the Python and C-library level.
+
+    pmcx prints its config dict via Python's sys.stdout and the MCX banner/stats
+    directly to file descriptor 1 (bypassing sys.stdout).  When `log_file` is given
+    both streams are appended there; when it is None this is a no-op.
+    """
+    if log_file is None:
+        yield
+        return
+
+    with open(log_file, "a") as sink:
+        saved_stdout = os.dup(1)
+        saved_stderr = os.dup(2)
+        os.dup2(sink.fileno(), 1)
+        os.dup2(sink.fileno(), 2)
+        old_sys_stdout = sys.stdout
+        old_sys_stderr = sys.stderr
+        sys.stdout = sink
+        sys.stderr = sink
+        try:
+            yield
+        finally:
+            sys.stdout = old_sys_stdout
+            sys.stderr = old_sys_stderr
+            os.dup2(saved_stdout, 1)
+            os.dup2(saved_stderr, 2)
+            os.close(saved_stdout)
+            os.close(saved_stderr)
 
 
 class ForwardModel:
@@ -65,6 +99,7 @@ class ForwardModel:
         head_model: TwoSurfaceHeadModel,
         geo3d: cdt.LabeledPoints,
         measurement_list: pd.DataFrame,
+        log_file: Path | None = None,
     ):
         """Constructor for the forward model.
 
@@ -74,7 +109,11 @@ class ForwardModel:
             geo3d (cdt.LabeledPoints): Optode positions and directions.
             measurement_list (pd.DataFrame): List of measurements of experiment with
                 source, detector, channel and wavelength.
+            log_file (Path | None): If given, pmcx output is appended to this file
+                instead of being printed. Subsequent runs append to the same file.
         """
+
+        self.log_file = log_file
 
         assert head_model.crs == geo3d.points.crs
 
@@ -181,10 +220,12 @@ class ForwardModel:
 
         if "cuda" in cfg and cfg["cuda"]:
             import pmcx
-            result = pmcx.run(cfg)
+            with _redirect_mcx_output(self.log_file):
+                result = pmcx.run(cfg)
         else:
             import pmcxcl
-            result = pmcxcl.run(cfg)
+            with _redirect_mcx_output(self.log_file):
+                result = pmcxcl.run(cfg)
 
         fluence = result["flux"][:, :, :, 0]  # there is only one time bin
 
@@ -286,9 +327,7 @@ class ForwardModel:
                 units
             )
 
-            for i_opt in range(n_optodes):
-                label = self.optode_pos.label.values[i_opt]
-                print(f"simulating fluence for {label}. {i_opt+1} / {n_optodes}")
+            for i_opt in tqdm(range(n_optodes), desc="simulating fluence"):
 
                 # run MCX or MCXCL
                 # shape: [i,j,k]
@@ -490,8 +529,9 @@ class ForwardModel:
         with FluenceFile(fluence_fname, "r") as fluence_file:
             fluence_at_optodes = fluence_file.get_fluence_at_optodes()
 
-
-            for _, r in self.measurement_list.iterrows():
+            for _, r in tqdm(
+                self.measurement_list.iterrows(), total=len(self.measurement_list)
+            ):
                 # using the adjoint monte carlo method
                 # see YaoIntesFang2018 and BoasDale2005
 

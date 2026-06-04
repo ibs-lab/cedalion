@@ -91,6 +91,50 @@ def test_TwoSurfaceHeadModel():
         assert allclose(head.voxel_to_vertex_scalp, head2.voxel_to_vertex_scalp)
 
 
+def test_TwoSurfaceHeadModel_scaled_roundtrip():
+    """save/load must round-trip a head whose CRS is no longer 'ijk'."""
+    (
+        SEG_DATADIR,
+        mask_files,
+        landmarks_file,
+    ) = cedalion.data.get_colin27_segmentation(downsampled=True)
+    head = fw.TwoSurfaceHeadModel.from_segmentation(
+        segmentation_dir=SEG_DATADIR,
+        mask_files=mask_files,
+        landmarks_ras_file=landmarks_file,
+        smoothing=0,
+        brain_face_count=None,
+        scalp_face_count=None,
+    )
+    landmarks_ras = head.landmarks.points.apply_transform(head.t_ijk2ras)
+    # Rename the CRS dim so register_general_affine doesn't see duplicates.
+    target_lm = (landmarks_ras * 1.05).rename(
+        {landmarks_ras.points.crs: "subj_ras"}
+    )
+    scaled = head.scale_to_landmarks(target_lm)
+    assert scaled.crs != "ijk"  # sanity: we actually left ijk
+
+    def iu(x):
+        return x.pint.dequantify().values
+
+    with tempfile.TemporaryDirectory() as dirpath:
+        tmp = os.path.join(dirpath, "scaled_head")
+        scaled.save(tmp)
+        reloaded = fw.TwoSurfaceHeadModel.load(tmp)
+        # Used to raise AssertionError via the crs property.
+        assert reloaded.crs == scaled.crs
+        assert reloaded.brain.crs == scaled.brain.crs
+        assert reloaded.brain.units == scaled.brain.units
+        assert reloaded.scalp.crs == scaled.scalp.crs
+        assert reloaded.scalp.units == scaled.scalp.units
+        assert reloaded.t_ijk2ras.dims == scaled.t_ijk2ras.dims
+        assert (iu(reloaded.t_ijk2ras) == iu(scaled.t_ijk2ras)).all()
+        # landmarks: compare unit-stripped values (netCDF doesn't preserve
+        # pint units, an orthogonal latent issue).
+        assert np.allclose(iu(reloaded.landmarks), iu(scaled.landmarks))
+        repr(reloaded)
+
+
 @skip_if_nirfaster_unavailable
 def test_run_nirfaster():
     """A minimal setup to run nirfaster."""
@@ -469,3 +513,28 @@ def test_scale_to_landmarks_no_warning_full_1010():
     with _warnings.catch_warnings():
         _warnings.simplefilter("error", UserWarning)
         colin.scale_to_landmarks(target)
+
+
+def test_scale_to_landmarks_with_colliding_crs_name():
+    """Regression for CRS-name collision in scale_to_landmarks.
+
+    Target_landmarks with a CRS name that collides with the head model's
+    t_ijk2ras dims (e.g. crs="ijk" against an atlas whose t_ijk2ras has dims
+    ["mni","ijk"]) must succeed end-to-end.
+    scale_to_landmarks now internally renames the colliding CRS to a unique
+    placeholder so the result is unambiguous.
+    """
+    colin = cdot.get_standard_headmodel("colin27")
+
+    # Reuse colin's own landmarks (so registration is well-conditioned) but
+    # force the CRS dim name to "ijk" so it collides with colin.t_ijk2ras.dims.
+    target = colin.landmarks.points.apply_transform(colin.t_ijk2ras).pint.to("mm")
+    target = target.rename({target.points.crs: "ijk"})
+    assert "ijk" in colin.t_ijk2ras.dims  # precondition for the collision
+
+    scaled = colin.scale_to_landmarks(target)
+
+    assert scaled.t_ijk2ras.ndim == 2
+    assert scaled.t_ijk2ras.shape == (4, 4)
+    assert scaled.t_ras2ijk.shape == (4, 4)
+    assert len(set(scaled.t_ijk2ras.dims)) == 2  # no duplicate dim names

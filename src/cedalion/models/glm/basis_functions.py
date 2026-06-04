@@ -8,6 +8,7 @@ import pint
 import xarray as xr
 
 import cedalion.typing as cdt
+import cedalion.dataclasses as cdc
 from cedalion import cite, Quantity, units
 from cedalion.sigproc.frequency import sampling_rate
 import cedalion.xrutils as xrutils
@@ -226,7 +227,7 @@ class Gamma(TemporalBasisFunction):
     ) -> xr.DataArray:
         cite("Strangman2002")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
-        spatial = xrutils.spatial_dim(ts)
+        spatial = cdc.get_spatial_dimension(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
@@ -300,7 +301,7 @@ class GammaDeriv(TemporalBasisFunction):
     ) -> xr.DataArray:
         cite("Strangman2002")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
-        spatial = xrutils.spatial_dim(ts)
+        spatial = cdc.get_spatial_dimension(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
@@ -377,7 +378,7 @@ class AFNIGamma(TemporalBasisFunction):
     ) -> xr.DataArray:
         cite("Cox1996")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
-        spatial = xrutils.spatial_dim(ts)
+        spatial = cdc.get_spatial_dimension(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
@@ -432,7 +433,7 @@ class DiracDelta(TemporalBasisFunction):
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
         # other_dim = xrutils.other_dim(ts, "time", "channel")
-        spatial = xrutils.spatial_dim(ts)
+        spatial = cdc.get_spatial_dimension(ts)
         other_dim = xrutils.other_dim(ts, "time", spatial)
         other_dim_values = ts[other_dim].values
 
