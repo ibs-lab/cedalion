@@ -575,10 +575,12 @@ def get_atlas_files(atlas : str) -> tuple[Path, Path]:
         fnames = DATASETS.fetch("atlas_aal3.zip", processor=pooch.Unzip())
         fname_volume = [Path(i) for i in fnames if i.endswith(".nii")][0]
         fname_labels = [Path(i) for i in fnames if i.endswith(".json")][0]
+        cite("Rolls2020")
     elif atlas == "brodmann":
-        fnames = DATASETS.fetch("atlas_aal3.zip", processor=pooch.Unzip())
+        fnames = DATASETS.fetch("atlas_brodmann.zip", processor=pooch.Unzip())
         fname_volume = [Path(i) for i in fnames if i.endswith(".nii")][0]
         fname_labels = [Path(i) for i in fnames if i.endswith(".json")][0]
+        cite("Mai2017")
     else:
         raise ValueError(f"atlas must be one of {AVAILABLE_ATLASES}")
 
