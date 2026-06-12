@@ -478,13 +478,14 @@ def drift_legendre_regressors(ts : cdt.NDTimeSeries, order : int) -> DesignMatri
 
     regressor_names = [f"Drift LP {i}" for i in range(order + 1)]
 
-    drift_regressors = xr.DataArray(
-        drift_regressors,
-        dims=["time", "regressor", dim3],
-        coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
-    )
+    # drift_regressors = xr.DataArray(
+    #     drift_regressors,
+    #     dims=["time", "regressor", dim3],
+    #     coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
+    # )
 
-    return DesignMatrix(common=drift_regressors, channel_wise=[])
+    # return DesignMatrix(common=drift_regressors, channel_wise=[])
+    return common_regressor_from_array(ts, drift_regressors, regressor_names)
 
 
 def drift_cosine_regressors(ts: cdt.NDTimeSeries, fmax: cdt.QFrequency) -> DesignMatrix:
@@ -727,26 +728,84 @@ def average_short_channel_regressor(ts_short: cdt.NDTimeSeries):
     return DesignMatrix(common=regressor, channel_wise=[])
 
 
+def common_regressor_from_array(
+    ts: cdt.NDTimeSeries,
+    regressors: xr.DataArray | np.ndarray,
+    regressor_names: str | list[str],
+) -> DesignMatrix:
+    """Create common GLM regressors from a precomputed array.
+
+    Args:
+        ts: Time-series data whose time and third-dimension coordinates are used.
+        regressors: Regressor array with shape either
+            ``(n_times, n_regressors, n_dim3)`` or, for a single regressor,
+            ``(n_times, n_dim3)``. If an ``xr.DataArray`` is passed, it is
+            dequantified before packaging.
+        regressor_names: Name or names for the regressors. A single string is
+            allowed only when there is one regressor.
+
+    Returns:
+        Design matrix containing the regressors as common regressors.
+    """
+
+    spatial = xrutils.spatial_dim(ts)
+    dim3 = xrutils.other_dim(ts, spatial, "time")
+
+    if isinstance(regressors, xr.DataArray):
+        regressors = regressors.pint.dequantify().values
+    else:
+        regressors = np.asarray(regressors)
+
+    if regressors.ndim == 2:
+        regressors = regressors[:, None, :]
+
+    if regressors.ndim != 3:
+        raise ValueError(
+            "regressors must have shape (n_times, n_regressors, n_dim3) "
+            "or (n_times, n_dim3) for a single regressor."
+        )
+
+    if regressors.shape[0] != ts.sizes["time"]:
+        raise ValueError(
+            "regressors time dimension does not match ts: "
+            f"{regressors.shape[0]} != {ts.sizes['time']}."
+        )
+
+    if regressors.shape[2] != ts.sizes[dim3]:
+        raise ValueError(
+            f"regressors {dim3!r} dimension does not match ts: "
+            f"{regressors.shape[2]} != {ts.sizes[dim3]}."
+        )
+
+    n_regressors = regressors.shape[1]
+
+    if isinstance(regressor_names, str):
+        regressor_names = [regressor_names]
+
+    if len(regressor_names) != n_regressors:
+        raise ValueError(
+            "Number of regressor names must match the regressor dimension: "
+            f"{len(regressor_names)} != {n_regressors}."
+        )
+
+    regressors = xr.DataArray(
+        regressors,
+        dims=["time", "regressor", dim3],
+        coords={
+            "time": ts.time,
+            "regressor": regressor_names,
+            dim3: ts[dim3].values,
+        },
+    )
+
+    return DesignMatrix(common=regressors, channel_wise=[])
+
 def global_component_regressor(
     ts: cdt.NDTimeSeries,
-    global_component: xr.DataArray,
+    global_component: xr.DataArray | np.ndarray,
     regressor_name: str = "global",
 ) -> DesignMatrix:
     """Create a common GLM regressor from a precomputed global component."""
 
-    spatial = xrutils.spatial_dim(ts)
-    other_dim = xrutils.other_dim(ts, spatial, "time")
-
-    regressor = global_component.pint.dequantify()
-
-    if other_dim not in regressor.dims:
-        regressor = xr.concat(
-            [regressor] * ts.sizes[other_dim],
-            dim=ts[other_dim],
-        )
-
-    regressor = regressor.expand_dims({"regressor": [regressor_name]})
-    regressor = regressor.transpose("time", "regressor", other_dim)
-
-    return DesignMatrix(common=regressor, channel_wise=[])
+    return common_regressor_from_array(ts, global_component, regressor_name)
 
