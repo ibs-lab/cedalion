@@ -1,0 +1,524 @@
+{
+  "atlas_name": "Brodmann_Mai_Matajnik",
+  "space": "ICBM152",
+  "description": "Brodmann Mai-Matajnik atlas used directly for surface label sampling",
+  "source_nifti": "Brodmann_Mai_Matajnik.nii",
+  "labels": [
+    {
+      "index": 1,
+      "name": "right_Ent",
+      "hemisphere": "right",
+      "ba_number": 0
+    },
+    {
+      "index": 2,
+      "name": "right_BA20",
+      "hemisphere": "right",
+      "ba_number": 20
+    },
+    {
+      "index": 3,
+      "name": "right_BA38",
+      "hemisphere": "right",
+      "ba_number": 38
+    },
+    {
+      "index": 4,
+      "name": "right_BA21",
+      "hemisphere": "right",
+      "ba_number": 21
+    },
+    {
+      "index": 5,
+      "name": "right_BA36",
+      "hemisphere": "right",
+      "ba_number": 36
+    },
+    {
+      "index": 6,
+      "name": "right_BA11",
+      "hemisphere": "right",
+      "ba_number": 11
+    },
+    {
+      "index": 7,
+      "name": "right_BA37",
+      "hemisphere": "right",
+      "ba_number": 37
+    },
+    {
+      "index": 8,
+      "name": "right_BA25",
+      "hemisphere": "right",
+      "ba_number": 25
+    },
+    {
+      "index": 9,
+      "name": "right_BA12",
+      "hemisphere": "right",
+      "ba_number": 12
+    },
+    {
+      "index": 10,
+      "name": "right_BA19",
+      "hemisphere": "right",
+      "ba_number": 19
+    },
+    {
+      "index": 11,
+      "name": "right_BA47",
+      "hemisphere": "right",
+      "ba_number": 47
+    },
+    {
+      "index": 12,
+      "name": "right_BA22",
+      "hemisphere": "right",
+      "ba_number": 22
+    },
+    {
+      "index": 13,
+      "name": "right_BA18",
+      "hemisphere": "right",
+      "ba_number": 18
+    },
+    {
+      "index": 14,
+      "name": "right_BA10",
+      "hemisphere": "right",
+      "ba_number": 10
+    },
+    {
+      "index": 15,
+      "name": "right_BA17",
+      "hemisphere": "right",
+      "ba_number": 17
+    },
+    {
+      "index": 16,
+      "name": "right_BA32",
+      "hemisphere": "right",
+      "ba_number": 32
+    },
+    {
+      "index": 17,
+      "name": "right_BA24",
+      "hemisphere": "right",
+      "ba_number": 24
+    },
+    {
+      "index": 18,
+      "name": "right_BA46",
+      "hemisphere": "right",
+      "ba_number": 46
+    },
+    {
+      "index": 19,
+      "name": "right_BA45",
+      "hemisphere": "right",
+      "ba_number": 45
+    },
+    {
+      "index": 20,
+      "name": "right_BA33",
+      "hemisphere": "right",
+      "ba_number": 33
+    },
+    {
+      "index": 21,
+      "name": "right_BA44",
+      "hemisphere": "right",
+      "ba_number": 44
+    },
+    {
+      "index": 22,
+      "name": "right_BA6",
+      "hemisphere": "right",
+      "ba_number": 6
+    },
+    {
+      "index": 23,
+      "name": "right_BA23",
+      "hemisphere": "right",
+      "ba_number": 23
+    },
+    {
+      "index": 24,
+      "name": "right_BA42",
+      "hemisphere": "right",
+      "ba_number": 42
+    },
+    {
+      "index": 25,
+      "name": "right_BA43",
+      "hemisphere": "right",
+      "ba_number": 43
+    },
+    {
+      "index": 26,
+      "name": "right_BA30",
+      "hemisphere": "right",
+      "ba_number": 30
+    },
+    {
+      "index": 27,
+      "name": "right_BA41",
+      "hemisphere": "right",
+      "ba_number": 41
+    },
+    {
+      "index": 28,
+      "name": "right_BA29",
+      "hemisphere": "right",
+      "ba_number": 29
+    },
+    {
+      "index": 29,
+      "name": "right_BA26",
+      "hemisphere": "right",
+      "ba_number": 26
+    },
+    {
+      "index": 30,
+      "name": "right_BA31",
+      "hemisphere": "right",
+      "ba_number": 31
+    },
+    {
+      "index": 31,
+      "name": "right_BA4",
+      "hemisphere": "right",
+      "ba_number": 4
+    },
+    {
+      "index": 32,
+      "name": "right_BA1",
+      "hemisphere": "right",
+      "ba_number": 1
+    },
+    {
+      "index": 33,
+      "name": "right_BA9",
+      "hemisphere": "right",
+      "ba_number": 9
+    },
+    {
+      "index": 34,
+      "name": "right_BA39",
+      "hemisphere": "right",
+      "ba_number": 39
+    },
+    {
+      "index": 35,
+      "name": "right_BA2",
+      "hemisphere": "right",
+      "ba_number": 2
+    },
+    {
+      "index": 36,
+      "name": "right_BA3",
+      "hemisphere": "right",
+      "ba_number": 3
+    },
+    {
+      "index": 37,
+      "name": "right_BA40",
+      "hemisphere": "right",
+      "ba_number": 40
+    },
+    {
+      "index": 38,
+      "name": "right_BA7",
+      "hemisphere": "right",
+      "ba_number": 7
+    },
+    {
+      "index": 39,
+      "name": "right_BA8",
+      "hemisphere": "right",
+      "ba_number": 8
+    },
+    {
+      "index": 40,
+      "name": "right_BA5",
+      "hemisphere": "right",
+      "ba_number": 5
+    },
+    {
+      "index": 41,
+      "name": "right_BA52",
+      "hemisphere": "right",
+      "ba_number": 52
+    },
+    {
+      "index": 42,
+      "name": "right_BA35",
+      "hemisphere": "right",
+      "ba_number": 35
+    },
+    {
+      "index": 43,
+      "name": "right_BA34",
+      "hemisphere": "right",
+      "ba_number": 34
+    },
+    {
+      "index": 101,
+      "name": "left_Ent",
+      "hemisphere": "left",
+      "ba_number": 0
+    },
+    {
+      "index": 102,
+      "name": "left_BA20",
+      "hemisphere": "left",
+      "ba_number": 20
+    },
+    {
+      "index": 103,
+      "name": "left_BA38",
+      "hemisphere": "left",
+      "ba_number": 38
+    },
+    {
+      "index": 104,
+      "name": "left_BA21",
+      "hemisphere": "left",
+      "ba_number": 21
+    },
+    {
+      "index": 105,
+      "name": "left_BA36",
+      "hemisphere": "left",
+      "ba_number": 36
+    },
+    {
+      "index": 106,
+      "name": "left_BA11",
+      "hemisphere": "left",
+      "ba_number": 11
+    },
+    {
+      "index": 107,
+      "name": "left_BA37",
+      "hemisphere": "left",
+      "ba_number": 37
+    },
+    {
+      "index": 108,
+      "name": "left_BA25",
+      "hemisphere": "left",
+      "ba_number": 25
+    },
+    {
+      "index": 109,
+      "name": "left_BA12",
+      "hemisphere": "left",
+      "ba_number": 12
+    },
+    {
+      "index": 110,
+      "name": "left_BA19",
+      "hemisphere": "left",
+      "ba_number": 19
+    },
+    {
+      "index": 111,
+      "name": "left_BA47",
+      "hemisphere": "left",
+      "ba_number": 47
+    },
+    {
+      "index": 112,
+      "name": "left_BA22",
+      "hemisphere": "left",
+      "ba_number": 22
+    },
+    {
+      "index": 113,
+      "name": "left_BA18",
+      "hemisphere": "left",
+      "ba_number": 18
+    },
+    {
+      "index": 114,
+      "name": "left_BA10",
+      "hemisphere": "left",
+      "ba_number": 10
+    },
+    {
+      "index": 115,
+      "name": "left_BA17",
+      "hemisphere": "left",
+      "ba_number": 17
+    },
+    {
+      "index": 116,
+      "name": "left_BA32",
+      "hemisphere": "left",
+      "ba_number": 32
+    },
+    {
+      "index": 117,
+      "name": "left_BA24",
+      "hemisphere": "left",
+      "ba_number": 24
+    },
+    {
+      "index": 118,
+      "name": "left_BA46",
+      "hemisphere": "left",
+      "ba_number": 46
+    },
+    {
+      "index": 119,
+      "name": "left_BA45",
+      "hemisphere": "left",
+      "ba_number": 45
+    },
+    {
+      "index": 120,
+      "name": "left_BA33",
+      "hemisphere": "left",
+      "ba_number": 33
+    },
+    {
+      "index": 121,
+      "name": "left_BA44",
+      "hemisphere": "left",
+      "ba_number": 44
+    },
+    {
+      "index": 122,
+      "name": "left_BA6",
+      "hemisphere": "left",
+      "ba_number": 6
+    },
+    {
+      "index": 123,
+      "name": "left_BA23",
+      "hemisphere": "left",
+      "ba_number": 23
+    },
+    {
+      "index": 124,
+      "name": "left_BA42",
+      "hemisphere": "left",
+      "ba_number": 42
+    },
+    {
+      "index": 125,
+      "name": "left_BA43",
+      "hemisphere": "left",
+      "ba_number": 43
+    },
+    {
+      "index": 126,
+      "name": "left_BA30",
+      "hemisphere": "left",
+      "ba_number": 30
+    },
+    {
+      "index": 127,
+      "name": "left_BA41",
+      "hemisphere": "left",
+      "ba_number": 41
+    },
+    {
+      "index": 128,
+      "name": "left_BA29",
+      "hemisphere": "left",
+      "ba_number": 29
+    },
+    {
+      "index": 129,
+      "name": "left_BA26",
+      "hemisphere": "left",
+      "ba_number": 26
+    },
+    {
+      "index": 130,
+      "name": "left_BA31",
+      "hemisphere": "left",
+      "ba_number": 31
+    },
+    {
+      "index": 131,
+      "name": "left_BA4",
+      "hemisphere": "left",
+      "ba_number": 4
+    },
+    {
+      "index": 132,
+      "name": "left_BA1",
+      "hemisphere": "left",
+      "ba_number": 1
+    },
+    {
+      "index": 133,
+      "name": "left_BA9",
+      "hemisphere": "left",
+      "ba_number": 9
+    },
+    {
+      "index": 134,
+      "name": "left_BA39",
+      "hemisphere": "left",
+      "ba_number": 39
+    },
+    {
+      "index": 135,
+      "name": "left_BA2",
+      "hemisphere": "left",
+      "ba_number": 2
+    },
+    {
+      "index": 136,
+      "name": "left_BA3",
+      "hemisphere": "left",
+      "ba_number": 3
+    },
+    {
+      "index": 137,
+      "name": "left_BA40",
+      "hemisphere": "left",
+      "ba_number": 40
+    },
+    {
+      "index": 138,
+      "name": "left_BA7",
+      "hemisphere": "left",
+      "ba_number": 7
+    },
+    {
+      "index": 139,
+      "name": "left_BA8",
+      "hemisphere": "left",
+      "ba_number": 8
+    },
+    {
+      "index": 140,
+      "name": "left_BA5",
+      "hemisphere": "left",
+      "ba_number": 5
+    },
+    {
+      "index": 141,
+      "name": "left_BA52",
+      "hemisphere": "left",
+      "ba_number": 52
+    },
+    {
+      "index": 142,
+      "name": "left_BA35",
+      "hemisphere": "left",
+      "ba_number": 35
+    },
+    {
+      "index": 143,
+      "name": "left_BA34",
+      "hemisphere": "left",
+      "ba_number": 34
+    }
+  ]
+}

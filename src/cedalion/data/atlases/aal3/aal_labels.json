@@ -1,0 +1,672 @@
+{
+  "atlas_name": "AAL3",
+  "space": "MNI152",
+  "description": "AAL3 atlas warped to ICBM152 space using SPM coregistration",
+  "source_nifti": "w_ROI_MNI_V7_1mm.nii",
+  "labels": [
+    {
+      "index": 1,
+      "name": "Precentral_L"
+    },
+    {
+      "index": 2,
+      "name": "Precentral_R"
+    },
+    {
+      "index": 3,
+      "name": "Frontal_Sup_2_L"
+    },
+    {
+      "index": 4,
+      "name": "Frontal_Sup_2_R"
+    },
+    {
+      "index": 5,
+      "name": "Frontal_Mid_2_L"
+    },
+    {
+      "index": 6,
+      "name": "Frontal_Mid_2_R"
+    },
+    {
+      "index": 7,
+      "name": "Frontal_Inf_Oper_L"
+    },
+    {
+      "index": 8,
+      "name": "Frontal_Inf_Oper_R"
+    },
+    {
+      "index": 9,
+      "name": "Frontal_Inf_Tri_L"
+    },
+    {
+      "index": 10,
+      "name": "Frontal_Inf_Tri_R"
+    },
+    {
+      "index": 11,
+      "name": "Frontal_Inf_Orb_2_L"
+    },
+    {
+      "index": 12,
+      "name": "Frontal_Inf_Orb_2_R"
+    },
+    {
+      "index": 13,
+      "name": "Rolandic_Oper_L"
+    },
+    {
+      "index": 14,
+      "name": "Rolandic_Oper_R"
+    },
+    {
+      "index": 15,
+      "name": "Supp_Motor_Area_L"
+    },
+    {
+      "index": 16,
+      "name": "Supp_Motor_Area_R"
+    },
+    {
+      "index": 17,
+      "name": "Olfactory_L"
+    },
+    {
+      "index": 18,
+      "name": "Olfactory_R"
+    },
+    {
+      "index": 19,
+      "name": "Frontal_Sup_Medial_L"
+    },
+    {
+      "index": 20,
+      "name": "Frontal_Sup_Medial_R"
+    },
+    {
+      "index": 21,
+      "name": "Frontal_Med_Orb_L"
+    },
+    {
+      "index": 22,
+      "name": "Frontal_Med_Orb_R"
+    },
+    {
+      "index": 23,
+      "name": "Rectus_L"
+    },
+    {
+      "index": 24,
+      "name": "Rectus_R"
+    },
+    {
+      "index": 25,
+      "name": "OFCmed_L"
+    },
+    {
+      "index": 26,
+      "name": "OFCmed_R"
+    },
+    {
+      "index": 27,
+      "name": "OFCant_L"
+    },
+    {
+      "index": 28,
+      "name": "OFCant_R"
+    },
+    {
+      "index": 29,
+      "name": "OFCpost_L"
+    },
+    {
+      "index": 30,
+      "name": "OFCpost_R"
+    },
+    {
+      "index": 31,
+      "name": "OFClat_L"
+    },
+    {
+      "index": 32,
+      "name": "OFClat_R"
+    },
+    {
+      "index": 33,
+      "name": "Insula_L"
+    },
+    {
+      "index": 34,
+      "name": "Insula_R"
+    },
+    {
+      "index": 37,
+      "name": "Cingulate_Mid_L"
+    },
+    {
+      "index": 38,
+      "name": "Cingulate_Mid_R"
+    },
+    {
+      "index": 39,
+      "name": "Cingulate_Post_L"
+    },
+    {
+      "index": 40,
+      "name": "Cingulate_Post_R"
+    },
+    {
+      "index": 41,
+      "name": "Hippocampus_L"
+    },
+    {
+      "index": 42,
+      "name": "Hippocampus_R"
+    },
+    {
+      "index": 43,
+      "name": "ParaHippocampal_L"
+    },
+    {
+      "index": 44,
+      "name": "ParaHippocampal_R"
+    },
+    {
+      "index": 45,
+      "name": "Amygdala_L"
+    },
+    {
+      "index": 46,
+      "name": "Amygdala_R"
+    },
+    {
+      "index": 47,
+      "name": "Calcarine_L"
+    },
+    {
+      "index": 48,
+      "name": "Calcarine_R"
+    },
+    {
+      "index": 49,
+      "name": "Cuneus_L"
+    },
+    {
+      "index": 50,
+      "name": "Cuneus_R"
+    },
+    {
+      "index": 51,
+      "name": "Lingual_L"
+    },
+    {
+      "index": 52,
+      "name": "Lingual_R"
+    },
+    {
+      "index": 53,
+      "name": "Occipital_Sup_L"
+    },
+    {
+      "index": 54,
+      "name": "Occipital_Sup_R"
+    },
+    {
+      "index": 55,
+      "name": "Occipital_Mid_L"
+    },
+    {
+      "index": 56,
+      "name": "Occipital_Mid_R"
+    },
+    {
+      "index": 57,
+      "name": "Occipital_Inf_L"
+    },
+    {
+      "index": 58,
+      "name": "Occipital_Inf_R"
+    },
+    {
+      "index": 59,
+      "name": "Fusiform_L"
+    },
+    {
+      "index": 60,
+      "name": "Fusiform_R"
+    },
+    {
+      "index": 61,
+      "name": "Postcentral_L"
+    },
+    {
+      "index": 62,
+      "name": "Postcentral_R"
+    },
+    {
+      "index": 63,
+      "name": "Parietal_Sup_L"
+    },
+    {
+      "index": 64,
+      "name": "Parietal_Sup_R"
+    },
+    {
+      "index": 65,
+      "name": "Parietal_Inf_L"
+    },
+    {
+      "index": 66,
+      "name": "Parietal_Inf_R"
+    },
+    {
+      "index": 67,
+      "name": "SupraMarginal_L"
+    },
+    {
+      "index": 68,
+      "name": "SupraMarginal_R"
+    },
+    {
+      "index": 69,
+      "name": "Angular_L"
+    },
+    {
+      "index": 70,
+      "name": "Angular_R"
+    },
+    {
+      "index": 71,
+      "name": "Precuneus_L"
+    },
+    {
+      "index": 72,
+      "name": "Precuneus_R"
+    },
+    {
+      "index": 73,
+      "name": "Paracentral_Lobule_L"
+    },
+    {
+      "index": 74,
+      "name": "Paracentral_Lobule_R"
+    },
+    {
+      "index": 75,
+      "name": "Caudate_L"
+    },
+    {
+      "index": 76,
+      "name": "Caudate_R"
+    },
+    {
+      "index": 77,
+      "name": "Putamen_L"
+    },
+    {
+      "index": 78,
+      "name": "Putamen_R"
+    },
+    {
+      "index": 79,
+      "name": "Pallidum_L"
+    },
+    {
+      "index": 80,
+      "name": "Pallidum_R"
+    },
+    {
+      "index": 83,
+      "name": "Heschl_L"
+    },
+    {
+      "index": 84,
+      "name": "Heschl_R"
+    },
+    {
+      "index": 85,
+      "name": "Temporal_Sup_L"
+    },
+    {
+      "index": 86,
+      "name": "Temporal_Sup_R"
+    },
+    {
+      "index": 87,
+      "name": "Temporal_Pole_Sup_L"
+    },
+    {
+      "index": 88,
+      "name": "Temporal_Pole_Sup_R"
+    },
+    {
+      "index": 89,
+      "name": "Temporal_Mid_L"
+    },
+    {
+      "index": 90,
+      "name": "Temporal_Mid_R"
+    },
+    {
+      "index": 91,
+      "name": "Temporal_Pole_Mid_L"
+    },
+    {
+      "index": 92,
+      "name": "Temporal_Pole_Mid_R"
+    },
+    {
+      "index": 93,
+      "name": "Temporal_Inf_L"
+    },
+    {
+      "index": 94,
+      "name": "Temporal_Inf_R"
+    },
+    {
+      "index": 95,
+      "name": "Cerebelum_Crus1_L"
+    },
+    {
+      "index": 96,
+      "name": "Cerebelum_Crus1_R"
+    },
+    {
+      "index": 97,
+      "name": "Cerebelum_Crus2_L"
+    },
+    {
+      "index": 98,
+      "name": "Cerebelum_Crus2_R"
+    },
+    {
+      "index": 99,
+      "name": "Cerebelum_3_L"
+    },
+    {
+      "index": 100,
+      "name": "Cerebelum_3_R"
+    },
+    {
+      "index": 101,
+      "name": "Cerebelum_4_5_L"
+    },
+    {
+      "index": 102,
+      "name": "Cerebelum_4_5_R"
+    },
+    {
+      "index": 103,
+      "name": "Cerebelum_6_L"
+    },
+    {
+      "index": 104,
+      "name": "Cerebelum_6_R"
+    },
+    {
+      "index": 105,
+      "name": "Cerebelum_7b_L"
+    },
+    {
+      "index": 106,
+      "name": "Cerebelum_7b_R"
+    },
+    {
+      "index": 107,
+      "name": "Cerebelum_8_L"
+    },
+    {
+      "index": 108,
+      "name": "Cerebelum_8_R"
+    },
+    {
+      "index": 109,
+      "name": "Cerebelum_9_L"
+    },
+    {
+      "index": 110,
+      "name": "Cerebelum_9_R"
+    },
+    {
+      "index": 111,
+      "name": "Cerebelum_10_L"
+    },
+    {
+      "index": 112,
+      "name": "Cerebellum_10_R"
+    },
+    {
+      "index": 113,
+      "name": "Vermis_1_2"
+    },
+    {
+      "index": 114,
+      "name": "Vermis_3"
+    },
+    {
+      "index": 115,
+      "name": "Vermis_4_5"
+    },
+    {
+      "index": 116,
+      "name": "Vermis_6"
+    },
+    {
+      "index": 117,
+      "name": "Vermis_7"
+    },
+    {
+      "index": 118,
+      "name": "Vermis_8"
+    },
+    {
+      "index": 119,
+      "name": "Vermis_9"
+    },
+    {
+      "index": 120,
+      "name": "Vermis_10"
+    },
+    {
+      "index": 121,
+      "name": "Thal_AV_L"
+    },
+    {
+      "index": 122,
+      "name": "Thal_AV_R"
+    },
+    {
+      "index": 123,
+      "name": "Thal_LP_L"
+    },
+    {
+      "index": 124,
+      "name": "Thal_LP_R"
+    },
+    {
+      "index": 125,
+      "name": "Thal_VA_L"
+    },
+    {
+      "index": 126,
+      "name": "Thal_VA_R"
+    },
+    {
+      "index": 127,
+      "name": "Thal_VL_L"
+    },
+    {
+      "index": 128,
+      "name": "Thal_VL_R"
+    },
+    {
+      "index": 129,
+      "name": "Thal_VPL_L"
+    },
+    {
+      "index": 130,
+      "name": "Thal_VPL_R"
+    },
+    {
+      "index": 131,
+      "name": "Thal_IL_L"
+    },
+    {
+      "index": 132,
+      "name": "Thal_IL_R"
+    },
+    {
+      "index": 133,
+      "name": "Thal_Re_L"
+    },
+    {
+      "index": 134,
+      "name": "Thal_Re_R"
+    },
+    {
+      "index": 135,
+      "name": "Thal_MDm_L"
+    },
+    {
+      "index": 136,
+      "name": "Thal_MDm_R"
+    },
+    {
+      "index": 137,
+      "name": "Thal_MDl_L"
+    },
+    {
+      "index": 138,
+      "name": "Thal_MDl_R"
+    },
+    {
+      "index": 139,
+      "name": "Thal_LGN_L"
+    },
+    {
+      "index": 140,
+      "name": "Thal_LGN_R"
+    },
+    {
+      "index": 141,
+      "name": "Thal_MGN_L"
+    },
+    {
+      "index": 142,
+      "name": "Thal_MGN_R"
+    },
+    {
+      "index": 143,
+      "name": "Thal_PuI_L"
+    },
+    {
+      "index": 144,
+      "name": "Thal_PuI_R"
+    },
+    {
+      "index": 145,
+      "name": "Thal_PuM_L"
+    },
+    {
+      "index": 146,
+      "name": "Thal_PuM_R"
+    },
+    {
+      "index": 147,
+      "name": "Thal_PuA_L"
+    },
+    {
+      "index": 148,
+      "name": "Thal_PuA_R"
+    },
+    {
+      "index": 149,
+      "name": "Thal_PuL_L"
+    },
+    {
+      "index": 150,
+      "name": "Thal_PuL_R"
+    },
+    {
+      "index": 151,
+      "name": "ACC_sub_L"
+    },
+    {
+      "index": 152,
+      "name": "ACC_sub_R"
+    },
+    {
+      "index": 153,
+      "name": "ACC_pre_L"
+    },
+    {
+      "index": 154,
+      "name": "ACC_pre_R"
+    },
+    {
+      "index": 155,
+      "name": "ACC_sup_L"
+    },
+    {
+      "index": 156,
+      "name": "ACC_sup_R"
+    },
+    {
+      "index": 157,
+      "name": "Vent_Str_L"
+    },
+    {
+      "index": 158,
+      "name": "Vent_Str_R"
+    },
+    {
+      "index": 159,
+      "name": "VTA_L"
+    },
+    {
+      "index": 160,
+      "name": "VTA_R"
+    },
+    {
+      "index": 161,
+      "name": "SN_pc_L"
+    },
+    {
+      "index": 162,
+      "name": "SN_pc_R"
+    },
+    {
+      "index": 163,
+      "name": "SN_pr_L"
+    },
+    {
+      "index": 164,
+      "name": "SN_pr_R"
+    },
+    {
+      "index": 165,
+      "name": "Red_N_L"
+    },
+    {
+      "index": 166,
+      "name": "Red_N_R"
+    },
+    {
+      "index": 167,
+      "name": "LC_L"
+    },
+    {
+      "index": 168,
+      "name": "LC_R"
+    },
+    {
+      "index": 169,
+      "name": "Raphe_D"
+    },
+    {
+      "index": 170,
+      "name": "Raphe_M"
+    }
+  ]
+}
