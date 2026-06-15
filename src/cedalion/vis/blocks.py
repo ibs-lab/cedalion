@@ -27,6 +27,7 @@ __all__ = [
     "plot_surface",
     "plot_labeled_points",
     "plot_vector_field",
+    "pick_point_widget",
     "camera_at_cog",
 ]
 
@@ -313,6 +314,146 @@ def plot_surface(
         )
 
         return get_points_and_labels
+
+########################################################################################
+
+
+def pick_point_widget(
+    plotter: pv.Plotter,
+    initial_position: ArrayLike | None = None,
+    surface: cdc.Surface | None = None,
+    margin: float = 50.0,
+    step: float = 1.0,
+    color: pv.ColorLike = "red",
+    radius: float = 3.0,
+):
+    """Place a marker that can be moved to pick a 3D position.
+
+    This complements `enable_surface_point_picking`: it allows picking positions
+    that are occluded by or located inside a surface (e.g. a point on the brain
+    surface hidden below the scalp), which cannot be selected by clicking on the
+    mesh. Render the surrounding surface(s) with a reduced `opacity` so that the
+    marker remains visible while it is moved through them.
+
+    Three slider widgets are added to control the marker's x/y/z position. This
+    works both in native windows and in Jupyter (e.g. with
+    `pv.set_jupyter_backend("server")` or `"client")`, since slider interactions
+    are mouse-driven.
+
+    In a native (non-Jupyter) window the marker can additionally be nudged with
+    the keyboard:
+        Left / Right : move along x
+        Up / Down : move along y
+        Page Up / Page Down : move along z
+        +/- : double / halve the step size
+    Keyboard events are not forwarded to the render window when it is embedded
+    in Jupyter, so there the sliders are the only way to move the marker.
+
+    Args:
+        plotter: A PyVista plotter instance.
+        initial_position: Starting position of the marker. If None, defaults to
+            the center of gravity of `surface` (if given) or the origin.
+        surface: Optional surface, used to derive a default `initial_position`
+            and the range of the slider widgets.
+        margin: Extra distance (in the units of the scene, typically mm) added
+            on either side of the surface's bounding box (or, if no surface is
+            given, of `initial_position`) when calculating the slider ranges.
+        step: Step size (in the units of the scene, typically mm) for each key
+            press (native windows only).
+        color: Color of the marker sphere.
+        radius: Radius of the marker sphere.
+
+    Returns:
+        function: a function that, when called, returns the current marker
+        position as a numpy array.
+
+    Initial Contributors:
+        - Elsa-Henriette Harms | 80045974+elsahh@users.noreply.github.com | 2026
+    """
+
+    if surface is not None:
+        vertices = surface.vertices.pint.dequantify().values
+        bounds_min = vertices.min(axis=0)
+        bounds_max = vertices.max(axis=0)
+        if initial_position is None:
+            initial_position = vertices.mean(axis=0)
+    else:
+        bounds_min = bounds_max = None
+        if initial_position is None:
+            initial_position = np.zeros(3)
+
+    initial_position = np.array(initial_position, dtype=float)
+
+    if bounds_min is None:
+        bounds_min = initial_position.copy()
+        bounds_max = initial_position.copy()
+
+    bounds_min = np.minimum(bounds_min, initial_position) - margin
+    bounds_max = np.maximum(bounds_max, initial_position) + margin
+
+    state = {"position": initial_position.copy(), "step": float(step)}
+
+    def render_marker():
+        plotter.add_mesh(
+            pv.Sphere(radius=radius, center=state["position"]),
+            color=color,
+            smooth_shading=True,
+            name="picked_point_marker",
+        )
+        x, y, z = state["position"]
+        plotter.add_text(
+            f"Picked point: ({x:.2f}, {y:.2f}, {z:.2f})",
+            position="upper_left",
+            font_size=10,
+            name="picked_point_text",
+        )
+        plotter.render()
+
+    def move(axis, sign):
+        state["position"][axis] += sign * state["step"]
+        render_marker()
+
+    def change_step(factor):
+        state["step"] *= factor
+
+    plotter.add_key_event("Right", lambda: move(0, 1))
+    plotter.add_key_event("Left", lambda: move(0, -1))
+    plotter.add_key_event("Up", lambda: move(1, 1))
+    plotter.add_key_event("Down", lambda: move(1, -1))
+    plotter.add_key_event("Prior", lambda: move(2, 1))
+    plotter.add_key_event("Next", lambda: move(2, -1))
+    plotter.add_key_event("plus", lambda: change_step(2.0))
+    plotter.add_key_event("minus", lambda: change_step(0.5))
+
+    axis_labels = ["x", "y", "z"]
+    slider_spans = [(0.05, 0.31), (0.36, 0.62), (0.67, 0.93)]
+
+    for axis, (pa, pb) in enumerate(slider_spans):
+        def make_callback(axis=axis):
+            def callback(value):
+                state["position"][axis] = value
+                render_marker()
+
+            return callback
+
+        plotter.add_slider_widget(
+            make_callback(),
+            rng=(bounds_min[axis], bounds_max[axis]),
+            value=state["position"][axis],
+            title=axis_labels[axis],
+            pointa=(pa, 0.9),
+            pointb=(pb, 0.9),
+            interaction_event="always",
+            style="modern",
+        )
+
+    render_marker()
+
+    def get_point():
+        return state["position"].copy()
+
+    return get_point
+
 
 ########################################################################################
 

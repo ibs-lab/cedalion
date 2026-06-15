@@ -2,6 +2,12 @@
 
 import cedalion.models.glm.design_matrix
 
-from .basis_functions import TemporalBasisFunction, GaussianKernels, Gamma, DiracDelta
+from .basis_functions import (
+    TemporalBasisFunction,
+    GaussianKernels,
+    Gamma,
+    DiracDelta,
+    FIR,
+)
 #from .design_matrix import hrf_regressors
 from .solve import fit, predict, predict_with_uncertainty

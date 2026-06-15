@@ -193,6 +193,76 @@ class GaussianKernels(TemporalBasisFunction):
         )
 
 
+class FIR(TemporalBasisFunction):
+    r"""Finite Impulse Response (FIR) basis set.
+
+    A series of non-overlapping boxcar functions ("taps") that tile the time
+    interval [-t_pre, t_post] around the stimulus onset in steps of t_delta.
+    Each component is 1 within its time bin and 0 elsewhere. Convolved with
+    the stimulus train, this lets the GLM estimate the HRF amplitude at each
+    time lag independently, without assuming a particular HRF shape.
+
+    The number of taps is derived from t_pre, t_post and t_delta as
+    ``floor((t_pre + t_post) / t_delta)``.
+
+    Args:
+        t_pre (:class:`Quantity`, [time]): time before trial onset
+        t_post (:class:`Quantity`, [time]): time after trial onset
+        t_delta (:class:`Quantity`, [time]): width of each FIR tap. This sets
+            the temporal resolution of the estimated HRF.
+    """
+
+    def __init__(
+        self,
+        t_pre: cdt.QTime,
+        t_post: cdt.QTime,
+        t_delta: cdt.QTime,
+    ):
+        super().__init__(convolve_over_duration=False)
+        self.t_pre = _to_unit(t_pre, units.s)
+        self.t_post = _to_unit(t_post, units.s)
+        self.t_delta = _to_unit(t_delta, units.s)
+
+    def __call__(
+        self,
+        ts: cdt.NDTimeSeries,
+    ) -> xr.DataArray:
+        fs = sampling_rate(ts).to(units.Hz)
+
+        # create time-axis
+        smpl_pre = int(np.ceil(self.t_pre * fs)) + 1
+        smpl_post = int(np.ceil(self.t_post * fs)) + 1
+        t_hrf = np.arange(-smpl_pre, smpl_post) / fs
+        t_hrf = t_hrf.to("s")
+
+        t = t_hrf.magnitude
+        delta = self.t_delta.to(units.s).magnitude
+        duration = t[-1] - t[0]
+
+        # number of non-overlapping taps spanning the interval
+        n_components = int(np.floor(duration / delta))
+
+        # tile [-t_pre, t_post] with consecutive bins of width t_delta
+        bin_edges = t[0] + np.arange(n_components + 1) * delta
+
+        regressors = np.zeros((len(t), n_components))
+        for i in range(n_components):
+            lo, hi = bin_edges[i], bin_edges[i + 1]
+            in_bin = (t >= lo) & (t < hi)
+            regressors[in_bin, i] = 1.0
+
+        component_names = _generate_component_names(n_components)
+
+        return xr.DataArray(
+            regressors,
+            dims=["time", "component"],
+            coords={
+                "time": xr.DataArray(t_hrf, dims=["time"]).pint.dequantify(),
+                "component": component_names,
+            },
+        )
+
+
 class Gamma(TemporalBasisFunction):
     r"""Modified gamma function, optionally convolved with a square-wave.
 
