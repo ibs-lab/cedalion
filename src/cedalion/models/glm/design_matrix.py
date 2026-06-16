@@ -297,19 +297,7 @@ def hrf_regressors(
 
                 regressors[:, i_reg, i_other] = regressor
 
-    regressors = xr.DataArray(
-        regressors,
-        dims=["time", "regressor", other_dim],
-        coords={
-            "time": ts.time.values,
-            "regressor": regressor_names,
-            other_dim: ts[other_dim].values,
-        },
-    )
-
-    # hrf_regs = hrf_regs.pint.quantify("micromolar")
-
-    return DesignMatrix(common=regressors, channel_wise=[])
+    return common_regressor_from_array(ts, regressors, regressor_names)
 
 # FIXME reduce overlap with hrf_regressors
 
@@ -387,17 +375,12 @@ def hrf_extract_regressors(
 
                 regressors[:, i_reg, i_other] = regressor
 
-    regressors = xr.DataArray(
+    return common_regressor_from_array(
+        ts,
         regressors,
-        dims=["time", "regressor", other_dim],
-        coords={
-            "time": basis.time.values,
-            "regressor": regressor_names,
-            other_dim: ts[other_dim].values,
-        },
+        regressor_names,
+        time=basis.time.values,
     )
-
-    return DesignMatrix(common=regressors, channel_wise=[])
 
 
 
@@ -437,13 +420,7 @@ def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
 
     regressor_names = [f"Drift {i}" for i in range(drift_order + 1)]
 
-    drift_regressors = xr.DataArray(
-        drift_regressors,
-        dims=["time", "regressor", dim3],
-        coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
-    )
-
-    return DesignMatrix(common=drift_regressors, channel_wise=[])
+    return common_regressor_from_array(ts, drift_regressors, regressor_names)
 
 
 def drift_legendre_regressors(ts : cdt.NDTimeSeries, order : int) -> DesignMatrix:
@@ -478,13 +455,6 @@ def drift_legendre_regressors(ts : cdt.NDTimeSeries, order : int) -> DesignMatri
 
     regressor_names = [f"Drift LP {i}" for i in range(order + 1)]
 
-    # drift_regressors = xr.DataArray(
-    #     drift_regressors,
-    #     dims=["time", "regressor", dim3],
-    #     coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
-    # )
-
-    # return DesignMatrix(common=drift_regressors, channel_wise=[])
     return common_regressor_from_array(ts, drift_regressors, regressor_names)
 
 
@@ -517,13 +487,7 @@ def drift_cosine_regressors(ts: cdt.NDTimeSeries, fmax: cdt.QFrequency) -> Desig
 
     regressor_names = [f"Drift Cos {i}" for i in range(ncosines)]
 
-    drift_regressors = xr.DataArray(
-        drift_regressors,
-        dims=["time", "regressor", dim3],
-        coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
-    )
-
-    return DesignMatrix(common=drift_regressors, channel_wise=[])
+    return common_regressor_from_array(ts, drift_regressors, regressor_names)
 
 
 
@@ -721,28 +685,28 @@ def average_short_channel_regressor(ts_short: cdt.NDTimeSeries):
 
     cite("Huppert2009")
     ts_short = ts_short.pint.dequantify()
-    regressor = ts_short.mean("channel", skipna=True).expand_dims("regressor")
-    regressor = regressor.assign_coords({"regressor": ["short"]})
-    regressor = regressor.transpose("time", "regressor", ...)
+    regressor = ts_short.mean("channel", skipna=True)
 
-    return DesignMatrix(common=regressor, channel_wise=[])
+    return common_regressor_from_array(ts_short, regressor, "short")
 
 
 def common_regressor_from_array(
     ts: cdt.NDTimeSeries,
     regressors: xr.DataArray | np.ndarray,
     regressor_names: str | list[str],
+    time: ArrayLike | None = None,
 ) -> DesignMatrix:
     """Create common GLM regressors from a precomputed array.
 
     Args:
-        ts: Time-series data whose time and third-dimension coordinates are used.
+        ts: Time-series data whose third-dimension coordinates are used.
         regressors: Regressor array with shape either
             ``(n_times, n_regressors, n_dim3)`` or, for a single regressor,
             ``(n_times, n_dim3)``. If an ``xr.DataArray`` is passed, it is
             dequantified before packaging.
         regressor_names: Name or names for the regressors. A single string is
             allowed only when there is one regressor.
+        time: Optional time coordinate for the regressors. Defaults to ``ts.time``.
 
     Returns:
         Design matrix containing the regressors as common regressors.
@@ -765,10 +729,13 @@ def common_regressor_from_array(
             "or (n_times, n_dim3) for a single regressor."
         )
 
-    if regressors.shape[0] != ts.sizes["time"]:
+    if time is None:
+        time = ts.time
+
+    if regressors.shape[0] != len(time):
         raise ValueError(
-            "regressors time dimension does not match ts: "
-            f"{regressors.shape[0]} != {ts.sizes['time']}."
+            "regressors time dimension does not match time coordinate: "
+            f"{regressors.shape[0]} != {len(time)}."
         )
 
     if regressors.shape[2] != ts.sizes[dim3]:
@@ -792,20 +759,10 @@ def common_regressor_from_array(
         regressors,
         dims=["time", "regressor", dim3],
         coords={
-            "time": ts.time,
+            "time": time,
             "regressor": regressor_names,
             dim3: ts[dim3].values,
         },
     )
 
     return DesignMatrix(common=regressors, channel_wise=[])
-
-def global_component_regressor(
-    ts: cdt.NDTimeSeries,
-    global_component: xr.DataArray | np.ndarray,
-    regressor_name: str = "global",
-) -> DesignMatrix:
-    """Create a common GLM regressor from a precomputed global component."""
-
-    return common_regressor_from_array(ts, global_component, regressor_name)
-
