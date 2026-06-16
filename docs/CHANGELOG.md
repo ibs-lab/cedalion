@@ -1,8 +1,12 @@
 # Changelog
 
+<!--
 ## Unreleased changes (available on the `dev` branch)
- 
-## Version 26.04.0 (in preparation)
+--> 
+
+## Version 26.5.1 (2026-05-27)
+
+This is the shipping build of the 26.5 release announced on May 27th 2026; in 26.5.0 an issue with vertex-to-voxel mapping of the `TwoSurfaceHeadModel` was found.
 
 ### Additions and Changes
 
@@ -29,7 +33,11 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 
 - Added `TwoSurfaceHeadmodel.scale_to_headsize` and `TwoSurfaceHeadmodel.scale_to_landmarks` to adjust the head model's size to the head circumferences or digitized landmarks, respectively. By [Eike Middell](https://github.com/emiddell).
 
-- Higher-resolution cortex meshes for the Colin27 and ICBM152 head models, which additionally maintain a link to the freesurfer surfaces from which they were derived, by [Eike Middell](https://github.com/emiddell). ([#138](https://github.com/ibs-lab/cedalion/pull/138)). The Colin27 meshes were subsequently recomputed to remove artifacts and to fix the voxel-to-vertex mapping. Reduced meshes of the FreeSurfer inflated brains are now bundled with a 1-to-1 vertex correspondence to the pial brain meshes, and sparse voxel-to-vertex maps are stored in Matrix Market format.
+- Added `TwoSurfaceHeadmodel.align_and_relax_to_scalp` to conform montages to the scalp surface using a spring-relaxation method that minimizes channel distance distortions. By [Eike Middell](https://github.com/emiddell).
+
+- Added higher-resolution cortex meshes for the Colin27 and ICBM152 head models, which additionally maintain a link to the Freesurfer surfaces from which they were derived.  The Colin27 and ICBM-152 meshes were subsequently recomputed to remove artifacts. Reduced meshes of the FreeSurfer inflated brains are now bundled with a 1-to-1 vertex correspondence to the pial brain meshes. A mechanism for deriving parcel-aware, sparse voxel-to-vertex maps, that are stored in Matrix Market format, was added.  By [Eike Middell](https://github.com/emiddell). ([#138](https://github.com/ibs-lab/cedalion/pull/138)).
+
+- Added `TwoSurfaceHeadmodel.assign_parcels_via_mni_coords` for applying other parcellation schemes to brain vertices using a volumetric atlas in MNI space, by [Eike Middell](https://github.com/emiddell).
 
 - The factory method `cedalion.dot.get_standard_headmodel` to construct the `TwoSurfaceHeadModel` of the standard Colin27 and ICBM-152 heads was added, by [Eike Middell](https://github.com/emiddell).
 
@@ -96,11 +104,12 @@ to `motion_correct.X`. Argument names were made PEP8 compliant. The example `22_
 
 - Added a `Dockerfile` to build a containerised cedalion environment, by [Nils Harmening](https://github.com/harmening). ([#6](https://github.com/ibs-lab/cedalion/pull/6))
 
-- Addded `cedalion.bibliography.Bibliography`, a container for collecting references. An
+- Added `cedalion.bibliography.Bibliography`, a container for collecting references. An
 instance of this class is instantiated as `cedalion.bib` which is used by functions
 throughout the toolbox for citing used methods. At the end of a notebook, a call to
 cedalion.bib.dump_to_notebook() produces a list of references. By [Eike Middell](https://github.com/emiddell). ([#153](https://github.com/ibs-lab/cedalion/pull/153))
 
+- Added `cedalion.io.bids.load_from_bids_optodes_tsv` and `cedalion.io.bids.export_to_bids_optodes_tsv` for handling BIDS-compliant optode geometry files. By [Eike Middell](https://github.com/emiddell).
 
 ### Fixes
 
@@ -114,7 +123,13 @@ series until the filter is initialized, by [Eike Middell](https://github.com/emi
 - Fixed `cedalion.io.read_photogrammetry_einstar` to filter out unpicked positions, by [Nils Harmening](https://github.com/harmening). ([#144](https://github.com/ibs-lab/cedalion/pull/144))
 - Removed a redundant `t_ras2ijk` transform when saving and loading `TwoSurfaceHeadModel`s, by [Nils Harmening](https://github.com/harmening). ([#143](https://github.com/ibs-lab/cedalion/pull/143))
 - Fixed `TwoSurfaceHeadModel.__repr__` raising when `landmarks` was `None`, by [Eike Middell](https://github.com/emiddell).
-
+- Fixed a bug caused by mutable inputs in `snap_to_scalp_voxels`, by [Nils Harmening](https://github.com/harmening). ([#160](https://github.com/ibs-lab/cedalion/pull/160))
+- Fixed a bug caused by mutable inputs in `TwoSurfaceHeadModel`, by [Nils Harmening](https://github.com/harmening). ([#163](https://github.com/ibs-lab/cedalion/pull/163))
+- Fixed a bug in `TwoSurfaceHeadModel.scale_to_landmarks` caused by Xarray contracting over all common dimensions in cases where
+CRS names did not differ, by [Nils Harmening](https://github.com/harmening). ([#165](https://github.com/ibs-lab/cedalion/pull/165))
+- Fixed a bug in `TwoSurfaceHeadModel.scale_to_landmarks` caused by Xarray contracting over all common dimensions in cases where
+CRS names did not differ, by [Nils Harmening](https://github.com/harmening). ([#165](https://github.com/ibs-lab/cedalion/pull/165))
+- Fixed a bug in `TwoSurfaceHeadModel.load` and `.save` caused by asymmetric assumptions in both functions , by [Nils Harmening](https://github.com/harmening). ([#164](https://github.com/ibs-lab/cedalion/pull/165))
 
 
 

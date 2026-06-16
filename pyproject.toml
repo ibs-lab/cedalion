@@ -56,10 +56,11 @@ dependencies = [
   "setuptools-scm",
   "snirf==0.8.*",
   "pmcx>=0.3.3",
-  "pmcxcl==0.3.1",
+  "pmcxcl>=0.3.1",
   "pyxdf==1.17.0",
   "snirf2bids @ git+https://github.com/emiddell/snirf2bids.git@v0.8.8", # FIXME
   "seedir",
+  "pybtex",
 ]
 
 

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import gzip
+import json
 import os
+import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+import nibabel
 import numpy as np
 import pandas as pd
 import scipy
@@ -14,7 +18,6 @@ import scipy.sparse
 import trimesh
 import xarray as xr
 from scipy.spatial import KDTree
-import gzip
 
 import cedalion
 import cedalion.data
@@ -23,9 +26,13 @@ import cedalion.typing as cdt
 from cedalion import xrutils
 from cedalion.dot.utils import map_segmentation_mask_to_surface
 from cedalion.geometry.ellipsoid import get_landmarks_for_headsize
+from cedalion import cite
 from cedalion.geometry.registration import (
     register_general_affine,
     register_trans_rot_isoscale,
+    register_optodes_spring_icp,
+    register_identity,
+    SpringICPResult
 )
 from cedalion.geometry.segmentation import (
     surface_from_segmentation,
@@ -91,16 +98,10 @@ class TwoSurfaceHeadModel:
     def from_segmentation(
         cls,
         segmentation_dir: str,
-        mask_files: dict[str, str] = {
-            "csf": "csf.nii",
-            "gm": "gm.nii",
-            "scalp": "scalp.nii",
-            "skull": "skull.nii",
-            "wm": "wm.nii",
-        },
+        mask_files: dict[str, str] | None = None,
         landmarks_ras_file: str | None = None,
-        brain_seg_types: list[str] = ["gm", "wm"],
-        scalp_seg_types: list[str] = ["scalp"],
+        brain_seg_types: list[str] | None = None,
+        scalp_seg_types: list[str] | None = None,
         smoothing: float = 0.,
         brain_face_count: int | None = 180000,
         scalp_face_count: int | None = 60000,
@@ -122,6 +123,19 @@ class TwoSurfaceHeadModel:
             scalp_face_count: Number of faces for the scalp surface.
             fill_holes: Whether to fill holes in the segmentation masks.
         """
+
+        if mask_files is None:
+            mask_files = {
+                "csf": "csf.nii",
+                "gm": "gm.nii",
+                "scalp": "scalp.nii",
+                "skull": "skull.nii",
+                "wm": "wm.nii",
+            }
+        if brain_seg_types is None:
+            brain_seg_types = ["gm", "wm"]
+        if scalp_seg_types is None:
+            scalp_seg_types = ["scalp"]
 
         # load segmentation mask
         segmentation_masks, t_ijk2ras = read_segmentation_masks(
@@ -212,21 +226,15 @@ class TwoSurfaceHeadModel:
     def from_surfaces(
         cls,
         segmentation_dir: str,
-        mask_files: dict[str, str] = {
-            "csf": "csf.nii",
-            "gm": "gm.nii",
-            "scalp": "scalp.nii",
-            "skull": "skull.nii",
-            "wm": "wm.nii",
-        },
+        mask_files: dict[str, str] | None = None,
         brain_surface_file: str = None,
         scalp_surface_file: str = None,
         landmarks_ras_file: str | None = None,
-        brain_seg_types: list[str] = ["gm", "wm"],
-        scalp_seg_types: list[str] = ["scalp"],
+        brain_seg_types: list[str] | None = None,
+        scalp_seg_types: list[str] | None = None,
         smoothing: float = 0.0,
-        brain_face_count: int | None = 180000,
-        scalp_face_count: int | None = 60000,
+        brain_face_count: int | None = None,
+        scalp_face_count: int | None = None,
         fill_holes: bool = False,
         coordinates_file: Path | str | None = None,
         voxel_to_vertex_mapping_file_brain : Path | None = None,
@@ -256,6 +264,19 @@ class TwoSurfaceHeadModel:
         Returns:
             TwoSurfaceHeadModel: An instance of the TwoSurfaceHeadModel class.
         """
+
+        if mask_files is None:
+            mask_files = {
+                "csf": "csf.nii",
+                "gm": "gm.nii",
+                "scalp": "scalp.nii",
+                "skull": "skull.nii",
+                "wm": "wm.nii",
+            }
+        if brain_seg_types is None:
+            brain_seg_types = ["gm", "wm"]
+        if scalp_seg_types is None:
+            scalp_seg_types = ["scalp"]
 
         # load segmentation mask
         segmentation_masks, t_ijk2ras = read_segmentation_masks(
@@ -414,6 +435,30 @@ class TwoSurfaceHeadModel:
             voxel_to_vertex_scalp=self.voxel_to_vertex_scalp,
         )
 
+    def copy(self, copy_segmasks=False):
+        """Create a copy of this head model.
+
+        Args:
+            copy_segmasks: if False, the new instance gets a reference to the existing
+                segmentation masks instead of a full copy.
+        """
+
+        if copy_segmasks:
+            segmentation_masks = self.segmentation_masks.copy()
+        else:
+            segmentation_masks = self.segmentation_masks
+
+        return TwoSurfaceHeadModel(
+            segmentation_masks=segmentation_masks,
+            brain=self.brain.copy(),
+            scalp=self.scalp.copy(),
+            landmarks=self.landmarks.copy(),
+            t_ijk2ras=self.t_ijk2ras.copy(),
+            t_ras2ijk=self.t_ras2ijk.copy(),
+            voxel_to_vertex_brain=self.voxel_to_vertex_brain.copy(),
+            voxel_to_vertex_scalp=self.voxel_to_vertex_scalp.copy(),
+        )
+
     def save(self, foldername: str):
         """Save the head model to a folder.
 
@@ -445,6 +490,20 @@ class TwoSurfaceHeadModel:
                                            self.voxel_to_vertex_brain)
         scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_scalp.npz"),
                                            self.voxel_to_vertex_scalp)
+
+        # PLY drops CRS/units; netCDF doesn't preserve pint units
+        metadata = {
+            "format_version": 1,
+            "brain": {"crs": self.brain.crs, "units": str(self.brain.units)},
+            "scalp": {"crs": self.scalp.crs, "units": str(self.scalp.units)},
+            "t_ijk2ras": {
+                "to_crs":   self.t_ijk2ras.dims[0],
+                "from_crs": self.t_ijk2ras.dims[1],
+                "units":    str(self.t_ijk2ras.pint.units),
+            },
+        }
+        with open(os.path.join(foldername, "metadata.json"), "w") as f:
+            json.dump(metadata, f, indent=2)
         return
 
     @classmethod
@@ -491,12 +550,41 @@ class TwoSurfaceHeadModel:
         voxel_to_vertex_scalp = scipy.sparse.load_npz(os.path.join(foldername,
                                                       'voxel_to_vertex_scalp.npz'))
 
-        # Construct TwoSurfaceHeadModel
-        brain_ijk = cdc.TrimeshSurface(brain, 'ijk', cedalion.units.Unit("1"))
-        scalp_ijk = cdc.TrimeshSurface(scalp, 'ijk', cedalion.units.Unit("1"))
-        t_ijk2ras = cdc.affine_transform_from_numpy(
-            np.array(t_ijk2ras), "ijk", "unknown", "1", "mm"
-        )
+        # PLY drops CRS/units and netCDF doesn't preserve pint units, so the
+        # critical attributes are read from metadata.json written by save().
+        # Alternatively if metadata.json is missing, throw a warning and try to
+        # fall back to inferring the surface CRS from landmarks and assuming
+        # dimensionless units. This is not ideal, since landmarks are optional.
+        metadata_path = os.path.join(foldername, "metadata.json")
+        if os.path.exists(metadata_path):
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+            brain_crs   = metadata["brain"]["crs"]
+            scalp_crs   = metadata["scalp"]["crs"]
+            brain_units = cedalion.units.Unit(metadata["brain"]["units"])
+            scalp_units = cedalion.units.Unit(metadata["scalp"]["units"])
+            t_to_crs    = metadata["t_ijk2ras"]["to_crs"]
+            t_from_crs  = metadata["t_ijk2ras"]["from_crs"]
+            t_units     = cedalion.units.Unit(metadata["t_ijk2ras"]["units"])
+        else:
+            warnings.warn(
+                "Loading head model without metadata.json; "
+                "inferring CRS from landmarks, units assumed dimensionless."
+            )
+            lm_crs = None
+            if landmarks_ijk is not None:
+                lm_crs = next(d for d in landmarks_ijk.dims if d != "label")
+            brain_crs = scalp_crs = lm_crs or "ijk"
+            brain_units = scalp_units = cedalion.units.Unit("1")
+            t_to_crs   = t_ijk2ras.dims[0]
+            t_from_crs = t_ijk2ras.dims[1]
+            t_units    = cedalion.units.Unit("mm")
+
+        brain_ijk = cdc.TrimeshSurface(brain, brain_crs, brain_units)
+        scalp_ijk = cdc.TrimeshSurface(scalp, scalp_crs, scalp_units)
+        t_ijk2ras = xr.DataArray(
+            np.array(t_ijk2ras), dims=[t_to_crs, t_from_crs]
+        ).pint.quantify(t_units)
         t_ras2ijk = xrutils.pinv(t_ijk2ras)
 
         return cls(
@@ -539,6 +627,8 @@ class TwoSurfaceHeadModel:
             t = register_trans_rot_isoscale(self.landmarks, points)
         elif mode == "general":
             t = register_general_affine(self.landmarks, points)
+        elif mode == "identity":
+            t = register_identity(self.landmarks, points)
         else:
             raise ValueError(f"unexpected mode '{mode}'")
 
@@ -546,6 +636,100 @@ class TwoSurfaceHeadModel:
         snapped = self.scalp.snap(transformed)
         return snapped
 
+    def align_and_relax_to_scalp(
+        self,
+        points: cdt.LabeledPoints,
+        channels: list[tuple[str, str]] | cdt.NDTimeSeries | pd.DataFrame,
+        nominal_distances: dict[tuple[str, str], float] | None = None,
+        n_iter: int = 400,
+        k_spring: float = 1.0,
+        k_anchor: float = 10.0,
+        step_size: float = 0.1,
+        convergence_tol: float = 0.01,
+        initial_align_mode: str = "general",
+    ) -> tuple[cdt.LabeledPoints, "SpringICPResult"]:
+        """Align and project optodes onto the scalp using spring-relaxation ICP.
+
+        Unlike :meth:`align_and_snap_to_scalp`, which projects every optode
+        independently to its nearest scalp point, this method preserves the
+        probe geometry by coupling source–detector pairs through Hooke's-law
+        springs.  The algorithm alternates between a spring-force step —
+        attracting each pair toward its nominal channel distance — and an ICP
+        projection step that keeps every optode on the scalp surface.
+        Anatomical landmarks shared between the probe and the head model are
+        enforced as strong anchor springs.  The approach is based on the
+        spring-relaxation registration introduced in AtlasViewer
+        (:cite:t:`Aasted2015`).
+
+        Two-phase registration:
+
+        1. **Initial alignment** — a global transform (translation + rotation
+           + optional scale) fitted to matched landmark pairs brings ``points``
+           into the scalp coordinate system.
+
+        2. **Spring-relaxation ICP** — optodes are iteratively refined:
+           channel springs resist geometry distortion; anchor springs enforce
+           anatomical positions; every optode is projected back onto the scalp
+           mesh after each force step.
+
+        Args:
+            points: Probe coordinates (sources, detectors and landmarks).
+            channels: Channel definitions — accepted forms are a
+                :class:`~cedalion.typing.NDTimeSeries` DataArray (coords
+                ``source`` and ``detector``), a measurement-list
+                :class:`pandas.DataFrame` (columns ``source``, ``detector``,
+                ``wavelength``), or a list of ``(source_label,
+                detector_label)`` tuples.
+            nominal_distances: Optional pre-specified rest lengths for each
+                channel spring, keyed by ``(src_label, det_label)``.  When
+                *None*, distances are measured from the initially aligned
+                positions.
+            n_iter: Maximum number of spring-relaxation iterations.
+            k_spring: Spring constant for channel springs (Hooke's law).
+            k_anchor: Spring constant for landmark-anchor springs.  Should
+                exceed ``k_spring`` to enforce anatomical constraints
+                strongly.
+            step_size: Fraction of the net force vector applied per
+                iteration.  Reduce if the relaxation is numerically unstable.
+            convergence_tol: Early-stop threshold: halt when the maximum
+                surface-projection displacement across all optodes falls
+                below this value (in scalp units, typically mm).
+            initial_align_mode: Global alignment method applied before
+                relaxation.  One of ``"general"`` (12-DOF full affine),
+                ``"trans_rot_isoscale"`` (7-DOF), ``"trans_rot"`` (6-DOF),
+                or ``"identity"`` (unit conversion only).
+
+        Returns:
+            tuple: ``(registered_points, details)`` where
+            ``registered_points`` is a
+            :class:`~cedalion.typing.LabeledPoints` DataArray with the final
+            optode positions on the scalp, and ``details`` is a
+            :class:`~cedalion.geometry.registration.SpringICPResult`
+            containing convergence diagnostics and per-channel quality
+            metrics.
+
+        References:
+            Paper & Code: :cite:t:`Aasted2015`
+
+        See Also:
+            :meth:`align_and_snap_to_scalp` for a faster but
+            geometry-unaware alternative.
+        """
+        cite("Aasted2015")
+
+        return register_optodes_spring_icp(
+            self.scalp,
+            points,
+            channels,
+            self.landmarks,
+            nominal_distances=nominal_distances,
+            n_iter=n_iter,
+            k_spring=k_spring,
+            k_anchor=k_anchor,
+            step_size=step_size,
+            convergence_tol=convergence_tol,
+            initial_align_mode=initial_align_mode
+        )
 
     # FIXME then maybe this should also not be in this class
     @cdc.validate_schemas
@@ -621,8 +805,7 @@ class TwoSurfaceHeadModel:
             # Snap to closest scalp voxel
             snapped[i] = voxels[voxel_idx]
 
-        points.values = snapped
-        return points
+        return points.copy(data=snapped)
 
 
     def scale_to_landmarks(
@@ -648,6 +831,20 @@ class TwoSurfaceHeadModel:
             New :class:`TwoSurfaceHeadModel` scaled and aligned to
             ``target_landmarks``.
         """
+        # Avoid CRS-name collisions with self's transform dims. If we don't
+        # rename, the composed t_ijk2scaled ends up with duplicate dim names
+        # (e.g. ["ijk","ijk"]) which xarray cannot broadcast over downstream.
+        # The placeholder is derived from the caller's CRS so the resulting
+        # head model's CRS still points back to the source name.
+        target_crs = target_landmarks.points.crs
+        if target_crs in self.t_ijk2ras.dims:
+            placeholder = f"{target_crs}_scaled"
+            i = 0
+            while placeholder in self.t_ijk2ras.dims:
+                i += 1
+                placeholder = f"{target_crs}_scaled{i}"
+            target_landmarks = target_landmarks.rename({target_crs: placeholder})
+
         if self.crs == "ijk":
             landmarks_ras = self.landmarks.points.apply_transform(self.t_ijk2ras)
         else:
@@ -661,14 +858,13 @@ class TwoSurfaceHeadModel:
             raise ValueError(f"unexpected mode '{mode}'")
 
 
-        t_ijk2scaled = t_ras2scaled @ self.t_ijk2ras
+        t_ijk2scaled = xrutils.compose_affine(t_ras2scaled, self.t_ijk2ras)
         t_scaled2ijk = xrutils.pinv(t_ijk2scaled)
 
         if self.crs == "ijk":
             result = self.apply_transform(t_ijk2scaled)
         else:
-            result = self.apply_transform(t_ijk2scaled)
-
+            result = self.apply_transform(t_ras2scaled)
 
         result.t_ijk2ras = t_ijk2scaled
         result.t_ras2ijk = t_scaled2ijk
@@ -712,7 +908,9 @@ class TwoSurfaceHeadModel:
         """
         v = self.brain.vertices
         if not all([f"mni152_{i}" in v.coords for i in ["r", "a", "s"]]):
-            return ValueError("The cortex surface has no mni vertex coordinates")
+            raise NotImplementedError(
+                "The cortex surface has no mni vertex coordinates"
+            )
 
         mni_coords = (
             xr.concat([v.mni152_r, v.mni152_a, v.mni152_s], dim="mni152")
@@ -726,6 +924,201 @@ class TwoSurfaceHeadModel:
             mni_coords = mni_coords.drop_vars(c)
 
         return mni_coords
+
+    def assign_parcels_via_mni_coords(
+        self,
+        coordinate_label: str,
+        label_mapping: dict[int, str],
+        voxel_label_niftii: Path,
+        voxel_label_crs: str = "mni152",
+        background_label = "Background",
+        mni_eps=5.
+    ) -> "TwoSurfaceHeadModel":
+        """Assign parcel labels to brain vertices using a volumetric atlas in MNI space.
+
+        For each brain vertex, the nearest non-background voxel within ``mni_eps``
+        in MNI152 space is found and its string label is assigned to the veretx.
+        Vertices with no labeled neighbor within the search radius receive
+        ``background_label``.
+
+        Args:
+            coordinate_label: Name of the new vertex coordinate.
+            label_mapping: A dictionary that maps numeric voxel labels in the NIfTI file
+                to string parcel names.
+            voxel_label_niftii: Path to the NIfTI atlas file whose voxels carry
+                numeric region labels.
+            voxel_label_crs: Coordinate reference system of the NIfTI file,
+                either ``"mni152"`` or ``"mni305"``. Defaults to ``"mni152"``.
+            background_label: String label used for unlabeled vertices and, if
+                present in ``label_mapping``, to identify background voxels.
+                Defaults to ``"Background"``.
+            mni_eps: Radius of the ball search around each vertex.
+                Defaults to ``5.0``. Increase this value to find non-background
+                voxels for each vertex.
+
+        Returns:
+            A copy of the head model with parcel labels assigned as a new
+            coordinate to brain vertices.
+        """
+
+        if voxel_label_crs not in ["mni152", "mni305"]:
+            raise ValueError(
+                "The niftii file should be either in the 'mni152' or 'mni305' space."
+            )
+
+        vertex_mni_coords = self.get_brain_mni152_coords()
+
+        # load the niftii file which contains for each voxel a numeric label
+        img = nibabel.load(voxel_label_niftii)
+        flat_voxel_numlabels = img.get_fdata().flatten().astype(int)
+
+        # figure out numeric label of background:
+        if background_label in label_mapping.values():
+            # background is specified in label_mapping
+            bg_numlabel = [k for k, v in label_mapping.items() if v == background_label]
+        else:
+            # background is not specified in label mapping. assume there is one numeric
+            # label used in the niftii, that is not in the mapping and that denotes
+            # background (often 0).
+            used_numlabels = np.unique(flat_voxel_numlabels)
+            bg_numlabel = [i for i in used_numlabels if i not in label_mapping.keys()]
+
+        assert len(bg_numlabel) == 1
+        bg_numlabel = bg_numlabel[0]
+
+        # obtain cell coordinates in the RAS space of the niftii file
+        ijk2crs = cedalion.io.anatomy._get_affine_from_niftii(img, crs=voxel_label_crs)
+
+        if voxel_label_crs == "mni152":
+            # the niftii provides already mni152 coordinates. just use its transform
+            ijk2mni152 = ijk2crs
+        elif voxel_label_crs == "mni305":
+            # if the niftii is in mni305 coordiantes apply additionally the transform
+            # that bring us from mni305 to mni152
+            ijk2mni152 = xrutils.compose_affine(
+                cedalion.dot.utils.mni305_to_mni152, ijk2crs
+            )
+
+        ijk2mni152 = ijk2mni152.pint.dequantify()  # FIXME?
+
+        voxel_coords = cedalion.io.anatomy.cell_coordinates(
+            img, ijk2mni152, center=True
+        )
+        voxel_coords = voxel_coords.pint.dequantify()
+
+        flat_voxel_coords = voxel_coords.values.reshape(-1, 3)
+
+        vertex_strlabels = []
+
+        # for all voxels within a ball of radius mni_eps around a vertice's MNI coord...
+        t = KDTree(flat_voxel_coords)
+        neighbor_list = t.query_ball_point(vertex_mni_coords.values, mni_eps)
+
+        for i, neighbors_flat_idx in enumerate(neighbor_list):
+            # ... retrieve their numeric label and distance to the MNI coord
+            vortex_numlabels = flat_voxel_numlabels[neighbors_flat_idx]
+            vortex_coords = flat_voxel_coords[neighbors_flat_idx]
+            dists = np.linalg.norm(vortex_coords - vertex_mni_coords.values[i], axis=1)
+
+            # ... create a mask of voxels that are not background
+            notbg_mask = vortex_numlabels != bg_numlabel
+
+            # .. if there are labeled voxels nearby assign the closest one
+            if np.any(notbg_mask):
+                masked_dists = np.where(notbg_mask, dists, np.inf)
+                this_vortex_numlabel = vortex_numlabels[np.argmin(masked_dists)]
+                vertex_strlabels.append(label_mapping[this_vortex_numlabel])
+            # otherwise assign background
+            else:
+                vertex_strlabels.append(background_label)
+
+        hm = self.copy()
+        hm.brain.vertex_coords[coordinate_label] = vertex_strlabels
+
+        return hm
+
+    def parcel_summary_from_vertex_coordinate(
+        self,
+        atlas_coord,
+        head_model_name: str,
+        exclude_pattern: str | None = "Background|Medial_Wall",
+    ):
+        vertices = self.brain.vertices
+        coords = vertices.coords
+        mni152 = self.get_brain_mni152_coords().pint.dequantify().values
+
+        df = pd.DataFrame({
+            "vertex": vertices.label.values,
+            "parcel": coords["parcel"].values,
+            "atlas_label": coords[atlas_coord].values,
+            "mni152_r": mni152[:, 0],
+            "mni152_a": mni152[:, 1],
+            "mni152_s": mni152[:, 2],
+        })
+
+        if "fsaverage_vertex" in coords:
+            df["fsaverage_vertex"] = coords["fsaverage_vertex"].values
+        elif "fsaverage_vertex_id" in coords:
+            df["fsaverage_vertex"] = coords["fsaverage_vertex_id"].values
+        else:
+            df["fsaverage_vertex"] = pd.NA
+
+        df["parcel"] = df["parcel"].astype(str)
+        df = df[df["parcel"] != ""]
+
+        if exclude_pattern is not None:
+            excluded = df["parcel"].str.contains(exclude_pattern, case=False, na=False)
+            df = df[~excluded]
+
+        counts = (
+            df.groupby(["parcel", "atlas_label"], dropna=False)
+            .size()
+            .reset_index(name="matching_vertices")
+        )
+        parcel_totals = (
+            df.groupby("parcel").size().rename("parcel_vertices").reset_index()
+        )
+        summary = counts.merge(parcel_totals, on="parcel", how="left")
+        summary["fraction_of_parcel"] = (
+            summary["matching_vertices"] / summary["parcel_vertices"]
+        )
+        summary = summary.sort_values(
+            ["parcel", "matching_vertices", "atlas_label"],
+            ascending=[True, False, True],
+        ).drop_duplicates("parcel")
+
+        representative = df.sort_values("vertex").drop_duplicates(
+            ["parcel", "atlas_label"]
+        )[
+            [
+                "parcel",
+                "atlas_label",
+                "vertex",
+                "fsaverage_vertex",
+                "mni152_r",
+                "mni152_a",
+                "mni152_s",
+            ]
+        ]
+        summary = summary.merge(
+            representative, on=["parcel", "atlas_label"], how="left"
+        )
+        summary.insert(0, "model", head_model_name)
+        return summary[
+            [
+                "model",
+                "parcel",
+                "atlas_label",
+                "vertex",
+                "fsaverage_vertex",
+                "mni152_r",
+                "mni152_a",
+                "mni152_s",
+                "matching_vertices",
+                "parcel_vertices",
+                "fraction_of_parcel",
+            ]
+        ]
 
 
 @lru_cache
@@ -752,7 +1145,8 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            # FIXME: disabled while investigating the voxel parcel labels
+            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,
@@ -772,7 +1166,8 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            # FIXME: disabled while investigating the voxel parcel labels
+            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,

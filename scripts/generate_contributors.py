@@ -49,6 +49,13 @@ NAME_OVERRIDES: dict[str, str] = {
     "shakiba93": "Shakiba Moradi",
     "isamusisi": "Isa Musisi",
     "ahns97": "Sung Min Ahn",
+    "huppertt": "Theodore Huppert",
+}
+
+# Contributors that must always appear, even if absent from the GitHub API response.
+# Values are fallback commit counts used only when GitHub does not return them.
+GUARANTEED_CONTRIBUTORS: dict[str, int] = {
+    "huppertt": 1,
 }
 
 _MAINTAINER_LOGINS = {m["login"] for m in MAINTAINERS}
@@ -79,6 +86,9 @@ def fetch_contributors() -> dict[str, int]:
             # Redirect duplicate accounts to their canonical login.
             login = ACCOUNT_MERGE.get(login, login)
             counts[login] = counts.get(login, 0) + entry["contributions"]
+    for login, fallback_count in GUARANTEED_CONTRIBUTORS.items():
+        if login not in counts:
+            counts[login] = fallback_count
     return counts
 
 

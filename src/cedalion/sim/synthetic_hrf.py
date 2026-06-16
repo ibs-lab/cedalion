@@ -222,7 +222,7 @@ def build_synthetic_hrf_timeseries(
 
     dms = glm.design_matrix.hrf_regressors(ts, stim_df, basis_fct)
     hrf_regs = dms.common
-    hrf_regs *= stim_df.value.max()
+    hrf_regs *= stim_df.value.max() / hrf_regs.max()
 
     # remove HRF prefix from regressor names
     hrf_regs = hrf_regs.assign_coords(
