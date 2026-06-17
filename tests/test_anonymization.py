@@ -108,6 +108,16 @@ def test_isolate_reduces_count_with_body():
     assert head_surface.nvertices < surface.nvertices
 
 
+def test_isolate_head_warns_when_sphere_misses(simple_sphere_surface, caplog):
+    """A far-off nasion pushes the sphere off the mesh; isolate_head warns."""
+    far_nasion = np.array([-2000.0, 0.0, 0.0])
+    with caplog.at_level("WARNING", logger="cedalion"):
+        out, mask = isolate_head(simple_sphere_surface, far_nasion)
+    assert "matched only" in caplog.text
+    assert out is simple_sphere_surface
+    assert int(mask.sum()) < 100
+
+
 def test_align_origin_at_ear_midpoint(simple_sphere_surface, axis_normalized_landmarks):
     """CTF origin is placed at the midpoint of LPA and RPA."""
     _, aligned_lm, _ = align_axes_from_landmarks(

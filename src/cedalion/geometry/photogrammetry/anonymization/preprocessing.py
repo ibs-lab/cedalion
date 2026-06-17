@@ -167,10 +167,18 @@ def isolate_head(
 
     head_mask = head_mask & _largest_component_mask(surface.mesh)
 
-    if head_mask.sum() < 100 or head_mask.mean() > 0.95:
+    if head_mask.mean() > 0.95:
         logger.debug(
             f"Head isolation: sphere contains {head_mask.mean()*100:.0f}% "
-            f"of vertices -- scan is already head-only"
+            f"of vertices -- scan is already head-only."
+        )
+        return surface, head_mask
+
+    if head_mask.sum() < 100:
+        logger.warning(
+            f"Head isolation: sphere matched only {int(head_mask.sum())} "
+            f"vertices out of {len(vertices)}. Likely a centroid/radius "
+            f"mismatch (check nasion alignment). Returning input unchanged."
         )
         return surface, head_mask
 
