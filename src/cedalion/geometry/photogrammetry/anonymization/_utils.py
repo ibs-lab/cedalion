@@ -145,6 +145,12 @@ def _rebuild_mesh(
 
     Used by every transform in the pipeline to keep the
     ``Trimesh(process=False)`` + ``_copy_visual`` pattern in one place.
+
+    Note: do not replace these call sites with ``TrimeshSurface.apply_transform``
+    (``src/cedalion/dataclasses/geometry.py``). That path relies on
+    ``mesh.copy()`` to propagate the visual and does not explicitly re-attach
+    ``TextureVisuals``; combined with the vertex-reindexing steps here (which
+    need UV slicing), it would silently downgrade textured meshes.
     """
     new_mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
     _copy_visual(src_mesh, new_mesh, vertex_index=vertex_index)

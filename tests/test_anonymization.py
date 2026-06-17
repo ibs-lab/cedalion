@@ -28,7 +28,7 @@ def simple_sphere_surface():
     """Unit sphere as a minimal TrimeshSurface for geometry-only tests."""
     sphere = trimesh.creation.icosphere(subdivisions=3, radius=100)
     return cdc.TrimeshSurface(
-        mesh=sphere, crs="scanner", units=cedalion.units.millimeter
+        mesh=sphere, crs="digitized", units=cedalion.units.millimeter
     )
 
 
@@ -41,7 +41,7 @@ def head_like_surface():
     vertices[:, 1] *= 0.9
     head_mesh = trimesh.Trimesh(vertices=vertices, faces=sphere.faces)
     return cdc.TrimeshSurface(
-        mesh=head_mesh, crs="scanner", units=cedalion.units.millimeter
+        mesh=head_mesh, crs="digitized", units=cedalion.units.millimeter
     )
 
 
@@ -57,7 +57,7 @@ def axis_normalized_landmarks():
     ], dtype=float)
     return cdc.build_labeled_points(
         coords,
-        crs="scanner",
+        crs="digitized",
         units="mm",
         labels=["Nz", "Iz", "Cz", "LPA", "RPA"],
         types=[cdc.PointType.LANDMARK] * 5,
@@ -101,7 +101,7 @@ def test_isolate_reduces_count_with_body():
     combined = trimesh.util.concatenate([sphere, body])
 
     surface = cdc.TrimeshSurface(
-        combined, crs="scanner", units=cedalion.units.millimeter
+        combined, crs="digitized", units=cedalion.units.millimeter
     )
     nasion = np.array([0, 100, 0])
     head_surface, _ = isolate_head(surface, nasion)
