@@ -12,6 +12,7 @@ import numpy as np
 
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
+from cedalion.errors import CRSMismatchError
 from cedalion.geometry.landmarks import normalize_landmarks_labels
 
 from ._utils import _ear_midpoint, _apply_affine, _transform_labeled_points
@@ -29,6 +30,7 @@ from .preprocessing import (
 
 
 _REQUIRED_LABELS = ("Nz", "Iz", "Cz", "LPA", "RPA")
+_ENTRY_CRS = "digitized"
 
 
 @cdc.validate_schemas
@@ -95,6 +97,12 @@ def anonymize_scan(
     missing = set(_REQUIRED_LABELS) - set(labels)
     if missing:
         raise ValueError(f"Missing landmarks for anonymization: {missing}")
+
+    if surface.crs != _ENTRY_CRS:
+        raise CRSMismatchError.unexpected_crs(_ENTRY_CRS, surface.crs)
+    landmarks_crs = next(d for d in landmarks.dims if d != "label")
+    if landmarks_crs != _ENTRY_CRS:
+        raise CRSMismatchError.unexpected_crs(_ENTRY_CRS, landmarks_crs)
     idx = {lbl: i for i, lbl in enumerate(labels)}
     Nz_raw = landmarks.pint.dequantify().values[idx["Nz"]]
 
