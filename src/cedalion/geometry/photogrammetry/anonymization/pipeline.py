@@ -159,6 +159,16 @@ def anonymize_scan(
 
     surface_anon = delete_masked_vertices(surface_h, mask)
 
+    min_remaining_frac = 0.20
+    remaining = surface_anon.nvertices / max(surface_h.nvertices, 1)
+    if remaining < min_remaining_frac:
+        raise RuntimeError(
+            f"Anonymization mask removed {(1 - remaining) * 100:.1f}% of "
+            f"vertices ({surface_h.nvertices} -> {surface_anon.nvertices}); "
+            f"expected at least {min_remaining_frac * 100:.0f}% to survive. "
+            f"Check landmark frame and cap detection."
+        )
+
     if return_frame == "ctf":
         return surface_anon, landmarks_ctf
 

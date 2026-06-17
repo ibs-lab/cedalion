@@ -384,6 +384,25 @@ def test_anonymize_scan_raises_on_missing_landmark(
         anonymize_scan(head_like_surface, partial)
 
 
+def test_anonymize_raises_when_mask_destroys_mesh(
+    head_like_surface, axis_normalized_landmarks
+):
+    """RuntimeError fires when the deletion mask removes >80% of vertices.
+
+    A huge ``ear_delete_radius_mm`` puts every vertex inside one of the ear
+    spheres (still gated below ``cap_z``), so far more than 80% of the head
+    is wiped out and the post-condition guard trips.
+    """
+    with pytest.raises(RuntimeError, match="removed"):
+        anonymize_scan(
+            head_like_surface,
+            axis_normalized_landmarks,
+            ear_delete_radius_mm=10_000.0,
+            cap_z_ceiling_mm=0.0,        # force the failsafe path
+            eyebrow_offset_mm=10_000.0,  # failsafe lifts cap far above the head
+        )
+
+
 def test_full_anonymization_pipeline(
     head_like_surface, axis_normalized_landmarks, tmp_path
 ):
