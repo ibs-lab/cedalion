@@ -5,12 +5,8 @@ affine application, landmark transforms, ear midpoint, and upper-head centroid
 to avoid duplicating these across sibling modules.
 """
 
-from typing import Callable
-
 import numpy as np
 import trimesh
-
-import cedalion.typing as cdt
 
 
 def _resolve_texture_image(visual):
@@ -51,27 +47,6 @@ def _reindex_faces(
 def _apply_affine(points: np.ndarray, M: np.ndarray) -> np.ndarray:
     """Apply a 4x4 affine to an ``(N, 3)`` point array."""
     return points @ M[:3, :3].T + M[:3, 3]
-
-
-def _transform_labeled_points(
-    landmarks: cdt.LabeledPoints,
-    transform_xyz: Callable[[np.ndarray], np.ndarray],
-    new_crs: str,
-) -> cdt.LabeledPoints:
-    """Transform a LabeledPoints array and rename its spatial dim.
-
-    Wraps the dequantify -> math -> ``copy(data=...)`` -> rename -> quantify
-    cycle that ``align_axes_from_landmarks`` and ``revert_to_einstar_frame``
-    both need.
-    """
-    dequant = landmarks.pint.dequantify()
-    new_xyz = transform_xyz(dequant.values)
-    old_crs_dim = next(d for d in landmarks.dims if d != "label")
-    return (
-        dequant.copy(data=new_xyz)
-        .rename({old_crs_dim: new_crs})
-        .pint.quantify()
-    )
 
 
 def _ear_midpoint(Lpa: np.ndarray, Rpa: np.ndarray) -> np.ndarray:

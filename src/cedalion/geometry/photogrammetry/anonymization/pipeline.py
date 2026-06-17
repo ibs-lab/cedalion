@@ -15,7 +15,7 @@ import cedalion.typing as cdt
 from cedalion.errors import CRSMismatchError
 from cedalion.geometry.landmarks import normalize_landmarks_labels
 
-from ._utils import _ear_midpoint, _apply_affine, _transform_labeled_points
+from ._utils import _ear_midpoint
 from .mask import (
     delete_masked_vertices,
     detect_cap_boundary,
