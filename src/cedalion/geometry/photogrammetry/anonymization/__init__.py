@@ -17,9 +17,9 @@ Example:
 
 Pipeline steps inside ``anonymize_scan``:
 
-1. :func:`normalize_axes`: rotate around X so Y points anterior.
+1. :func:`orient_y_anterior`: rotate around X so Y points anterior.
 2. :func:`isolate_head`: strip body, shoulders, and disconnected fragments.
-3. :func:`align_axes_from_landmarks`: map into the CTF frame.
+3. :func:`align_to_ctf`: map into the CTF frame.
 4. :func:`detect_cap_boundary`: find the cap front edge along Z.
 5. :func:`face_mask_from_landmarks`: face region + ear spheres, clamped
    below the cap.
@@ -34,9 +34,9 @@ whole pipeline.
 """
 
 from .preprocessing import (
-    normalize_axes,
+    orient_y_anterior,
     isolate_head,
-    align_axes_from_landmarks,
+    align_to_ctf,
     revert_to_einstar_frame,
 )
 from .mask import (
@@ -53,9 +53,9 @@ __all__ = [
     "anonymize_scan",
     # Preprocessing (axis normalization, head isolation, full alignment,
     # and the inverse mapping back to the raw Einstar frame)
-    "normalize_axes",
+    "orient_y_anterior",
     "isolate_head",
-    "align_axes_from_landmarks",
+    "align_to_ctf",
     "revert_to_einstar_frame",
     # Mask construction and application
     "detect_cap_boundary",

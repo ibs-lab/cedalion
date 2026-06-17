@@ -3,10 +3,10 @@
 Gets a raw Einstar photogrammetry scan into a standard reference frame suitable for
 landmark detection and mask building:
 
-- ``normalize_axes`` rotates around X so Y points anterior (preliminary,
+- ``orient_y_anterior`` rotates around X so Y points anterior (preliminary,
   used before head isolation).
 - ``isolate_head`` strips body/shoulders/chair and disconnected fragments.
-- ``align_axes_from_landmarks`` maps the scan into the CTF frame
+- ``align_to_ctf`` maps the scan into the CTF frame
   (+X=anterior, +Y=left, +Z=up, origin at the LPA-RPA midpoint) once all 5
   landmarks are available.
 """
@@ -31,7 +31,7 @@ logger = logging.getLogger("cedalion")
 
 
 @cdc.validate_schemas
-def normalize_axes(
+def orient_y_anterior(
     surface: cdc.TrimeshSurface,
     nasion: np.ndarray,
 ) -> tuple[cdc.TrimeshSurface, np.ndarray, np.ndarray]:
@@ -205,7 +205,7 @@ def isolate_head(
 
 
 @cdc.validate_schemas
-def align_axes_from_landmarks(
+def align_to_ctf(
     surface: cdc.TrimeshSurface,
     landmarks: cdt.LabeledPoints,
 ) -> tuple[cdc.TrimeshSurface, cdt.LabeledPoints, cdt.AffineTransform]:
@@ -221,7 +221,7 @@ def align_axes_from_landmarks(
     The returned surface and landmarks carry ``crs="ctf"``.
 
     Args:
-        surface: Axis-normalized TrimeshSurface (post ``normalize_axes`` and
+        surface: Axis-normalized TrimeshSurface (post ``orient_y_anterior`` and
             ``isolate_head``). Labels must already be canonicalized via
             ``normalize_landmarks_labels``.
         landmarks: LabeledPoints with canonical labels Nz, Iz, Cz, LPA, RPA
@@ -314,9 +314,9 @@ def revert_to_einstar_frame(
 ) -> tuple[cdc.TrimeshSurface, cdt.LabeledPoints]:
     """Map an aligned surface and landmarks back into the raw Einstar frame.
 
-    Inverse of ``normalize_axes`` composed with ``align_axes_from_landmarks``,
+    Inverse of ``orient_y_anterior`` composed with ``align_to_ctf``,
     so the returned mesh and landmarks land back in the CRS the original
-    ``align_axes_from_landmarks`` was called from (i.e. ``T_align.dims[1]``),
+    ``align_to_ctf`` was called from (i.e. ``T_align.dims[1]``),
     matching ``read_einstar_obj``'s output.
 
     Note that ``isolate_head`` is not invertible: the returned mesh is still
@@ -324,13 +324,13 @@ def revert_to_einstar_frame(
 
     Args:
         surface: TrimeshSurface in the CTF frame (post
-            ``align_axes_from_landmarks``, optionally after masking).
+            ``align_to_ctf``, optionally after masking).
         landmarks: LabeledPoints in the CTF frame.
-        R_normalize: 3x3 rotation returned by ``normalize_axes`` (a same-CRS
+        R_normalize: 3x3 rotation returned by ``orient_y_anterior`` (a same-CRS
             pre-rotation, so it stays as raw numpy rather than an
             :class:`~cedalion.typing.AffineTransform`).
         T_align: :class:`~cedalion.typing.AffineTransform` returned by
-            ``align_axes_from_landmarks``, with dims ``[ctf, source_crs]``.
+            ``align_to_ctf``, with dims ``[ctf, source_crs]``.
 
     Returns:
         Tuple of (surface_revert, landmarks_revert). The output CRS is taken

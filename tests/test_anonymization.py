@@ -11,13 +11,13 @@ import cedalion
 import cedalion.dataclasses as cdc
 
 from cedalion.geometry.photogrammetry.anonymization import (
-    align_axes_from_landmarks,
+    align_to_ctf,
     anonymize_scan,
     delete_masked_vertices,
     detect_cap_boundary,
     face_mask_from_landmarks,
     isolate_head,
-    normalize_axes,
+    orient_y_anterior,
     revert_to_einstar_frame,
     save_anonymized_scan,
 )
@@ -47,7 +47,7 @@ def head_like_surface():
 
 @pytest.fixture
 def axis_normalized_landmarks():
-    """5 anatomical landmarks in the post-normalize_axes frame (X=up, Y=ant, Z=left)."""
+    """5 anatomical landmarks in the post-orient_y_anterior frame (X=up, Y=ant, Z=left)."""
     coords = np.array([
         [0, 100, 0],     # Nz (anterior)
         [0, -100, 0],    # Iz (posterior)
@@ -65,23 +65,23 @@ def axis_normalized_landmarks():
 
 
 def test_normalize_rotation_orthogonal(simple_sphere_surface):
-    """Rotation matrix returned by normalize_axes is orthogonal."""
+    """Rotation matrix returned by orient_y_anterior is orthogonal."""
     nasion = np.array([0, 50, 50])
-    _, _, R = normalize_axes(simple_sphere_surface, nasion)
+    _, _, R = orient_y_anterior(simple_sphere_surface, nasion)
     assert_allclose(R @ R.T, np.eye(3), atol=1e-10)
 
 
 def test_normalize_nasion_to_positive_y(simple_sphere_surface):
     """After normalization the rotated nasion has a positive Y component."""
     nasion = np.array([0, 50, 50])
-    _, rotated_nasion, _ = normalize_axes(simple_sphere_surface, nasion)
+    _, rotated_nasion, _ = orient_y_anterior(simple_sphere_surface, nasion)
     assert rotated_nasion[1] > 0
 
 
 def test_normalize_identity_when_aligned(simple_sphere_surface):
     """No rotation is applied when the nasion already points along +Y."""
     nasion = np.array([0, 100, 0])
-    _, rotated_nasion, R = normalize_axes(simple_sphere_surface, nasion)
+    _, rotated_nasion, R = orient_y_anterior(simple_sphere_surface, nasion)
     assert_allclose(R, np.eye(3), atol=1e-6)
     assert_allclose(rotated_nasion, nasion, atol=1e-6)
 
@@ -120,7 +120,7 @@ def test_isolate_head_warns_when_sphere_misses(simple_sphere_surface, caplog):
 
 def test_align_origin_at_ear_midpoint(simple_sphere_surface, axis_normalized_landmarks):
     """CTF origin is placed at the midpoint of LPA and RPA."""
-    _, aligned_lm, _ = align_axes_from_landmarks(
+    _, aligned_lm, _ = align_to_ctf(
         simple_sphere_surface, axis_normalized_landmarks
     )
     lm = aligned_lm.pint.dequantify()
@@ -131,7 +131,7 @@ def test_align_origin_at_ear_midpoint(simple_sphere_surface, axis_normalized_lan
 
 def test_align_axes_orientation(simple_sphere_surface, axis_normalized_landmarks):
     """Nz points along +X, LPA along +Y, and Cz along +Z in the CTF frame."""
-    _, aligned_lm, _ = align_axes_from_landmarks(
+    _, aligned_lm, _ = align_to_ctf(
         simple_sphere_surface, axis_normalized_landmarks
     )
     lm = aligned_lm.pint.dequantify()
@@ -145,7 +145,7 @@ def test_align_axes_orientation(simple_sphere_surface, axis_normalized_landmarks
 
 def test_align_returns_ctf_crs(simple_sphere_surface, axis_normalized_landmarks):
     """Aligned surface carries crs='ctf'."""
-    aligned_surface, _, _ = align_axes_from_landmarks(
+    aligned_surface, _, _ = align_to_ctf(
         simple_sphere_surface, axis_normalized_landmarks
     )
     assert aligned_surface.crs == "ctf"
@@ -157,7 +157,7 @@ def test_align_raises_on_missing_landmark(
     """ValueError is raised when a required landmark is absent."""
     partial = axis_normalized_landmarks.isel(label=slice(0, 4))
     with pytest.raises(ValueError, match="Missing landmarks"):
-        align_axes_from_landmarks(simple_sphere_surface, partial)
+        align_to_ctf(simple_sphere_surface, partial)
 
 
 def test_align_raises_on_degenerate_lpa_rpa(simple_sphere_surface):
@@ -177,7 +177,7 @@ def test_align_raises_on_degenerate_lpa_rpa(simple_sphere_surface):
         types=[cdc.PointType.LANDMARK] * 5,
     )
     with pytest.raises(ValueError, match="LPA and RPA coincide"):
-        align_axes_from_landmarks(simple_sphere_surface, lm)
+        align_to_ctf(simple_sphere_surface, lm)
 
 
 def test_align_raises_on_nz_on_ear_axis(simple_sphere_surface):
@@ -199,7 +199,7 @@ def test_align_raises_on_nz_on_ear_axis(simple_sphere_surface):
         types=[cdc.PointType.LANDMARK] * 5,
     )
     with pytest.raises(ValueError, match="Nz lies on the LPA-RPA axis"):
-        align_axes_from_landmarks(simple_sphere_surface, lm)
+        align_to_ctf(simple_sphere_surface, lm)
 
 
 def test_cap_boundary_in_sane_range():
@@ -307,7 +307,7 @@ def test_delete_preserves_crs_and_units(simple_sphere_surface):
 
 def test_revert_round_trip_with_align(simple_sphere_surface, axis_normalized_landmarks):
     """align then revert recovers the original vertex positions."""
-    aligned_surface, aligned_lm, T = align_axes_from_landmarks(
+    aligned_surface, aligned_lm, T = align_to_ctf(
         simple_sphere_surface, axis_normalized_landmarks
     )
     reverted_surface, _ = revert_to_einstar_frame(
@@ -324,7 +324,7 @@ def test_revert_returns_digitized_crs(
     simple_sphere_surface, axis_normalized_landmarks
 ):
     """Reverted surface carries crs='digitized'."""
-    aligned_surface, aligned_lm, T = align_axes_from_landmarks(
+    aligned_surface, aligned_lm, T = align_to_ctf(
         simple_sphere_surface, axis_normalized_landmarks
     )
     reverted_surface, _ = revert_to_einstar_frame(
@@ -406,7 +406,7 @@ def test_full_anonymization_pipeline(
 ):
     """End-to-end pipeline: normalize, isolate, align, mask, revert, save."""
     nasion = axis_normalized_landmarks.pint.dequantify().sel(label="Nz").values
-    surface_n, nasion_n, R = normalize_axes(head_like_surface, nasion)
+    surface_n, nasion_n, R = orient_y_anterior(head_like_surface, nasion)
     lm_arr = axis_normalized_landmarks.pint.dequantify().values
     landmarks_n = (
         axis_normalized_landmarks.pint.dequantify()
@@ -415,7 +415,7 @@ def test_full_anonymization_pipeline(
     )
     surface_n, _ = isolate_head(surface_n, nasion_n)
 
-    surface_h, landmarks_n, T_ctf = align_axes_from_landmarks(surface_n, landmarks_n)
+    surface_h, landmarks_n, T_ctf = align_to_ctf(surface_n, landmarks_n)
     verts = np.asarray(surface_h.mesh.vertices)
     lm_n = landmarks_n.pint.dequantify()
     Nz = lm_n.sel(label="Nz").values

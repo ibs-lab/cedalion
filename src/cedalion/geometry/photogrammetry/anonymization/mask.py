@@ -10,7 +10,7 @@ applies it to the mesh:
 - ``delete_masked_vertices``: drops triangles touching any masked vertex.
 
 All mask math assumes the CTF frame: +X=anterior, +Y=left, +Z=up, origin
-at the LPA-RPA midpoint (see ``align_axes_from_landmarks``).
+at the LPA-RPA midpoint (see ``align_to_ctf``).
 """
 
 import logging

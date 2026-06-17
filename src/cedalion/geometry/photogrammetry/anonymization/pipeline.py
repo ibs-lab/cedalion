@@ -22,9 +22,9 @@ from .mask import (
     face_mask_from_landmarks,
 )
 from .preprocessing import (
-    align_axes_from_landmarks,
+    align_to_ctf,
     isolate_head,
-    normalize_axes,
+    orient_y_anterior,
     revert_to_einstar_frame,
 )
 
@@ -52,9 +52,9 @@ def anonymize_scan(
 
     Steps (each is also exposed as a standalone function for inspection):
 
-    1. ``normalize_axes``: rotate around X so Y points anterior.
+    1. ``orient_y_anterior``: rotate around X so Y points anterior.
     2. ``isolate_head``: strip body, shoulders, fragments.
-    3. ``align_axes_from_landmarks``: map into the CTF frame.
+    3. ``align_to_ctf``: map into the CTF frame.
     4. ``detect_cap_boundary``: find the cap front edge along Z.
     5. ``face_mask_from_landmarks``: union face region + ear spheres,
        clamped below the cap.
@@ -105,10 +105,10 @@ def anonymize_scan(
         raise CRSMismatchError.unexpected_crs(_ENTRY_CRS, landmarks_crs)
     Nz_raw = landmarks.sel(label="Nz").pint.dequantify().values
 
-    surface_n, _, R_norm = normalize_axes(surface, Nz_raw)
+    surface_n, _, R_norm = orient_y_anterior(surface, Nz_raw)
     R_norm4 = np.eye(4)
     R_norm4[:3, :3] = R_norm
-    # normalize_axes is a pre-rotation within the same CRS, not a CRS change,
+    # orient_y_anterior is a pre-rotation within the same CRS, not a CRS change,
     # so we pass the raw 4x4 to apply_transform (the AffineTransform wrapper
     # would produce a DataArray with duplicate "digitized" dim names).
     landmarks_n = landmarks.points.apply_transform(R_norm4)
@@ -118,7 +118,7 @@ def anonymize_scan(
         surface_n, Nz_n, radius=head_isolation_radius_mm
     )
 
-    surface_h, landmarks_ctf, T_align = align_axes_from_landmarks(
+    surface_h, landmarks_ctf, T_align = align_to_ctf(
         surface_n, landmarks_n
     )
     Nz, Iz, Cz, Lpa, Rpa = (
