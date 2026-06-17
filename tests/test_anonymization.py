@@ -160,6 +160,48 @@ def test_align_raises_on_missing_landmark(
         align_axes_from_landmarks(simple_sphere_surface, partial)
 
 
+def test_align_raises_on_degenerate_lpa_rpa(simple_sphere_surface):
+    """ValueError when LPA and RPA coincide (ear axis is undefined)."""
+    coords = np.array([
+        [0, 100, 0],
+        [0, -100, 0],
+        [100, 0, 0],
+        [0, 0, 50],
+        [0, 0, 50],   # RPA == LPA
+    ], dtype=float)
+    lm = cdc.build_labeled_points(
+        coords,
+        crs="digitized",
+        units="mm",
+        labels=["Nz", "Iz", "Cz", "LPA", "RPA"],
+        types=[cdc.PointType.LANDMARK] * 5,
+    )
+    with pytest.raises(ValueError, match="LPA and RPA coincide"):
+        align_axes_from_landmarks(simple_sphere_surface, lm)
+
+
+def test_align_raises_on_nz_on_ear_axis(simple_sphere_surface):
+    """ValueError when Nz lies on the LPA-RPA line (X axis is undefined)."""
+    coords = np.array([
+        [0, 0, 50],      # Nz on LPA-RPA line (Y=Z=0 has no Nz-perp component)
+        [0, -100, 0],
+        [100, 0, 0],
+        [0, 0, 100],
+        [0, 0, -100],
+    ], dtype=float)
+    # Nz at (0, 0, 50): origin = 0, ear_axis along Z, Nz-origin = (0,0,50) ||
+    # ear_axis -> perpendicular component is zero.
+    lm = cdc.build_labeled_points(
+        coords,
+        crs="digitized",
+        units="mm",
+        labels=["Nz", "Iz", "Cz", "LPA", "RPA"],
+        types=[cdc.PointType.LANDMARK] * 5,
+    )
+    with pytest.raises(ValueError, match="Nz lies on the LPA-RPA axis"):
+        align_axes_from_landmarks(simple_sphere_surface, lm)
+
+
 def test_cap_boundary_in_sane_range():
     """cap_z stays inside the documented [Nz[2], Nz[2] + ceiling] window."""
     sphere = trimesh.creation.icosphere(subdivisions=4, radius=100)
@@ -265,9 +307,10 @@ def test_delete_preserves_crs_and_units(simple_sphere_surface):
 
 def test_revert_round_trip_with_align(simple_sphere_surface, axis_normalized_landmarks):
     """align then revert recovers the original vertex positions."""
-    aligned_surface, aligned_lm, M = align_axes_from_landmarks(
+    aligned_surface, aligned_lm, T = align_axes_from_landmarks(
         simple_sphere_surface, axis_normalized_landmarks
     )
+    M = T.pint.dequantify().values
     reverted_surface, _ = revert_to_einstar_frame(
         aligned_surface, aligned_lm, R_normalize=np.eye(3), M_align=M
     )
@@ -282,9 +325,10 @@ def test_revert_returns_digitized_crs(
     simple_sphere_surface, axis_normalized_landmarks
 ):
     """Reverted surface carries crs='digitized'."""
-    aligned_surface, aligned_lm, M = align_axes_from_landmarks(
+    aligned_surface, aligned_lm, T = align_axes_from_landmarks(
         simple_sphere_surface, axis_normalized_landmarks
     )
+    M = T.pint.dequantify().values
     reverted_surface, _ = revert_to_einstar_frame(
         aligned_surface, aligned_lm, np.eye(3), M
     )
@@ -354,7 +398,8 @@ def test_full_anonymization_pipeline(
     )
     surface_n, _ = isolate_head(surface_n, nasion_n)
 
-    surface_h, landmarks_n, M_ctf = align_axes_from_landmarks(surface_n, landmarks_n)
+    surface_h, landmarks_n, T_ctf = align_axes_from_landmarks(surface_n, landmarks_n)
+    M_ctf = T_ctf.pint.dequantify().values
     verts = np.asarray(surface_h.mesh.vertices)
     lm_n = landmarks_n.pint.dequantify()
     Nz = lm_n.sel(label="Nz").values

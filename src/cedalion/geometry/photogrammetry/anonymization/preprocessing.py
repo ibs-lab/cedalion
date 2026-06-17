@@ -18,7 +18,6 @@ import trimesh
 
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
-from cedalion.geometry.landmarks import normalize_landmarks_labels
 
 from ._utils import (
     _apply_affine,
@@ -210,7 +209,7 @@ def isolate_head(
 def align_axes_from_landmarks(
     surface: cdc.TrimeshSurface,
     landmarks: cdt.LabeledPoints,
-) -> tuple[cdc.TrimeshSurface, cdt.LabeledPoints, np.ndarray]:
+) -> tuple[cdc.TrimeshSurface, cdt.LabeledPoints, cdt.AffineTransform]:
     """Map mesh + landmarks into the CTF anatomical frame.
 
     CTF convention:
@@ -224,43 +223,53 @@ def align_axes_from_landmarks(
 
     Args:
         surface: Axis-normalized TrimeshSurface (post ``normalize_axes`` and
-            ``isolate_head``).
-        landmarks: LabeledPoints with labels Nz, Iz, Cz, and LPA/RPA (or
-            aliases like Lpa/Rpa, "left ear"/"right ear"; normalized
-            internally via ``normalize_landmarks_labels``)
+            ``isolate_head``). Labels must already be canonicalized via
+            ``normalize_landmarks_labels``.
+        landmarks: LabeledPoints with canonical labels Nz, Iz, Cz, LPA, RPA
             (matching the surface frame).
 
     Returns:
-        Tuple of (aligned_surface, aligned_landmarks, transform).
-        ``transform`` is a 4x4 homogeneous affine that maps input-frame
-        points into CTF; apply as ``hom = transform @ [x, y, z, 1]``.
+        Tuple of (aligned_surface, aligned_landmarks, T_align).
+        ``T_align`` is an :class:`~cedalion.typing.AffineTransform` with
+        ``dims=["ctf", surface.crs]`` carrying pint units, suitable for
+        ``points.apply_transform`` and ``TrimeshSurface.apply_transform``.
 
     Raises:
         ValueError: If any of the required landmarks (Nz, Iz, Cz, LPA, RPA)
-            are missing after label normalization.
+            are missing, or if the landmarks are degenerate (LPA==RPA, or
+            Nz on the LPA-RPA axis) so an orthonormal CTF basis cannot be
+            constructed.
     """
-    landmarks = normalize_landmarks_labels(landmarks)
-    lm = landmarks.pint.dequantify().values
-    labels = list(landmarks["label"].values)
-    idx = {lbl: i for i, lbl in enumerate(labels)}
-
     required = {"Nz", "Iz", "Cz", "LPA", "RPA"}
-    missing = required - set(labels)
+    missing = required - set(landmarks["label"].values.tolist())
     if missing:
         raise ValueError(f"Missing landmarks for alignment: {missing}")
 
-    Nz = lm[idx["Nz"]]
-    Cz = lm[idx["Cz"]]
-    Lpa = lm[idx["LPA"]]
-    Rpa = lm[idx["RPA"]]
+    Nz = landmarks.sel(label="Nz").pint.dequantify().values
+    Cz = landmarks.sel(label="Cz").pint.dequantify().values
+    Lpa = landmarks.sel(label="LPA").pint.dequantify().values
+    Rpa = landmarks.sel(label="RPA").pint.dequantify().values
     origin = _ear_midpoint(Lpa, Rpa)
 
-    y_ax = Lpa - Rpa
-    y_ax = y_ax / np.linalg.norm(y_ax)
+    ear_axis = Lpa - Rpa
+    ear_norm = float(np.linalg.norm(ear_axis))
+    if ear_norm < 1e-6:
+        raise ValueError(
+            f"Degenerate landmarks: LPA and RPA coincide "
+            f"(|LPA - RPA| = {ear_norm:.3e} mm). Cannot define CTF Y-axis."
+        )
+    y_ax = ear_axis / ear_norm
 
     nz_dir = Nz - origin
     nz_dir = nz_dir - np.dot(nz_dir, y_ax) * y_ax
-    x_ax = nz_dir / np.linalg.norm(nz_dir)
+    nz_norm = float(np.linalg.norm(nz_dir))
+    if nz_norm < 1e-6:
+        raise ValueError(
+            f"Degenerate landmarks: Nz lies on the LPA-RPA axis "
+            f"(perpendicular component = {nz_norm:.3e} mm). "
+            f"Cannot define CTF X-axis."
+        )
+    x_ax = nz_dir / nz_norm
 
     z_ax = np.cross(x_ax, y_ax)
 
@@ -273,6 +282,17 @@ def align_axes_from_landmarks(
     M[:3, :3] = R
     M[:3, 3] = -R @ origin
 
+    units_str = str(surface.units)
+    T_align = cdc.affine_transform_from_numpy(
+        M,
+        from_crs=surface.crs,
+        to_crs="ctf",
+        from_units=units_str,
+        to_units=units_str,
+    )
+
+    aligned_landmarks = landmarks.points.apply_transform(T_align)
+
     aligned_verts = _apply_affine(np.asarray(surface.mesh.vertices), M)
     new_mesh = _rebuild_mesh(
         surface.mesh,
@@ -283,11 +303,7 @@ def align_axes_from_landmarks(
         new_mesh, crs="ctf", units=surface.units,
     )
 
-    aligned_landmarks = _transform_labeled_points(
-        landmarks, lambda p: _apply_affine(p, M), "ctf"
-    )
-
-    return aligned_surface, aligned_landmarks, M
+    return aligned_surface, aligned_landmarks, T_align
 
 
 @cdc.validate_schemas

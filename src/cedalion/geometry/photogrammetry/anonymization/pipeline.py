@@ -118,9 +118,12 @@ def anonymize_scan(
         surface_n, Nz_n, radius=head_isolation_radius_mm
     )
 
-    surface_h, landmarks_ctf, M_align = align_axes_from_landmarks(
+    surface_h, landmarks_ctf, T_align = align_axes_from_landmarks(
         surface_n, landmarks_n
     )
+    # Bridge: revert_to_einstar_frame still consumes the raw 4x4 (refactored
+    # in B7). Strip the pint/CRS wrapping here.
+    M_align = T_align.pint.dequantify().values
     Nz, Iz, Cz, Lpa, Rpa = (
         landmarks_ctf.sel(label=lbl).pint.dequantify().values
         for lbl in _REQUIRED_LABELS
