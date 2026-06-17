@@ -183,6 +183,26 @@ def test_cap_boundary_failsafe_clamps_implausible_cap():
     assert cap_z == pytest.approx(Nz[2] + 10.0)
 
 
+def test_cap_boundary_failsafe_when_peak_at_edge():
+    """Failsafe fires when the smoothed X-max profile peaks at the lowest bin.
+
+    Builds an anterior X-max profile that decreases monotonically with z, so
+    ``argmax(xv_s) == 0`` and the walk-back loop has no iterations to take.
+    Without the failsafe, cap_z would silently stay at the first bin center
+    (~Nz[2]) and the deletion mask would collapse to almost nothing.
+    """
+    z = np.linspace(1.0, 99.0, 197)
+    x = 100.0 - 0.5 * z
+    y = np.zeros_like(z)
+    verts = np.column_stack([x, y, z])
+    Nz = np.array([100.0, 0.0, 0.0])
+    Cz = np.array([0.0, 0.0, 100.0])
+    Lpa = np.array([0.0, 1.0, 0.0])
+    Rpa = np.array([0.0, -1.0, 0.0])
+    cap_z, *_ = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa)
+    assert cap_z == pytest.approx(Nz[2] + 10.0)
+
+
 def test_face_mask_region_semantics():
     """Anterior-below-cap vertex is masked; posterior and above-cap are not."""
     Nz = np.array([100, 0, 10])

@@ -101,19 +101,24 @@ def detect_cap_boundary(
 
     peak_idx = int(np.argmax(xv_s))
     grad = np.gradient(xv_s, zv)
-    cap_z = zv[0]
-    for i in range(peak_idx - 1, 0, -1):
+    cap_z = None
+    for i in range(peak_idx - 1, -1, -1):
         if grad[i] < foot_grad_threshold:
             cap_z = zv[i]
             break
 
     ceiling = Nz[2] + cap_z_ceiling_mm
-    if cap_z > ceiling:
+    if cap_z is None or cap_z > ceiling:
         fallback = Nz[2] + eyebrow_offset_mm
+        reason = (
+            "no foot found below peak"
+            if cap_z is None
+            else f"cap_z={cap_z:.1f} mm exceeded ceiling "
+                 f"Nz+{cap_z_ceiling_mm:.0f}={ceiling:.1f}"
+        )
         logger.info(
-            f"detect_cap_boundary: cap_z={cap_z:.1f} mm exceeded ceiling "
-            f"Nz+{cap_z_ceiling_mm:.0f}={ceiling:.1f}; assuming flush cap "
-            f"and falling back to Nz+{eyebrow_offset_mm:.0f}={fallback:.1f} mm."
+            f"detect_cap_boundary: {reason}; assuming flush cap and falling "
+            f"back to Nz+{eyebrow_offset_mm:.0f}={fallback:.1f} mm."
         )
         cap_z = fallback
 
