@@ -311,33 +311,53 @@ def revert_to_einstar_frame(
     surface: cdc.TrimeshSurface,
     landmarks: cdt.LabeledPoints,
     R_normalize: np.ndarray,
-    M_align: np.ndarray,
+    T_align: cdt.AffineTransform,
 ) -> tuple[cdc.TrimeshSurface, cdt.LabeledPoints]:
     """Map an aligned surface and landmarks back into the raw Einstar frame.
 
     Inverse of ``normalize_axes`` composed with ``align_axes_from_landmarks``,
-    so the returned mesh and landmarks carry ``crs="digitized"`` and match
-    the original ``read_einstar_obj`` output.
+    so the returned mesh and landmarks land back in the CRS the original
+    ``align_axes_from_landmarks`` was called from (i.e. ``T_align.dims[1]``),
+    matching ``read_einstar_obj``'s output.
 
     Note that ``isolate_head`` is not invertible: the returned mesh is still
-    head-only even though its coordinates are in the digitized frame.
+    head-only even though its coordinates are in the original frame.
 
     Args:
         surface: TrimeshSurface in the CTF frame (post
             ``align_axes_from_landmarks``, optionally after masking).
         landmarks: LabeledPoints in the CTF frame.
-        R_normalize: 3x3 rotation returned by ``normalize_axes``.
-        M_align: 4x4 affine returned by ``align_axes_from_landmarks``.
+        R_normalize: 3x3 rotation returned by ``normalize_axes`` (a same-CRS
+            pre-rotation, so it stays as raw numpy rather than an
+            :class:`~cedalion.typing.AffineTransform`).
+        T_align: :class:`~cedalion.typing.AffineTransform` returned by
+            ``align_axes_from_landmarks``, with dims ``[ctf, source_crs]``.
 
     Returns:
-        Tuple of (surface_digitized, landmarks_digitized). Both carry
-        ``crs="digitized"`` and the mesh preserves UVs / vertex colors.
+        Tuple of (surface_revert, landmarks_revert). The output CRS is taken
+        from ``T_align.dims[1]`` (the original source CRS, typically
+        ``"digitized"``); the mesh preserves UVs / vertex colors.
     """
-    M_inv = np.linalg.inv(M_align)
+    target_crs = T_align.dims[1]
+    units_str = str(surface.units)
+    M_align = T_align.pint.dequantify().values
+    T_align_inv = cdc.affine_transform_from_numpy(
+        np.linalg.inv(M_align),
+        from_crs="ctf",
+        to_crs=target_crs,
+        from_units=units_str,
+        to_units=units_str,
+    )
+
     R_inv4 = np.eye(4)
     R_inv4[:3, :3] = R_normalize.T
-    M_total = R_inv4 @ M_inv
 
+    landmarks_unaligned = landmarks.points.apply_transform(T_align_inv)
+    raw_landmarks = landmarks_unaligned.points.apply_transform(R_inv4)
+
+    # Mesh stays on _apply_affine + _rebuild_mesh per the texture-preservation
+    # contract documented in _rebuild_mesh and _copy_visual.
+    M_total = R_inv4 @ np.linalg.inv(M_align)
     raw_verts = _apply_affine(np.asarray(surface.mesh.vertices), M_total)
     new_mesh = _rebuild_mesh(
         surface.mesh,
@@ -345,11 +365,7 @@ def revert_to_einstar_frame(
         faces=surface.mesh.faces,
     )
     raw_surface = cdc.TrimeshSurface(
-        new_mesh, crs="digitized", units=surface.units,
-    )
-
-    raw_landmarks = _transform_labeled_points(
-        landmarks, lambda p: _apply_affine(p, M_total), "digitized"
+        new_mesh, crs=target_crs, units=surface.units,
     )
 
     return raw_surface, raw_landmarks

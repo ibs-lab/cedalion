@@ -310,9 +310,8 @@ def test_revert_round_trip_with_align(simple_sphere_surface, axis_normalized_lan
     aligned_surface, aligned_lm, T = align_axes_from_landmarks(
         simple_sphere_surface, axis_normalized_landmarks
     )
-    M = T.pint.dequantify().values
     reverted_surface, _ = revert_to_einstar_frame(
-        aligned_surface, aligned_lm, R_normalize=np.eye(3), M_align=M
+        aligned_surface, aligned_lm, R_normalize=np.eye(3), T_align=T
     )
     assert_allclose(
         np.asarray(reverted_surface.mesh.vertices),
@@ -328,9 +327,8 @@ def test_revert_returns_digitized_crs(
     aligned_surface, aligned_lm, T = align_axes_from_landmarks(
         simple_sphere_surface, axis_normalized_landmarks
     )
-    M = T.pint.dequantify().values
     reverted_surface, _ = revert_to_einstar_frame(
-        aligned_surface, aligned_lm, np.eye(3), M
+        aligned_surface, aligned_lm, np.eye(3), T
     )
     assert reverted_surface.crs == "digitized"
 
@@ -418,7 +416,6 @@ def test_full_anonymization_pipeline(
     surface_n, _ = isolate_head(surface_n, nasion_n)
 
     surface_h, landmarks_n, T_ctf = align_axes_from_landmarks(surface_n, landmarks_n)
-    M_ctf = T_ctf.pint.dequantify().values
     verts = np.asarray(surface_h.mesh.vertices)
     lm_n = landmarks_n.pint.dequantify()
     Nz = lm_n.sel(label="Nz").values
@@ -430,7 +427,7 @@ def test_full_anonymization_pipeline(
     mask, _ = face_mask_from_landmarks(verts, Nz, Lpa, Rpa, cap_z=cap_z)
     surface_anon = delete_masked_vertices(surface_h, mask)
     surface_anon_dig, _ = revert_to_einstar_frame(
-        surface_anon, landmarks_n, R, M_ctf
+        surface_anon, landmarks_n, R, T_ctf
     )
 
     out = str(tmp_path / "anon.obj")
