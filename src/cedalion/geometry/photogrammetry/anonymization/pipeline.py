@@ -103,20 +103,17 @@ def anonymize_scan(
     landmarks_crs = next(d for d in landmarks.dims if d != "label")
     if landmarks_crs != _ENTRY_CRS:
         raise CRSMismatchError.unexpected_crs(_ENTRY_CRS, landmarks_crs)
-    idx = {lbl: i for i, lbl in enumerate(labels)}
-    Nz_raw = landmarks.pint.dequantify().values[idx["Nz"]]
+    Nz_raw = landmarks.sel(label="Nz").pint.dequantify().values
 
     surface_n, _, R_norm = normalize_axes(surface, Nz_raw)
     R_norm4 = np.eye(4)
     R_norm4[:3, :3] = R_norm
-    crs_dim = next(d for d in landmarks.dims if d != "label")
-    landmarks_n = _transform_labeled_points(
-        landmarks,
-        lambda p: _apply_affine(p, R_norm4),
-        new_crs=crs_dim,
-    )
+    # normalize_axes is a pre-rotation within the same CRS, not a CRS change,
+    # so we pass the raw 4x4 to apply_transform (the AffineTransform wrapper
+    # would produce a DataArray with duplicate "digitized" dim names).
+    landmarks_n = landmarks.points.apply_transform(R_norm4)
 
-    Nz_n = landmarks_n.pint.dequantify().values[idx["Nz"]]
+    Nz_n = landmarks_n.sel(label="Nz").pint.dequantify().values
     surface_n, _ = isolate_head(
         surface_n, Nz_n, radius=head_isolation_radius_mm
     )
@@ -124,9 +121,9 @@ def anonymize_scan(
     surface_h, landmarks_ctf, M_align = align_axes_from_landmarks(
         surface_n, landmarks_n
     )
-    lm_ctf = landmarks_ctf.pint.dequantify().values
     Nz, Iz, Cz, Lpa, Rpa = (
-        lm_ctf[idx[lbl]] for lbl in _REQUIRED_LABELS
+        landmarks_ctf.sel(label=lbl).pint.dequantify().values
+        for lbl in _REQUIRED_LABELS
     )
     ear_mid = _ear_midpoint(Lpa, Rpa)
 
