@@ -334,9 +334,9 @@ def test_revert_returns_digitized_crs(
 
 
 def test_save_raises_on_bad_extension(simple_sphere_surface, tmp_path):
-    """ValueError is raised when out_path does not end in .obj."""
+    """trimesh raises on extensions it cannot export."""
     out = str(tmp_path / "out.txt")
-    with pytest.raises(ValueError, match=".obj"):
+    with pytest.raises(ValueError, match="exporter not available"):
         save_anonymized_scan(simple_sphere_surface, out)
 
 
@@ -346,6 +346,31 @@ def test_save_geometry_only(simple_sphere_surface, tmp_path):
     written = save_anonymized_scan(simple_sphere_surface, out, strip_texture=True)
     assert os.path.exists(out)
     assert any(p.endswith(".obj") for p in written)
+
+
+def test_anonymize_scan_on_textureless_surface(
+    head_like_surface, axis_normalized_landmarks
+):
+    """End-to-end pipeline succeeds on a textureless mesh (no UV, no JPG)."""
+    assert getattr(head_like_surface.mesh.visual, "uv", None) is None
+    surface_anon, _ = anonymize_scan(head_like_surface, axis_normalized_landmarks)
+    assert surface_anon.nvertices < head_like_surface.nvertices
+    assert getattr(surface_anon.mesh.visual, "uv", None) is None
+
+
+def test_save_anonymized_scan_ply(
+    head_like_surface, axis_normalized_landmarks, tmp_path
+):
+    """A textureless anonymized surface round-trips through a .ply export."""
+    surface_anon, _ = anonymize_scan(head_like_surface, axis_normalized_landmarks)
+    out = str(tmp_path / "anon.ply")
+    written = save_anonymized_scan(surface_anon, out)
+    assert written == [out]
+    assert os.path.exists(out)
+    assert not os.path.exists(str(tmp_path / "anon.mtl"))
+    assert not os.path.exists(str(tmp_path / "anon.jpg"))
+    reloaded = trimesh.load(out)
+    assert len(reloaded.vertices) == surface_anon.nvertices
 
 
 def test_anonymize_scan_reduces_vertices(head_like_surface, axis_normalized_landmarks):

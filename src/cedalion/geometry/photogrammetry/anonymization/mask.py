@@ -286,36 +286,57 @@ def save_anonymized_scan(
 ) -> list[str]:
     """Export an anonymized photogrammetry surface to disk.
 
-    Default path (``strip_texture=False``): writes an ``.obj`` + ``.mtl`` +
-    sanitized ``.jpg`` bundle. The JPG is rebuilt to contain colors *only*
-    for UV regions still referenced by the anonymized mesh; face-region
-    pixels are replaced by the fill color, so opening the JPG alone reveals
-    no face.
+    For ``.obj`` paths with ``strip_texture=False`` and a textured input,
+    writes an ``.obj`` + ``.mtl`` + sanitized ``.jpg`` bundle. The JPG is
+    rebuilt to contain colors *only* for UV regions still referenced by the
+    anonymized mesh; face-region pixels are replaced by the fill color, so
+    opening the JPG alone reveals no face.
 
-    ``strip_texture=True`` writes geometry only (no MTL, no JPG). Same
-    fallback applies when the input mesh has no usable texture, with a
-    warning.
+    Any other case (``strip_texture=True``, textureless input, or a
+    non-``.obj`` extension that cannot carry an MTL/JPG sidecar) writes
+    geometry only. The supported geometry-only extensions are whatever
+    ``trimesh.Trimesh.export`` accepts (``.ply``, ``.stl``, ``.glb``,
+    ``.off``, ``.3mf``, ``.dae``, ``.xyz``, etc.).
 
     Args:
         surface: Anonymized TrimeshSurface (typically output of
             ``delete_masked_vertices``).
-        out_path: Destination path ending in ``.obj``.
+        out_path: Destination path. Extension determines the mesh format;
+            ``.obj`` enables the texture sidecar.
         strip_texture: If True, skip the MTL + JPG and write geometry only.
+            Ignored for non-``.obj`` extensions (those can never carry a
+            sidecar).
 
     Returns:
         List of absolute paths written (``.obj`` plus ``.mtl`` + ``.jpg``
-        when a texture was written).
+        when a texture was written; just the mesh file otherwise).
 
     Raises:
-        ValueError: If ``out_path`` does not end in ``.obj``.
+        ValueError: If the extension is unsupported by ``trimesh.export``.
     """
-    if not out_path.lower().endswith(".obj"):
-        raise ValueError(f"out_path must end in .obj, got: {out_path}")
-
+    ext = os.path.splitext(out_path)[1].lower()
     out_dir = os.path.dirname(os.path.abspath(out_path)) or "."
     stem = os.path.splitext(os.path.basename(out_path))[0]
 
-    sanitized = None if strip_texture else _sanitize_texture_from_uv(surface.mesh)
+    # Single up-front check: only ``.obj`` can carry the MTL/JPG sidecar.
+    # If the user has texture data but chose a different format (without
+    # explicitly stripping it), warn and degrade to geometry-only.
+    has_uv = (
+        getattr(surface.mesh.visual, "uv", None) is not None
+        and len(surface.mesh.visual.uv) == len(surface.mesh.vertices)
+    )
+    if has_uv and not strip_texture and ext != ".obj":
+        logger.warning(
+            f"save_anonymized_scan: texture export is only available for "
+            f"'.obj'; '{ext}' cannot carry an MTL/JPG sidecar. Writing "
+            f"geometry only."
+        )
+
+    sanitized = (
+        _sanitize_texture_from_uv(surface.mesh)
+        if ext == ".obj" and not strip_texture
+        else None
+    )
 
     # Bare rebuild: the visual is rewritten below (with the sanitized
     # texture) or the mesh is exported geometry-only, so we deliberately
@@ -354,7 +375,7 @@ def save_anonymized_scan(
 
         written.extend([out_path, mtl_path, jpg_path])
     else:
-        if not strip_texture:
+        if ext == ".obj" and not strip_texture and not has_uv:
             logger.warning(
                 "save_anonymized_scan: input mesh has no usable texture; "
                 "falling back to geometry-only OBJ."
