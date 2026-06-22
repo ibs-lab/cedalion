@@ -11,6 +11,7 @@ import cedalion
 import cedalion.dataclasses as cdc
 
 from cedalion.geometry.photogrammetry.anonymization import (
+    CapDetectionParams,
     align_to_ctf,
     anonymize_scan,
     delete_masked_vertices,
@@ -422,8 +423,10 @@ def test_anonymize_raises_when_mask_destroys_mesh(
             head_like_surface,
             axis_normalized_landmarks,
             ear_delete_radius_mm=10_000.0,
-            cap_z_ceiling_mm=0.0,        # force the failsafe path
-            eyebrow_offset_mm=10_000.0,  # failsafe lifts cap far above the head
+            cap=CapDetectionParams(
+                z_ceiling=0.0,        # force the failsafe path
+                eyebrow_offset=10_000.0,  # lifts cap far above the head
+            ),
         )
 
 

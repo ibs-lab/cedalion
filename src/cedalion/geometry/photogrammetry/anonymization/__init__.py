@@ -40,6 +40,7 @@ from .preprocessing import (
     revert_to_einstar_frame,
 )
 from .mask import (
+    CapDetectionParams,
     detect_cap_boundary,
     face_mask_from_landmarks,
     delete_masked_vertices,
@@ -58,6 +59,7 @@ __all__ = [
     "align_to_ctf",
     "revert_to_einstar_frame",
     # Mask construction and application
+    "CapDetectionParams",
     "detect_cap_boundary",
     "face_mask_from_landmarks",
     "delete_masked_vertices",

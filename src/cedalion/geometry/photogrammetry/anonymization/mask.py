@@ -15,6 +15,7 @@ at the LPA-RPA midpoint (see ``align_to_ctf``).
 
 import logging
 import os
+from dataclasses import dataclass
 
 import numpy as np
 import trimesh
@@ -28,29 +29,49 @@ from ._utils import _ear_midpoint, _rebuild_mesh, _reindex_faces, _resolve_textu
 logger = logging.getLogger("cedalion")
 
 
+@dataclass(frozen=True)
+class CapDetectionParams:
+    """Parameters for :func:`detect_cap_boundary`.
+
+    Distances are in millimetres; ``foot_grad_threshold`` is dimensionless
+    (a slope dX/dZ).
+
+    Attributes:
+        band_width: Y-band half-width for the midline X-profile (mm).
+        bin_size: Z-bin size for the X-profile (mm).
+        foot_grad_threshold: dX/dZ below this value marks the foot of the rise.
+        z_ceiling: Absolute mm above Nz at which the cap-peak detection is
+            considered untrustworthy and the failsafe fires.
+        eyebrow_offset: Failsafe cut height, expressed as mm above Nz.
+            Anatomically just above the supraorbital ridge.
+    """
+
+    band_width: float = 15.0
+    bin_size: float = 1.0
+    foot_grad_threshold: float = 0.2
+    z_ceiling: float = 40.0
+    eyebrow_offset: float = 10.0
+
+
 def detect_cap_boundary(
     verts: np.ndarray,
     Nz: np.ndarray,
     Cz: np.ndarray,
     Lpa: np.ndarray,
     Rpa: np.ndarray,
-    band_width: float = 15.0,
-    bin_size: float = 1.0,
-    foot_grad_threshold: float = 0.2,
-    cap_z_ceiling_mm: float = 40.0,
-    eyebrow_offset_mm: float = 10.0,
+    params: CapDetectionParams = CapDetectionParams(),
 ) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
     """Find the Z height where the EEG cap front edge sits.
 
     Scans upward from Nz along the midline and records max-X per Z-bin. The
     cap protrudes anteriorly, so X-max on the midline traces the cap. The
     cap edge is the foot of the rise leading to the peak: walk back from the
-    peak until the smoothed gradient drops below ``foot_grad_threshold``.
+    peak until the smoothed gradient drops below ``params.foot_grad_threshold``.
 
     Failsafe for flush / no-optode caps: when the cap sits flat against the
     head, the anterior bump vanishes and X-max is roughly monotonic up to
     ``Cz``, stranding ``cap_z`` near the crown. If detection lands above
-    ``Nz[2] + cap_z_ceiling_mm``, fall back to ``Nz[2] + eyebrow_offset_mm``
+    ``Nz[2] + params.z_ceiling``, fall back to ``Nz[2] + params.eyebrow_offset``
     (just above the supraorbital ridge).
 
     Expects the CTF frame (+X=anterior, +Y=left, +Z=up).
@@ -61,17 +82,14 @@ def detect_cap_boundary(
         Cz: Cz position.
         Lpa: Left preauricular position.
         Rpa: Right preauricular position.
-        band_width: Y-band half-width for the midline X-profile (mm).
-        bin_size: Z-bin size for the X-profile (mm).
-        foot_grad_threshold: dX/dZ below this value marks the foot of the rise.
-        cap_z_ceiling_mm: Absolute mm above Nz at which the cap-peak
-            detection is considered untrustworthy and the failsafe fires.
-        eyebrow_offset_mm: Failsafe cut height, expressed as mm above Nz.
-            Anatomically just above the supraorbital ridge.
+        params: Cap-detection parameters; see :class:`CapDetectionParams`.
 
     Returns:
         Tuple of (cap_z, profile_z, profile_x_raw, profile_x_smooth).
     """
+    band_width = params.band_width
+    bin_size = params.bin_size
+    foot_grad_threshold = params.foot_grad_threshold
     ear_mid = _ear_midpoint(Lpa, Rpa)
     mid_y = ear_mid[1]
     in_band = np.abs(verts[:, 1] - mid_y) < band_width
@@ -107,18 +125,18 @@ def detect_cap_boundary(
             cap_z = zv[i]
             break
 
-    ceiling = Nz[2] + cap_z_ceiling_mm
+    ceiling = Nz[2] + params.z_ceiling
     if cap_z is None or cap_z > ceiling:
-        fallback = Nz[2] + eyebrow_offset_mm
+        fallback = Nz[2] + params.eyebrow_offset
         reason = (
             "no foot found below peak"
             if cap_z is None
             else f"cap_z={cap_z:.1f} mm exceeded ceiling "
-                 f"Nz+{cap_z_ceiling_mm:.0f}={ceiling:.1f}"
+                 f"Nz+{params.z_ceiling:.0f}={ceiling:.1f}"
         )
         logger.info(
             f"detect_cap_boundary: {reason}; assuming flush cap and falling "
-            f"back to Nz+{eyebrow_offset_mm:.0f}={fallback:.1f} mm."
+            f"back to Nz+{params.eyebrow_offset:.0f}={fallback:.1f} mm."
         )
         cap_z = fallback
 

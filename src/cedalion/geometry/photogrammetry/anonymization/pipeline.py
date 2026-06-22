@@ -16,6 +16,7 @@ from cedalion.errors import CRSMismatchError
 from cedalion.geometry.landmarks import normalize_landmarks_labels
 
 from .mask import (
+    CapDetectionParams,
     delete_masked_vertices,
     detect_cap_boundary,
     face_mask_from_landmarks,
@@ -38,13 +39,9 @@ def anonymize_scan(
     landmarks: cdt.LabeledPoints,
     *,
     head_isolation_radius_mm: float = 220.0,
-    cap_band_width_mm: float = 15.0,
-    cap_bin_size_mm: float = 1.0,
-    cap_foot_grad_threshold: float = 0.2,
-    cap_z_ceiling_mm: float = 40.0,
-    eyebrow_offset_mm: float = 10.0,
     ear_delete_radius_mm: float = 40.0,
     landmark_keep_radius_mm: float = 8.0,
+    cap: CapDetectionParams = CapDetectionParams(),
     return_frame: Literal["digitized", "ctf"] = "digitized",
 ) -> tuple[cdc.TrimeshSurface, cdt.LabeledPoints]:
     """Run the full face-anonymization pipeline on a raw Einstar scan.
@@ -71,17 +68,11 @@ def anonymize_scan(
             ``normalize_landmarks_labels``).
         head_isolation_radius_mm: Sphere radius around the upper-head
             centroid for ``isolate_head``.
-        cap_band_width_mm: Y-band half-width for the cap X-profile.
-        cap_bin_size_mm: Z-bin size for the cap X-profile.
-        cap_foot_grad_threshold: dX/dZ below which the cap-foot is
-            recognized.
-        cap_z_ceiling_mm: mm above Nz at which cap detection is
-            considered untrustworthy and the failsafe fires.
-        eyebrow_offset_mm: failsafe cap height above Nz.
         ear_delete_radius_mm: sphere radius around LPA/RPA for the ear
             region of the deletion mask.
         landmark_keep_radius_mm: per-landmark preservation sphere radius
             and half-width of the midline nasion strip.
+        cap: cap-detection parameters; see :class:`CapDetectionParams`.
         return_frame: ``"digitized"`` (default) reverts back to the raw
             Einstar frame; ``"ctf"`` keeps the CTF frame.
 
@@ -123,14 +114,7 @@ def anonymize_scan(
     )
 
     verts = np.asarray(surface_h.mesh.vertices)
-    cap_z, *_ = detect_cap_boundary(
-        verts, Nz, Cz, Lpa, Rpa,
-        band_width=cap_band_width_mm,
-        bin_size=cap_bin_size_mm,
-        foot_grad_threshold=cap_foot_grad_threshold,
-        cap_z_ceiling_mm=cap_z_ceiling_mm,
-        eyebrow_offset_mm=eyebrow_offset_mm,
-    )
+    cap_z, *_ = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa, params=cap)
 
     mask, _ = face_mask_from_landmarks(
         verts, Nz, Lpa, Rpa,
