@@ -114,7 +114,7 @@ def anonymize_scan(
     )
 
     verts = np.asarray(surface_h.mesh.vertices)
-    cap_z, *_ = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa, params=cap)
+    cap_z = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa, params=cap).cap_z
 
     mask, _ = face_mask_from_landmarks(
         verts, Nz, Lpa, Rpa,

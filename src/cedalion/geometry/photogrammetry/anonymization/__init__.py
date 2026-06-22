@@ -41,6 +41,7 @@ from .preprocessing import (
 )
 from .mask import (
     CapDetectionParams,
+    CapProfile,
     detect_cap_boundary,
     face_mask_from_landmarks,
     delete_masked_vertices,
@@ -60,6 +61,7 @@ __all__ = [
     "revert_to_einstar_frame",
     # Mask construction and application
     "CapDetectionParams",
+    "CapProfile",
     "detect_cap_boundary",
     "face_mask_from_landmarks",
     "delete_masked_vertices",

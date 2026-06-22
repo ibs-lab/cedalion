@@ -16,6 +16,7 @@ at the LPA-RPA midpoint (see ``align_to_ctf``).
 import logging
 import os
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 import trimesh
@@ -53,6 +54,24 @@ class CapDetectionParams:
     eyebrow_offset: float = 10.0
 
 
+class CapProfile(NamedTuple):
+    """Result of :func:`detect_cap_boundary`.
+
+    Attributes:
+        cap_z: Z height of the cap front edge (mm). Always finite -- the
+            failsafe at ``z_ceiling`` / ``eyebrow_offset`` ensures this.
+        z: Z bin centers used in the X-max profile.
+        x_raw: Per-bin max-X values (the raw cap-trace).
+        x_smooth: ``x_raw`` smoothed with a Savitzky-Golay filter; the
+            cap-foot walk-back operates on this.
+    """
+
+    cap_z: float
+    z: np.ndarray
+    x_raw: np.ndarray
+    x_smooth: np.ndarray
+
+
 def detect_cap_boundary(
     verts: np.ndarray,
     Nz: np.ndarray,
@@ -60,7 +79,7 @@ def detect_cap_boundary(
     Lpa: np.ndarray,
     Rpa: np.ndarray,
     params: CapDetectionParams = CapDetectionParams(),
-) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
+) -> CapProfile:
     """Find the Z height where the EEG cap front edge sits.
 
     Scans upward from Nz along the midline and records max-X per Z-bin. The
@@ -85,7 +104,8 @@ def detect_cap_boundary(
         params: Cap-detection parameters; see :class:`CapDetectionParams`.
 
     Returns:
-        Tuple of (cap_z, profile_z, profile_x_raw, profile_x_smooth).
+        :class:`CapProfile` with the detected ``cap_z`` and the underlying
+        X-max profile arrays (``z``, ``x_raw``, ``x_smooth``).
     """
     band_width = params.band_width
     bin_size = params.bin_size
@@ -109,7 +129,12 @@ def detect_cap_boundary(
     valid = ~np.isnan(max_x)
     if valid.sum() < 7:
         fallback = 0.5 * (Nz[2] + Cz[2])
-        return fallback, bin_centers[valid], max_x[valid], max_x[valid]
+        return CapProfile(
+            cap_z=fallback,
+            z=bin_centers[valid],
+            x_raw=max_x[valid],
+            x_smooth=max_x[valid],
+        )
 
     zv = bin_centers[valid]
     xv = max_x[valid]
@@ -140,7 +165,7 @@ def detect_cap_boundary(
         )
         cap_z = fallback
 
-    return cap_z, zv, xv, xv_s
+    return CapProfile(cap_z=cap_z, z=zv, x_raw=xv, x_smooth=xv_s)
 
 
 def face_mask_from_landmarks(

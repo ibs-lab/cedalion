@@ -212,7 +212,7 @@ def test_cap_boundary_in_sane_range():
     Cz = np.array([0, 0, 100])
     Lpa = np.array([0, 1, 0])
     Rpa = np.array([0, -1, 0])
-    cap_z, *_ = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa)
+    cap_z = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa).cap_z
     assert Nz[2] <= cap_z <= Nz[2] + 40.0
 
 
@@ -233,7 +233,7 @@ def test_cap_boundary_failsafe_clamps_implausible_cap():
     Cz = np.array([0.0, 0.0, 100.0])
     Lpa = np.array([0.0, 1.0, 0.0])
     Rpa = np.array([0.0, -1.0, 0.0])
-    cap_z, *_ = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa)
+    cap_z = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa).cap_z
     assert cap_z == pytest.approx(Nz[2] + 10.0)
 
 
@@ -253,7 +253,7 @@ def test_cap_boundary_failsafe_when_peak_at_edge():
     Cz = np.array([0.0, 0.0, 100.0])
     Lpa = np.array([0.0, 1.0, 0.0])
     Rpa = np.array([0.0, -1.0, 0.0])
-    cap_z, *_ = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa)
+    cap_z = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa).cap_z
     assert cap_z == pytest.approx(Nz[2] + 10.0)
 
 
@@ -447,7 +447,7 @@ def test_full_anonymization_pipeline(
     Lpa = lm_n.sel(label="LPA").values
     Rpa = lm_n.sel(label="RPA").values
 
-    cap_z, *_ = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa)
+    cap_z = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa).cap_z
     mask, _ = face_mask_from_landmarks(verts, Nz, Lpa, Rpa, cap_z=cap_z)
     surface_anon = delete_masked_vertices(surface_h, mask)
     surface_anon_dig, _ = revert_to_einstar_frame(
