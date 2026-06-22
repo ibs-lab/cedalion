@@ -1,4 +1,4 @@
-"""Preprocessing: axis normalization and head isolation.
+"""Preprocessing: Y-anterior orientation, head isolation, and CTF alignment.
 
 Gets a raw Einstar photogrammetry scan into a standard reference frame suitable for
 landmark detection and mask building:
@@ -73,7 +73,7 @@ def orient_y_anterior(
     rotated_nasion = R @ nasion
 
     logger.debug(
-        f"Axis normalization: rotated {np.degrees(angle):.1f}deg around X. "
+        f"orient_y_anterior: rotated {np.degrees(angle):.1f}deg around X. "
         f"Y now points anterior."
     )
 
@@ -139,12 +139,12 @@ def isolate_head(
     excluding shoulders and body. Scans that are already head-only are
     returned unchanged (the sphere just contains everything).
 
-    The surface must be axis-normalized first (X=up, Y=anterior, Z=left).
+    The surface must be Y-anterior-oriented first (X=up, Y=anterior, Z=left).
 
     Args:
-        surface: Axis-normalized TrimeshSurface.
+        surface: Y-anterior-oriented TrimeshSurface (post ``orient_y_anterior``).
         nasion: Nasion position as numpy array of shape (3,), in mm,
-            in the axis-normalized frame (matching ``surface``).
+            in the Y-anterior-oriented frame (matching ``surface``).
         radius: Sphere radius in mm (default 220). A human head has
             ~90mm radius; 220mm adds margin for ears and jaw.
 
@@ -221,7 +221,7 @@ def align_to_ctf(
     The returned surface and landmarks carry ``crs="ctf"``.
 
     Args:
-        surface: Axis-normalized TrimeshSurface (post ``orient_y_anterior`` and
+        surface: Y-anterior-oriented TrimeshSurface (post ``orient_y_anterior`` and
             ``isolate_head``). Labels must already be canonicalized via
             ``normalize_landmarks_labels``.
         landmarks: LabeledPoints with canonical labels Nz, Iz, Cz, LPA, RPA

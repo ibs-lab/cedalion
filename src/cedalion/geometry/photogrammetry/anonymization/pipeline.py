@@ -15,7 +15,6 @@ import cedalion.typing as cdt
 from cedalion.errors import CRSMismatchError
 from cedalion.geometry.landmarks import normalize_landmarks_labels
 
-from ._utils import _ear_midpoint
 from .mask import (
     delete_masked_vertices,
     detect_cap_boundary,
@@ -56,13 +55,12 @@ def anonymize_scan(
     2. ``isolate_head``: strip body, shoulders, fragments.
     3. ``align_to_ctf``: map into the CTF frame.
     4. ``detect_cap_boundary``: find the cap front edge along Z.
-    5. ``face_mask_from_landmarks``: union face region + ear spheres,
-       clamped below the cap.
-    6. Preserve ``landmark_keep_radius_mm``-spheres around each landmark
-       and a midline nasion strip from Nz to the cap.
-    7. ``delete_masked_vertices``: drop triangles touching any masked
+    5. ``face_mask_from_landmarks``: union face region + ear spheres
+       (clamped below the cap), then carve out preservation spheres around
+       each landmark and a midline nasion strip up to the cap.
+    6. ``delete_masked_vertices``: drop triangles touching any masked
        vertex, keeping UVs in sync.
-    8. (default) ``revert_to_einstar_frame``: return to ``crs="digitized"``
+    7. (default) ``revert_to_einstar_frame``: return to ``crs="digitized"``
        so the output matches ``read_einstar_obj``'s convention and can be
        fed to ``save_anonymized_scan`` and downstream co-registration.
 
@@ -125,7 +123,6 @@ def anonymize_scan(
         landmarks_ctf.sel(label=lbl).pint.dequantify().values
         for lbl in _REQUIRED_LABELS
     )
-    ear_mid = _ear_midpoint(Lpa, Rpa)
 
     verts = np.asarray(surface_h.mesh.vertices)
     cap_z, *_ = detect_cap_boundary(
@@ -139,20 +136,11 @@ def anonymize_scan(
 
     mask, _ = face_mask_from_landmarks(
         verts, Nz, Lpa, Rpa,
+        Iz=Iz, Cz=Cz,
         cap_z=cap_z,
         ear_delete_radius=ear_delete_radius_mm,
+        landmark_keep_radius=landmark_keep_radius_mm,
     )
-
-    for lm in (Nz, Iz, Cz, Lpa, Rpa):
-        near = np.linalg.norm(verts - lm, axis=1) < landmark_keep_radius_mm
-        mask[near] = False
-    nasion_strip = (
-        (verts[:, 2] >= Nz[2])
-        & (verts[:, 2] < cap_z)
-        & (np.abs(verts[:, 1] - Nz[1]) < landmark_keep_radius_mm)
-        & (verts[:, 0] > ear_mid[0])
-    )
-    mask[nasion_strip] = False
 
     surface_anon = delete_masked_vertices(surface_h, mask)
 

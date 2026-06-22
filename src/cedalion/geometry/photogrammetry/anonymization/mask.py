@@ -130,15 +130,26 @@ def face_mask_from_landmarks(
     Nz: np.ndarray,
     Lpa: np.ndarray,
     Rpa: np.ndarray,
+    Iz: np.ndarray | None = None,
+    Cz: np.ndarray | None = None,
     cap_z: float | None = None,
     ear_delete_radius: float = 40.0,
+    landmark_keep_radius: float = 0.0,
 ) -> tuple[np.ndarray, dict]:
-    """Build face + ear deletion mask from the landmarks (CTF frame).
+    """Build the full face + ear deletion mask with co-registration carve-outs.
 
     Mask is the union of two regions, both clamped below the cap boundary:
 
     1. Face region: anterior to the ear coronal plane (X > ear_mid_X).
     2. Ear spheres: ``ear_delete_radius`` mm around Lpa and Rpa.
+
+    When ``landmark_keep_radius > 0``, two carve-outs preserve regions that
+    co-registration relies on:
+
+    3. A ``landmark_keep_radius`` sphere around each provided landmark
+       (Nz, Lpa, Rpa, plus Iz / Cz when supplied).
+    4. A midline strip from Nz up to ``cap_z``, ``landmark_keep_radius`` wide
+       in Y, anterior to the ear midpoint.
 
     Expects the CTF frame (+X=anterior, +Y=left, +Z=up).
 
@@ -147,14 +158,20 @@ def face_mask_from_landmarks(
         Nz: Nasion position in the CTF frame.
         Lpa: Left preauricular position in the CTF frame.
         Rpa: Right preauricular position in the CTF frame.
+        Iz: Inion position. Optional; only used for the per-landmark carve-out.
+        Cz: Vertex position. Optional; only used for the per-landmark carve-out.
         cap_z: Upper bound Z value (typically from ``detect_cap_boundary``).
             Defaults to Nz[2] if not provided.
         ear_delete_radius: Sphere radius around Lpa/Rpa in mm.
+        landmark_keep_radius: Per-landmark preservation sphere radius and
+            half-width of the midline nasion strip, in mm. ``0`` disables
+            the carve-outs (default, matches the standalone "union only"
+            behavior).
 
     Returns:
         Tuple of (mask, info). ``mask`` is a boolean array of shape (N,).
         ``info`` has keys ``upper_bound``, ``ear_mid``, and ``counts``
-        (per-region vertex counts).
+        (per-region vertex counts plus the carved totals when applicable).
     """
     ear_mid = _ear_midpoint(Lpa, Rpa)
     upper_bound = cap_z if cap_z is not None else Nz[2]
@@ -169,15 +186,32 @@ def face_mask_from_landmarks(
 
     mask = face_region | ear_region
 
+    counts = {
+        "below_cap": int(below_cap.sum()),
+        "face_region": int(face_region.sum()),
+        "ear_region": int(ear_region.sum()),
+    }
+
+    if landmark_keep_radius > 0:
+        keep_landmarks = [lm for lm in (Nz, Iz, Cz, Lpa, Rpa) if lm is not None]
+        carved_spheres = np.zeros_like(mask)
+        for lm in keep_landmarks:
+            carved_spheres |= np.linalg.norm(verts - lm, axis=1) < landmark_keep_radius
+        carved_strip = (
+            (verts[:, 2] >= Nz[2])
+            & (verts[:, 2] < upper_bound)
+            & (np.abs(verts[:, 1] - Nz[1]) < landmark_keep_radius)
+            & (verts[:, 0] > ear_mid[0])
+        )
+        mask[carved_spheres | carved_strip] = False
+        counts["carved_spheres"] = int(carved_spheres.sum())
+        counts["carved_nasion_strip"] = int(carved_strip.sum())
+
+    counts["all"] = int(mask.sum())
     info = {
         "upper_bound": upper_bound,
         "ear_mid": ear_mid,
-        "counts": {
-            "below_cap": int(below_cap.sum()),
-            "face_region": int(face_region.sum()),
-            "ear_region": int(ear_region.sum()),
-            "all": int(mask.sum()),
-        },
+        "counts": counts,
     }
     return mask, info
 

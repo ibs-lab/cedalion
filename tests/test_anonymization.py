@@ -129,7 +129,7 @@ def test_align_origin_at_ear_midpoint(simple_sphere_surface, axis_normalized_lan
     assert_allclose(0.5 * (lpa + rpa), [0, 0, 0], atol=1e-6)
 
 
-def test_align_axes_orientation(simple_sphere_surface, axis_normalized_landmarks):
+def test_align_to_ctf_orientation(simple_sphere_surface, axis_normalized_landmarks):
     """Nz points along +X, LPA along +Y, and Cz along +Z in the CTF frame."""
     _, aligned_lm, _ = align_to_ctf(
         simple_sphere_surface, axis_normalized_landmarks

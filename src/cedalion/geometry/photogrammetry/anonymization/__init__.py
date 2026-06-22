@@ -21,11 +21,11 @@ Pipeline steps inside ``anonymize_scan``:
 2. :func:`isolate_head`: strip body, shoulders, and disconnected fragments.
 3. :func:`align_to_ctf`: map into the CTF frame.
 4. :func:`detect_cap_boundary`: find the cap front edge along Z.
-5. :func:`face_mask_from_landmarks`: face region + ear spheres, clamped
-   below the cap.
-6. Preserve small spheres around each landmark and a midline nasion strip.
-7. :func:`delete_masked_vertices`: drop triangles touching any masked vertex.
-8. :func:`revert_to_einstar_frame`: return to ``crs="digitized"`` so the
+5. :func:`face_mask_from_landmarks`: face region + ear spheres clamped
+   below the cap, with per-landmark preservation spheres and a midline
+   nasion strip carved out.
+6. :func:`delete_masked_vertices`: drop triangles touching any masked vertex.
+7. :func:`revert_to_einstar_frame`: return to ``crs="digitized"`` so the
    output matches :func:`cedalion.io.read_einstar_obj`.
 
 Each of those functions is also exported so callers that need to inspect
@@ -51,7 +51,7 @@ from .pipeline import anonymize_scan
 __all__ = [
     # Top-level orchestrator (canonical entry point)
     "anonymize_scan",
-    # Preprocessing (axis normalization, head isolation, full alignment,
+    # Preprocessing (Y-anterior orientation, head isolation, full alignment,
     # and the inverse mapping back to the raw Einstar frame)
     "orient_y_anterior",
     "isolate_head",
