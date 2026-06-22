@@ -30,7 +30,6 @@ from .preprocessing import (
 
 
 _REQUIRED_LABELS = ("Nz", "Iz", "Cz", "LPA", "RPA")
-_ENTRY_CRS = "digitized"
 
 
 @cdc.validate_schemas
@@ -42,6 +41,7 @@ def anonymize_scan(
     ear_delete_radius_mm: float = 40.0,
     landmark_keep_radius_mm: float = 8.0,
     cap: CapDetectionParams = CapDetectionParams(),
+    min_remaining_frac: float = 0.20,
     return_frame: Literal["digitized", "ctf"] = "digitized",
 ) -> tuple[cdc.TrimeshSurface, cdt.LabeledPoints]:
     """Run the full face-anonymization pipeline on a raw Einstar scan.
@@ -62,10 +62,12 @@ def anonymize_scan(
        fed to ``save_anonymized_scan`` and downstream co-registration.
 
     Args:
-        surface: Raw Einstar TrimeshSurface (``crs="digitized"``).
+        surface: TrimeshSurface with a defined CRS (typically ``"digitized"``
+            from :func:`cedalion.io.read_einstar_obj`).
         landmarks: LabeledPoints with Nz, Iz, Cz, LPA, RPA (mixed-case
             aliases like Lpa/Rpa accepted; normalized via
-            ``normalize_landmarks_labels``).
+            ``normalize_landmarks_labels``). Must share ``surface.crs``;
+            the CRS string itself is arbitrary as long as both agree.
         head_isolation_radius_mm: Sphere radius around the upper-head
             centroid for ``isolate_head``.
         ear_delete_radius_mm: sphere radius around LPA/RPA for the ear
@@ -73,6 +75,10 @@ def anonymize_scan(
         landmark_keep_radius_mm: per-landmark preservation sphere radius
             and half-width of the midline nasion strip.
         cap: cap-detection parameters; see :class:`CapDetectionParams`.
+        min_remaining_frac: minimum fraction of vertices that must survive
+            masking, otherwise a ``RuntimeError`` is raised. Catches
+            pathological inputs that would silently produce a near-empty
+            mesh. Set to ``0`` to disable the post-condition.
         return_frame: ``"digitized"`` (default) reverts back to the raw
             Einstar frame; ``"ctf"`` keeps the CTF frame.
 
@@ -87,17 +93,18 @@ def anonymize_scan(
     if missing:
         raise ValueError(f"Missing landmarks for anonymization: {missing}")
 
-    if surface.crs != _ENTRY_CRS:
-        raise CRSMismatchError.unexpected_crs(_ENTRY_CRS, surface.crs)
+    # The pipeline math is intrinsic to the point positions; the CRS string
+    # itself doesn't matter, but surface and landmarks must agree on it so we
+    # don't silently mix frames.
     landmarks_crs = next(d for d in landmarks.dims if d != "label")
-    if landmarks_crs != _ENTRY_CRS:
-        raise CRSMismatchError.unexpected_crs(_ENTRY_CRS, landmarks_crs)
+    if surface.crs != landmarks_crs:
+        raise CRSMismatchError.unexpected_crs(surface.crs, landmarks_crs)
     Nz_raw = landmarks.sel(label="Nz").pint.dequantify().values
 
     surface_n, _, R_norm = orient_y_anterior(surface, Nz_raw)
     # orient_y_anterior is a pre-rotation within the same CRS, not a CRS change,
     # so we pass the raw 4x4 to apply_transform (the AffineTransform wrapper
-    # would produce a DataArray with duplicate "digitized" dim names).
+    # would produce a DataArray with duplicated CRS dim names).
     landmarks_n = landmarks.points.apply_transform(R_norm)
 
     Nz_n = landmarks_n.sel(label="Nz").pint.dequantify().values
@@ -114,7 +121,7 @@ def anonymize_scan(
     )
 
     verts = np.asarray(surface_h.mesh.vertices)
-    cap_z = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa, params=cap).cap_z
+    cap_z = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa, params=cap)
 
     mask, _ = face_mask_from_landmarks(
         verts, Nz, Lpa, Rpa,
@@ -126,15 +133,15 @@ def anonymize_scan(
 
     surface_anon = delete_masked_vertices(surface_h, mask)
 
-    min_remaining_frac = 0.20
-    remaining = surface_anon.nvertices / max(surface_h.nvertices, 1)
-    if remaining < min_remaining_frac:
-        raise RuntimeError(
-            f"Anonymization mask removed {(1 - remaining) * 100:.1f}% of "
-            f"vertices ({surface_h.nvertices} -> {surface_anon.nvertices}); "
-            f"expected at least {min_remaining_frac * 100:.0f}% to survive. "
-            f"Check landmark frame and cap detection."
-        )
+    if min_remaining_frac > 0:
+        remaining = surface_anon.nvertices / max(surface_h.nvertices, 1)
+        if remaining < min_remaining_frac:
+            raise RuntimeError(
+                f"Anonymization mask removed {(1 - remaining) * 100:.1f}% of "
+                f"vertices ({surface_h.nvertices} -> {surface_anon.nvertices}); "
+                f"expected at least {min_remaining_frac * 100:.0f}% to survive. "
+                f"Check landmark frame and cap detection."
+            )
 
     if return_frame == "ctf":
         return surface_anon, landmarks_ctf
