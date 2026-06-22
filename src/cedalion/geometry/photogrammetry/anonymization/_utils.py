@@ -1,8 +1,9 @@
 """Shared helpers used by ``preprocessing`` and ``mask``.
 
-Consolidates texture-image lookup, mesh rebuilding, face/vertex reindexing,
-affine application, landmark transforms, ear midpoint, and upper-head centroid
-to avoid duplicating these across sibling modules.
+Consolidates texture-image lookup, largest-connected-component selection,
+face/vertex reindexing, affine application, ear midpoint, upper-head centroid,
+and the ``Trimesh + _copy_visual`` rebuild pattern to avoid duplicating these
+across sibling modules.
 """
 
 import numpy as np
@@ -16,6 +17,52 @@ def _resolve_texture_image(visual):
         return image
     mat = getattr(visual, "material", None)
     return getattr(mat, "image", None) if mat is not None else None
+
+
+def _largest_component_mask(mesh: trimesh.Trimesh) -> np.ndarray:
+    """Boolean vertex mask selecting the largest connected component.
+
+    Einstar scans contain floating fragments (loose triangles, cable shreds,
+    background patches) that drag vertex extrema off into empty space; strip
+    them first.
+
+    Uses ``trimesh.graph.connected_component_labels`` on face adjacency rather
+    than ``mesh.split``: split allocates a ``Trimesh`` per component and can
+    OOM on scans with thousands of fragments.
+
+    Einstar OBJs duplicate vertices along UV seams; ``Trimesh.merge_vertices``
+    preserves seams (to keep textures), so face adjacency on the raw mesh
+    over-fragments the head. ``trimesh.grouping.unique_rows`` does
+    position-only merging for connectivity analysis.
+
+    Args:
+        mesh: A ``trimesh.Trimesh`` instance.
+
+    Returns:
+        Boolean array of shape ``(n_vertices,)``. All-True if the mesh is
+        empty or already a single connected component.
+    """
+    n_verts = len(mesh.vertices)
+    n_faces = len(mesh.faces)
+    if n_faces == 0:
+        return np.ones(n_verts, dtype=bool)
+
+    _, inverse = trimesh.grouping.unique_rows(np.asarray(mesh.vertices))
+    canonical_faces = inverse[mesh.faces]
+    adjacency = trimesh.graph.face_adjacency(faces=canonical_faces)
+    face_labels = trimesh.graph.connected_component_labels(
+        adjacency, node_count=n_faces
+    )
+    counts = np.bincount(face_labels)
+    if len(counts) <= 1:
+        return np.ones(n_verts, dtype=bool)
+    biggest_label = int(np.argmax(counts))
+    face_mask = face_labels == biggest_label
+
+    kept_vidx = np.unique(mesh.faces[face_mask])
+    mask = np.zeros(n_verts, dtype=bool)
+    mask[kept_vidx] = True
+    return mask
 
 
 def _reindex_faces(
