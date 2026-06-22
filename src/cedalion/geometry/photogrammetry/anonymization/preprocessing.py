@@ -48,8 +48,9 @@ def orient_y_anterior(
 
     Returns:
         Tuple of (rotated_surface, rotated_nasion, rotation_matrix).
-        ``rotated_nasion`` is in the same units as the input. The 3x3
-        ``rotation_matrix`` can be applied to other points via ``p @ R.T``.
+        ``rotated_nasion`` is in the same units as the input. The 4x4
+        ``rotation_matrix`` carries no translation and is suitable for
+        ``LabeledPoints.points.apply_transform`` directly.
     """
     vertices = surface.mesh.vertices
 
@@ -57,7 +58,8 @@ def orient_y_anterior(
     angle = np.arctan2(nasion[2] - centroid[2], nasion[1] - centroid[1])
     cos_a = np.cos(-angle)
     sin_a = np.sin(-angle)
-    R = np.array([
+    R = np.eye(4)
+    R[:3, :3] = np.array([
         [1.0, 0.0, 0.0],
         [0.0, cos_a, -sin_a],
         [0.0, sin_a, cos_a],
@@ -65,12 +67,12 @@ def orient_y_anterior(
 
     new_mesh = _rebuild_mesh(
         surface.mesh,
-        vertices=vertices @ R.T,
+        vertices=vertices @ R[:3, :3].T,
         faces=surface.mesh.faces,
     )
     rotated_surface = cdc.TrimeshSurface(new_mesh, crs=surface.crs, units=surface.units)
 
-    rotated_nasion = R @ nasion
+    rotated_nasion = R[:3, :3] @ nasion
 
     logger.debug(
         f"orient_y_anterior: rotated {np.degrees(angle):.1f}deg around X. "
@@ -326,7 +328,7 @@ def revert_to_einstar_frame(
         surface: TrimeshSurface in the CTF frame (post
             ``align_to_ctf``, optionally after masking).
         landmarks: LabeledPoints in the CTF frame.
-        R_normalize: 3x3 rotation returned by ``orient_y_anterior`` (a same-CRS
+        R_normalize: 4x4 rotation returned by ``orient_y_anterior`` (a same-CRS
             pre-rotation, so it stays as raw numpy rather than an
             :class:`~cedalion.typing.AffineTransform`).
         T_align: :class:`~cedalion.typing.AffineTransform` returned by
@@ -348,8 +350,9 @@ def revert_to_einstar_frame(
         to_units=units_str,
     )
 
-    R_inv4 = np.eye(4)
-    R_inv4[:3, :3] = R_normalize.T
+    # R_normalize is a pure rotation (no translation), so its inverse equals
+    # its transpose.
+    R_inv4 = R_normalize.T
 
     landmarks_unaligned = landmarks.points.apply_transform(T_align_inv)
     raw_landmarks = landmarks_unaligned.points.apply_transform(R_inv4)

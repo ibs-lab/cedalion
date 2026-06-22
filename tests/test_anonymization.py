@@ -68,7 +68,8 @@ def test_normalize_rotation_orthogonal(simple_sphere_surface):
     """Rotation matrix returned by orient_y_anterior is orthogonal."""
     nasion = np.array([0, 50, 50])
     _, _, R = orient_y_anterior(simple_sphere_surface, nasion)
-    assert_allclose(R @ R.T, np.eye(3), atol=1e-10)
+    assert R.shape == (4, 4)
+    assert_allclose(R @ R.T, np.eye(4), atol=1e-10)
 
 
 def test_normalize_nasion_to_positive_y(simple_sphere_surface):
@@ -82,7 +83,7 @@ def test_normalize_identity_when_aligned(simple_sphere_surface):
     """No rotation is applied when the nasion already points along +Y."""
     nasion = np.array([0, 100, 0])
     _, rotated_nasion, R = orient_y_anterior(simple_sphere_surface, nasion)
-    assert_allclose(R, np.eye(3), atol=1e-6)
+    assert_allclose(R, np.eye(4), atol=1e-6)
     assert_allclose(rotated_nasion, nasion, atol=1e-6)
 
 
@@ -311,7 +312,7 @@ def test_revert_round_trip_with_align(simple_sphere_surface, axis_normalized_lan
         simple_sphere_surface, axis_normalized_landmarks
     )
     reverted_surface, _ = revert_to_einstar_frame(
-        aligned_surface, aligned_lm, R_normalize=np.eye(3), T_align=T
+        aligned_surface, aligned_lm, R_normalize=np.eye(4), T_align=T
     )
     assert_allclose(
         np.asarray(reverted_surface.mesh.vertices),
@@ -328,7 +329,7 @@ def test_revert_returns_digitized_crs(
         simple_sphere_surface, axis_normalized_landmarks
     )
     reverted_surface, _ = revert_to_einstar_frame(
-        aligned_surface, aligned_lm, np.eye(3), T
+        aligned_surface, aligned_lm, np.eye(4), T
     )
     assert reverted_surface.crs == "digitized"
 
@@ -432,12 +433,7 @@ def test_full_anonymization_pipeline(
     """End-to-end pipeline: normalize, isolate, align, mask, revert, save."""
     nasion = axis_normalized_landmarks.pint.dequantify().sel(label="Nz").values
     surface_n, nasion_n, R = orient_y_anterior(head_like_surface, nasion)
-    lm_arr = axis_normalized_landmarks.pint.dequantify().values
-    landmarks_n = (
-        axis_normalized_landmarks.pint.dequantify()
-        .copy(data=lm_arr @ R.T)
-        .pint.quantify()
-    )
+    landmarks_n = axis_normalized_landmarks.points.apply_transform(R)
     surface_n, _ = isolate_head(surface_n, nasion_n)
 
     surface_h, landmarks_n, T_ctf = align_to_ctf(surface_n, landmarks_n)

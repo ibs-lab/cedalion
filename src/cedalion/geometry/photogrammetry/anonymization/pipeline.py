@@ -104,12 +104,10 @@ def anonymize_scan(
     Nz_raw = landmarks.sel(label="Nz").pint.dequantify().values
 
     surface_n, _, R_norm = orient_y_anterior(surface, Nz_raw)
-    R_norm4 = np.eye(4)
-    R_norm4[:3, :3] = R_norm
     # orient_y_anterior is a pre-rotation within the same CRS, not a CRS change,
     # so we pass the raw 4x4 to apply_transform (the AffineTransform wrapper
     # would produce a DataArray with duplicate "digitized" dim names).
-    landmarks_n = landmarks.points.apply_transform(R_norm4)
+    landmarks_n = landmarks.points.apply_transform(R_norm)
 
     Nz_n = landmarks_n.sel(label="Nz").pint.dequantify().values
     surface_n, _ = isolate_head(
