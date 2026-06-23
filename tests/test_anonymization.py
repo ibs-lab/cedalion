@@ -9,6 +9,7 @@ from numpy.testing import assert_allclose
 
 import cedalion
 import cedalion.dataclasses as cdc
+from cedalion.errors import CRSMismatchError
 
 from cedalion.geometry.photogrammetry.anonymization import (
     CapDetectionParams,
@@ -407,6 +408,23 @@ def test_anonymize_scan_raises_on_missing_landmark(
     partial = axis_normalized_landmarks.isel(label=slice(0, 3))
     with pytest.raises(ValueError, match="Missing landmarks"):
         anonymize_scan(head_like_surface, partial)
+
+
+def test_anonymize_raises_on_crs_mismatch(head_like_surface):
+    """CRSMismatchError when surface and landmarks live in different CRSs."""
+    coords = np.array([
+        [0, 100, 0], [0, -100, 0], [100, 0, 0],
+        [0, 0, 100], [0, 0, -100],
+    ], dtype=float)
+    mismatched = cdc.build_labeled_points(
+        coords,
+        crs="mri",   # head_like_surface is "digitized"
+        units="mm",
+        labels=["Nz", "Iz", "Cz", "LPA", "RPA"],
+        types=[cdc.PointType.LANDMARK] * 5,
+    )
+    with pytest.raises(CRSMismatchError):
+        anonymize_scan(head_like_surface, mismatched)
 
 
 def test_anonymize_raises_when_mask_destroys_mesh(

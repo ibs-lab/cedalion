@@ -1,13 +1,13 @@
 """Preprocessing: Y-anterior orientation, head isolation, and CTF alignment.
 
-Gets a raw Einstar photogrammetry scan into a standard reference frame suitable for
+Gets a raw Einstar photogrammetry scan into a standard reference CRS suitable for
 landmark detection and mask building:
 
 - ``orient_y_anterior`` rotates around X so Y points anterior (preliminary,
   used before head isolation).
 - ``isolate_head`` strips body/shoulders/chair and disconnected fragments.
-- ``align_to_ctf`` maps the scan into the CTF frame
-  (+X=anterior, +Y=left, +Z=up, origin at the LPA-RPA midpoint) once all 5
+- ``align_to_ctf`` maps the scan into the CTF coordinate system
+  (ALS: +X=anterior, +Y=left, +Z=up, origin at the LPA-RPA midpoint) once all 5
   landmarks are available.
 """
 
@@ -45,7 +45,7 @@ def orient_y_anterior(
     Args:
         surface: TrimeshSurface in raw Einstar coordinates.
         nasion: Nasion position as numpy array of shape (3,), in mm, in the
-            raw Einstar frame (matching ``surface``).
+            raw Einstar CRS (matching ``surface``).
 
     Returns:
         Tuple of (rotated_surface, rotated_nasion, rotation_matrix).
@@ -101,7 +101,7 @@ def isolate_head(
     Args:
         surface: Y-anterior-oriented TrimeshSurface (post ``orient_y_anterior``).
         nasion: Nasion position as numpy array of shape (3,), in mm,
-            in the Y-anterior-oriented frame (matching ``surface``).
+            in the Y-anterior-oriented CRS (matching ``surface``).
         radius: Sphere radius in mm (default 220). A human head has
             ~90mm radius; 220mm adds margin for ears and jaw.
 
@@ -166,7 +166,7 @@ def align_to_ctf(
     surface: cdc.TrimeshSurface,
     landmarks: cdt.LabeledPoints,
 ) -> tuple[cdc.TrimeshSurface, cdt.LabeledPoints, cdt.AffineTransform]:
-    """Map mesh + landmarks into the CTF anatomical frame.
+    """Map mesh + landmarks into the CTF anatomical CRS.
 
     CTF convention:
 
@@ -182,7 +182,7 @@ def align_to_ctf(
             ``isolate_head``). Labels must already be canonicalized via
             ``normalize_landmarks_labels``.
         landmarks: LabeledPoints with canonical labels Nz, Iz, Cz, LPA, RPA
-            (matching the surface frame).
+            (matching the surface CRS).
 
     Returns:
         Tuple of (aligned_surface, aligned_landmarks, T_align).
@@ -270,7 +270,7 @@ def revert_to_einstar_frame(
     R_normalize: np.ndarray,
     T_align: cdt.AffineTransform,
 ) -> tuple[cdc.TrimeshSurface, cdt.LabeledPoints]:
-    """Map an aligned surface and landmarks back into the raw Einstar frame.
+    """Map an aligned surface and landmarks back into the raw Einstar CRS.
 
     Inverse of ``orient_y_anterior`` composed with ``align_to_ctf``,
     so the returned mesh and landmarks land back in the CRS the original
@@ -278,12 +278,12 @@ def revert_to_einstar_frame(
     matching ``read_einstar_obj``'s output.
 
     Note that ``isolate_head`` is not invertible: the returned mesh is still
-    head-only even though its coordinates are in the original frame.
+    head-only even though its coordinates are in the original CRS.
 
     Args:
-        surface: TrimeshSurface in the CTF frame (post
+        surface: TrimeshSurface in the CTF CRS (post
             ``align_to_ctf``, optionally after masking).
-        landmarks: LabeledPoints in the CTF frame.
+        landmarks: LabeledPoints in the CTF CRS.
         R_normalize: 4x4 rotation returned by ``orient_y_anterior`` (a same-CRS
             pre-rotation, so it stays as raw numpy rather than an
             :class:`~cedalion.typing.AffineTransform`).

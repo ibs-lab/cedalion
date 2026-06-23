@@ -19,7 +19,7 @@ Pipeline steps inside ``anonymize_scan``:
 
 1. :func:`orient_y_anterior`: rotate around X so Y points anterior.
 2. :func:`isolate_head`: strip body, shoulders, and disconnected fragments.
-3. :func:`align_to_ctf`: map into the CTF frame.
+3. :func:`align_to_ctf`: map into the CTF coordinate system.
 4. :func:`detect_cap_boundary`: find the cap front edge along Z.
 5. :func:`face_mask_from_landmarks`: face region + ear spheres clamped
    below the cap, with per-landmark preservation spheres and a midline
@@ -53,7 +53,7 @@ __all__ = [
     # Top-level orchestrator (canonical entry point)
     "anonymize_scan",
     # Preprocessing (Y-anterior orientation, head isolation, full alignment,
-    # and the inverse mapping back to the raw Einstar frame)
+    # and the inverse mapping back to the raw Einstar CRS)
     "orient_y_anterior",
     "isolate_head",
     "align_to_ctf",

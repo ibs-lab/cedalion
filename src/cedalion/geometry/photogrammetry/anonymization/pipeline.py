@@ -48,7 +48,7 @@ def anonymize_scan(
 
     1. ``orient_y_anterior``: rotate around X so Y points anterior.
     2. ``isolate_head``: strip body, shoulders, fragments.
-    3. ``align_to_ctf``: map into the CTF frame.
+    3. ``align_to_ctf``: map into the CTF coordinate system.
     4. ``detect_cap_boundary``: find the cap front edge along Z.
     5. ``face_mask_from_landmarks``: union face region + ear spheres
        (clamped below the cap), then carve out preservation spheres around
@@ -78,10 +78,10 @@ def anonymize_scan(
             pathological inputs that would silently produce a near-empty
             mesh. Set to ``0`` to disable the post-condition.
         return_frame: ``"digitized"`` (default) reverts back to the raw
-            Einstar frame; ``"ctf"`` keeps the CTF frame.
+            Einstar frame; ``"ctf"`` keeps the CTF coordinate system.
 
     Returns:
-        Tuple of (anonymized_surface, anonymized_landmarks). Frame is
+        Tuple of (anonymized_surface, anonymized_landmarks). CRS is
         controlled by ``return_frame``. The surface can be written with
         ``save_anonymized_scan`` when ``return_frame="digitized"``.
     """
@@ -93,7 +93,7 @@ def anonymize_scan(
 
     # The pipeline math is intrinsic to the point positions; the CRS string
     # itself doesn't matter, but surface and landmarks must agree on it so we
-    # don't silently mix frames.
+    # don't silently mix coordinate systems.
     landmarks_crs = next(d for d in landmarks.dims if d != "label")
     if surface.crs != landmarks_crs:
         raise CRSMismatchError.unexpected_crs(surface.crs, landmarks_crs)
@@ -106,17 +106,12 @@ def anonymize_scan(
     landmarks_n = landmarks.points.apply_transform(R_norm)
 
     Nz_n = landmarks_n.sel(label="Nz").pint.dequantify().values
-    surface_n, _ = isolate_head(
-        surface_n, Nz_n, radius=head_isolation_radius_mm
-    )
+    surface_n, _ = isolate_head(surface_n, Nz_n, radius=head_isolation_radius_mm)
 
-    surface_h, landmarks_ctf, T_align = align_to_ctf(
-        surface_n, landmarks_n
-    )
-    Nz, Iz, Cz, Lpa, Rpa = (
-        landmarks_ctf.sel(label=lbl).pint.dequantify().values
-        for lbl in _REQUIRED_LABELS
-    )
+    surface_h, landmarks_ctf, T_align = align_to_ctf(surface_n, landmarks_n)
+
+    Nz, Iz, Cz, Lpa, Rpa = (landmarks_ctf.sel(label=lbl).pint.dequantify().values
+                            for lbl in _REQUIRED_LABELS)
 
     verts = np.asarray(surface_h.mesh.vertices)
     cap_z = detect_cap_boundary(verts, Nz, Cz, Lpa, Rpa, params=cap)
@@ -138,7 +133,7 @@ def anonymize_scan(
                 f"Anonymization mask removed {(1 - remaining) * 100:.1f}% of "
                 f"vertices ({surface_h.nvertices} -> {surface_anon.nvertices}); "
                 f"expected at least {min_remaining_frac * 100:.0f}% to survive. "
-                f"Check landmark frame and cap detection."
+                f"Check landmark CRS and cap detection."
             )
 
     if return_frame == "ctf":

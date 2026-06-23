@@ -9,7 +9,7 @@ applies it to the mesh:
   spheres, clamped below the cap.
 - ``delete_masked_vertices``: drops triangles touching any masked vertex.
 
-All mask math assumes the CTF frame: +X=anterior, +Y=left, +Z=up, origin
+All mask math assumes the CTF CRS: +X=anterior, +Y=left, +Z=up, origin
 at the LPA-RPA midpoint (see ``align_to_ctf``).
 """
 
@@ -74,7 +74,7 @@ def detect_cap_boundary(
     ``Nz[2] + params.z_ceiling``, fall back to ``Nz[2] + params.eyebrow_offset``
     (just above the supraorbital ridge).
 
-    Expects the CTF frame (+X=anterior, +Y=left, +Z=up).
+    Expects the CTF CRS (+X=anterior, +Y=left, +Z=up).
 
     Args:
         verts: Mesh vertices, shape (N, 3).
@@ -169,13 +169,13 @@ def face_mask_from_landmarks(
     4. A midline strip from Nz up to ``cap_z``, ``landmark_keep_radius`` wide
        in Y, anterior to the ear midpoint.
 
-    Expects the CTF frame (+X=anterior, +Y=left, +Z=up).
+    Expects the CTF CRS (+X=anterior, +Y=left, +Z=up).
 
     Args:
         verts: Mesh vertices, shape (N, 3).
-        Nz: Nasion position in the CTF frame.
-        Lpa: Left preauricular position in the CTF frame.
-        Rpa: Right preauricular position in the CTF frame.
+        Nz: Nasion position in the CTF CRS.
+        Lpa: Left preauricular position in the CTF CRS.
+        Rpa: Right preauricular position in the CTF CRS.
         Iz: Inion position. Optional; only used for the per-landmark carve-out.
         Cz: Vertex position. Optional; only used for the per-landmark carve-out.
         cap_z: Upper bound Z value (typically from ``detect_cap_boundary``).
