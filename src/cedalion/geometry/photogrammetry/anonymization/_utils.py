@@ -3,11 +3,15 @@
 Consolidates texture-image lookup, largest-connected-component selection,
 face/vertex reindexing, affine application, ear midpoint, upper-head centroid,
 and the ``Trimesh + _copy_visual`` rebuild pattern to avoid duplicating these
-across sibling modules.
+across sibling modules. Also hosts the canonical landmark label tuple.
 """
 
 import numpy as np
 import trimesh
+
+
+_REQUIRED_LABELS = ("Nz", "Iz", "Cz", "LPA", "RPA")
+"""Canonical landmark labels expected by the anonymization pipeline."""
 
 
 def _resolve_texture_image(visual):

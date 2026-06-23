@@ -19,6 +19,7 @@ import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 
 from ._utils import (
+    _REQUIRED_LABELS,
     _apply_affine,
     _ear_midpoint,
     _largest_component_mask,
@@ -195,8 +196,7 @@ def align_to_ctf(
             Nz on the LPA-RPA axis) so an orthonormal CTF basis cannot be
             constructed.
     """
-    required = {"Nz", "Iz", "Cz", "LPA", "RPA"}
-    missing = required - set(landmarks["label"].values.tolist())
+    missing = set(_REQUIRED_LABELS) - set(landmarks["label"].values.tolist())
     if missing:
         raise ValueError(f"Missing landmarks for alignment: {missing}")
 
@@ -248,6 +248,8 @@ def align_to_ctf(
 
     aligned_landmarks = landmarks.points.apply_transform(T_align)
 
+    # Mesh stays on _apply_affine + _rebuild_mesh per the texture-preservation
+    # contract documented in _rebuild_mesh and _copy_visual.
     aligned_verts = _apply_affine(np.asarray(surface.mesh.vertices), M)
     new_mesh = _rebuild_mesh(
         surface.mesh,

@@ -2,8 +2,8 @@
 
 Single entry point that chains the helper functions from ``preprocessing``
 and ``mask``. The individual functions remain public so downstream code can
-inspect intermediate state (e.g. the cap-detection profile, the head
-isolation mask), but the canonical pipeline lives here and only here.
+re-run an intermediate step or inspect the head-isolation / deletion masks,
+but the canonical pipeline lives here and only here.
 """
 
 from typing import Literal
@@ -15,6 +15,7 @@ import cedalion.typing as cdt
 from cedalion.errors import CRSMismatchError
 from cedalion.geometry.landmarks import normalize_landmarks_labels
 
+from ._utils import _REQUIRED_LABELS
 from .mask import (
     CapDetectionParams,
     delete_masked_vertices,
@@ -27,9 +28,6 @@ from .preprocessing import (
     orient_y_anterior,
     revert_to_einstar_frame,
 )
-
-
-_REQUIRED_LABELS = ("Nz", "Iz", "Cz", "LPA", "RPA")
 
 
 @cdc.validate_schemas
