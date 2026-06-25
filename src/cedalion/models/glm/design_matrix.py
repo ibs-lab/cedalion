@@ -18,8 +18,10 @@ from cedalion import cite
 
 
 from cedalion.sigproc.frequency import sampling_rate
+from cedalion.sigproc.physio import global_component_subtract
 
 from .basis_functions import TemporalBasisFunction
+
 
 
 @dataclass
@@ -748,12 +750,19 @@ def common_regressor_from_array(
     dim3 = xrutils.other_dim(ts, spatial_dim, "time")
 
     if isinstance(regressors, xr.DataArray):
-        regressors = regressors.pint.dequantify().values
+        regressors = regressors.pint.dequantify()
+
+        if regressors.ndim == 2:
+            regressors = regressors.transpose("time", dim3).values[:, None, :]
+        elif regressors.ndim == 3:
+            regressors = regressors.transpose("time", "regressor", dim3).values
+        else:
+            regressors = regressors.values
     else:
         regressors = np.asarray(regressors)
 
-    if regressors.ndim == 2:
-        regressors = regressors[:, None, :]
+        if regressors.ndim == 2:
+            regressors = regressors[:, None, :]
 
     if regressors.ndim != 3:
         raise ValueError(
@@ -798,3 +807,49 @@ def common_regressor_from_array(
     )
 
     return DesignMatrix(common=regressors, channel_wise=[])
+
+
+def global_component_regressor(
+    ts: cdt.NDTimeSeries,
+    ts_weights: xr.DataArray | None = None,
+    k: float = 0,
+    spatial_dim: str | None = None,
+    spectral_dim: str | None = None,
+    regressor_names: str | list[str] = "global",
+) -> DesignMatrix:
+    """Create common GLM regressors from the global physiological component.
+
+    The global component is computed with
+    :func:`cedalion.sigproc.physio.global_component_subtract`. The corrected
+    time series returned by that function is discarded, and only the global
+    component is used as a common GLM regressor.
+
+    Args:
+        ts: Time-series data.
+        ts_weights: Optional per-spatial/spectral weights passed to
+            ``global_component_subtract``.
+        k: Component-removal mode passed to ``global_component_subtract``.
+            ``k=0`` uses weighted-mean subtraction. ``k>0`` uses PCA-based
+            component removal.
+        spatial_dim: Spatial dimension name. If ``None``, it is inferred from
+            ``ts``.
+        spectral_dim: Spectral dimension name. If ``None``, it is inferred by
+            ``global_component_subtract``.
+        regressor_names: Name or names for the regressors.
+
+    Returns:
+        Design matrix containing the global component as common regressors.
+    """
+
+    if spatial_dim is None:
+        spatial_dim = cdc.get_spatial_dimension(ts)
+
+    _, global_component = global_component_subtract(
+        ts,
+        ts_weights=ts_weights,
+        k=k,
+        spatial_dim=spatial_dim,
+        spectral_dim=spectral_dim,
+    )
+
+    return common_regressor_from_array(ts, global_component, regressor_names)
