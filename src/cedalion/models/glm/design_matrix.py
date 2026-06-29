@@ -18,7 +18,10 @@ from cedalion import cite
 
 
 from cedalion.sigproc.frequency import sampling_rate
-from cedalion.sigproc.physio import global_component_subtract
+from cedalion.sigproc.physio import (compute_Hglobal_from_PCA,
+                                     get_spatial_smoothing_kernel,
+                                     global_component_subtract,
+                                     )
 
 from .basis_functions import TemporalBasisFunction
 
@@ -851,5 +854,49 @@ def global_component_regressor(
         spatial_dim=spatial_dim,
         spectral_dim=spectral_dim,
     )
+
+    return common_regressor_from_array(ts, global_component, regressor_names)
+
+
+def spatially_smoothed_pca_global_component_regressor(
+    ts: cdt.NDTimeSeries,
+    vertices: xr.DataArray | np.ndarray,
+    sigma_mm: float = 80.0,
+    spatial_dim: str | None = None,
+    spectral_dim: str | None = None,
+    regressor_names: str | list[str] = "global_smoothed_pca",
+) -> DesignMatrix:
+    """Create a GLM regressor from a spatially smoothed PCA global component.
+
+    Args:
+        ts: Time-series data.
+        vertices: Spatial coordinates for the spatial dimension, shape
+            ``(n_spatial, 3)``.
+        sigma_mm: Gaussian smoothing width in millimeters.
+        spatial_dim: Spatial dimension name. If ``None``, inferred from ``ts``.
+        spectral_dim: Spectral dimension name. If ``None``, inferred from
+            ``ts``.
+        regressor_names: Name or names for the regressors.
+
+    Returns:
+        Design matrix containing the spatially smoothed PCA global component.
+    """
+
+    if spatial_dim is None:
+        spatial_dim = cdc.get_spatial_dimension(ts)
+
+    if spectral_dim is None:
+        spectral_dim = xrutils.other_dim(ts, spatial_dim, "time")
+
+    smoothing_kernel = get_spatial_smoothing_kernel(vertices, sigma_mm)
+
+    smoothed_global_field = compute_Hglobal_from_PCA(
+        ts,
+        smoothing_kernel=smoothing_kernel,
+        spatial_dim=spatial_dim,
+        spectral_dim=spectral_dim,
+    )
+
+    global_component = smoothed_global_field.mean(spatial_dim, skipna=True)
 
     return common_regressor_from_array(ts, global_component, regressor_names)
