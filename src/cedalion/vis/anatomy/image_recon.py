@@ -514,7 +514,7 @@ def image_recon_multi_view(
             ts_title = title_str if view == 'scale_bar' else None
             p0, surf, lab = image_recon(
                 X_ts, head, cmap=cmap, clim=clim, view_type=view_type,
-                view_position=view, p0=p0, title_str=ts_title, off_screen=False,
+                view_position=view, p0=p0, title_str=ts_title, off_screen=(SAVE and filename is not None),
                 plotshape=subplot_shape, iax=iax, wdw_size=wdw_size
             )
             subplots[view] = surf

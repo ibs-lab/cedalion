@@ -101,6 +101,37 @@ def get(fname: str | Path) -> Path:
     return files("cedalion.data").joinpath(fname)
 
 
+@dataclass
+class AtlasFiles:
+    """Paths for a bundled atlas volume and label lookup."""
+
+    basedir: Path
+    nifti: Path
+    labels_json: Path
+
+
+def get_aal3_atlas_files() -> AtlasFiles:
+    """Return paths to the bundled AAL3 atlas volume and label lookup."""
+
+    atlas_dir = get("atlases/aal3")
+    return AtlasFiles(
+        basedir=atlas_dir,
+        nifti=atlas_dir / "ROI_MNI_V7_1mm.nii",
+        labels_json=atlas_dir / "aal_labels.json",
+    )
+
+
+def get_brodmann_atlas_files() -> AtlasFiles:
+    """Return paths to the bundled Brodmann atlas volume and label lookup."""
+
+    atlas_dir = get("atlases/brodmann")
+    return AtlasFiles(
+        basedir=atlas_dir,
+        nifti=atlas_dir / "Brodmann_Mai_Matajnik.nii",
+        labels_json=atlas_dir / "brodmann_labels.json",
+    )
+
+
 def get_ninja_cap_probe():
     """Load the fullhead Ninja NIRS cap probe."""
 
@@ -544,10 +575,12 @@ def get_atlas_files(atlas : str) -> tuple[Path, Path]:
         fnames = DATASETS.fetch("atlas_aal3.zip", processor=pooch.Unzip())
         fname_volume = [Path(i) for i in fnames if i.endswith(".nii")][0]
         fname_labels = [Path(i) for i in fnames if i.endswith(".json")][0]
+        cite("Rolls2020")
     elif atlas == "brodmann":
-        fnames = DATASETS.fetch("atlas_aal3.zip", processor=pooch.Unzip())
+        fnames = DATASETS.fetch("atlas_brodmann.zip", processor=pooch.Unzip())
         fname_volume = [Path(i) for i in fnames if i.endswith(".nii")][0]
         fname_labels = [Path(i) for i in fnames if i.endswith(".json")][0]
+        cite("Mai2017")
     else:
         raise ValueError(f"atlas must be one of {AVAILABLE_ATLASES}")
 
