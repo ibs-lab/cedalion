@@ -52,7 +52,7 @@ def int2od(amplitudes: cdt.NDTimeSeries, return_baseline: bool = False):
         return od
     
 
-def int2od_rt(chunk_amplitudes: cdt.NDTimeSeries):
+def int2od_rt(chunk_amplitudes: cdt.NDTimeSeries, baseline: cdt.NDTimeSeries | None = None):
     """Calculate optical density from intensity amplitude data.
 
     Computes the log-ratio of intensity relative to its temporal mean, implementing
@@ -61,6 +61,9 @@ def int2od_rt(chunk_amplitudes: cdt.NDTimeSeries):
 
     Args:
         chunk_amplitudes (xr.DataArray, (time, channel, *)): amplitude data.
+        baseline (xr.DataArray, (channel, *), optional): The intensity baseline data
+            (average time series) used for conversion to OD. If None, it will be calculated
+            from the chunk_amplitudes. Defaults to None.
 
     Returns:
         od: (xr.DataArray, (time, channel,*): The optical density data.
@@ -78,12 +81,17 @@ def int2od_rt(chunk_amplitudes: cdt.NDTimeSeries):
         )
 
     # calculate baseline
-    baseline = chunk_amplitudes.mean("time")
+    if baseline is None:
+        baseline = chunk_amplitudes.mean("time")
 
-    # conversion to optical density
-    od = -np.log(chunk_amplitudes / baseline)
+        od = -np.log(chunk_amplitudes / baseline)
 
-    return od, baseline
+        return od, baseline
+    else:
+        # conversion to optical density
+        od = -np.log(chunk_amplitudes / baseline)
+
+        return od
 
 
 def od2int(od: cdt.NDTimeSeries, baseline: cdt.NDTimeSeries):
