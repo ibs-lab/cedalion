@@ -176,8 +176,6 @@ def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
     if len(unique_units) > 1:
         raise ValueError(f"more than one unit found in {fname}: {unique_units}")
 
-    pos = np.vstack(pos)
-
     result = xr.DataArray(
         positions,
         dims=["label", crs],
