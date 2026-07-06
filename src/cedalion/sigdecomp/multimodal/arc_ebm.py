@@ -17,14 +17,14 @@ import cedalion.data
 from cedalion import cite
 
 def arc_ebm(X: np.ndarray, guess_mat, constraint = 'correlation') -> np.ndarray:
-    """Adaptive-reverse Constrained ICA by Entropy Bound Minimization (arc-EBM) is a constrained ICA algorithm.
-        arc-EBM calculates the blind source separation demixing matrix corresponding to X, 
+    """Adaptive-reverse (Spectrally) Constrained ICA by Entropy Bound Minimization (arc-EBM/arsc-EBM) is a constrained ICA algorithm.
+        arc-EBM/arsc-EBM calculates the blind source separation demixing matrix corresponding to X, 
         using the reference signals in guess_mat and the constraint specified by constraint.
 
     Args:
         X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
         guess_mat (np.ndarray, (Time Points, Referenced Channels)), (np.ndarray, (Time Points/2, Referenced Channels)): Time or frequency domain reference signals. The number of reference signals should be less than or equal to the number of channels in X. The first dimension should be T for time domain signals and T/2 for frequency domain signals.
-        constraint (str): the constraint to be used for the gradient step, either 'correlation' (default) or 'psd'
+        constraint (str): the constraint to be used for the gradient step, either 'correlation' (default) for arc-EBM or 'psd' for arsc-EBM 
 
     Returns:
         W (np.ndarray, (Channels, Channels)): the [N x N] demixing matrix with weights for  N channels/sources. 

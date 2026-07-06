@@ -12,8 +12,8 @@ from cedalion.sigdecomp.multimodal import arc_ebm as arc_ebm
 import cedalion.data
 from cedalion import cite
 
-def arc_erbm(X: np.ndarray, guess_mat, p: int = None , pr_guess_mat = None) -> np.ndarray:
-    """ Adaptive-reverse Constrained ICA by Entropy Rate Bound Minimization (arc-ERBM) is a spectrally constrained ICA algorithm. 
+def arsc_erbm(X: np.ndarray, guess_mat, p: int = None , pr_guess_mat = None) -> np.ndarray:
+    """ Adaptive-reverse Spectrally Constrained ICA by Entropy Rate Bound Minimization (arsc-ERBM) is a constrained ICA algorithm. 
 
     Args:
         X (np.ndarray, (Channels, Time Points)): the [N x T] input multivariate time series with dimensionality N observations/channels and T time points
@@ -106,7 +106,7 @@ def arc_erbm(X: np.ndarray, guess_mat, p: int = None , pr_guess_mat = None) -> n
         # compute gradient vector
         vec = (sign / np.linalg.norm(psd_s, 2)) * r_n_c -  (np.abs(current_corr) / np.linalg.norm(psd_s, 2)**2) * psd_s 
         vec = vec.reshape((-1, 1, 1))     
-        c_grad  = (T/2) * mu_c[n] * np.sum( np.multiply(np.dot(C_tilde,  w), vec), axis = 0  )    
+        c_grad  = (T/2) * mu_c[n] * np.sum( np.multiply(np.dot(C_tilde,  w), vec), axis = 0 )
         return c_grad
              
     if constraint == 'phase_retrieval' : 
@@ -117,7 +117,7 @@ def arc_erbm(X: np.ndarray, guess_mat, p: int = None , pr_guess_mat = None) -> n
 
             # filter reference amplitude
             amp_filtered =  sp.signal.lfilter(filter, 1, amp , axis = 0 )
-            amp_filtered = np.abs(np.fft.rfft(amp_filtered)) 
+            amp_filtered = np.abs(np.fft.rfft(amp_filtered))
 
             # compute fft of estimated source
             y_hat = np.fft.rfft(y)
