@@ -18,7 +18,7 @@ from cedalion import cite
 
 def arc_ebm(X: np.ndarray, guess_mat, constraint = 'correlation') -> np.ndarray:
     """Adaptive-reverse (Spectrally) Constrained ICA by Entropy Bound Minimization (arc-EBM/arsc-EBM) is a constrained ICA algorithm.
-        arc-EBM/arsc-EBM calculates the blind source separation demixing matrix corresponding to X, 
+        arc-EBM/arsc-EBM calculates the blind source separation demixing matrix W corresponding to data X, 
         using the reference signals in guess_mat and the constraint specified by constraint.
 
     Args:
