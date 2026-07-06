@@ -31,7 +31,8 @@ from cedalion.geometry.registration import (
     register_general_affine,
     register_trans_rot_isoscale,
     register_optodes_spring_icp,
-    register_identity
+    register_identity,
+    SpringICPResult
 )
 from cedalion.geometry.segmentation import (
     surface_from_segmentation,
@@ -821,7 +822,7 @@ class TwoSurfaceHeadModel:
         Args:
             target_landmarks: Target landmark positions (e.g. from a digitizer)
                 in any CRS.  Must contain the same label subset as the model's
-                landmarks. 
+                landmarks.
             mode: method to derive the affine transform. Could be either
                 'trans_rot_isoscale' or 'general'. See cedalion.geometry.registraion
                 for details.
@@ -1035,6 +1036,89 @@ class TwoSurfaceHeadModel:
         hm.brain.vertex_coords[coordinate_label] = vertex_strlabels
 
         return hm
+
+    def parcel_summary_from_vertex_coordinate(
+        self,
+        atlas_coord,
+        head_model_name: str,
+        exclude_pattern: str | None = "Background|Medial_Wall",
+    ):
+        vertices = self.brain.vertices
+        coords = vertices.coords
+        mni152 = self.get_brain_mni152_coords().pint.dequantify().values
+
+        df = pd.DataFrame({
+            "vertex": vertices.label.values,
+            "parcel": coords["parcel"].values,
+            "atlas_label": coords[atlas_coord].values,
+            "mni152_r": mni152[:, 0],
+            "mni152_a": mni152[:, 1],
+            "mni152_s": mni152[:, 2],
+        })
+
+        if "fsaverage_vertex" in coords:
+            df["fsaverage_vertex"] = coords["fsaverage_vertex"].values
+        elif "fsaverage_vertex_id" in coords:
+            df["fsaverage_vertex"] = coords["fsaverage_vertex_id"].values
+        else:
+            df["fsaverage_vertex"] = pd.NA
+
+        df["parcel"] = df["parcel"].astype(str)
+        df = df[df["parcel"] != ""]
+
+        if exclude_pattern is not None:
+            excluded = df["parcel"].str.contains(exclude_pattern, case=False, na=False)
+            df = df[~excluded]
+
+        counts = (
+            df.groupby(["parcel", "atlas_label"], dropna=False)
+            .size()
+            .reset_index(name="matching_vertices")
+        )
+        parcel_totals = (
+            df.groupby("parcel").size().rename("parcel_vertices").reset_index()
+        )
+        summary = counts.merge(parcel_totals, on="parcel", how="left")
+        summary["fraction_of_parcel"] = (
+            summary["matching_vertices"] / summary["parcel_vertices"]
+        )
+        summary = summary.sort_values(
+            ["parcel", "matching_vertices", "atlas_label"],
+            ascending=[True, False, True],
+        ).drop_duplicates("parcel")
+
+        representative = df.sort_values("vertex").drop_duplicates(
+            ["parcel", "atlas_label"]
+        )[
+            [
+                "parcel",
+                "atlas_label",
+                "vertex",
+                "fsaverage_vertex",
+                "mni152_r",
+                "mni152_a",
+                "mni152_s",
+            ]
+        ]
+        summary = summary.merge(
+            representative, on=["parcel", "atlas_label"], how="left"
+        )
+        summary.insert(0, "model", head_model_name)
+        return summary[
+            [
+                "model",
+                "parcel",
+                "atlas_label",
+                "vertex",
+                "fsaverage_vertex",
+                "mni152_r",
+                "mni152_a",
+                "mni152_s",
+                "matching_vertices",
+                "parcel_vertices",
+                "fraction_of_parcel",
+            ]
+        ]
 
 
 @lru_cache
