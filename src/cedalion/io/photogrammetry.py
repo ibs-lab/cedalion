@@ -73,8 +73,7 @@ def opt_fid_to_xr(fiducials, optodes, units=cedalion.units.mm):
                 object.
     """
 
-    # FIXME: this should get a different CRS
-    CRS = "ijk"
+    CRS = "digitized"
     if len(fiducials) == 0:
         fidu_coords = np.zeros((0, 3))
     else:
