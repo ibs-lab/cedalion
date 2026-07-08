@@ -14,6 +14,7 @@ from matplotlib.patches import Rectangle
 from vtk.util.numpy_support import numpy_to_vtk
 from numpy.typing import ArrayLike
 
+import cedalion
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 from cedalion.dataclasses import PointType
@@ -161,6 +162,14 @@ def plot_surface(
         - Eike Middell | middell@tu-berlin.de | 2024
         - Masha Iudina | mashayudi@gmail.com | 2024
     """
+
+    if pick_landmarks and surface.units != cedalion.units.mm:
+        raise NotImplementedError(
+            "plot_surface(pick_landmarks=...) currently requires a surface "
+            f"in mm; got units={surface.units}. Convert the surface to mm "
+            "before picking (e.g. `surface.mesh.apply_scale(factor); "
+            "surface.units = cedalion.units.mm`)."
+        )
 
     if isinstance(surface, cdc.VTKSurface):
         mesh = surface.mesh
