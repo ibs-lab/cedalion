@@ -163,6 +163,8 @@ def plot_surface(
         - Masha Iudina | mashayudi@gmail.com | 2024
     """
 
+    textured_path = False
+
     if pick_landmarks and surface.units != cedalion.units.mm:
         raise NotImplementedError(
             "plot_surface(pick_landmarks=...) currently requires a surface "
@@ -174,7 +176,22 @@ def plot_surface(
     if isinstance(surface, cdc.VTKSurface):
         mesh = surface.mesh
     elif isinstance(surface, cdc.TrimeshSurface):
-        mesh = cdc.VTKSurface.from_trimeshsurface(surface).mesh
+        # UV-mapped path: preserves texture at pixel resolution instead of
+        # collapsing to per-vertex color (which smears sub-vertex features on
+        # coarse meshes like Scaniverse scans).
+        tri_visual = surface.mesh.visual
+        tri_uv = getattr(tri_visual, "uv", None)
+        tri_img = getattr(tri_visual, "image", None) or getattr(
+            getattr(tri_visual, "material", None), "image", None
+        )
+        if tri_uv is not None and tri_img is not None:
+            from cedalion.vtktutils import trimesh_to_pv_textured_polydata
+            mesh, texture = trimesh_to_pv_textured_polydata(surface.mesh)
+            if texture is not None and "texture" not in kwargs:
+                kwargs["texture"] = texture
+            textured_path = True
+        else:
+            mesh = cdc.VTKSurface.from_trimeshsurface(surface).mesh
     else:
         raise ValueError("unsupported mesh")
 
@@ -223,9 +240,11 @@ def plot_surface(
     if "pickable" not in kwargs:
         kwargs["pickable"] = True
     if "smooth_shading" not in kwargs:
-        kwargs["smooth_shading"] = True
+        # smooth_shading + split_sharp_edges recompute normals and duplicate
+        # vertices along sharp edges, which mangles UVs on the textured path.
+        kwargs["smooth_shading"] = not textured_path
     if "split_sharp_edges" not in kwargs:
-        kwargs["split_sharp_edges"] = True
+        kwargs["split_sharp_edges"] = not textured_path
     if "feature_angle" not in kwargs:
         kwargs["feature_angle"] = 90
 
