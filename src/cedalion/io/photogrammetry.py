@@ -1,11 +1,12 @@
 """Module for reading photogrammetry output file formats."""
 
+import cedalion
 import cedalion.dataclasses as cdc
 import numpy as np
 from collections import OrderedDict
 
 
-def read_photogrammetry_einstar(fn):
+def read_photogrammetry_einstar(fn, units=cedalion.units.mm):
     """Read optodes and fiducials from photogrammetry pipeline.
 
     This method reads the output file as returned by the
@@ -13,6 +14,9 @@ def read_photogrammetry_einstar(fn):
 
     Args:
         fn (str): The filename of the einstar photogrammetry output file.
+        units: Units of the coordinates in the file. Defaults to millimetres
+            (Einstar convention). Pass e.g. ``cedalion.units.m`` for exports
+            in metres.
 
     Returns:
         tuple: A tuple containing:
@@ -24,7 +28,7 @@ def read_photogrammetry_einstar(fn):
     fiducials, optodes = read_einstar(fn)
     fiducials = OrderedDict((k, v) for k, v in fiducials.items() if v != [])
     optodes = OrderedDict((k, v) for k, v in optodes.items() if v != [])
-    fiducials, optodes = opt_fid_to_xr(fiducials, optodes)
+    fiducials, optodes = opt_fid_to_xr(fiducials, optodes, units=units)
     return fiducials, optodes
 
 
@@ -53,12 +57,13 @@ def read_einstar(fn):
     return fiducials, optodes
 
 
-def opt_fid_to_xr(fiducials, optodes):
+def opt_fid_to_xr(fiducials, optodes, units=cedalion.units.mm):
     """Convert OrderedDicts fiducials and optodes to cedalion LabeledPoints objects.
 
     Args:
         fiducials (OrderedDict): The fiducials as an OrderedDict.
         optodes (OrderedDict): The optodes as an OrderedDict.
+        units: Units to attach to the returned LabeledPoints. Defaults to mm.
 
     Returns:
         tuple: A tuple containing:
@@ -68,8 +73,7 @@ def opt_fid_to_xr(fiducials, optodes):
                 object.
     """
 
-    # FIXME: this should get a different CRS
-    CRS = "ijk"
+    CRS = "digitized"
     if len(fiducials) == 0:
         fidu_coords = np.zeros((0, 3))
     else:
@@ -81,8 +85,8 @@ def opt_fid_to_xr(fiducials, optodes):
         opt_coords = np.array(list(optodes.values()))
 
     fiducials = cdc.build_labeled_points(
-        fidu_coords, labels=list(fiducials.keys()), crs=CRS
-    )  # , units="mm")
+        fidu_coords, labels=list(fiducials.keys()), crs=CRS, units=units,
+    )
 
     types = []
     for lab in list(optodes.keys()):
@@ -93,6 +97,7 @@ def opt_fid_to_xr(fiducials, optodes):
         else:
             types.append(cdc.PointType(0))
     optodes = cdc.build_labeled_points(
-        opt_coords, labels=list(optodes.keys()), crs=CRS, types=types
+        opt_coords, labels=list(optodes.keys()), crs=CRS, types=types,
+        units=units,
     )
     return fiducials, optodes
