@@ -7,6 +7,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
 					getting_started_io/14_snirf2bids.ipynb \
 					plots_visualization/12_plots_example.ipynb \
 					machine_learning/50_finger_tapping_lda_classification.ipynb \
+					machine_learning/50b_advanced_finger_tapping_lda_classification.ipynb \
 					machine_learning/52_ica_erbm_fingertapping_example.ipynb \
 					machine_learning/53_constrained_ICA_example.ipynb \
 					modeling/31_glm_basis_functions.ipynb \
