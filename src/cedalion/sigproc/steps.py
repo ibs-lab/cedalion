@@ -13,6 +13,7 @@ import cedalion.sigproc.quality
 import cedalion.sigproc.motion
 import cedalion.xrutils as xrutils
 from cedalion.physunits import parse_quantity
+from cedalion import units
 from dataclasses import dataclass
 
 # We want to provide a simpler yaml-based interface to all the different preprocessing
@@ -112,6 +113,56 @@ def _repair_amp(
     ctx.rec[ctx.step_name] = cedalion.sigproc.quality.repair_amp(
         ctx.ts, median_len=median_len, interp_nan=interp_nan, **kwargs
     )
+
+
+@preproc_step("wavelet")
+def _wavelet(
+    ctx: Context,
+    *,
+    iqr: float = 1.5,
+    wavelet: str = "db2",
+    level: int = 4,
+):
+    """TBD."""
+    ctx.rec[ctx.step_name] = cedalion.sigproc.motion.wavelet(
+        ctx.ts, iqr=iqr, wavelet=wavelet, level=level
+    )
+
+
+@preproc_step("sci")
+def _sci(
+    ctx: Context,
+    window_length,
+    sci_thresh: float,
+    *,
+    cardiac_fmin: cdt.QFrequency = 0.5 * units.Hz,
+    cardiac_fmax: cdt.QFrequency = 2.5 * units.Hz,
+):
+    """TBD."""
+    sci_values, sci_mask_values = cedalion.sigproc.quality.sci(
+        ctx.ts, window_length, sci_thresh, cardiac_fmin=cardiac_fmin,
+        cardiac_fmax=cardiac_fmax
+    )
+    ctx.sidecar[ctx.step_name] = sci_values
+    ctx.sidecar[ctx.step_name + "_mask"] = sci_mask_values
+
+
+@preproc_step("psp")
+def _psp(
+    ctx: Context,
+    window_length,
+    psp_thresh: float,
+    *,
+    cardiac_fmin: cdt.QFrequency = 0.5 * units.Hz,
+    cardiac_fmax: cdt.QFrequency = 2.5 * units.Hz,
+):
+    """TBD."""
+    psp_values, psp_mask_values = cedalion.sigproc.quality.psp(
+        ctx.ts, window_length, psp_thresh, cardiac_fmin=cardiac_fmin,
+        cardiac_fmax=cardiac_fmax
+    )
+    ctx.sidecar[ctx.step_name] = psp_values
+    ctx.sidecar[ctx.step_name + "_mask"] = psp_mask_values
 
 
 # FIXME move somewhere central
