@@ -79,45 +79,126 @@ def dialog_artefact_removal() -> None:
     dialog.mainloop()
     return result["choice"]
 
+import numpy as np
+
+
 def interpft(x, ny):
+    """Periodically resample a one-dimensional signal using Fourier interpolation.
+
+    Parameters
+    ----------
+    x : array_like
+        One period of an equally spaced signal.
+    ny : int
+        Desired number of output samples.
+
+    Returns
+    -------
+    y : ndarray
+        Periodically resampled signal with length `ny`.
+
+    Notes
+    -----
+    - ny > len(x): Fourier upsampling through spectral zero-padding.
+    - ny < len(x): Fourier downsampling through spectral truncation.
+    - The signal is assumed to be periodic.
+    """
     x = np.asarray(x)
+
+    if x.ndim != 1:
+        raise ValueError("x must be a one-dimensional array.")
+
+    if not isinstance(ny, (int, np.integer)):
+        raise TypeError("ny must be an integer.")
+
+    if ny < 1:
+        raise ValueError("ny must be at least 1.")
+
     m = x.size
 
-    # FFT
+    if m == 0:
+        raise ValueError("x must contain at least one sample.")
+
+    # No resampling is necessary.
+    if ny == m:
+        return x.copy()
+
     X = np.fft.fft(x)
-
-    # Lower half incl. Nyquist
-                # nyq = int(np.ceil((m + 1) / 2))
-    nyq = int(np.ceil((min(m, ny) + 1) / 2))     # NEU
-
-    # New frequency-domain array
     Y = np.zeros(ny, dtype=complex)
 
-    # Copy lower frequencies (0 ... nyq-1)
-    Y[:nyq] = X[:nyq]
+    # Upsampling
+    if ny > m:
 
-    # Copy upper frequencies (mirror side)
-                # Y[ny - (m - nyq) + 1:] = X[nyq + 1:]
-    n_upper = min(m - nyq, ny - nyq)            # NEU
-    if n_upper > 0:                             # NEU
-        Y[-n_upper:] = X[-n_upper:]             # NEU
+        # Odd input length:
+        # X = [DC, positive frequencies, negative frequencies]
+        # There is no unpaired Nyquist coefficient.
+        if m % 2 == 1:
+            k = (m - 1) // 2
 
-    # Even length: split Nyquist term
-                # if m % 2 == 0:
-                #     Y[nyq] = X[nyq] / 2
-                #     Y[nyq + ny - m] = X[nyq] / 2
-    if (m % 2 == 0) and (ny % 2 == 0) and (nyq < ny) and (nyq < m): # NEU
-        Y[nyq] = X[nyq] / 2                                         # NEU
-        Y[-nyq] = X[nyq] / 2                                        # NEU
+            # DC and positive frequencies
+            Y[:k + 1] = X[:k + 1]
 
-    # IFFT
+            # Negative frequencies
+            if k > 0:
+                Y[-k:] = X[-k:]
+
+        # Even input length:
+        # X[m // 2] is an unpaired Nyquist coefficient.
+        # It must be split between positive and negative frequencies.
+        else:
+            k = m // 2
+
+            # DC and positive frequencies below Nyquist
+            Y[:k] = X[:k]
+
+            # Negative frequencies above negative Nyquist
+            if k > 1:
+                Y[-(k - 1):] = X[-(k - 1):]
+
+            # Split the original Nyquist coefficient
+            Y[k] = X[k] / 2
+            Y[-k] = X[k] / 2
+
+    # Downsampling
+    else:
+
+        # Odd output length:
+        # Retain DC and matching positive/negative frequency pairs.
+        # There is no output Nyquist coefficient.
+        if ny % 2 == 1:
+            k = (ny - 1) // 2
+
+            # DC and positive frequencies
+            Y[:k + 1] = X[:k + 1]
+            # Negative frequencies
+            if k > 0:
+                Y[-k:] = X[-k:]
+
+        # Even output length:
+        # The frequencies +k and -k become one output Nyquist bin,
+        # so their coefficients must be combined.
+        else:
+            k = ny // 2
+
+            # DC and positive frequencies below target Nyquist
+            Y[:k] = X[:k]
+            # Negative frequencies above target negative Nyquist
+            if k > 1:
+                Y[-(k - 1):] = X[-(k - 1):]
+            # Unite the positive and negative target-Nyquist pair
+            Y[k] = X[k] + X[-k]
+
+    # Convert the resized spectrum back to the sample domain.
     y = np.fft.ifft(Y)
 
-    # discard complex part if input was real
+    # Correct for NumPy's inverse-FFT normalization.
+    y *= ny / m
+
+    # Remove insignificant imaginary round-off for real input.
     if np.isrealobj(x):
         y = y.real
 
-    return y * (ny / m)
+    return y
 
 def peakseek(
     x: ArrayLike,
@@ -569,8 +650,7 @@ def extract_waveforms(
         minima_idx, minima_value = peakseek(
             -1 * actual_ts_np,
             min_peak_dist,
-            min_peak_height
-        )
+            min_peak_height)
         minima_value = -1 * minima_value
 
         # --- BVP analysis specific correction of peakseek ---
@@ -615,7 +695,7 @@ def extract_waveforms(
 
         # Compare the distance between the median minimum value and zero
         # with the distance between the actual minimum value and zero, and
-        # filter the value out if it the acutal distance is too small.
+        # filter the value out if the acutal distance is too small.
         minimma_value_median = np.median(minima_value)
         dist_median_zero = np.abs(0 - minimma_value_median)
 
@@ -639,7 +719,7 @@ def extract_waveforms(
         # --- Iterate over consecutive minima to extract waveforms ---
         for i in range(len(minima_idx) - 1):
 
-            # --- Robust duration check using local median ---
+            # --- Duration check using local median ---
             start = max(0, i - 3)
             end = min(len(minima_idx), i + 5)
             diff = np.diff(minima_idx[start:end])
@@ -736,8 +816,8 @@ def remove_artifact_waveforms(
     xy-normalized waveforms. For every individual waveform, a deviation
     metric is calculated as the summed absolute distance to this mean
     waveform. This deviation serves as an artifact score.
-    Waveforms with deviation values below the 2.5th percentile or above
-    the 97.5th percentile are classified as artifacts and removed.
+    Waveforms with deviation values above the 97.5th percentile are
+    classified as artifacts and removed.
     The cleaned waveform matrices are stored alongside the original data
     without overwriting them.
 
@@ -760,7 +840,6 @@ def remove_artifact_waveforms(
         2. wav_storage_details:
             Extended with artifact-cleaned matrices and diagnostic information:
                 - nparray_wav_xy_normal_all_woa
-                - P_025: lower deviation percentile threshold
                 - P_975: upper deviation percentile threshold
                 - bvp_wav_dev: deviation score per waveform
 
@@ -788,21 +867,17 @@ def remove_artifact_waveforms(
             bvp_wav_dev[i] = np.sum(np.abs(actual_wavs_final[:, i]
                                            - bvp_wav_final_mean))
 
-        # Percentile thresholds
-        p_025 = np.percentile(bvp_wav_dev, 2.5)
+        # Percentile threshold
         p_975 = np.percentile(bvp_wav_dev, 97.5)
 
         # Artifact indices
-        idx_bvp_wav_p025  = np.where(bvp_wav_dev < p_025)[0]
         idx_bvp_wav_p975 = np.where(bvp_wav_dev > p_975)[0]
-        idx_bvp_wav_p025_p975  = np.concatenate([idx_bvp_wav_p025, idx_bvp_wav_p975])
 
         # Remove artifacts and store output
         wav_storage_user[ch]["nparray_wav_xy_normal_zscore_all_woa"] = np.delete(
-            actual_wavs_final, idx_bvp_wav_p025_p975, axis=1)
+            actual_wavs_final, idx_bvp_wav_p975, axis=1)
         wav_storage_user[ch]["nparray_wav_xy_normal_all_woa"] = np.delete(
-            actual_wavs_xynorm, idx_bvp_wav_p025_p975, axis=1)
-        wav_storage_details[ch]["P_025"] = p_025
+            actual_wavs_xynorm, idx_bvp_wav_p975, axis=1)
         wav_storage_details[ch]["P_975"] = p_975
         wav_storage_details[ch]["bvp_wav_dev"] = bvp_wav_dev
 
@@ -1263,7 +1338,7 @@ def calc_wav_coh_bvpa_pr(ts_1: cdt.NDTimeSeries,
     dt = 1.0 / fs
 
     # ch_list = ts_1.channel.values
-    ch_list = ["S1D15"]
+    ch_list = ['S4D10']
 
     for ch in ch_list:
         y_ts_1 = ts_1.sel(channel=ch).to_numpy()
@@ -1484,9 +1559,7 @@ def plot_wavs_woa(bvp_cont: BVP_Container, ch: str, container_name: str = "") ->
     ax.set_xlabel('BVP waveform [n]')
     ax.set_ylabel('WDI')
     ax.autoscale(enable=True, tight=True)
-    # percentile lines
-    ax.axhline(bvp_cont.wav_storage_details[ch]['P_025'],
-               color='r', linestyle='--', linewidth=1)
+    # percentile line
     ax.axhline(bvp_cont.wav_storage_details[ch]['P_975'],
                color='r', linestyle='--', linewidth=1)
 
@@ -1497,9 +1570,7 @@ def plot_wavs_woa(bvp_cont: BVP_Container, ch: str, container_name: str = "") ->
     ax.set_xlabel('WDI')
     ax.set_ylabel('Count')
     ax.autoscale(enable=True, tight=True)
-    # percentile lines
-    ax.axvline(bvp_cont.wav_storage_details[ch]['P_025'],
-               color='r', linestyle='--', linewidth=1)
+    # percentile line
     ax.axvline(bvp_cont.wav_storage_details[ch]['P_975'],
                color='r', linestyle='--', linewidth=1)
 
