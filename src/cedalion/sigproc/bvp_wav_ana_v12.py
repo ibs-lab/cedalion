@@ -6,8 +6,6 @@
 #  - BVP spezifische peakseek Korrektur wieder aus peakseek herausgenommen und
 #       in extract_waveforms integriert.
 #  - classify_waveforms: Klassifizierung nach delta hinzugefügt.
-
-# Nochmal überprüfen
 #  - interpft auch für downsampling erweitert
 
 import numpy as np
@@ -79,9 +77,6 @@ def dialog_artefact_removal() -> None:
     dialog.mainloop()
     return result["choice"]
 
-import numpy as np
-
-
 def interpft(x, ny):
     """Periodically resample a one-dimensional signal using Fourier interpolation.
 
@@ -128,7 +123,6 @@ def interpft(x, ny):
 
     # Upsampling
     if ny > m:
-
         # Odd input length:
         # X = [DC, positive frequencies, negative frequencies]
         # There is no unpaired Nyquist coefficient.
@@ -161,7 +155,6 @@ def interpft(x, ny):
 
     # Downsampling
     else:
-
         # Odd output length:
         # Retain DC and matching positive/negative frequency pairs.
         # There is no output Nyquist coefficient.
@@ -2066,5 +2059,163 @@ def plot_coherence_bvpa_pr(bvp_cont: BVP_Container, ch: str,
     cbar = fig.colorbar(cf, cax=ax_cbar)
     cbar.set_ticks(np.arange(0, 1.01, 0.2))
     cbar.set_label('Coherence', rotation=90, labelpad=7)
+
+    plt.show()
+
+def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
+                           coherence_thresh=0.9,
+                           arrow_step_time=30,
+                           arrow_step_period: int=4) -> None:
+    """Plots mean wavelet coherence and mean phase between BVPA and PR.
+
+    The mean phase is calculated for the whole frequency range. Phase arrows
+    are plotted in black for frequencies where relevant phase information is
+    available and in grey otherwise. Relevant phase means that the coherence
+    is above the threshold and the frequency is inside the cone of interest.
+
+    Args:
+        bvp_cont: BVP Container which includes the blood volume pulse time series
+            created by the function "extract_bvp" and the two storages.
+        ch: string that specifies the channel which should be plotted.
+        coherence_thresh: threshold above which phase information is considered
+            relevant.
+        arrow_step_time: steps between lines of arrow-grid in the direction of time
+            in seconds.
+        arrow_step_period: steps between lines of arrow-grid in the direction of
+            frequency. Higher values lead to lower arrow density.
+
+    Example:
+        plot_coherence_bvpa_pr(rec, "S1D15")
+    """
+
+    WCT = bvp_cont.wav_storage_details[ch]["wavelet_coherence"]
+    aWCT = bvp_cont.wav_storage_details[ch]["phase"]
+    coi = bvp_cont.wav_storage_details[ch]["cone_of_interest"]
+    freq = bvp_cont.wav_storage_details[ch]["frequency"]
+    time = bvp_cont.wav_storage_details[ch]["wc_time"] / 60
+    S12 = bvp_cont.wav_storage_details[ch]["cross_wavelet_transform"]
+    S1 = bvp_cont.wav_storage_details[ch]["cwt_signal1"]
+    S2 = bvp_cont.wav_storage_details[ch]["cwt_signal2"]
+    n = time.size
+
+    fs_qty = sampling_rate(bvp_cont['bvpa_ts'])
+    fs = float(fs_qty.to('Hz').magnitude)
+    arrow_step_time = int(arrow_step_time * fs)
+    arrow_step_time = max(1, arrow_step_time)
+
+    source = bvp_cont['bvp_ts'].coords["source"].sel(channel=ch).item()
+    detector = bvp_cont['bvp_ts'].coords["detector"].sel(channel=ch).item()
+
+    cmap = cmap_parula()
+    freq_ticks = np.array([0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 1, 2])
+
+    # ----- Means of coherence and phase over time
+    S12_real = np.real(S12)
+    S12_img = np.imag(S12)
+    mean_help = np.sqrt((np.mean(S12_real, axis=1) ** 2)
+                        + (np.mean(S12_img, axis=1) ** 2))
+    mean_coherence = np.abs(mean_help) ** 2 / np.mean((S1 * S2), axis=1)
+    mean_phase = np.angle(np.mean(np.exp(1j * aWCT), axis=1))
+
+    # Determine which frequencies are relevant
+    coi = np.asarray(coi)
+    coi_freq = 1.0 / coi
+
+    TT, FF = np.meshgrid(time, freq)
+
+    inside_coi = FF >= coi_freq[np.newaxis, :]
+    strong_coh = WCT >= coherence_thresh
+    mask = inside_coi & strong_coh
+
+    ti = np.arange(0, n, arrow_step_time)
+    si = np.arange(0, freq.size, arrow_step_period)
+    mask_sub = mask[np.ix_(si, ti)]
+
+    freq_has_arrows = np.any(mask_sub, axis=1)
+
+    # Prepare mean phase arrows
+    freq_phase = np.log2(freq[si])
+    mean_phase_plot = mean_phase[si]
+
+    U = np.cos(mean_phase_plot)
+    V = np.sin(mean_phase_plot)
+    Y = np.zeros_like(freq_phase)
+
+    # ----- PLOT -----
+    fig = plt.figure(figsize=(13.5, 5))
+    gs = GridSpec(2, 1, figure=fig, height_ratios=[4, 1],
+                  hspace=0.08)
+
+    plt.rcParams.update({'font.size': 10})
+    fig.patch.set_facecolor('white')
+    fig.subplots_adjust(left=0.08, right=0.96, top=0.92, bottom=0.10)
+
+    # ----- Mean coherence
+    ax_mean_coherence = fig.add_subplot(gs[0, 0])
+
+    ax_mean_coherence.plot(
+        np.log2(freq),
+        mean_coherence,
+        color=cmap(0.8),
+        linewidth=2,
+        label="Mean coherence")
+
+    ax_mean_coherence.set_title(
+        "Mean wavelet coherence and mean phase\n(BVPA–PR coupling) ("
+        + source + " | " + detector + ")",
+        fontweight='bold',
+        fontsize=12)
+
+    ax_mean_coherence.set_ylabel("Mean coherence")
+    ax_mean_coherence.set_yticks(np.arange(0, 1.0001, 0.2))
+    ax_mean_coherence.set_ylim(0, 1.001)
+
+    ax_mean_coherence.set_xticks(np.log2(freq_ticks))
+    ax_mean_coherence.set_xticklabels([f"{v:g}" for v in freq_ticks])
+    ax_mean_coherence.set_xlim(np.log2(freq.min()), np.log2(2))
+    ax_mean_coherence.tick_params(axis="x", labelbottom=False)
+
+    # ----- Mean phase
+    ax_mean_phase = fig.add_subplot(gs[1, 0], sharex=ax_mean_coherence)
+
+    # Non-relevant phase arrows
+    ax_mean_phase.quiver(
+        freq_phase[~freq_has_arrows],
+        Y[~freq_has_arrows],
+        U[~freq_has_arrows],
+        V[~freq_has_arrows],
+        angles="uv",
+        pivot="mid",
+        scale_units="width",
+        scale=25,
+        width=0.003,
+        headwidth=6,
+        headlength=7,
+        color="gray",
+        alpha=0.3)
+
+    # Relevant phase arrows
+    ax_mean_phase.quiver(
+        freq_phase[freq_has_arrows],
+        Y[freq_has_arrows],
+        U[freq_has_arrows],
+        V[freq_has_arrows],
+        angles="uv",
+        pivot="mid",
+        scale_units="width",
+        scale=25,
+        width=0.003,
+        headwidth=6,
+        headlength=7,
+        color="k")
+
+    ax_mean_phase.set_ylim(-1.2, 1.2)
+    ax_mean_phase.set_yticks([])
+    ax_mean_phase.set_ylabel("Mean phase")
+
+    ax_mean_phase.set_xticks(np.log2(freq_ticks))
+    ax_mean_phase.set_xticklabels([f"{v:g}" for v in freq_ticks])
+    ax_mean_phase.set_xlim(np.log2(freq.min()), np.log2(2))
+    ax_mean_phase.set_xlabel("Frequency [Hz]")
 
     plt.show()
