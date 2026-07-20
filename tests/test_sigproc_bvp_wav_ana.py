@@ -43,13 +43,46 @@ def test_interpft():
     np.testing.assert_allclose(downsampled, x, atol=1e-12)
 
 def test_peakseek():
-    signal = np.array([
+    simple_signal = np.array([
         10.0, 0.0, 2.0, 0.0, 3.0, 0.0,
         1.0, 0.0, 0.0, 4.0, 0.0, 10.0,
     ])
 
-    locations, peaks = peakseek(signal, minpeakdist=3, minpeakh=1.5)
+    locations, peaks = peakseek(
+        simple_signal,
+        minpeakdist=3,
+        minpeakh=1.5,
+    )
 
     np.testing.assert_array_equal(locations, np.array([4, 9]))
     np.testing.assert_array_equal(peaks, np.array([3.0, 4.0]))
 
+    a = np.array([
+        0.21362854, 0.05005765, 0.00135350, -0.00906460,
+        -0.00849233, -0.02022217, -0.01101648, -0.00662955,
+    ])
+
+    b = np.array([
+        -0.33609957, -0.12807130, -0.08131665, -0.03903412,
+        -0.02956690, -0.01606627, -0.00380470, -0.00521266,
+    ])
+
+    n_samples = 80
+    t_samples = np.arange(n_samples) / n_samples
+    k = np.arange(1, 9)[:, None]
+    angle_samples = 2 * np.pi * k * t_samples
+
+    multiharmonic_signal = np.sum(
+        a[:, None] * np.sin(angle_samples)
+        + b[:, None] * (np.cos(angle_samples) - 1),
+        axis=0,
+    )
+
+    locations, peaks = peakseek(multiharmonic_signal)
+
+    np.testing.assert_array_equal(locations, np.array([23, 35]))
+    np.testing.assert_allclose(
+        peaks,
+        np.array([0.9698297535333608, 0.9508981042738599]),
+        atol=1e-12,
+    )

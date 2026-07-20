@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import LogLocator, NullFormatter
 
 import cedalion.typing as cdt
 from cedalion import physunits
@@ -484,7 +485,9 @@ def wct(
 
 # --- BVP Analysis -------------------
 
-def extract_bvp(hbo_conc_ts: cdt.NDTimeSeries, fs_new=50, request=True) -> cdt.NDTimeSeries:
+def extract_bvp(
+    hbo_conc_ts: cdt.NDTimeSeries, fs_new=50, request=True
+    ) -> cdt.NDTimeSeries:
     """Extracts the blood volume pulsation (BVP) time series from an
     HbO concentration time series.
 
@@ -1037,7 +1040,7 @@ def classify_waveforms(
 def extract_bvpa(
     bvp_ts: cdt.NDTimeSeries,
     wav_storage_user: dict
-) -> cdt.NDTimeSeries:
+    ) -> cdt.NDTimeSeries:
     """Extracts the blood volume pulse amplitude (BVPA) time series from
     a blood volume pulse (BVP) signal.
 
@@ -2089,7 +2092,7 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
     """
 
     WCT = bvp_cont.wav_storage_details[ch]["wavelet_coherence"]
-    aWCT = bvp_cont.wav_storage_details[ch]["phase"]
+    # aWCT = bvp_cont.wav_storage_details[ch]["phase"]
     coi = bvp_cont.wav_storage_details[ch]["cone_of_interest"]
     freq = bvp_cont.wav_storage_details[ch]["frequency"]
     time = bvp_cont.wav_storage_details[ch]["wc_time"] / 60
@@ -2106,22 +2109,13 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
     source = bvp_cont['bvp_ts'].coords["source"].sel(channel=ch).item()
     detector = bvp_cont['bvp_ts'].coords["detector"].sel(channel=ch).item()
 
-    cmap = cmap_parula()
     freq_ticks = np.array([0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 1, 2])
 
-    # ----- Means of coherence and phase over time
-    S12_real = np.real(S12)
-    S12_img = np.imag(S12)
-    mean_help = np.sqrt((np.mean(S12_real, axis=1) ** 2)
-                        + (np.mean(S12_img, axis=1) ** 2))
-    mean_coherence = np.abs(mean_help) ** 2 / np.mean((S1 * S2), axis=1)
-    mean_phase = np.angle(np.mean(np.exp(1j * aWCT), axis=1))
-
-    # Determine which frequencies are relevant
+    # ----- Determine which frequencies are relevant
     coi = np.asarray(coi)
     coi_freq = 1.0 / coi
 
-    TT, FF = np.meshgrid(time, freq)
+    _, FF = np.meshgrid(time, freq)
 
     inside_coi = FF >= coi_freq[np.newaxis, :]
     strong_coh = WCT >= coherence_thresh
@@ -2133,8 +2127,28 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
 
     freq_has_arrows = np.any(mask_sub, axis=1)
 
-    # Prepare mean phase arrows
-    freq_phase = np.log2(freq[si])
+    # ----- Means time
+    # phase-consistent mean coherence
+    S12_coi = np.where(inside_coi, S12, np.nan + 1j * np.nan)
+    S1S2_coi = np.where(inside_coi, S1 * S2, np.nan)
+
+    mean_S12 = np.nanmean(S12_coi, axis=1)
+    mean_denominator = np.nanmean(S1S2_coi, axis=1)
+
+    phase_consistent_mean_coherence = np.abs(mean_S12) ** 2 / mean_denominator
+
+    # mean coherence
+    WTC_coi = np.where(inside_coi, WCT, np.nan)
+    mean_coherence = np.nanmean(WTC_coi, axis=1)
+    percentile_5th_coherence = np.nanpercentile(WTC_coi, 5, axis=1)
+    percentile_95th_coherence = np.nanpercentile(WTC_coi, 95, axis=1)
+
+    # mean phase
+    mean_phase = np.angle(mean_S12)                              # weighted mean phase
+    # mean_phase = np.angle(np.mean(np.exp(1j * aWCT), axis=1))  # unweighted mean phase
+
+    # ----- Prepare mean phase arrows
+    freq_phase = freq[si]
     mean_phase_plot = mean_phase[si]
 
     U = np.cos(mean_phase_plot)
@@ -2142,41 +2156,69 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
     Y = np.zeros_like(freq_phase)
 
     # ----- PLOT -----
-    fig = plt.figure(figsize=(13.5, 5))
-    gs = GridSpec(2, 1, figure=fig, height_ratios=[4, 1],
+    fig = plt.figure(figsize=(13.5, 7))
+    gs = GridSpec(3, 1, figure=fig, height_ratios=[3, 3, 1],
                   hspace=0.08)
 
     plt.rcParams.update({'font.size': 10})
     fig.patch.set_facecolor('white')
-    fig.subplots_adjust(left=0.08, right=0.96, top=0.92, bottom=0.10)
+    fig.subplots_adjust(left=0.06, right=0.99, top=0.935, bottom=0.08)
 
-    # ----- Mean coherence
-    ax_mean_coherence = fig.add_subplot(gs[0, 0])
+    # ----- Phase-consistent mean coherence
+    ax_phase_consistent_mean_coherence = fig.add_subplot(gs[0, 0])
 
-    ax_mean_coherence.plot(
-        np.log2(freq),
-        mean_coherence,
-        color=cmap(0.8),
-        linewidth=2,
-        label="Mean coherence")
+    ax_phase_consistent_mean_coherence.plot(
+        freq,
+        phase_consistent_mean_coherence,
+        color=[0.959, 0.278, 0.329],
+        linewidth=2)
 
-    ax_mean_coherence.set_title(
-        "Mean wavelet coherence and mean phase\n(BVPA–PR coupling) ("
-        + source + " | " + detector + ")",
+    ax_phase_consistent_mean_coherence.set_title(
+        "Wavelet coherence – Means\n"
+        "(BVPA–PR coupling) ("+ source + " | " + detector + ")",
         fontweight='bold',
         fontsize=12)
 
-    ax_mean_coherence.set_ylabel("Mean coherence")
+    ax_phase_consistent_mean_coherence.set_ylabel("Phase-consistent\n" \
+                                                  "mean wavelet coherence",
+                                                  fontweight='bold')
+    ax_phase_consistent_mean_coherence.set_yticks(np.arange(0, 1.0001, 0.2))
+    ax_phase_consistent_mean_coherence.set_ylim(0, 1.001)
+
+    ax_phase_consistent_mean_coherence.set_xticks(freq_ticks)
+    ax_phase_consistent_mean_coherence.set_xticklabels([f"{v:g}" for v in freq_ticks])
+    ax_phase_consistent_mean_coherence.tick_params(axis="x", labelbottom=False)
+
+    # ----- Mean coherence incl. 5th and 95th percentile
+    ax_mean_coherence = fig.add_subplot(gs[1, 0], sharex=ax_phase_consistent_mean_coherence)
+
+    ax_mean_coherence.fill_between(
+        freq,
+        percentile_5th_coherence,
+        percentile_95th_coherence,
+        color=[0.959, 0.278, 0.329],
+        alpha=0.1,
+        linewidth=0,
+        label="5th–95th percentile")
+
+    ax_mean_coherence.plot(
+        freq,
+        mean_coherence,
+        color=[0.959, 0.278, 0.329],
+        linewidth=2)
+
+    ax_mean_coherence.set_ylabel("Mean wavelet coherence",
+                                 fontweight='bold')
     ax_mean_coherence.set_yticks(np.arange(0, 1.0001, 0.2))
     ax_mean_coherence.set_ylim(0, 1.001)
 
-    ax_mean_coherence.set_xticks(np.log2(freq_ticks))
+    ax_mean_coherence.set_xticks(freq_ticks)
     ax_mean_coherence.set_xticklabels([f"{v:g}" for v in freq_ticks])
-    ax_mean_coherence.set_xlim(np.log2(freq.min()), np.log2(2))
     ax_mean_coherence.tick_params(axis="x", labelbottom=False)
+    ax_mean_coherence.legend(loc="upper right", facecolor="white", framealpha=1)
 
     # ----- Mean phase
-    ax_mean_phase = fig.add_subplot(gs[1, 0], sharex=ax_mean_coherence)
+    ax_mean_phase = fig.add_subplot(gs[2, 0], sharex=ax_phase_consistent_mean_coherence)
 
     # Non-relevant phase arrows
     ax_mean_phase.quiver(
@@ -2211,11 +2253,20 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
 
     ax_mean_phase.set_ylim(-1.2, 1.2)
     ax_mean_phase.set_yticks([])
-    ax_mean_phase.set_ylabel("Mean phase")
+    ax_mean_phase.set_ylabel("Weighted\nmean\nphase", fontweight='bold')
 
-    ax_mean_phase.set_xticks(np.log2(freq_ticks))
+    ax_mean_phase.set_xscale("log", base=10)
+    ax_mean_phase.set_xlim(freq.min(), 2)
+
+    ax_mean_phase.set_xticks(freq_ticks)
     ax_mean_phase.set_xticklabels([f"{v:g}" for v in freq_ticks])
-    ax_mean_phase.set_xlim(np.log2(freq.min()), np.log2(2))
-    ax_mean_phase.set_xlabel("Frequency [Hz]")
+
+    ax_mean_phase.xaxis.set_minor_locator(
+        LogLocator(base=10, subs=np.arange(2, 10) * 0.1))
+    ax_mean_phase.xaxis.set_minor_formatter(NullFormatter())
+
+    ax_mean_phase.tick_params(axis="x", which="major", length=6)
+    ax_mean_phase.tick_params(axis="x", which="minor", length=3)
+    ax_mean_phase.set_xlabel("Frequency [Hz]", fontweight='bold')
 
     plt.show()
