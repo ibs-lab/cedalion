@@ -450,7 +450,7 @@ def wct(
     scales1 = np.ones([1, y1.size]) * sj[:, None]
     scales2 = np.ones([1, y2.size]) * sj[:, None]
 
-    # Smooth the wavelet spectra before truncating.
+    # Smooth the wavelet spectra before truncating
     S1 = wavelet.smooth(np.abs(W1) ** 2 / scales1, dt, dj, sj)
     S2 = wavelet.smooth(np.abs(W2) ** 2 / scales2, dt, dj, sj)
 
@@ -2155,17 +2155,48 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
     V = np.sin(mean_phase_plot)
     Y = np.zeros_like(freq_phase)
 
+    # ----- Frequency ranges with relevant phase arrows
+    # Sort frequencies to ensure increasing order
+    order = np.argsort(freq_phase)
+    shade_freq = freq_phase[order]
+    shade_mask = freq_has_arrows[order]
+    # Bin boundaries halfway between frequencies.
+    freq_edges = np.empty(shade_freq.size + 1)
+    freq_edges[1:-1] = np.sqrt(shade_freq[:-1] * shade_freq[1:])
+    freq_edges[0] = freq.min()
+    freq_edges[-1] = 2.0
+    # Find contiguous True regions
+    changes = np.diff(
+        np.concatenate(([False], shade_mask, [False])).astype(int))
+    starts = np.flatnonzero(changes == 1)
+    stops = np.flatnonzero(changes == -1)
+    phase_shading_ranges = [
+        (freq_edges[start], freq_edges[stop])
+        for start, stop in zip(starts, stops)]
+
     # ----- PLOT -----
     fig = plt.figure(figsize=(13.5, 7))
-    gs = GridSpec(3, 1, figure=fig, height_ratios=[3, 3, 1],
-                  hspace=0.08)
+    gs = GridSpec(5, 2, figure=fig,
+                  height_ratios=[3, 1.15, 1.5, 1.5, 1],
+                  width_ratios=[4, 1],
+                  hspace=0.08, wspace=0.0)
 
     plt.rcParams.update({'font.size': 10})
     fig.patch.set_facecolor('white')
-    fig.subplots_adjust(left=0.06, right=0.99, top=0.935, bottom=0.08)
+    fig.subplots_adjust(left=0.06, right=0.99, top=0.93, bottom=0.08)
 
     # ----- Phase-consistent mean coherence
     ax_phase_consistent_mean_coherence = fig.add_subplot(gs[0, 0])
+
+    for left, right in phase_shading_ranges:
+        ax_phase_consistent_mean_coherence.axvspan(
+            left,
+            right,
+            facecolor="yellow",
+            alpha=0.2,
+            edgecolor="black",
+            linewidth=1,
+            zorder=0)
 
     ax_phase_consistent_mean_coherence.plot(
         freq,
@@ -2173,10 +2204,12 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
         color=[0.959, 0.278, 0.329],
         linewidth=2)
 
+    title_upper_subplot = (
+        r"$\mathbf{Global\ complex\ wavelet\ coherence}$ "
+        r"$\mathrm{(phase‐locking\ and\ coupling\ strength)}$" "\n"
+        rf"$\mathbf{{(BVPA–PR\ coupling)\ ({source}\ |\ {detector})}}$")
     ax_phase_consistent_mean_coherence.set_title(
-        "Wavelet coherence – Means\n"
-        "(BVPA–PR coupling) ("+ source + " | " + detector + ")",
-        fontweight='bold',
+        title_upper_subplot,
         fontsize=12)
 
     ax_phase_consistent_mean_coherence.set_ylabel("Phase-consistent\n" \
@@ -2185,19 +2218,44 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
     ax_phase_consistent_mean_coherence.set_yticks(np.arange(0, 1.0001, 0.2))
     ax_phase_consistent_mean_coherence.set_ylim(0, 1.001)
 
+    ax_phase_consistent_mean_coherence.set_xscale("log", base=10)
+    ax_phase_consistent_mean_coherence.set_xlim(freq.min(), 2)
+
     ax_phase_consistent_mean_coherence.set_xticks(freq_ticks)
     ax_phase_consistent_mean_coherence.set_xticklabels([f"{v:g}" for v in freq_ticks])
-    ax_phase_consistent_mean_coherence.tick_params(axis="x", labelbottom=False)
+
+    ax_phase_consistent_mean_coherence.xaxis.set_minor_locator(
+        LogLocator(base=10, subs=np.arange(2, 10) * 0.1))
+    ax_phase_consistent_mean_coherence.xaxis.set_minor_formatter(NullFormatter())
+
+    ax_phase_consistent_mean_coherence.tick_params(axis="x", which="major", length=6)
+    ax_phase_consistent_mean_coherence.tick_params(axis="x", which="minor", length=3)
+    ax_phase_consistent_mean_coherence.set_xlabel("Frequency [Hz]", fontweight='bold')
+
+    ax_phase_consistent_mean_coherence.grid(axis="x",
+                                            which="major",
+                                            color="lightgray",
+                                            linestyle="-")
 
     # ----- Mean coherence incl. 5th and 95th percentile
-    ax_mean_coherence = fig.add_subplot(gs[1, 0], sharex=ax_phase_consistent_mean_coherence)
+    ax_mean_coherence = fig.add_subplot(gs[2:4, 0])
+
+    for left, right in phase_shading_ranges:
+        ax_mean_coherence.axvspan(
+            left,
+            right,
+            facecolor="yellow",
+            alpha=0.2,
+            edgecolor="black",
+            linewidth=1,
+            zorder=0)
 
     ax_mean_coherence.fill_between(
         freq,
         percentile_5th_coherence,
         percentile_95th_coherence,
         color=[0.959, 0.278, 0.329],
-        alpha=0.1,
+        alpha=0.2,
         linewidth=0,
         label="5th–95th percentile")
 
@@ -2207,6 +2265,13 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
         color=[0.959, 0.278, 0.329],
         linewidth=2)
 
+    title_middle_subplot = (
+        r"$\mathbf{Global\ wavelet\ coherence}$ "
+        r"$\mathrm{(overall\ coupling\ magnitude)}$" "\n"
+        rf"$\mathbf{{(BVPA–PR\ coupling)\ ({source}\ |\ {detector})}}$")
+    ax_mean_coherence.set_title(
+        title_middle_subplot,
+        fontsize=12)
     ax_mean_coherence.set_ylabel("Mean wavelet coherence",
                                  fontweight='bold')
     ax_mean_coherence.set_yticks(np.arange(0, 1.0001, 0.2))
@@ -2217,8 +2282,23 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
     ax_mean_coherence.tick_params(axis="x", labelbottom=False)
     ax_mean_coherence.legend(loc="upper right", facecolor="white", framealpha=1)
 
+    ax_mean_coherence.grid(axis="x",
+                            which="major",
+                            color="lightgray",
+                            linestyle="-")
+
     # ----- Mean phase
-    ax_mean_phase = fig.add_subplot(gs[2, 0], sharex=ax_phase_consistent_mean_coherence)
+    ax_mean_phase = fig.add_subplot(gs[4, 0], sharex=ax_mean_coherence)
+
+    for left, right in phase_shading_ranges:
+        ax_mean_phase.axvspan(
+            left,
+            right,
+            facecolor="yellow",
+            alpha=0.2,
+            edgecolor="black",
+            linewidth=1,
+            zorder=0)
 
     # Non-relevant phase arrows
     ax_mean_phase.quiver(
@@ -2253,7 +2333,7 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
 
     ax_mean_phase.set_ylim(-1.2, 1.2)
     ax_mean_phase.set_yticks([])
-    ax_mean_phase.set_ylabel("Weighted\nmean\nphase", fontweight='bold')
+    ax_mean_phase.set_ylabel("Phase", fontweight='bold')
 
     ax_mean_phase.set_xscale("log", base=10)
     ax_mean_phase.set_xlim(freq.min(), 2)
@@ -2268,5 +2348,18 @@ def plot_meancoh_meanphase_bvpa_pr(bvp_cont: BVP_Container, ch: str,
     ax_mean_phase.tick_params(axis="x", which="major", length=6)
     ax_mean_phase.tick_params(axis="x", which="minor", length=3)
     ax_mean_phase.set_xlabel("Frequency [Hz]", fontweight='bold')
+
+    image = plt.imread(
+        r"E:\WorkPy\03_Cedalion\cedalion\docs\img\Legende_MeanPasePlot.png")
+    ax_phase_legend = fig.add_subplot(gs[3:, 1])
+    ax_phase_legend.imshow(image)
+    ax_phase_legend.axis("off")
+
+    pos = ax_phase_legend.get_position()
+    ax_phase_legend.set_position([
+        pos.x0,
+        0.005,
+        pos.width,
+        pos.height])
 
     plt.show()
