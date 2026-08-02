@@ -25,18 +25,6 @@ from dataclasses import dataclass
 PREPROC_STEP_ADAPTERS: dict[str, Callable] = {}
 
 
-def _propagate_units(result: cdt.NDTimeSeries, reference: cdt.NDTimeSeries):
-    """Some cedalion motion-correction functions return arrays that have lost
-    pint unit-quantification — a gap in cedalion, not a data issue. Motion
-    correction doesn't change the physical quantity being measured, so it's
-    always correct to carry units forward from the input.
-    """
-
-    if not hasattr(result.data, "units") and hasattr(reference.data, "units"):
-        result = result.pint.quantify(reference.data.units)
-    return result
-
-
 def preproc_step(name):
     """Adds an adapter to the registry."""
 
@@ -209,18 +197,47 @@ def _pca(
     stdev_thresh: float = 50.0,
     amp_thresh: float = 5.0,
 ):
-    """TBD."""
-    ma_mask = cedalion.sigproc.quality.id_motion(
-        ctx.ts, t_motion=t_motion, t_mask=t_mask, stdev_thresh=stdev_thresh,
-        amp_thresh=amp_thresh
+    """Apply PCA motion correction."""
+
+    # Detect motion separately for every channel/wavelength.
+    ma_mask_ch = cedalion.sigproc.quality.id_motion(
+        ctx.ts,
+        t_motion=t_motion,
+        t_mask=t_mask,
+        stdev_thresh=stdev_thresh,
+        amp_thresh=amp_thresh,
     )
+
+    # Convert the channel-wise mask into one global time mask.
+    # This is the same preparation used by pca_recurse().
+    ma_mask = cedalion.sigproc.quality.id_motion_refine(
+        ma_mask_ch,
+        "all",
+    )[0].copy()
+
+    # Match the time alignment used by pca_recurse().
+    ma_mask.values = np.hstack(
+        [ma_mask.values[0], ma_mask.values[:-1]]
+    )
+
     ts_cleaned, n_sv_used, svs = cedalion.sigproc.motion.pca(
-        ctx.ts, ma_mask, n_sv
+        ctx.ts,
+        ma_mask,
+        n_sv=n_sv,
     )
+
     ctx.rec[ctx.step_name] = ts_cleaned
     ctx.sidecar[ctx.step_name + "_n_sv"] = n_sv_used
-    ctx.sidecar[ctx.step_name + "_svs"] = svs
 
+    sv_name = ctx.step_name + "_svs"
+    sv_dim = ctx.step_name + "_component"
+    sv_values = np.asarray(svs, dtype=float).reshape(-1)
+
+    ctx.sidecar[sv_name] = xr.DataArray(
+        sv_values,
+        dims=(sv_dim,),
+        coords={sv_dim: np.arange(sv_values.size)},
+    )
 
 @preproc_step("pca_recurse")
 def _pca_recurse(
@@ -233,25 +250,48 @@ def _pca_recurse(
     n_sv: float = 0.97,
     max_iter: int = 5,
 ):
-    """TBD."""
-    ts_cleaned, svs, n_sv_ret, t_inc = cedalion.sigproc.motion.pca_recurse(
-        ctx.ts, t_motion=t_motion, t_mask=t_mask, stdev_thresh=stdev_thresh,
-        amp_thresh=amp_thresh, n_sv=n_sv, max_iter=max_iter
+    """Apply recursive PCA motion correction."""
+
+    ts_cleaned, svs, n_sv_ret, t_inc = (
+        cedalion.sigproc.motion.pca_recurse(
+            ctx.ts,
+            t_motion=t_motion,
+            t_mask=t_mask,
+            stdev_thresh=stdev_thresh,
+            amp_thresh=amp_thresh,
+            n_sv=n_sv,
+            max_iter=max_iter,
+        )
     )
+
     ctx.rec[ctx.step_name] = ts_cleaned
-    ctx.sidecar[ctx.step_name + "_svs"] = svs
     ctx.sidecar[ctx.step_name + "_n_sv"] = n_sv_ret
+
+    sv_name = ctx.step_name + "_svs"
+    sv_dim = ctx.step_name + "_component"
+
+    # Converts scalar, empty, or normal arrays to a one-dimensional array.
+    sv_values = np.asarray(svs, dtype=float).reshape(-1)
+
+    ctx.sidecar[sv_name] = xr.DataArray(
+        sv_values,
+        dims=(sv_dim,),
+        coords={sv_dim: np.arange(sv_values.size)},
+    )
+
     if "units" in t_inc.time.attrs:
         t_inc = t_inc.copy()
         t_inc.time.attrs["units"] = str(t_inc.time.attrs["units"])
+
     ctx.sidecar[ctx.step_name + "_t_inc"] = t_inc
 
 
 @preproc_step("spline_sg")
 def _spline_sg(ctx: Context, *, p: float, frame_size: cdt.QTime = 10 * units.s):
     """TBD."""
-    result = cedalion.sigproc.motion.spline_sg(ctx.ts, p=p, frame_size=frame_size)
-    ctx.rec[ctx.step_name] = _propagate_units(result, ctx.ts)
+    ctx.rec[ctx.step_name] = cedalion.sigproc.motion.spline_sg(
+        ctx.ts, p=p, frame_size=frame_size
+    )
 
 
 # FIXME move somewhere central
