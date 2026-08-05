@@ -1,4 +1,13 @@
-"""Independent Component Analysis by Entropy Bound Minimization (ICA-EBM).
+"""Constrained Independent Component Analysis by Entropy Bound Minimization.
+
+Both constrained variants are provided by the single function :func:`arc_ebm`, which
+selects between them via its ``constraint`` argument:
+
+- arc-EBM (adaptive-reverse constrained ICA-EBM), ``constraint='correlation'``
+- arsc-EBM (adaptive-reverse spectrally constrained ICA-EBM), ``constraint='psd'``
+
+There is deliberately no separate ``arsc_ebm`` module or function. For the entropy
+*rate* bound variant see :mod:`cedalion.sigdecomp.multimodal.arsc_erbm`.
 
 This code is based on :cite:t:`Li2010A` and converted matlab versions provided by the
 MLSP Lab at the University of Maryland, which is available here:

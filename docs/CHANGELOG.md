@@ -1,8 +1,22 @@
 # Changelog
 
-<!--
 ## Unreleased changes (available on the `dev` branch)
---> 
+
+### Additions and Changes
+
+#### Structure and Renaming:
+
+- The module `cedalion.sigdecomp.multimodal.arc_erbm` was renamed to
+`cedalion.sigdecomp.multimodal.arsc_erbm` and its function `arc_erbm` to `arsc_erbm`
+(adaptive-reverse **spectrally** constrained ICA by entropy rate bound minimization).
+This aligns the nomenclature in cedalion with the one used in the corresponding
+publication. Importing `cedalion.sigdecomp.multimodal.arc_erbm` raises a
+`DeprecationWarning` to trigger adoption. The spectrally constrained EBM variant
+(arsc-EBM) is unchanged and remains available as
+`cedalion.sigdecomp.multimodal.arc_ebm.arc_ebm(..., constraint="psd")`. The example
+`examples/machine_learning/53_constrained_ICA_example.ipynb` was updated accordingly.
+By [Jacqueline Behrendt](https://github.com/jackybehrendt12).
+([#174](https://github.com/ibs-lab/cedalion/pull/174))
 
 ## Version 26.5.1 (2026-05-27)
 

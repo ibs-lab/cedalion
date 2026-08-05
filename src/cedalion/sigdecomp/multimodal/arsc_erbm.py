@@ -1,4 +1,8 @@
-"""Independent Component Analysis by Entropy Bound Rate Minimization (ICA-ERBM).
+"""Spectrally Constrained ICA by Entropy Rate Bound Minimization (arsc-ERBM).
+
+Adaptive-reverse spectrally constrained ICA-ERBM. The unconstrained variant lives in
+:mod:`cedalion.sigdecomp.unimodal.ica_erbm`; the entropy *bound* counterparts arc-EBM
+and arsc-EBM live in :mod:`cedalion.sigdecomp.multimodal.arc_ebm`.
 
 This code is based on :cite:t:`Li2010B` and :cite:t:`Fu2014`. It was converted from
 matlab versions provided by the MLSP Lab at the University of Maryland, which is
