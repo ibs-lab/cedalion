@@ -14,6 +14,7 @@ from numpy.typing import ArrayLike
 
 import cedalion.dataclasses as cdc
 
+SPATIAL_DIMENSIONS = ["channel", "vertex", "parcel", "voxel"]
 
 class ValidationError(Exception):
     pass
@@ -72,11 +73,11 @@ def validate_schemas(func):
     return wrapper
 
 
-# schemas describe the minimum requirements. LabeledPointClouds have an additional
+# schemas describe the minimum requirements. LabeledPoints have an additional
 # dimension that's name denote the coordinate system and that is not enforced yet.
 # FIXME support wildcards in dims?
 
-LabeledPointCloudSchema = DataArraySchema(
+LabeledPointsSchema = DataArraySchema(
     dims=("label",), coords=(("label", ("label", "type")),)
 )
 
@@ -139,6 +140,54 @@ def build_timeseries(
     return da
 
 
+def empty_timeseries_from_measurement_list(
+    meas_list: pd.DataFrame,
+    value_units: str = "1",
+    time_units: str = "s",
+):
+    """Build a one-sample, NDTimeSeries with channels defined by a measurement list.
+
+    Args:
+        meas_list: Measurement list DataFrame.
+        value_units: Pint unit string for the data values. Defaults to dimensionless.
+        time_units: Pint unit string for the time coordinate. Defaults to seconds.
+
+    Returns:
+        xr.DataArray: Zero-filled array with dims ``(channel, wavelength, time)``.
+    """
+    time = np.zeros(1, dtype=float)
+    samples = np.arange(len(time))
+    wavelengths = meas_list.wavelength.unique()
+
+    # restrict to single wavelength
+    ml = meas_list[meas_list.wavelength == wavelengths[0]]
+
+    nchannel = len(ml)
+
+    coords = {
+        "time": ("time", time),
+        "samples": ("time", samples),
+        "channel": ("channel", ml.channel.values),
+        "source" : ("channel", ml.source.values),
+        "detector" : ("channel", ml.detector.values),
+        "wavelength" : ("wavelength", wavelengths)
+    }
+
+    dims = ("channel", "wavelength", "time")
+    data= np.zeros((nchannel, len(wavelengths), 1))
+
+    da = xr.DataArray(
+        data,
+        dims=dims,
+        coords=coords,
+    )
+    da = da.pint.quantify(value_units)
+    da = da.pint.quantify({"time": time_units})
+
+    return da
+
+
+
 def build_labeled_points(
     coordinates: ArrayLike | None = None,
     crs: str = "pos",
@@ -194,3 +243,22 @@ def validate_stim_schema(df: pd.DataFrame):
 def build_stim_dataframe():
     columns = ["onset", "duration", "value", "trial_type"]
     return pd.DataFrame(columns=columns)
+
+
+def get_spatial_dimension(array : xr.DataArray) -> str:
+    """Return the name of the spatial dimension.
+
+    Args:
+        array: the array of which the spatial dimension name is searched-for
+
+    Returns:
+        The name of the identified spatial dimension.
+    """
+
+    candidates = [d for d in array.dims if d in SPATIAL_DIMENSIONS]
+    if len(candidates) == 0:
+        raise ValueError(f"no spatial dimension identified in {array.dims}")
+    elif len(candidates) > 1:
+        raise ValueError(f"more than one spatial dimension identified in {array.dims}")
+    else:
+        return candidates[0]

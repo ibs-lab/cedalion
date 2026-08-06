@@ -1,21 +1,62 @@
 """Registrating optodes to scalp surfaces."""
 
+from dataclasses import dataclass
 import numpy as np
 from numpy.linalg import pinv
 from scipy.optimize import linear_sum_assignment, minimize
 from scipy.spatial import KDTree
 import xarray as xr
+import warnings
+import pandas as pd
 
 import cedalion
 import cedalion.dataclasses as cdc
 import cedalion.geometry.utils
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
+from cedalion.errors import CRSMismatchError
+
 
 from .utils import m_rot, m_scale1, m_scale3, m_trans
 
 
-def _subtract(a: cdt.LabeledPointCloud, b: cdt.LabeledPointCloud):
+@dataclass
+class SpringICPResult:
+    """Quality-control details returned by :func:`register_optodes_spring_icp`.
+
+    All distances and displacements are in the same units as the scalp surface.
+    """
+
+    initial_positions: cdt.LabeledPoints
+    """Positions after the initial landmark alignment, before spring relaxation."""
+
+    nominal_distances: dict
+    """Nominal channel distances ``{(src_label, det_label): float}`` used as spring
+    rest lengths.  Measured in scalp units from the phase-1 aligned positions unless
+    supplied by the caller."""
+
+    spring_errors: xr.DataArray
+    """Per-channel ``actual_distance - nominal_distance`` at convergence.
+    Dim ``channel``; auxiliary coords ``source`` and ``detector`` carry the
+    individual optode labels."""
+
+    landmark_errors: xr.DataArray
+    """Per-anchor Euclidean distance between the final optode position and the
+    target landmark position at convergence.  Dim ``label``.  Empty when no
+    optode labels overlap with ``landmarks_scalp``."""
+
+    snap_displacement_per_iter: np.ndarray
+    """Maximum surface-projection displacement (over all optodes) per iteration.
+    Shape ``(n_iterations,)``.  Use as a convergence diagnostic."""
+
+    n_iterations: int
+    """Number of iterations actually performed."""
+
+    converged: bool
+    """``True`` when the convergence criterion was met before *n_iter*."""
+
+
+def _subtract(a: cdt.LabeledPoints, b: cdt.LabeledPoints):
     """Calculate difference vectors between points and check CRS."""
 
     crs_a = a.points.crs
@@ -26,11 +67,45 @@ def _subtract(a: cdt.LabeledPointCloud, b: cdt.LabeledPointCloud):
 
     return a - b
 
+@cdc.validate_schemas
+def register_identity(
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
+):
+    """Affine transformation that just adapts units.
+
+    Args:
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
+
+    Returns:
+        cdt.AffineTransform: Affine transformation between the two point clouds.
+    """
+
+    from_crs = coords_trafo.points.crs
+    from_units = coords_trafo.pint.units
+    to_crs = coords_target.points.crs
+    to_units = coords_target.pint.units
+
+    unit_scale_factor = ((1 * from_units) / (1 * to_units)).to_reduced_units()
+    assert unit_scale_factor.units == cedalion.units.Unit("1")
+    unit_scale_factor = float(unit_scale_factor)
+
+    trafo = cdc.affine_transform_from_numpy(
+        m_scale1([unit_scale_factor]),
+        from_crs=from_crs,
+        to_crs=to_crs,
+        from_units=from_units,
+        to_units=to_units,
+    )
+
+    return trafo
+
 
 @cdc.validate_schemas
 def register_trans_rot(
-    coords_target: cdt.LabeledPointCloud,
-    coords_trafo: cdt.LabeledPointCloud,
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
 ):
     """Finds affine transformation between coords_target and coords_trafo.
 
@@ -38,8 +113,8 @@ def register_trans_rot(
     between the two point clouds.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -110,8 +185,8 @@ def register_trans_rot(
 
 @cdc.validate_schemas
 def register_general_affine(
-    coords_target: cdt.LabeledPointCloud,
-    coords_trafo: cdt.LabeledPointCloud,
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
 ):
     """Finds affine transformation between coords_target and coords_trafo.
 
@@ -121,8 +196,8 @@ def register_general_affine(
     coordinate systems.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -140,6 +215,28 @@ def register_general_affine(
     # restrict to commmon labels and dequantify
     coords_trafo = coords_trafo.sel(label=common_labels).pint.dequantify()
     coords_target = coords_target.sel(label=common_labels).pint.dequantify()
+
+    # Warn if the source landmark cloud (restricted to common labels) is
+    # nearly coplanar — because a 12-DOF affine fit then collapses along the
+    # plane normal. Threshold 0.20 separates the Nz/Iz/LPA/RPA-only case
+    # (ratio ~0.12, observed 32% z-collapse on colin27) from configurations
+    # that include an off-plane landmark like Cz (ratio ~0.85) or the full
+    # 10-10 set (ratio ~0.7). Ratio numbers stem from experiences after
+    # extensive testing of different input landmarks on 15 subjects.
+    src_xyz = coords_trafo.values
+    src_centered = src_xyz - src_xyz.mean(axis=0, keepdims=True)
+    sv = np.linalg.svd(src_centered, compute_uv=False)
+    if sv[0] > 0 and sv[-1] / sv[0] < 0.20:
+        warnings.warn(
+            f"register_general_affine: source landmarks are nearly coplanar "
+            f"(sigma_min/sigma_max = {sv[-1]/sv[0]:.3f} on the "
+            f"{len(common_labels)} common labels). The 12-DOF affine fit "
+            f"will be poorly constrained perpendicular to the plane. "
+            f"Consider adding an off-plane landmark (for fNIRS/EEG fiducial "
+            f"sets, Cz works well).",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # Create augmented matrix with homogeneous coordinates
     ones = np.ones((len(common_labels), 1))
@@ -164,7 +261,7 @@ def register_general_affine(
 
 
 
-def _std_distance_to_cog(points: cdt.LabeledPointCloud):
+def _std_distance_to_cog(points: cdt.LabeledPoints):
     """Calculate the standard deviation of the distances to the center of gravity.
 
     Args:
@@ -180,8 +277,8 @@ def _std_distance_to_cog(points: cdt.LabeledPointCloud):
 
 @cdc.validate_schemas
 def register_trans_rot_isoscale(
-    coords_target: cdt.LabeledPointCloud,
-    coords_trafo: cdt.LabeledPointCloud,
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
 ):
     """Finds affine transformation between coords_target and coords_trafo.
 
@@ -189,8 +286,8 @@ def register_trans_rot_isoscale(
     between the two point clouds.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -249,8 +346,8 @@ def register_trans_rot_isoscale(
 
 @cdc.validate_schemas
 def register_trans_rot_scale(
-    coords_target: cdt.LabeledPointCloud,
-    coords_trafo: cdt.LabeledPointCloud,
+    coords_target: cdt.LabeledPoints,
+    coords_trafo: cdt.LabeledPoints,
 ):
     """Finds affine transformation between coords_target and coords_trafo.
 
@@ -258,8 +355,8 @@ def register_trans_rot_scale(
     between the two point clouds.
 
     Args:
-        coords_target (LabeledPointCloud): Target point cloud.
-        coords_trafo (LabeledPointCloud): Source point cloud.
+        coords_target (LabeledPoints): Target point cloud.
+        coords_trafo (LabeledPoints): Source point cloud.
 
     Returns:
         cdt.AffineTransform: Affine transformation between the two point clouds.
@@ -371,8 +468,8 @@ def gen_xform_from_pts(p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
 @cdc.validate_schemas
 def register_icp(
     surface: cdc.Surface,
-    landmarks: cdt.LabeledPointCloud,
-    geo3d: cdt.LabeledPointCloud,
+    landmarks: cdt.LabeledPoints,
+    geo3d: cdt.LabeledPoints,
     niterations=1000,
     random_sample_fraction=0.5,
 ):
@@ -380,8 +477,8 @@ def register_icp(
 
     Args:
         surface (Surface): Surface mesh to which to register the points.
-        landmarks (LabeledPointCloud): Landmarks to use for registration.
-        geo3d (LabeledPointCloud): Points to register to the surface.
+        landmarks (LabeledPoints): Landmarks to use for registration.
+        geo3d (LabeledPoints): Points to register to the surface.
         niterations (int): Number of iterations for the ICP algorithm (default 1000).
         random_sample_fraction (float): Fraction of points to use in each iteration
             (default 0.5).
@@ -475,8 +572,8 @@ def register_icp(
 
 # FIXME: returns only indices?
 def icp_with_full_transform(
-    opt_centers: cdt.LabeledPointCloud,
-    montage_points: cdt.LabeledPointCloud,
+    opt_centers: cdt.LabeledPoints,
+    montage_points: cdt.LabeledPoints,
     max_iterations: int = 50,
     tolerance: float = 500.0,
 ):
@@ -628,15 +725,15 @@ def find_spread_points(points_xr: xr.DataArray) -> np.ndarray:
     ).values
 
 
-def simple_scalp_projection(geo3d: cdt.LabeledPointCloud) -> cdt.LabeledPointCloud:
+def simple_scalp_projection(geo3d: cdt.LabeledPoints) -> cdt.LabeledPoints:
     """Projects 3D coordinates onto a 2D plane using a simple scalp projection.
 
     Args:
-        geo3d (LabeledPointCloud): 3D coordinates of points to project. Requires the
+        geo3d (LabeledPoints): 3D coordinates of points to project. Requires the
             landmarks Nz, LPA, and RPA.
 
     Returns:
-        A LabeledPointCloud containing the 2D coordinates of the projected points.
+        A LabeledPoints containing the 2D coordinates of the projected points.
     """
     lpa = None
     rpa = None
@@ -689,3 +786,329 @@ def simple_scalp_projection(geo3d: cdt.LabeledPointCloud) -> cdt.LabeledPointClo
     geo2d = geo2d.pint.dequantify()  # no units needed in this space
 
     return geo2d
+
+
+def _mesh_closest_point(
+    mesh, points: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return the closest point on *mesh* for each row of *points*.
+
+    Tries ``trimesh.proximity.closest_point`` first (requires the *rtree* package
+    for its spatial index).  When *rtree* is absent falls back to a pure-scipy
+    implementation: scipy KDTree finds the *k* nearest vertices, then
+    ``trimesh.triangles.closest_point`` checks every face adjacent to those
+    vertices and returns the best hit.
+
+    Returns:
+        closest_pts : (N, 3) float – nearest surface points
+        distances   : (N,)   float – Euclidean distances from *points*
+        triangle_ids: (N,)   int   – index of the nearest triangle
+    """
+    import trimesh.proximity
+    import trimesh.triangles
+
+    try:
+        return trimesh.proximity.closest_point(mesh, points)
+    except ModuleNotFoundError:
+        pass
+
+    # --- KDTree fallback (no rtree) -------------------------------------------
+    # Build a per-vertex KD-tree once; trimesh caches it on the mesh object.
+    kdtree = KDTree(mesh.vertices)
+
+    # k nearest vertices per query point; covers all adjacent faces for typical
+    # meshes where each vertex has ≤ 8 neighbours.
+    k = min(12, len(mesh.vertices))
+    _, vert_idxs = kdtree.query(points, k=k)          # (N, k)
+
+    # mesh.vertex_faces: (V, max_valence), -1 for unused slots
+    vf = mesh.vertex_faces                             # cached by trimesh
+
+    n_pts = len(points)
+    closest_pts = np.empty((n_pts, 3), dtype=float)
+    distances   = np.empty(n_pts, dtype=float)
+    triangle_ids = np.empty(n_pts, dtype=np.intp)
+
+    for i in range(n_pts):
+        # collect unique valid face indices around the k nearest vertices
+        raw = vf[vert_idxs[i]].ravel()
+        face_cands = np.unique(raw[raw >= 0])
+
+        tris = mesh.vertices[mesh.faces[face_cands]]      # (m, 3, 3)
+        pts_rep = np.broadcast_to(points[i], (len(tris), 3))
+        cps = trimesh.triangles.closest_point(tris, pts_rep)  # (m, 3)
+
+        dists = np.linalg.norm(cps - points[i], axis=1)
+        best  = np.argmin(dists)
+
+        closest_pts[i]  = cps[best]
+        distances[i]    = dists[best]
+        triangle_ids[i] = face_cands[best]
+
+    return closest_pts, distances, triangle_ids
+
+
+def register_optodes_spring_icp(
+    scalp: cdc.TrimeshSurface,
+    geo3d: cdt.LabeledPoints,
+    channels: list[tuple[str, str]] | cdt.NDTimeSeries | pd.DataFrame,
+    landmarks_scalp: cdt.LabeledPoints,
+    nominal_distances: dict[tuple[str, str], float] | None = None,
+    n_iter: int = 400,
+    k_spring: float = 1.0,
+    k_anchor: float = 10.0,
+    step_size: float = 0.1,
+    convergence_tol: float = 0.01,
+    initial_align_mode: str  = "general",
+) -> tuple[cdt.LabeledPoints, SpringICPResult]:
+    """Register optode coordinates onto a scalp mesh via spring relaxation and ICP.
+
+    Two-phase registration:
+
+    1. **Initial alignment** — a global transform (translation + rotation +
+       optional scale) is fitted to the matched landmark pairs and applied to
+       ``geo3d`` to bring them into the scalp coordinate system.
+
+    2. **Spring-relaxation ICP** — optodes are iteratively refined:
+
+       * Hooke's-law springs between each channel-forming source–detector pair,
+         with rest length equal to the nominal inter-optode distance, resist
+         distortion of channel geometry.
+       * Strong anchor springs pull any coordinate in geo3d whose label appears in
+         ``landmarks_scalp`` toward its known anatomical position on the scalp.
+       * After each force step every optode is projected onto the nearest point
+         on the scalp triangulated surface (ICP step).
+
+    Args:
+        scalp: Triangulated scalp surface in the target coordinate system.
+        geo3d: Probe coordinates (sources, detectors and landmarks) in the probe
+            coordinate system.
+        channels: ``(source_label, detector_label)`` pairs defining which
+            optode pairs form channels and therefore get a spring.
+        landmarks_scalp: Anatomical landmark positions in the scalp CRS (same
+            CRS as ``scalp``).  Any label that also appears in ``optodes`` is
+            used as a strong anchor during the relaxation phase.
+        nominal_distances: Optional pre-specified rest lengths for each channel
+            spring, keyed by ``(src_label, det_label)``.  When *None*,
+            distances are measured from the phase-1 aligned positions.
+        n_iter: Maximum number of relaxation iterations.
+        k_spring: Spring constant for channel springs.  Force magnitude scales
+            linearly with extension from the nominal distance.
+        k_anchor: Spring constant for landmark-anchor springs.  Should exceed
+            ``k_spring`` to enforce anatomical constraints strongly.
+        step_size: Fraction of the net force vector added to each position
+            per iteration.  Reduce if the relaxation is unstable.
+        convergence_tol: Stop early when the maximum surface-projection
+            displacement across all optodes is below this value (in scalp
+            units).
+        initial_align_mode: Phase-1 transform type.  One of
+            ``"trans_rot_isoscale"`` (7 DOF, default), ``"trans_rot"``
+            (6 DOF), ``"general"`` (12 DOF full affine), or ``"identity"`` (only
+            adapt units).
+
+    Returns:
+        :class:`SpringICPResult` with the final optode positions and
+        per-iteration / per-channel quality-control metrics.
+
+    Raises:
+        CRSMismatchError: If ``landmarks_scalp`` is not in the same CRS as
+            ``scalp``.
+        ValueError: If ``initial_align_mode`` is not recognised, or if a
+            channel label is absent from ``optodes``.
+    """
+    if landmarks_scalp.points.crs != scalp.crs:
+        raise CRSMismatchError.unexpected_crs(
+            expected_crs=scalp.crs, found_crs=landmarks_scalp.points.crs
+        )
+
+
+    if isinstance(channels, pd.DataFrame):
+        # measurement list
+        assert all(c in channels.columns for c in ["wavelength", "source", "detector"])
+        wavelengths = channels.wavelength.unique()
+        # restrict to single wavelength
+        channels = channels[channels.wavelength == wavelengths[0]]
+        channels = [(r.source, r.detector) for _,r in channels.iterrows()]
+    elif isinstance(channels, xr.DataArray):
+        # NDTime Series
+        assert all(c in channels.coords for c in ["source", "detector"])
+        channels = [
+            (s, d) for s, d in zip(channels.source.values, channels.detector.values)
+        ]
+    elif isinstance(channels, list):
+        # list of optode label pairs
+        pass
+    else:
+        raise ValueError(
+            "Channel definition must be either a NDTimeSeries, "
+            "a measurement list DataFrame or a list of optode label pairs."
+        )
+
+
+    # --- Phase 1: global alignment from landmark correspondences ---------------
+
+    landmarks_probe = geo3d[
+        (geo3d.type == cdc.PointType.LANDMARK) | (geo3d.type == cdc.PointType.ELECTRODE)
+    ]
+
+    if initial_align_mode == "trans_rot_isoscale":
+        t_init = register_trans_rot_isoscale(landmarks_scalp, landmarks_probe)
+    elif initial_align_mode == "trans_rot":
+        t_init = register_trans_rot(landmarks_scalp, landmarks_probe)
+    elif initial_align_mode == "general":
+        t_init = register_general_affine(landmarks_scalp, landmarks_probe)
+    elif initial_align_mode == "identity":
+        t_init = register_identity(landmarks_scalp, landmarks_probe)
+    else:
+        raise ValueError(
+            f"Unknown initial_align_mode {initial_align_mode!r}. "
+            "Choose 'trans_rot_isoscale', 'trans_rot', 'general', or 'identity'."
+        )
+
+    aligned = geo3d.points.apply_transform(t_init)
+    aligned_dq = aligned.pint.dequantify()
+    # pos_np: (N, 3) float array in scalp units – the working copy
+    pos_np = aligned_dq.values.copy()
+
+    labels = list(aligned.label.values)
+    label_to_idx = {lbl: i for i, lbl in enumerate(labels)}
+
+    missing = [lbl for ch in channels for lbl in ch if lbl not in label_to_idx]
+    if missing:
+        raise ValueError(
+            f"Channel labels not found in optodes: {sorted(set(missing))}"
+        )
+
+    # Nominal rest lengths in scalp units, computed from aligned positions
+    if nominal_distances is None:
+        nominal_distances = {
+            (src, det): float(
+                np.linalg.norm(pos_np[label_to_idx[src]] - pos_np[label_to_idx[det]])
+            )
+            for src, det in channels
+        }
+
+    # Anchor targets: optodes whose label also appears in landmarks_scalp
+    lm_scalp_dq = landmarks_scalp.pint.dequantify()
+    scalp_lm_label_set = set(landmarks_scalp.label.values)
+    anchor_labels = [lbl for lbl in labels if lbl in scalp_lm_label_set]
+    anchor_targets = {
+        lbl: lm_scalp_dq.sel(label=lbl).values
+        for lbl in anchor_labels
+    }
+
+    # Pre-index pairs to keep the hot loop free of dict lookups
+    channel_pairs = [
+        (label_to_idx[src], label_to_idx[det], nominal_distances[(src, det)])
+        for src, det in channels
+    ]
+    anchor_pairs = [
+        (label_to_idx[lbl], anchor_targets[lbl])
+        for lbl in anchor_labels
+    ]
+
+    # Per-optode channel count: normalise spring contributions so that an
+    # optode connected to many channels receives the same total spring weight
+    # as one connected to few, preventing heavily-connected optodes (typically
+    # sources) from accumulating disproportionate force.
+    valence = np.zeros(len(labels), dtype=float)
+    for i_src, i_det, _ in channel_pairs:
+        valence[i_src] += 1
+        valence[i_det] += 1
+    valence = np.where(valence > 0, valence, 1.0)  # avoid division by zero
+
+    # --- Phase 2: spring-relaxation ICP ----------------------------------------
+
+    snap_displacement_per_iter: list[float] = []
+    n_iter_actual = n_iter
+    converged = False
+
+    for i_iter in range(n_iter):
+        forces = np.zeros_like(pos_np)
+
+        # Hooke's-law spring forces between channel-forming pairs,
+        # normalised by each optode's channel count so that sources and
+        # detectors with different numbers of connections experience the
+        # same total spring weight.
+        for i_src, i_det, L0 in channel_pairs:
+            delta = pos_np[i_det] - pos_np[i_src]
+            d = np.linalg.norm(delta)
+            if d > 1e-10:
+                spring_force = k_spring * (d - L0) * (delta / d)
+                forces[i_src] += spring_force / valence[i_src]
+                forces[i_det] -= spring_force / valence[i_det]
+
+        # Anchor forces pulling landmarks to their scalp targets
+        for i_lm, target in anchor_pairs:
+            forces[i_lm] += k_anchor * (target - pos_np[i_lm])
+
+        # Remove the surface-normal component of every force so that the ICP
+        # projection step only has to correct numerical drift rather than
+        # fight forces that would immediately be undone by snapping.
+        _, nearest_vi = scalp.kdtree.query(pos_np)
+        normals = scalp.mesh.vertex_normals[nearest_vi]  # (N, 3)
+        normal_component = np.sum(forces * normals, axis=1, keepdims=True)
+        forces -= normal_component * normals
+
+        pos_np = pos_np + step_size * forces
+
+        # ICP step: project each optode onto the nearest point on the surface
+        proj_pts, snap_dists, _ = _mesh_closest_point(scalp.mesh, pos_np)
+        max_snap = float(np.max(snap_dists))
+        snap_displacement_per_iter.append(max_snap)
+        pos_np = proj_pts
+
+        if max_snap < convergence_tol:
+            n_iter_actual = i_iter + 1
+            converged = True
+            break
+
+    # --- Assemble result -------------------------------------------------------
+
+    # Rebuild as a quantified LabeledPoints with the same coords as aligned
+    pos_out = aligned_dq.copy(data=pos_np)
+    aligned_units = aligned.pint.units
+    if aligned_units is not None:
+        pos_out = pos_out.pint.quantify(aligned_units)
+
+    # Spring errors: signed length deviation from nominal at convergence
+    spring_errors = xr.DataArray(
+        np.array([
+            np.linalg.norm(pos_np[label_to_idx[det]] - pos_np[label_to_idx[src]])
+            - nominal_distances[(src, det)]
+            for src, det in channels
+        ]),
+        dims=["channel"],
+        coords={
+            "channel": [f"{src}-{det}" for src, det in channels],
+            "source":   ("channel", [src for src, _ in channels]),
+            "detector": ("channel", [det for _, det in channels]),
+        },
+    )
+
+    # Landmark anchor errors: distance to target position at convergence
+    if anchor_labels:
+        landmark_errors = xr.DataArray(
+            np.array([
+                np.linalg.norm(pos_np[label_to_idx[lbl]] - anchor_targets[lbl])
+                for lbl in anchor_labels
+            ]),
+            dims=["label"],
+            coords={"label": anchor_labels},
+        )
+    else:
+        landmark_errors = xr.DataArray(
+            np.empty(0, dtype=float),
+            dims=["label"],
+            coords={"label": np.array([], dtype=object)},
+        )
+
+    return pos_out, SpringICPResult(
+        initial_positions=aligned,
+        nominal_distances=nominal_distances,
+        spring_errors=spring_errors,
+        landmark_errors=landmark_errors,
+        snap_displacement_per_iter=np.array(snap_displacement_per_iter),
+        n_iterations=n_iter_actual,
+        converged=converged,
+    )

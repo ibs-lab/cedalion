@@ -70,7 +70,7 @@ class CedalionAccessor:
         return to_epochs(self._obj, df_stim, trial_types, before, after)
 
     def freq_filter(self, fmin, fmax, butter_order=4):
-        """Applys a Butterworth filter.
+        """Apply a Butterworth bandpass filter.
 
         Args:
             fmin (float): The lower cutoff frequency.
@@ -94,21 +94,44 @@ class CedalionAccessor:
 
 @xr.register_dataarray_accessor("points")
 class PointsAccessor:
+    """Accessor for :class:`~cedalion.typing.LabeledPoints` DataArrays.
+
+    Attached as the ``.points`` attribute on any DataArray that carries a
+    ``"label"`` dimension and coordinate (i.e. a labeled point cloud such as
+    ``geo3d`` or ``geo2d``).
+    """
+
     def __init__(self, xarray_obj):
-        """TBD."""
+        """Attach the accessor to *xarray_obj* after validation.
+
+        Args:
+            xarray_obj: DataArray representing a labeled point cloud. Must have
+                a ``"label"`` dimension and corresponding coordinate.
+
+        Raises:
+            AttributeError: If the required ``"label"`` dimension or coordinate
+                is missing.
+        """
         self._validate(xarray_obj)
         self._obj = xarray_obj
 
     @staticmethod
     def _validate(obj):
-        # verify there is a column latitude and a column longitude
-
+        """Raise AttributeError if *obj* does not look like a LabeledPoints array."""
         if not (("label" in obj.dims) and ("label" in obj.coords)):
             raise AttributeError(
                 "This dataarray does not look like a labled point cloud"
             )
 
     def to_homogeneous(self):
+        """Return the point cloud augmented with a homogeneous coordinate of 1.
+
+        Appends a column of ones so that affine transforms can be applied with
+        a single matrix multiplication. Units are preserved.
+
+        Returns:
+            LabeledPoints DataArray with shape ``(n_points, n_coords + 1)``.
+        """
         tmp = self._obj.pint.dequantify()
         augmented = np.hstack((tmp.values, np.ones((len(tmp), 1))))
         result = xr.DataArray(
@@ -118,16 +141,51 @@ class PointsAccessor:
         return result
 
     def rename(self, translations: Dict[str, str]):
+        """Rename point labels according to a translation dictionary.
+
+        Args:
+            translations: Mapping from old label strings to new label strings.
+                Labels not present in the mapping are kept unchanged.
+
+        Returns:
+            LabeledPoints DataArray with updated ``"label"`` coordinate.
+        """
         new_labels = [translations.get(i, i) for i in self._obj.label.values]
         return self._obj.assign_coords({"label": new_labels})
 
     def common_labels(self, other: xr.DataArray) -> List[str]:
-        """Return labels contained in both LabledPointClouds."""
+        """Return labels present in both this and *other* LabeledPoints arrays.
+
+        Args:
+            other: Second LabeledPoints DataArray. Must have a ``"label"``
+                dimension and coordinate.
+
+        Returns:
+            Sorted list of label strings shared by both point clouds.
+        """
         assert ("label" in other.dims) and ("label" in other.coords)
 
         return list(set(self._obj.label.values).intersection(other.label.values))
 
     def apply_transform(self, transform: Union[cdt.AffineTransform, np.ndarray]):
+        """Apply an affine transform to this point cloud.
+
+        Accepts either a cedalion :class:`~cedalion.typing.AffineTransform`
+        (a 4×4 ``xr.DataArray`` with CRS-named dimensions and pint units) or a
+        plain 4×4 ``numpy.ndarray``.
+
+        Args:
+            transform: 4×4 affine transformation. If an ``xr.DataArray``, the
+                source CRS must match the current CRS of the point cloud.
+
+        Returns:
+            Transformed LabeledPoints DataArray in the new coordinate system.
+
+        Raises:
+            CRSMismatchError: If a DataArray transform's source CRS does not
+                match the current point cloud CRS.
+            ValueError: If *transform* is not a DataArray or ndarray.
+        """
         if isinstance(transform, xr.DataArray):
             # FIXME validate schema
             return self._apply_xr_transform(transform)
@@ -199,10 +257,23 @@ class PointsAccessor:
 
     @property
     def crs(self):
+        """Name of the coordinate reference system dimension (the non-label dim).
+
+        Returns:
+            String name of the spatial dimension, e.g. ``"pos"``, ``"ras"``.
+        """
         assert len(self._obj.dims) == 2
         return [d for d in self._obj.dims if d != "label"][0]
 
     def set_crs(self, value: str):
+        """Return a copy of this point cloud with the CRS dimension renamed.
+
+        Args:
+            value: New name for the spatial dimension.
+
+        Returns:
+            LabeledPoints DataArray with the CRS dimension renamed to *value*.
+        """
         current = self.crs
         return self._obj.rename({current: value})
 
@@ -212,7 +283,23 @@ class PointsAccessor:
         coordinates: ArrayLike,
         type: Union[cdc.PointType, List[cdc.PointType]],
         group: Union[str, List[str]] = None,
-    ) -> cdt.LabeledPointCloud:
+    ) -> cdt.LabeledPoints:
+        """Append one or more points to this point cloud.
+
+        Args:
+            label: Label string (single point) or list of label strings.
+            coordinates: Coordinates of the new point(s). Shape ``(3,)`` for a
+                single point or ``(n, 3)`` for multiple points.
+            type: :class:`~cedalion.dataclasses.PointType` (single point) or
+                list thereof for multiple points.
+            group: Optional group string or list of group strings.
+
+        Returns:
+            New LabeledPoints DataArray with the added point(s) concatenated.
+
+        Raises:
+            KeyError: If a label already exists in the point cloud.
+        """
         # Handle the single point case
         if isinstance(label, str):
             assert isinstance(
@@ -308,6 +395,11 @@ class StimAccessor:
             stim.loc[stim.trial_type == old_trial_type, "trial_type"] = new_trial_type
 
     def conditions(self):
+        """Return the unique trial-type labels in the stimulus DataFrame.
+
+        Returns:
+            Array of unique trial-type strings.
+        """
         return self._obj.trial_type.unique()
 
     # FIXME obsolete?
@@ -326,9 +418,23 @@ class StimAccessor:
 
 
 class SMCallableWrapper:
-    """Wraps a method of statsmodel's result object."""
+    """Wraps a callable attribute of a statsmodels result object.
+
+    When :class:`StatsModelsAccessor` resolves a callable attribute (e.g.
+    ``summary()``), it returns one of these wrappers. Calling the wrapper
+    applies the method to every element in the 2-D array of result objects and
+    collects the outputs into an ``xr.DataArray``.
+    """
 
     def __init__(self, accessor, attr_name):
+        """Store a back-reference to the accessor and the attribute name.
+
+        Args:
+            accessor: The :class:`StatsModelsAccessor` instance that owns this
+                wrapper.
+            attr_name: Name of the callable attribute on the underlying
+                statsmodels result objects.
+        """
         self._accessor = accessor
         self._attr_name = attr_name
 
@@ -386,6 +492,7 @@ class StatsModelsAccessor:
                 i,
                 (
                     statsmodels.regression.linear_model.RegressionResultsWrapper,
+                    statsmodels.regression.recursive_ls.RecursiveLSResultsWrapper,
                     statsmodels.stats.contrast.ContrastResults,
                 ),
             ):
@@ -511,6 +618,19 @@ class StatsModelsAccessor:
 
 
     def regressor_variances(self):
+        """Return the variance of each regressor coefficient across all models.
+
+        Extracts the diagonal of the covariance matrix of parameter estimates
+        for each model in the array.
+
+        Returns:
+            DataArray with the same first two dims as the results array plus a
+            ``"regressor"`` dimension.
+
+        Raises:
+            NotImplementedError: If the underlying result objects are
+                ``ContrastResults`` (which carry no parameter estimates).
+        """
         try:
             regressors = self._array[0, 0].item().params.index
         except AttributeError:
@@ -532,6 +652,16 @@ class StatsModelsAccessor:
         return tvalues
 
     def p_values(self):
+        """Return the p-values from each hypothesis test in the result objects.
+
+        Returns:
+            DataArray with the same first two dims as the results array plus a
+            ``"hypothesis"`` dimension containing the p-values.
+
+        Raises:
+            NotImplementedError: If the result objects do not expose a
+                ``pvalue`` attribute.
+        """
         try:
             pvalues = self.map(lambda i : i.pvalue, name="hypothesis")
         except AttributeError:

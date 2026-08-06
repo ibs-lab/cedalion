@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
+from cedalion import cite
 from sklearn.decomposition import PCA
 import xarray as xr
 
@@ -18,43 +19,40 @@ def global_component_subtract(
 ) -> tuple:
     """Remove global (physiological) components from a time series.
 
-    Two modes are available, either weighted‐mean subtraction (if k=0) or PCA (if k>0).
+    Two modes are available: weighted-mean subtraction (``k=0``) or PCA-based
+    removal (``k>0``). Returns both the corrected time series and the global
+    component that was subtracted.
 
-    Returns both the corrected time series and the global component that was removed:
-    the weighted‐mean regressor if k=0, or the average of backprojected  principal
-    component time series if k>0.
+    Args:
+        ts: Input time series. Must have a ``"time"`` dimension, one spatial
+            dimension (``spatial_dim``, default ``"channel"``) and one spectral
+            dimension (e.g. ``"wavelength"`` or ``"chromophore"``).
+        ts_weights: Per-(spatial × spectral) weights, typically 1/variance. If
+            ``None``, all weights are 1 (unweighted). Must share all non-time
+            dimensions with ``ts``.
+        k: Component-removal mode.
 
-    Parameters:
-        ts : amplitudes (:class:`NDTimeSeries`):
-            Input DataArray. Must have a "time" dimension, one dimension for space
-            ("spatial_dim")
-            (default is "channel", can be "vertex" or "parcel") and one for spectral
-            info ("wavelength" or "chromophore").
-        ts_weights : xr.DataArray, optional
-            A DataArray of per‐(spatial_dim × spectral_dim) weigths. This is typically
-            1/(channel variance). If None, all weights = 1 (no weighting). Must have
-            same non-time dims as ts.
-        k : float, default=0
-            • k = 0: perform weighted‐mean subtraction (per spectral dim, e.g. HbX or
-                     wavelength).
-            • k ≥ 1: remove the first int(k) principal components per spectral dim.
-            • 0 < k < 1: remove the minimum number of PCs whose cumulative explained
-                         variance ≥ k.
-        spatial_dim : str, default "channel"
-            Name of the spatial dimension, like channel, vertex or parcel, across PCA or
-            averaging is performed. If absent, no subtraction is done.
-        spectral_dim : str, optional
-            Name of the spectral dimension (e.g. "wavelength" or "chromophore").
-            If None, inferred as the dimension in ts.dims that is neither "time" nor
-            spatial_dim. #FIXME for more dimensions
+            - ``k = 0``: weighted-mean subtraction per spectral slice.
+            - ``k >= 1``: remove the first ``int(k)`` principal components.
+            - ``0 < k < 1``: remove the minimum number of PCs whose cumulative
+              explained variance is >= ``k``.
+
+        spatial_dim: Name of the spatial dimension (e.g. ``"channel"``,
+            ``"vertex"``, or ``"parcel"``) across which PCA or averaging is
+            performed. If absent from ``ts``, no subtraction is done.
+        spectral_dim: Name of the spectral dimension (e.g. ``"wavelength"`` or
+            ``"chromophore"``). If ``None``, inferred as the only dimension in
+            ``ts.dims`` that is neither ``"time"`` nor ``spatial_dim``.
 
     Returns:
-        corrected : (:class:`NDTimeSeries`):
-            The time series with global (physiological) components removed.
-        global_component : (:class:`NDTimeSeries`):
-            If k=0: the weighted‐mean regressor (dims: "time", spectral_dim).
-            If k>0: the reconstructed PCA component(s) averaged across all channels
-                    (dims: "time", spectral_dim).
+        Tuple ``(corrected, global_component)``:
+
+        - **corrected** (:class:`NDTimeSeries`): time series with global
+          components removed.
+        - **global_component** (:class:`NDTimeSeries`): the subtracted signal.
+          For ``k=0`` this is the weighted-mean regressor
+          (dims: ``"time"``, ``spectral_dim``); for ``k>0`` it is the
+          backprojected PCA components averaged across channels.
 
     Initial Contributors:
         Alexander von Lühmann | vonluehmann@tu-berlin.de | 2025
@@ -230,7 +228,7 @@ def global_component_subtract(
                 coords={"time": time_coord, spatial_dim: chan_coord},
             )
 
-    # 1Reattach pint‐units
+    # Reattach pint units
     if orig_units is not None and orig_units != 1:
         corrected = corrected * orig_units
         global_comp = global_comp * orig_units
@@ -270,6 +268,7 @@ def ampd(amplitudes: cdt.NDTimeSeries, chunk_size: int = 500, step_size: int = 2
         Isa Musisi | w.musisi@campus.tu-berlin.de | 2024
 
     """
+    cite("Scholkmann2012")
     # Prepare output array with the same structure as amplitudes, filled with zeros
     peaks = np.zeros_like(amplitudes, dtype=int)
     # Iterate over channels and wavelengths

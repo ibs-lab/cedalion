@@ -34,7 +34,7 @@ For discussions and help please visit the [Cedalion forum on openfnirs.org](http
 
 
 ## How to cite Cedalion
-A paper for the toolbox is currently in the making. If you use this toolbox for a publication in the meantime, please cite us using GitHub's  "Cite this repository" feature in the "About" section. If you want to contact us or learn more about the IBS-Lab please go to https://www.ibs-lab.com/
+A paper for the toolbox is currently in the making. If you use this toolbox for a publication in the meantime, please cite us using GitHub's "Cite this repository" feature in the "About" section. If you want to contact us or learn more about the IBS-Lab please go to https://www.ibs-lab.com/
 
 
 ## License

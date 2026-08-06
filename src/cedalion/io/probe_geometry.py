@@ -1,32 +1,34 @@
 """Module for reading and writing probe geometry files."""
 
-import numpy as np
-import xarray as xr
-import trimesh
 import json
-from collections import OrderedDict
+from pathlib import Path
+
+import numpy as np
 import pandas as pd
+import trimesh
+import xarray as xr
+import scipy.io
 
 import cedalion
+import cedalion.typing as cdt
+import cedalion.utils as utils
 from cedalion.dataclasses import PointType, TrimeshSurface, build_labeled_points
 
 
 def load_tsv(tsv_fname: str, crs: str=None, units: str=None) -> xr.DataArray:
     """Load a tsv file containing optodes or landmarks.
 
-    Parameters
-    ----------
-    tsv_fname : str
-        Path to the tsv file.
-    crs : str
-        Coordinate reference system of the points if not in the file header.
-    units : str
-        Units of the points if not in the file header.
+    This function reads tsv-files with a column layout that differs from the
+    NIRS-BIDS standard.
+
+    Args:
+        tsv_fname: Path to the tsv file.
+        crs: Coordinate reference system of the points if not in the file header.
+        units: Units of the points if not in the file header.
 
     Returns:
-    -------
-    xr.DataArray
-        Optodes or landmarks as a Data
+        xr.DataArray containing the optodes or landmarks with ``label``, ``type``,
+        and positional dimensions.
     """
     # load the tsv file without header
     data = pd.read_csv(tsv_fname, sep="\t", header=None)
@@ -44,22 +46,22 @@ def load_tsv(tsv_fname: str, crs: str=None, units: str=None) -> xr.DataArray:
         if len(data.columns) > 4:
             datadict['PointType'] = data.iloc[:, 4]
         data = datadict
-        
+
     # parse crs and units
     for k in data.keys():
-        if k.startswith('crs'):
-            crs = k.split('=')[1].strip()
+        if k.startswith("crs"):
+            crs = k.split("=")[1].strip()
             data = data.drop(k, axis=1)
-        if k.startswith('units'):
-            units = k.split('=')[1].strip()
+        if k.startswith("units"):
+            units = k.split("=")[1].strip()
             data = data.drop(k, axis=1)
-    
-    for k in ['labels', 'X', 'Y', 'Z']:
+
+    for k in ["labels", "X", "Y", "Z"]:
         if k not in data.keys():
             raise ValueError(f"Missing {k} in tsv file")
-   
+
     # parse labels
-    labels = data['labels'].values
+    labels = data["labels"].values
 
     # parse types
     types = []
@@ -84,34 +86,29 @@ def load_tsv(tsv_fname: str, crs: str=None, units: str=None) -> xr.DataArray:
                 types.append(PointType(2)) # detectors
             elif lab in ['NAS', 'Nz', 'Iz', 'LPA', 'RPA']:
                 types.append(PointType(3)) # landmarks
-            elif lab[0] in ['A', 'C', 'F', 'I', 'N', 'O', 'P', 'T']:	
-                types.append(PointType(4)) # electrodes
+            elif lab[0] in ["A", "C", "F", "I", "N", "O", "P", "T"]:
+                types.append(PointType(4))  # electrodes
             else:
-                types.append(PointType(0)) # unknown
-    
+                types.append(PointType(0))  # unknown
+
     # parse data
-    data = np.array([data['X'].values, data['Y'].values, data['Z'].values]).T
-   
+    data = np.array([data["X"].values, data["Y"].values, data["Z"].values]).T
+
     # convert to xarray DataArray
-    geo3d = build_labeled_points(data, labels=labels, crs=crs,
-                                 types=types, units=units)
+    geo3d = build_labeled_points(data, labels=labels, crs=crs, types=types, units=units)
     return geo3d
 
 
 def export_to_tsv(tsv_filename, points):
-    """Export optodes, fiducials, landmarks, electodes, measurement lists to a tsv file.
+    """Export optodes, fiducials, landmarks, electrodes, or measurement lists to tsv.
 
-    Parameters
-    ----------
-    tsv_filename : str
-        Path to the output file.
+    This function writes tsv-files with a column layout that differs from the
+    NIRS-BIDS standard.
 
-    points : xr.DataArray, pd.DataFrame
-        Points to save.
-                
-    Returns 
-    -------
-    None    
+    Args:
+        tsv_filename: Path to the output tsv file.
+        points: Points to save. Either an :class:`xr.DataArray` (optodes /
+            landmarks / electrodes) or a :class:`pd.DataFrame` (measurement list).
     """
     # if measurement list, save it as tsv using pandas
     if isinstance(points, pd.DataFrame):
@@ -133,27 +130,26 @@ def export_to_tsv(tsv_filename, points):
             f.write(header + "\n")
 
             points = np.array(points.to_numpy())
-            for l, p, t in zip(labels, points, types):
-                f.write("%s\t%f\t%f\t%f\t%s\n" % (l, p[0], p[1], p[2], str(t)))
+            for lbl, p, t in zip(labels, points, types):
+                f.write("%s\t%f\t%f\t%f\t%s\n" % (lbl, p[0], p[1], p[2], str(t)))
     else:
         raise ValueError("Unknown points type: %s" % type(points))
     return
 
 
-def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
-    """Read a JSON file containing landmarks.
 
-    Parameters
-    ----------
-    fname : str
-        Path to the JSON file.
-    crs : str
-        Coordinate reference system of the landmarks.
+
+
+def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
+    """Read a JSON file containing landmarks (3D Slicer ``.mrk.json`` format).
+
+    Args:
+        fname: Path to the JSON file.
+        crs: Coordinate reference system of the landmarks.
 
     Returns:
-    -------
-    xr.DataArray
-        Landmarks as a DataArray.
+        xr.DataArray containing landmark positions with ``label`` and ``type``
+        coordinates, quantified with pint units.
     """
     with open(fname) as fin:
         x = json.load(fin)
@@ -180,8 +176,6 @@ def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
     if len(unique_units) > 1:
         raise ValueError(f"more than one unit found in {fname}: {unique_units}")
 
-    pos = np.vstack(pos)
-
     result = xr.DataArray(
         positions,
         dims=["label", crs],
@@ -195,16 +189,12 @@ def read_mrk_json(fname: str, crs: str) -> xr.DataArray:
 
 
 def save_mrk_json(fname: str, landmarks: xr.DataArray, crs: str):
-    """Save landmarks to a JSON file.
+    """Save landmarks to a 3D Slicer ``.mrk.json`` file.
 
-    Parameters
-    ----------
-    fname : str
-        Path to the output file.
-    landmarks : xr.DataArray
-        Landmarks to save.
-    crs: str
-        Coordinate system of the landmarks.
+    Args:
+        fname: Path to the output JSON file.
+        landmarks: Landmark positions as an xr.DataArray with ``label`` coordinate.
+        crs: Coordinate reference system name to embed in the file.
     """
     control_points = [{"id": i,
                        "label": lm.label.item(),
@@ -223,19 +213,16 @@ def save_mrk_json(fname: str, landmarks: xr.DataArray, crs: str):
 
 
 def read_digpts(fname: str, units: str="mm") -> xr.DataArray:
-    """Read a file containing digitized points.
+    """Read a file containing digitized 3D points.
 
-    Parameters
-    ----------
-    fname : str
-        Path to the file.
-    units : str
-        Units of the points.
+    Each line must have the format ``label: x y z``.
+
+    Args:
+        fname: Path to the digitized-points file.
+        units: Physical units of the coordinates (default: ``"mm"``).
 
     Returns:
-    -------
-    xr.DataArray
-        Digitized points as a DataArray.
+        xr.DataArray with dimensions ``["label", "pos"]``, quantified with pint units.
     """
     with open(fname) as fin:
         lines = fin.readlines()
@@ -260,18 +247,123 @@ def read_digpts(fname: str, units: str="mm") -> xr.DataArray:
     return result
 
 
-def read_einstar_obj(fname: str) -> TrimeshSurface:
-    """Read a textured triangle mesh generated by Einstar devices.
+def read_einstar_obj(
+    fname: str,
+    crs: str = "digitized",
+    units=cedalion.units.mm,
+) -> TrimeshSurface:
+    """Read a textured triangle mesh (Einstar, Scaniverse, ...).
 
-    Parameters
-    ----------
-    fname : str
-        Path to the file.
+    Args:
+        fname: Path to the ``.obj`` mesh file.
+        crs: Coordinate reference system tag. Defaults to ``"digitized"``.
+        units: Units of the vertex coordinates in the file. Defaults to
+            millimetres (Einstar convention). Pass e.g. ``cedalion.units.m``
+            for Scaniverse exports.
 
     Returns:
-    -------
-    TrimeshSurface
-        Triangle
+        TrimeshSurface in the given CRS and units.
     """
     mesh = trimesh.load(fname)
-    return TrimeshSurface(mesh, crs="digitized", units=cedalion.units.mm)
+    return TrimeshSurface(mesh, crs=crs, units=units)
+
+
+def read_fieldtrip_elc(fname : Path | str) -> cdt.LabeledPoints:
+    """Read electrode positions from a FieldTrip ``.elc`` file.
+
+    Args:
+        fname: Path to the ``.elc`` file.
+
+    Returns:
+        LabeledPoints with electrode positions, ``label`` and ``type`` coordinates,
+        and pint units derived from the file header.
+    """
+    section = "header"
+
+    crs : str = None
+    npoints : int = 0
+    units : str = None
+    coordinates = []
+    labels = []
+
+    with open(fname, "r") as fin:
+        for line in fin:
+            line = line.strip()
+
+            if line.startswith("#"):
+                continue
+            if line == "Positions":
+                section = "positions"
+                continue
+            if line == "Labels":
+                section = "labels"
+                continue
+
+            if section == "header":
+                if line.startswith("ReferenceLabel"):
+                    crs = line.split()[1]
+                    continue
+                if line.startswith("UnitPosition"):
+                    units = line.split()[1]
+                    continue
+                if line.startswith("NumberPositions"):
+                    npoints = int(line.split()[1])
+                    continue
+            elif section == "positions":
+                coordinates.append(np.asarray([float(i) for i in line.split()]))
+            elif section == "labels":
+                labels.append(line)
+
+    assert len(coordinates) == npoints
+    assert len(labels) == npoints
+    assert crs is not None
+    assert units is not None
+
+    coordinates = np.vstack(coordinates)
+
+    return build_labeled_points(
+        coordinates,
+        crs=crs,
+        units = units,
+        labels = labels,
+        types=[PointType.LANDMARK]*npoints
+    )
+
+
+def read_sd(fname : Path | str, crs="av") -> cdt.LabeledPoints:
+    """Read optode positions from a Homer/AtlasViewer ``.mat`` SD file.
+
+    Args:
+        fname: Path to the ``.mat`` SD file.
+        crs: Coordinate reference system label to assign (default: ``"av"``).
+
+    Returns:
+        LabeledPoints with source, detector, and landmark positions.
+    """
+    x = scipy.io.loadmat(fname, squeeze_me=True)
+    lm_pos = x["SD"]["Landmarks"][()][()][()]["pos"]
+    lm_labels = x["SD"]["Landmarks"][()][()][()]["labels"]
+    src_pos = x["SD"]["SrcPos3D"][()]
+    det_pos = x["SD"]["DetPos3D"][()]
+    units = x["SD"]["SpatialUnit"][()]
+
+    nsrc = len(src_pos)
+    ndet = len(det_pos)
+    nlm = len(lm_pos)
+
+    src_labels = utils.zero_padded_numbers(range(1, nsrc + 1), prefix="S")
+    det_labels = utils.zero_padded_numbers(range(1, ndet + 1), prefix="D")
+
+    coords = np.vstack((src_pos, det_pos, lm_pos))
+
+    return build_labeled_points(
+        coords,
+        crs=crs,
+        units=units,
+        labels=np.hstack((src_labels, det_labels, lm_labels)),
+        types=(
+            [PointType.SOURCE] * nsrc
+            + [PointType.DETECTOR] * ndet
+            + [PointType.LANDMARK] * nlm
+        ),
+    )

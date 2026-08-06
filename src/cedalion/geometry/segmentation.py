@@ -1,4 +1,4 @@
-"""Funtionality to work with segmented MRI scans."""
+"""Functionality to work with segmented MRI scans."""
 
 from typing import List
 
@@ -16,6 +16,7 @@ from functools import reduce
 
 import cedalion
 import cedalion.dataclasses as cdc
+from cedalion import cite
 
 
 def voxels_from_segmentation(
@@ -82,25 +83,7 @@ def surface_from_segmentation(
         .any("segmentation_type")
         .values
     )
-    """ Generate a surface from a segmentation mask.
 
-    Parameters
-    ----------
-    segmentation_mask : xr.DataArray
-        Segmentation mask.
-    segmentation_types : List[str]
-        List of segmentation types.
-    isovalue : float, optional
-        Isovalue for marching cubes, by default 0.9.
-    fill_holes_in_mask : bool, optional
-        Fill holes in the mask, by default False.
-
-    Returns
-    -------
-    cdc.TrimeshSurface
-        Surface in voxel space.
-
-    """
     if fill_holes_in_mask:
         combined_mask = scipy.ndimage.binary_fill_holes(combined_mask).astype(
             combined_mask.dtype
@@ -115,19 +98,17 @@ def surface_from_segmentation(
 
 
 def cell_coordinates(volume, flat: bool = False):
-    """Generate cell coordinates from a 3D volume.
+    """Generate voxel-centre coordinates from a 3D volume.
 
-    Parameters
-    ----------
-    volume : np.ndarray
-        3D volume.
-    flat : bool, optional
-        If True, return coordinates as a flat array, by default False.
+    Args:
+        volume: 3-D array whose shape defines the grid dimensions.
+        flat: If ``True``, return a flat ``(N, 3)`` array with ``label``,
+            ``i``, ``j``, ``k`` coordinates; otherwise return a
+            ``(ni, nj, nk, 3)`` grid array.
 
     Returns:
-    -------
-    xr.DataArray
-        Cell coordinates in voxel space.
+        xr.DataArray of voxel-centre coordinates in voxel (``ijk``) space,
+        quantified as dimensionless pint units.
     """
 
     # coordinates in voxel space
@@ -188,41 +169,38 @@ def segmentation_postprocessing(
     removeAir: bool = True,
     subtractTissues: bool = True
     ) -> dict:
-    """Postprocessing of the segmented SPM12 MRI segmentation files.
+    """Postprocess SPM12 tissue-probability maps into binary segmentation masks.
 
-    Parameters
-    ----------
-    segmentation_dir : str
-        Directory where the segmented files are stored.
-    mask_files : dict[str, str], optional
-        Dictionary containing the filenames of the segmented tissues.
-    isSmooth : bool, optional
-        Smooth the segmented tissues using Gaussian filter.
-    fixCSF : bool, optional
-        Fix the CSF continuity.
-    removeDisconnected : bool, optional
-        Remove disconnected voxels.
-    labelUnassigned : bool, optional
-        Label empty voxels to the nearest tissue type.
-    removeAir : bool, optional
-        Remove air cavities.
-    subtractTissues : bool, optional
-        Subtract tissues from each others
+    Applies a configurable sequence of steps: Gaussian smoothing, CSF continuity
+    repair, removal of disconnected components, labelling of unassigned voxels,
+    removal of air cavities, and tissue subtraction.  Results are saved as NIfTI
+    files alongside the originals.
 
+    Args:
+        segmentation_dir: Directory containing the SPM12 output files.
+        mask_files: Mapping from tissue name to filename within
+            ``segmentation_dir``.  Defaults to the standard SPM12 output names
+            (``c1.nii`` – ``c6.nii``).
+        isSmooth: Apply Gaussian smoothing to each tissue probability map before
+            thresholding.
+        fixCSF: Repair CSF continuity between brain tissue and bone.
+        removeDisconnected: Remove small disconnected components from each mask.
+        labelUnassigned: Assign unlabelled voxels to the nearest tissue type
+            via Gaussian distance blurring.
+        removeAir: Remove air cavities outside the head.
+        subtractTissues: Enforce non-overlapping masks by subtracting inner
+            tissues from outer ones (inside-out order).
 
     Returns:
-    -------
-    mask_files : dict
-        Dictionary containing the filenames of the postprocessed masks.
-
+        Dictionary mapping tissue names to the filenames of the saved
+        postprocessed NIfTI masks.
 
     References:
-    ----------
-    This whole postprocessing is based on the following references:
-    :cite:t:`Huang2013`
-    :cite:t:`Harmening2022`
+        :cite:t:`Huang2013`, :cite:t:`Harmening2022`
     """
 
+    cite("Huang2013")
+    cite("Harmening2022")
     # Load segmented spm output files
     tissues = mask_files.keys()
     img = {tissue: nib.load(os.path.join(segmentation_dir, mask_files[tissue]))
@@ -471,6 +449,19 @@ def segmentation_postprocessing(
 
 
 def binaryMaskGenerator(d):
+    """Convert multi-channel probability maps to mutually exclusive binary masks.
+
+    For each voxel the tissue with the highest probability wins; ties go to the
+    first tissue (index 0 = empty).
+
+    Args:
+        d: Array of shape ``(n_tissues, i, j, k)`` with tissue probability values.
+
+    Returns:
+        Binary mask array of shape ``(n_tissues + 1, i, j, k)`` where index 0
+        is the "empty/unassigned" class and indices 1…n_tissues correspond to
+        the input tissues.
+    """
     d0 = np.zeros(np.concatenate(([1], d.shape[1:])))
     data = np.concatenate((d0, d), axis=0)
     max_ind = np.argmax(data,0)
@@ -480,6 +471,19 @@ def binaryMaskGenerator(d):
     return mask
 
 def sizeOfObject(img, conn = None):
+    """Return connected-component sizes for a binary 3-D image, sorted descending.
+
+    Args:
+        img: Binary 3-D (or 2-D) NumPy array.
+        conn: Connectivity (number of neighbours to consider).  Defaults to 8
+            for 2-D and 26 for 3-D images.
+
+    Returns:
+        Tuple ``(size_descend, ind)``:
+
+        - **size_descend** (list[int]): component sizes sorted in descending order.
+        - **ind** (list[int]): original component indices sorted by descending size.
+    """
     if conn is None:
         if len(img.shape) == 2:
             conn = 8

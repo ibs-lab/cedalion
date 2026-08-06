@@ -4,7 +4,14 @@ import numpy as np
 
 
 def m_trans(t: np.ndarray) -> np.ndarray:
-    """Calculate the affine transformation matrix for a tranlation t."""
+    """Return a 4×4 homogeneous translation matrix.
+
+    Args:
+        t: Translation vector ``[tx, ty, tz]``.
+
+    Returns:
+        4×4 NumPy array encoding the translation as a homogeneous transform.
+    """
     tx, ty, tz = t
     # fmt: off
     return np.array([
@@ -17,9 +24,13 @@ def m_trans(t: np.ndarray) -> np.ndarray:
 
 
 def m_scale3(s: np.ndarray) -> np.ndarray:
-    """Calculate the affine transformation matrix for scaling s.
+    """Return a 4×4 homogeneous anisotropic scaling matrix.
 
-    Apply different scaling factors for each dimension.
+    Args:
+        s: Scale factors ``[sx, sy, sz]`` for each axis independently.
+
+    Returns:
+        4×4 NumPy array encoding the anisotropic scaling as a homogeneous transform.
     """
 
     sx, sy, sz = s
@@ -35,9 +46,13 @@ def m_scale3(s: np.ndarray) -> np.ndarray:
 
 
 def m_scale1(s: np.ndarray) -> np.ndarray:
-    """Calculate the affine transformation matrix for scaling s.
+    """Return a 4×4 homogeneous isotropic scaling matrix.
 
-    Apply one scaling factor for all dimensions.
+    Args:
+        s: Array whose first element is the uniform scale factor applied to all axes.
+
+    Returns:
+        4×4 NumPy array encoding the isotropic scaling as a homogeneous transform.
     """
     s = s[0]
 
@@ -52,11 +67,16 @@ def m_scale1(s: np.ndarray) -> np.ndarray:
 
 
 def m_rot(angles: np.ndarray) -> np.ndarray:
-    """Calculate the affine transformation matrix for a 3D rotation.
+    """Return a 4×4 homogeneous rotation matrix R = Rz(α)·Ry(β)·Rx(γ).
 
-    R = Rz(alpha)Ry(beta)Rx(gamma)
+    See https://en.wikipedia.org/wiki/Rotation_matrix#General_rotations.
 
-    https://en.wikipedia.org/wiki/Rotation_matrix#General_rotations
+    Args:
+        angles: Euler angles ``[alpha, beta, gamma]`` in radians, corresponding
+            to rotations about Z, Y, and X axes respectively.
+
+    Returns:
+        4×4 NumPy array encoding the combined rotation as a homogeneous transform.
     """
     alpha, beta, gamma = angles
 

@@ -17,10 +17,9 @@ import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
 import cedalion.sigproc.frequency as freq
-import cedalion.math as math
-from cedalion import Quantity, math, units
+from cedalion import cite, Quantity, math, units
 from cedalion.typing import NDTimeSeries
-import cedalion.nirs as nirs
+import cedalion.nirs
 from .frequency import freq_filter, sampling_rate
 
 logger = logging.getLogger("cedalion")
@@ -117,6 +116,8 @@ def psp(
         DataArray with coords from psp, true where psp_thresh is met.
     """
 
+    cite("Pollonini2014")
+    cite("Pollonini2016")
     amp = _extract_cardiac(amplitudes, cardiac_fmin, cardiac_fmax)
 
     amp = amp.pint.dequantify()
@@ -201,10 +202,11 @@ def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
         Original paper: :cite:`Sherafati2020`
     """
 
+    cite("Sherafati2020")
     fcut_min = 0.01
     fcut_max = 0.5
 
-    od = nirs.int2od(amplitudes)
+    od = cedalion.nirs.cw.int2od(amplitudes)
     od = xr.where(np.isinf(od), 0, od)
     od = xr.where(np.isnan(od), 0, od)
     od.time.attrs["units"] = units.s
@@ -269,6 +271,7 @@ def _get_gvtd_threshold(
         thresh (float): the threshold above which GVTD is considered motion.
     """
 
+    cite("Sherafati2020")
     units = GVTD.pint.units
     GVTD = GVTD.pint.dequantify()
 
@@ -481,6 +484,8 @@ def sci(
         DataArray with coords from sci, true where sci_thresh is met.
     """
 
+    cite("Pollonini2014")
+    cite("Pollonini2016")
     assert "wavelength" in amplitudes.dims  # FIXME move to validate schema
 
     amplitudes = amplitudes.pint.dequantify()
@@ -551,6 +556,7 @@ def snr(amplitudes: cdt.NDTimeSeries, snr_thresh: float = 2.0):
         Based on Homer3 v1.80.2 "hmR_PruneChannels.m" (:cite:t:`Huppert2009`)
     """
 
+    cite("Huppert2009")
     # calculate SNR
     snr = amplitudes.mean("time") / amplitudes.std("time")
     # create snr mask and update accoording to snr thresholds
@@ -576,6 +582,7 @@ def mean_amp(amplitudes: cdt.NDTimeSeries, amp_range: tuple[Quantity, Quantity])
     References:
         Based on Homer3 v1.80.2 "hmR_PruneChannels.m" (:cite:t:`Huppert2009`)
     """
+    cite("Huppert2009")
     # FIXME: default parameters in Homer3 were (1e4, 1e7). Adopt?
 
     # calculate mean amplitude
@@ -592,14 +599,14 @@ def mean_amp(amplitudes: cdt.NDTimeSeries, amp_range: tuple[Quantity, Quantity])
 @cdc.validate_schemas
 def sd_dist(
     amplitudes: cdt.NDTimeSeries,
-    geo3D: cdt.LabeledPointCloud,
+    geo3D: cdt.LabeledPoints,
     sd_range: tuple[Quantity, Quantity] = (0 * units.cm, 4.5 * units.cm),
 ):
     """Calculate source-detector separations and mask channels outside a distance range.
 
     Args:
         amplitudes (:class:`NDTimeSeries`, (channel, *)): input time series
-        geo3D (:class:`LabeledPointCloud`): 3D optode coordinates
+        geo3D (:class:`LabeledPoints`): 3D optode coordinates
         sd_range: if source-detector separation < sd_range[0] or > sd_range[1]
              then it is excluded as an active channelin sd_mask
 
@@ -612,6 +619,7 @@ def sd_dist(
         Based on Homer3 v1.80.2 "hmR_PruneChannels.m" (:cite:t:`Huppert2009`)
     """
 
+    cite("Huppert2009")
     # calculate channel distances
     sd_dist = xrutils.norm(
         geo3D.loc[amplitudes.source] - geo3D.loc[amplitudes.detector],
@@ -676,6 +684,7 @@ def id_motion(
         (:cite:t:`Huppert2009`).
     """
 
+    cite("Huppert2009")
     # TODO assert OD units, otherwise issue a warning
 
     # t_motion in samples rounded to the nearest sample
@@ -836,6 +845,7 @@ def detect_outliers_std(
         (:cite:t:`Jahani2018`)
     """
 
+    cite("Jahani2018")
     ts = ts.pint.dequantify()
     fs = freq.sampling_rate(ts)
 
@@ -883,6 +893,7 @@ def detect_outliers_grad(ts: cdt.NDTimeSeries, iqr_threshold: float = 1.5):
         (:cite:t:`Jahani2018`)
     """
 
+    cite("Jahani2018")
     ts = ts.pint.dequantify()
 
     #ts_lowpass = ts.cd.freq_filter(0, 2, butter_order=4) # FIXME
@@ -942,6 +953,7 @@ def detect_outliers(
         Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
         (:cite:t:`Jahani2018`)
     """
+    cite("Jahani2018")
     mask_std = detect_outliers_std(ts, t_window_std, iqr_threshold_std)
     mask_grad = detect_outliers_grad(ts, iqr_threshold_grad)
 
@@ -1050,6 +1062,7 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
         Based on Homer3 v1.80.2 "hmrR_tInc_baselineshift_Ch_Nirs.m"
         (:cite:t:`Jahani2018`)
     """
+    cite("Jahani2018")
     ts = ts.pint.dequantify()
 
     #ts = ts.stack(measurement=["channel", "wavelength"]).sortby("wavelength")
@@ -1208,7 +1221,7 @@ def repair_amp(amp: xr.DataArray, median_len=3, interp_nan=True, **kwargs):
         amp = amp.interpolate_na(dim="time", **kwargs)
         amp = amp.pint.quantify()
         # replace sample 0 with sample 1 if NaN
-        amp.loc[{"time":0}] = amp.isel(time=0).fillna(amp.isel(time=1))
+        amp[{"time":0}] = amp.isel(time=0).fillna(amp.isel(time=1))
 
     # Replace nonpositive values with a small value
     unit = amp.pint.units

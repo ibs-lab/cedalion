@@ -6,10 +6,17 @@ import functools
 
 
 def zero_padded_numbers(numbers: list[int], prefix: str = "") -> list[str]:
-    """Translate [0,1,..,13] to ["00","01", ... "13"].
+    """Format integers as zero-padded strings sized to the largest value.
 
-    Determine the length of the zero padding to accomodate the highest absolute
-    number. Optionally, a prefix can be specified.
+    For example, ``[0, 1, 13]`` becomes ``["00", "01", "13"]``. The padding
+    width is determined by the highest absolute value in the list.
+
+    Args:
+        numbers: List of integers to format.
+        prefix: Optional string prepended to each formatted number.
+
+    Returns:
+        List of zero-padded strings, one per input number.
     """
     if len(numbers) == 0:
         return []
@@ -19,14 +26,29 @@ def zero_padded_numbers(numbers: list[int], prefix: str = "") -> list[str]:
 
 
 def deprecated_api(message):
-    """Issue a deprecation warning."""
+    """Issue a ``DeprecationWarning`` with the given message.
 
+    Args:
+        message: Human-readable description of what is deprecated and what
+            to use instead.
+    """
     # FIXME: replace with @deprecated for python 3.13
     warnings.warn(message, DeprecationWarning)
 
 
 def deprecated(reason: str):
-    """Marks a function as deprecated by issuing a DeprecationWarning when used."""
+    """Decorator that marks a function as deprecated.
+
+    Wraps the decorated function so that every call emits a
+    ``DeprecationWarning`` naming the function and the reason for deprecation.
+
+    Args:
+        reason: Explanation of why the function is deprecated and, where
+            applicable, what should be used instead.
+
+    Returns:
+        A decorator that wraps the target function.
+    """
 
     def decorator(func):
         @functools.wraps(func)

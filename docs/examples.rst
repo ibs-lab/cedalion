@@ -13,7 +13,7 @@ Getting Started and IO
    examples/getting_started_io/*
 
 Signal Quality
------------------------
+--------------
 
 .. nbgallery::
    :glob:
@@ -21,7 +21,7 @@ Signal Quality
    examples/signal_quality/*
 
 Modeling
------------------------
+--------
 
 .. nbgallery::
    :glob:
@@ -45,7 +45,7 @@ Machine Learning and Data Driven Methods
    examples/machine_learning/*
 
 Physiology
------------------------
+----------
 
 .. nbgallery::
    :glob:
@@ -53,16 +53,15 @@ Physiology
    examples/physio/*
 
 Data Augmentation
------------------------
+-----------------
 
 .. nbgallery::
-   :caption: Coming soon
    :glob:
 
-   examples/data_augmentation/*
+   examples/augmentation/*
 
 Plots & Visualization
------------------------
+---------------------
 
 .. nbgallery::
    :glob:

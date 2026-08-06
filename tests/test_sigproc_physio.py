@@ -1,6 +1,6 @@
 import pytest
 import cedalion.sigproc.physio as physio
-import cedalion.datasets
+import cedalion.data
 from cedalion import units
 import numpy as np
 
@@ -9,7 +9,7 @@ np.random.seed(42)
 
 @pytest.fixture
 def rec():
-    rec = cedalion.datasets.get_snirf_test_data()[0]
+    rec = cedalion.data.get_snirf_test_data()[0]
     return rec
 
 

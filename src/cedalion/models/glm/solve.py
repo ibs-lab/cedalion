@@ -7,10 +7,11 @@ import numpy as np
 import xarray as xr
 
 import cedalion.typing as cdt
+import cedalion.dataclasses as cdc
 import cedalion.xrutils as xrutils
-#import cedalion.dataclasses.statistics
+from cedalion import cite
 from cedalion.models.glm.design_matrix import DesignMatrix
-#import statsmodels.regression
+
 import statsmodels.api
 import pandas as pd
 from scipy.linalg import toeplitz
@@ -21,6 +22,21 @@ import cedalion.math.ar_irls
 
 
 def _channel_fit(y, x, noise_model="ols", ar_order=30):
+    """Fit a single channel's time series with the specified linear noise model.
+
+    Args:
+        y: Dependent variable (pandas Series or 1-D array).
+        x: Design matrix (pandas DataFrame or 2-D array).
+        noise_model: Regression model to use.  One of ``"ols"``, ``"rls"``,
+            ``"wls"``, ``"ar_irls"``, ``"gls"``, ``"glsar"``.
+        ar_order: AR model order used by ``"ar_irls"`` and ``"glsar"``.
+
+    Returns:
+        Fitted statsmodels regression result object.
+
+    Raises:
+        ValueError: If ``noise_model`` is not one of the supported options.
+    """
     available_models = ["ols", "rls", "wls", "ar_irls", "gls", "glsar"]
 
     if noise_model not in available_models:
@@ -32,13 +48,19 @@ def _channel_fit(y, x, noise_model="ols", ar_order=30):
     if noise_model == "ols":
         reg_result = statsmodels.api.OLS(y, x).fit()
     elif noise_model == "rls":
-        reg_result = statsmodels.api.RecursiveLS(y, x).fit()
+        reg_result = statsmodels.api.RecursiveLS(
+            y,
+            x,
+            initialization="known",
+            initial_state=np.zeros(x.shape[1]),
+            initial_state_cov=np.eye(x.shape[1]) * 1e6,
+        ).fit()
     elif noise_model == "wls":
         reg_result = statsmodels.api.WLS(y, x).fit()
     elif noise_model == "ar_irls":
         reg_result = cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=ar_order)
     elif noise_model == "gls":
-        ols_resid = statsmodels.api.OLS(y, x).fit().resid
+        ols_resid = statsmodels.api.OLS(y, x).fit().resid.values  # need a numpy array
         resid_fit = statsmodels.api.OLS(
             ols_resid[1:],
             statsmodels.api.add_constant(ols_resid[:-1]),
@@ -87,17 +109,20 @@ def fit(
 
     """
 
+    cite("Barker2013")
     # FIXME: unit handling?
     # shoud the design matrix be dimensionless? -> thetas will have units
     ts = ts.pint.dequantify()
+
+    spatial_dim = cdc.get_spatial_dimension(ts)
 
     dim3_name = xrutils.other_dim(design_matrix.common, "time", "regressor")
 
 
     reg_results = xr.DataArray(
-        np.empty((ts.sizes["channel"], ts.sizes[dim3_name]), dtype=object),
-        dims=("channel", dim3_name),
-        coords=xrutils.coords_from_other(ts.isel(time=0), dims=("channel", dim3_name))
+        np.empty((ts.sizes[spatial_dim], ts.sizes[dim3_name]), dtype=object),
+        dims=(spatial_dim, dim3_name),
+        coords=xrutils.coords_from_other(ts.isel(time=0), dims=(spatial_dim, dim3_name))
     )
 
     for (
@@ -105,22 +130,21 @@ def fit(
         group_channels,
         group_design_matrix,
     ) in design_matrix.iter_computational_groups(ts):
-        group_y = ts.sel({"channel": group_channels, dim3_name: dim3}).transpose(
-            "time", "channel"
-        )
 
-        # pass x as a DataFrame to statsmodel to make it aware of regressor names
+        group_y = ts.sel({spatial_dim: group_channels, dim3_name: dim3}).transpose(
+            "time", spatial_dim
+        )
         x = pd.DataFrame(
             group_design_matrix.values, columns=group_design_matrix.regressor.values
         )
 
-        if(max_jobs==1):
-            for chan in tqdm(group_y.channel.values, disable=not verbose):
+        if max_jobs == 1:
+            for chan in tqdm(group_y[spatial_dim].values, disable=not verbose):
                 result = _channel_fit(group_y.loc[:, chan], x, noise_model, ar_order)
                 reg_results.loc[chan, dim3] = result
         else:
-            args_list=[]
-            for chan in group_y.channel.values:
+            args_list = []
+            for chan in group_y[spatial_dim].values:
                 args_list.append([group_y.loc[:, chan], x, noise_model, ar_order])
 
             with parallel_config(backend='threading', n_jobs=max_jobs):
@@ -131,8 +155,9 @@ def fit(
                     total=len(args_list)
                 )
 
-            for chan, result in zip(group_y.channel.values, batch_results):
+            for chan, result in zip(group_y[spatial_dim].values, batch_results):
                 reg_results.loc[chan, dim3] = result
+
 
     #try:
     #    coloring_matrix=np.linalg.cholesky(np.corrcoef(np.array(resid)))
@@ -179,6 +204,8 @@ def predict(
 
     dim3_name = xrutils.other_dim(design_matrix.common, "time", "regressor")
 
+    spatial_dim = cdc.get_spatial_dimension(ts)
+
     prediction = defaultdict(list)
 
     for (
@@ -187,11 +214,11 @@ def predict(
         group_design_matrix,
     ) in design_matrix.iter_computational_groups(ts):
         # (dim3, channel, regressor)
-        t = thetas.sel({"channel": group_channels, dim3_name: [dim3]})
+        t = thetas.sel({spatial_dim: group_channels, dim3_name: [dim3]})
         prediction[dim3].append(xr.dot(group_design_matrix, t, dim="regressor"))
 
     # concatenate channels
-    prediction = [xr.concat(v, dim="channel") for v in prediction.values()]
+    prediction = [xr.concat(v, dim=spatial_dim) for v in prediction.values()]
 
     # concatenate dim3
     prediction = xr.concat(prediction, dim=dim3_name)
