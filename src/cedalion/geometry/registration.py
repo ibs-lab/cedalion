@@ -730,7 +730,7 @@ def simple_scalp_projection(geo3d: cdt.LabeledPoints) -> cdt.LabeledPoints:
 
     Args:
         geo3d (LabeledPoints): 3D coordinates of points to project. Requires the
-            landmarks Nz, LPA, and RPA.
+            landmarks Nz/Nasion, LPA, and RPA.
 
     Returns:
         A LabeledPoints containing the 2D coordinates of the projected points.
@@ -744,11 +744,11 @@ def simple_scalp_projection(geo3d: cdt.LabeledPoints) -> cdt.LabeledPoints:
             lpa = label
         if label.lower() == "rpa":
             rpa = label
-        if label.lower() == "nz":
+        if label.lower() in {"nz", "nasion"}:
             nz = label
 
     if (lpa is None) or (rpa is None) or (nz is None):
-        raise ValueError("this projection needs the landmarks Nz, LPA and RPA.")
+        raise ValueError("this projection needs the landmarks Nz/Nasion, LPA and RPA.")
 
     crs = geo3d.points.crs
     # find the midpoint between LPA and RPA
