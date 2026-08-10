@@ -24,7 +24,6 @@ from dataclasses import dataclass
 # registry: method label -> adapter(rec, ts, **params)
 PREPROC_STEP_ADAPTERS: dict[str, Callable] = {}
 
-_PRUNE_GOOD = 0
 _PRUNE_SDS = 1
 _PRUNE_LOW_SIGNAL = 2
 _PRUNE_POOR_SNR = 3

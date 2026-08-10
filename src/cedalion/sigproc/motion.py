@@ -276,6 +276,7 @@ def spline_sg(
 
     dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_samples, K).T
 
+    # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
     dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
 
     if ts_units:
