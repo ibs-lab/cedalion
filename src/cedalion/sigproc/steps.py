@@ -17,15 +17,15 @@ from cedalion import units
 from cedalion.physunits import parse_quantity
 
 # We want to provide a simpler yaml-based interface to all the different preprocessing
-# methods. Therefore, we need adapaters which map The preprocess snakemake rule should
-# be configurable from a yaml file
+# methods. Therefore, we need adapaters which map yaml configuratons parameters
+# to function arguments and calls.
 
-# registry: method label -> adapter(rec, ts, **params)
+# A registry of preprocessing adapters map method label to adapter(rec, ts, **params)
 PREPROC_STEP_ADAPTERS: dict[str, Callable] = {}
 
 
 def preproc_step(name):
-    """Adds an adapter to the registry."""
+    """Decorator that adds an adapter to the registry."""
 
     def wrapper(fn):
         PREPROC_STEP_ADAPTERS[name] = fn
@@ -367,14 +367,13 @@ def preprocess(
         # call the adapter
         adapter(ctx, **step_params)
 
-        # FIXME data quality report as additional step, configured through params
 
     if not keep_intermediate:
         for key in list(rec.timeseries.keys())[:-1]:
             del rec.timeseries[key]
 
+    # write recording container and sidecar files
     cedalion.io.write_snirf(output_snirf, rec)
-
     sidecar.to_netcdf(output_sidecar)
 
 
