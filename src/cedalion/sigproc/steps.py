@@ -165,6 +165,82 @@ def _psp(
     ctx.sidecar[ctx.step_name + "_mask"] = psp_mask_values
 
 
+
+@preproc_step("spline")
+def _spline(
+    ctx: Context,
+    *,
+    p: float,
+    t_motion: cdt.QTime = 0.5 * units.s,
+    t_mask: cdt.QTime = 1.0 * units.s,
+    stdev_thresh: float = 50.0,
+    amp_thresh: float = 5.0,
+):
+    """TBD."""
+    ma_mask = cedalion.sigproc.quality.id_motion(
+            ctx.ts, t_motion=t_motion, t_mask=t_mask, stdev_thresh=stdev_thresh,
+            amp_thresh=amp_thresh
+        )
+    ctx.rec[ctx.step_name] = cedalion.sigproc.motion.spline(
+        ts=ctx.ts, t_inc_ch=ma_mask, p=p
+    )
+
+
+@preproc_step("pca")
+def _pca(
+    ctx: Context,
+    *,
+    n_sv: float = 0.97,
+    t_motion: cdt.QTime = 0.5 * units.s,
+    t_mask: cdt.QTime = 1.0 * units.s,
+    stdev_thresh: float = 50.0,
+    amp_thresh: float = 5.0,
+):
+    """TBD."""
+    ma_mask = cedalion.sigproc.quality.id_motion(
+        ctx.ts, t_motion=t_motion, t_mask=t_mask, stdev_thresh=stdev_thresh,
+        amp_thresh=amp_thresh
+    )
+    ts_cleaned, n_sv_used, svs = cedalion.sigproc.motion.pca(
+        ctx.ts, ma_mask, n_sv
+    )
+    ctx.rec[ctx.step_name] = ts_cleaned
+    ctx.sidecar[ctx.step_name + "_n_sv"] = n_sv_used
+    ctx.sidecar[ctx.step_name + "_svs"] = svs
+
+
+@preproc_step("pca_recurse")
+def _pca_recurse(
+    ctx: Context,
+    *,
+    t_motion: cdt.QTime = 0.5 * units.s,
+    t_mask: cdt.QTime = 1 * units.s,
+    stdev_thresh: float = 20,
+    amp_thresh: float = 5,
+    n_sv: float = 0.97,
+    max_iter: int = 5,
+):
+    """TBD."""
+    ts_cleaned, svs, n_sv_ret, t_inc = cedalion.sigproc.motion.pca_recurse(
+        ctx.ts, t_motion=t_motion, t_mask=t_mask, stdev_thresh=stdev_thresh,
+        amp_thresh=amp_thresh, n_sv=n_sv, max_iter=max_iter
+    )
+    ctx.rec[ctx.step_name] = ts_cleaned
+    ctx.sidecar[ctx.step_name + "_svs"] = svs
+    ctx.sidecar[ctx.step_name + "_n_sv"] = n_sv_ret
+    if "units" in t_inc.time.attrs:
+        t_inc = t_inc.copy()
+        t_inc.time.attrs["units"] = str(t_inc.time.attrs["units"])
+    ctx.sidecar[ctx.step_name + "_t_inc"] = t_inc
+
+
+@preproc_step("spline_sg")
+def _spline_sg(ctx: Context, *, p: float, frame_size: cdt.QTime = 10 * units.s):
+    """TBD."""
+    result = cedalion.sigproc.motion.spline_sg(ctx.ts, p=p, frame_size=frame_size)
+    ctx.rec[ctx.step_name] = result
+
+
 # FIXME move somewhere central
 def quantify_params(params: dict):
     result = {}

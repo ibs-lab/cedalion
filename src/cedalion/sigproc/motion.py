@@ -243,7 +243,9 @@ def spline_sg(
 
     tIncCh = detect_baselineshift(ts, M)
 
+    ts_units = ts.pint.units
     ts = ts.pint.dequantify()
+
     fNIRSdata_lpf2 = ts.cd.freq_filter(0, 2, butter_order=4)
 
     PADDING_TIME = 12 * units.s # FIXME configurable?
@@ -278,6 +280,9 @@ def spline_sg(
     # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
     dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
     dodSplineSG = dodSplineSG.pint.quantify()
+
+    if units:
+        dodSplineSG = dodSplineSG.pint.quantify(ts_units)
 
     return dodSplineSG
 
