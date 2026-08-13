@@ -67,7 +67,7 @@ community/index.md
 :maxdepth: 1
 :caption: ⭐ Tutorial
 
-Paper (in prep.) <https://arxiv.org/abs/2601.05923>
+Paper <https://www.spiedigitallibrary.org/journals/neurophotonics/volume-13/issue-S3/S32602/Cedalion-tutorial--a-Python-based-framework-for-comprehensive-analysis/10.1117/1.NPh.13.S3.S32602.full>
 Tutorial Notebooks <tutorial.rst>
 ```
 
