@@ -277,12 +277,12 @@ def spline_sg(
 
     dodSplineSG = xr.apply_ufunc(savgol_filter, dodSpline, framesize_samples, K).T
 
-    # dodSplineSG = dodSplineSG.unstack('measurement').pint.quantify()
     dodSplineSG = dodSplineSG.transpose("channel", "wavelength", "time")
-    dodSplineSG = dodSplineSG.pint.quantify()
 
-    if units:
+    if ts_units:
         dodSplineSG = dodSplineSG.pint.quantify(ts_units)
+    else:
+        dodSplineSG = dodSplineSG.pint.quantify()
 
     return dodSplineSG
 
@@ -321,9 +321,17 @@ def pca(
         Paper & Code: :cite:`Huppert2009`
     """
     cite("Huppert2009")
+
+    mask = t_inc == TAINTED
+
+    if not np.any(mask.values):
+        # No motion artifacts detected -- nothing to correct.
+        # Matches pca_recurse()'s convention for the already-clean case.
+        return ts.copy(), -1, np.array([], dtype=float)
+
     # apply_mask drops time points where the provided mask is False
     # -> keep only points with motion
-    y, m = xrutils.apply_mask(ts, t_inc == TAINTED, "drop", "none")
+    y, m = xrutils.apply_mask(ts, mask, "drop", "none")
 
     # stack y and od
     y = (
@@ -437,6 +445,7 @@ def pca(
 
     return ts_cleaned, n_sv, svs
 
+
 @deprecated("This function was renamed to 'pca_recurse'.")
 def motion_correct_PCA_recurse(
     fNIRSdata: cdt.NDTimeSeries,
@@ -507,7 +516,7 @@ def pca_recurse(
 
     # default values for the case that ts is already clean
     n_sv_ret = -1
-    svs = np.ndarray([])
+    svs = np.array([], dtype=float)
 
     while sum(~t_inc.values) > 0 and nI < max_iter:
         nI = nI + 1

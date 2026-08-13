@@ -1,20 +1,20 @@
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
 import cedalion.dataclasses as cdc
-import cedalion.typing as cdt
-
 import cedalion.io
 import cedalion.nirs
-import cedalion.sigproc.quality
 import cedalion.sigproc.motion
+import cedalion.sigproc.quality
+import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-from cedalion.physunits import parse_quantity
 from cedalion import units
-from dataclasses import dataclass
+from cedalion.physunits import parse_quantity
 
 # We want to provide a simpler yaml-based interface to all the different preprocessing
 # methods. Therefore, we need adapaters which map The preprocess snakemake rule should
@@ -196,18 +196,47 @@ def _pca(
     stdev_thresh: float = 50.0,
     amp_thresh: float = 5.0,
 ):
-    """TBD."""
-    ma_mask = cedalion.sigproc.quality.id_motion(
-        ctx.ts, t_motion=t_motion, t_mask=t_mask, stdev_thresh=stdev_thresh,
-        amp_thresh=amp_thresh
+    """Apply PCA motion correction."""
+
+    # Detect motion separately for every channel/wavelength.
+    ma_mask_ch = cedalion.sigproc.quality.id_motion(
+        ctx.ts,
+        t_motion=t_motion,
+        t_mask=t_mask,
+        stdev_thresh=stdev_thresh,
+        amp_thresh=amp_thresh,
     )
+
+    # Convert the channel-wise mask into one global time mask.
+    # This is the same preparation used by pca_recurse().
+    ma_mask = cedalion.sigproc.quality.id_motion_refine(
+        ma_mask_ch,
+        "all",
+    )[0].copy()
+
+    # Match the time alignment used by pca_recurse().
+    ma_mask.values = np.hstack(
+        [ma_mask.values[0], ma_mask.values[:-1]]
+    )
+
     ts_cleaned, n_sv_used, svs = cedalion.sigproc.motion.pca(
-        ctx.ts, ma_mask, n_sv
+        ctx.ts,
+        ma_mask,
+        n_sv=n_sv,
     )
+
     ctx.rec[ctx.step_name] = ts_cleaned
     ctx.sidecar[ctx.step_name + "_n_sv"] = n_sv_used
-    ctx.sidecar[ctx.step_name + "_svs"] = svs
 
+    sv_name = ctx.step_name + "_svs"
+    sv_dim = ctx.step_name + "_component"
+    sv_values = np.asarray(svs, dtype=float).reshape(-1)
+
+    ctx.sidecar[sv_name] = xr.DataArray(
+        sv_values,
+        dims=(sv_dim,),
+        coords={sv_dim: np.arange(sv_values.size)},
+    )
 
 @preproc_step("pca_recurse")
 def _pca_recurse(
@@ -220,17 +249,39 @@ def _pca_recurse(
     n_sv: float = 0.97,
     max_iter: int = 5,
 ):
-    """TBD."""
-    ts_cleaned, svs, n_sv_ret, t_inc = cedalion.sigproc.motion.pca_recurse(
-        ctx.ts, t_motion=t_motion, t_mask=t_mask, stdev_thresh=stdev_thresh,
-        amp_thresh=amp_thresh, n_sv=n_sv, max_iter=max_iter
+    """Apply recursive PCA motion correction."""
+
+    ts_cleaned, svs, n_sv_ret, t_inc = (
+        cedalion.sigproc.motion.pca_recurse(
+            ctx.ts,
+            t_motion=t_motion,
+            t_mask=t_mask,
+            stdev_thresh=stdev_thresh,
+            amp_thresh=amp_thresh,
+            n_sv=n_sv,
+            max_iter=max_iter,
+        )
     )
+
     ctx.rec[ctx.step_name] = ts_cleaned
-    ctx.sidecar[ctx.step_name + "_svs"] = svs
     ctx.sidecar[ctx.step_name + "_n_sv"] = n_sv_ret
+
+    sv_name = ctx.step_name + "_svs"
+    sv_dim = ctx.step_name + "_component"
+
+    # Converts scalar, empty, or normal arrays to a one-dimensional array.
+    sv_values = np.asarray(svs, dtype=float).reshape(-1)
+
+    ctx.sidecar[sv_name] = xr.DataArray(
+        sv_values,
+        dims=(sv_dim,),
+        coords={sv_dim: np.arange(sv_values.size)},
+    )
+
     if "units" in t_inc.time.attrs:
         t_inc = t_inc.copy()
         t_inc.time.attrs["units"] = str(t_inc.time.attrs["units"])
+
     ctx.sidecar[ctx.step_name + "_t_inc"] = t_inc
 
 
