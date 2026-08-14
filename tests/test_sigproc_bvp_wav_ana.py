@@ -132,8 +132,7 @@ def test_bvp_single_ch():
         pulse = np.sum(
             a[:, None] * np.sin(angles)
             + b[:, None] * (np.cos(angles) - 1),
-            axis=0,
-        )
+            axis=0)
 
         # The mean of the multiharmonic expression above is -sum(b).
         return pulse + np.sum(b)
@@ -141,9 +140,8 @@ def test_bvp_single_ch():
     def make_low_frequency_trend(actual_time):
         return (
             1.2
-            + 0.25 * np.sin(2 * np.pi * 0.05 * actual_time)
-            - 0.01 * actual_time
-        )
+            + 0.25 * np.sin(2 * np.pi * 0.1 * actual_time)
+            - 0.01 * actual_time)
 
     pulse = make_pulse(time)
     low_frequency_trend = make_low_frequency_trend(time)
@@ -169,14 +167,11 @@ def test_bvp_single_ch():
     trend_rmse = np.sqrt(np.mean(trend_error**2))
     trend_correlation = np.corrcoef(
         trend[interior],
-        expected_trend[interior],
-    )[0, 1]
+        expected_trend[interior])[0, 1]
     bvp_correlation = np.corrcoef(
         bvp[interior],
-        expected_pulse[interior],
-    )[0, 1]
+        expected_pulse[interior])[0, 1]
 
     assert trend_rmse < 0.08
     assert trend_correlation > 0.98
     assert bvp_correlation > 0.95
-
