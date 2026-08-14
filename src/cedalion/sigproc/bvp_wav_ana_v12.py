@@ -892,8 +892,8 @@ def classify_waveforms(
     Waveforms are then classified into three amplitude-based groups using
     percentile thresholds:
         - type 1:  < 25th percentile
-        - type 2: 25th to 75th percentile
-        - type 3:  > 75th percentile
+        - type 2:  > 75th percentile
+        - type 3: 25th to 75th percentile
 
     Args:
         bvp_cont: the BVP Container which includes the two storages built by
