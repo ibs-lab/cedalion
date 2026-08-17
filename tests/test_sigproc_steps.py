@@ -1,5 +1,7 @@
 """Tests for preprocessing step adapters."""
 
+import json
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -565,3 +567,84 @@ def test_prune_rejects_invalid_clean_fraction():
             use_sci=True,
             use_psp=False,
         )
+
+
+def test_preprocess_normalizes_landmarks_and_stores_config(
+    tmp_path,
+    monkeypatch,
+):
+    """Preprocess applies landmark normalization and records its configuration."""
+    class FakePreprocessRecording:
+        def __init__(self):
+            self.timeseries = {
+                "amp": _make_timeseries(),
+            }
+            self.geo3d = object()
+            self.stim = None
+
+        def __getitem__(self, name):
+            return self.timeseries[name]
+
+    rec = FakePreprocessRecording()
+    original_geo3d = rec.geo3d
+    normalized_geo3d = object()
+    normalization_calls = []
+    written = []
+
+    def fake_normalize_landmarks_labels(geo3d):
+        normalization_calls.append(geo3d)
+        return normalized_geo3d
+
+    monkeypatch.setattr(
+        steps.cedalion.io,
+        "read_snirf",
+        lambda *args, **kwargs: [rec],
+    )
+
+    monkeypatch.setattr(
+        steps.cedalion.io,
+        "write_snirf",
+        lambda path, recording: written.append((path, recording)),
+    )
+
+    monkeypatch.setattr(
+        steps,
+        "normalize_landmarks_labels",
+        fake_normalize_landmarks_labels,
+    )
+
+    preprocess_steps = [
+        {
+            "name": "od",
+            "method": "int2od",
+            "enable": False,
+        },
+    ]
+
+    output_snirf = tmp_path / "preproc.snirf"
+    output_sidecar = tmp_path / "sidecar.nc"
+
+    steps.preprocess(
+        input_snirf=(tmp_path / "input.snirf"),
+        input_events=None,
+        input_optodes=None,
+        input_coordsystem=None,
+        output_snirf=output_snirf,
+        output_sidecar=output_sidecar,
+        steps=preprocess_steps,
+        keep_intermediate=False,
+        normalize_landmarks=True,
+    )
+
+    assert normalization_calls == [original_geo3d]
+    assert rec.geo3d is normalized_geo3d
+    assert written == [(output_snirf, rec)]
+
+    with xr.open_dataset(output_sidecar) as sidecar:
+        preprocess_config = json.loads(sidecar.attrs["preprocess"])
+
+    assert preprocess_config == {
+        "steps": preprocess_steps,
+        "keep_intermediate": False,
+        "normalize_landmarks": True,
+    }

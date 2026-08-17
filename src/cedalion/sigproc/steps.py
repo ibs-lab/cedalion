@@ -1,5 +1,7 @@
-import numpy as np
+import json
 from pathlib import Path
+
+import numpy as np
 from typing import Callable
 
 import pandas as pd
@@ -13,6 +15,7 @@ import cedalion.nirs
 import cedalion.sigproc.quality
 import cedalion.sigproc.motion
 import cedalion.xrutils as xrutils
+from cedalion.geometry.landmarks import normalize_landmarks_labels
 from cedalion.physunits import parse_quantity
 from cedalion import Quantity, units
 from dataclasses import dataclass
@@ -739,6 +742,7 @@ def preprocess(
     output_sidecar: Path,
     steps: list[dict],
     keep_intermediate: bool = False,
+    normalize_landmarks: bool = False,
     # final_name : str # FIXME
 ) -> cdc.Recording:
 
@@ -763,7 +767,19 @@ def preprocess(
         # FIXME overwrite geo3d
         pass
 
+    if normalize_landmarks:
+        rec.geo3d = normalize_landmarks_labels(rec.geo3d)
+
     sidecar = xr.DataTree()
+    sidecar.attrs["preprocess"] = json.dumps(
+        {
+            "steps": steps,
+            "keep_intermediate": keep_intermediate,
+            "normalize_landmarks": normalize_landmarks,
+        },
+        sort_keys=True,
+        default=str,
+    )
 
     for step in steps:
         step_name = step["name"]  # mandatory

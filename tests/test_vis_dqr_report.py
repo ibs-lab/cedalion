@@ -1,6 +1,8 @@
-"""Tests for Cedalion workflow DQR assembly."""
+"""Tests for Cedalion DQR assembly."""
 
 from __future__ import annotations
+
+import json
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,7 +10,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from cedalion_workflows import dqr
+import cedalion.vis.dqr as dqr
 
 
 class FakeRecording:
@@ -90,6 +92,8 @@ def close_figures():
 
 def make_sidecar(
     wavelengths: list[float] | None = None,
+    *,
+    normalize_landmarks: bool = False,
 ) -> xr.Dataset:
     """Construct a minimal valid DQR sidecar."""
     if wavelengths is None:
@@ -220,6 +224,57 @@ def make_sidecar(
                     },
                 )
             ),
+            "amp_pruned_sd_dist": xr.DataArray(
+                [
+                    30.0,
+                    35.0,
+                    42.0,
+                ],
+                dims=("channel",),
+                coords={
+                    "channel": channels,
+                },
+            ),
+            "amp_pruned_time_clean_fraction": xr.DataArray(
+                [
+                    0.95,
+                    0.55,
+                    0.80,
+                ],
+                dims=("channel",),
+                coords={
+                    "channel": channels,
+                },
+            ),
+            "amp_pruned_mean_amp": xr.DataArray(
+                np.array(
+                    [
+                        np.linspace(
+                            0.20,
+                            0.25,
+                            nwavelengths,
+                        ),
+                        np.linspace(
+                            0.10,
+                            0.15,
+                            nwavelengths,
+                        ),
+                        np.linspace(
+                            0.30,
+                            0.35,
+                            nwavelengths,
+                        ),
+                    ]
+                ),
+                dims=(
+                    "channel",
+                    "wavelength",
+                ),
+                coords={
+                    "channel": channels,
+                    "wavelength": wavelengths,
+                },
+            ),
             "od_variance_corrected": (
                 xr.DataArray(
                     variance_values,
@@ -233,7 +288,26 @@ def make_sidecar(
                     },
                 )
             ),
-        }
+        },
+        attrs={
+            "preprocess": json.dumps(
+                {
+                    "steps": [
+                        {
+                            "name": "amp_pruned",
+                            "method": "prune",
+                            "params": {
+                                "snr_thresh": 5,
+                            },
+                        },
+                    ],
+                    "keep_intermediate": False,
+                    "normalize_landmarks": normalize_landmarks,
+                },
+                sort_keys=True,
+                default=str,
+            ),
+        },
     )
 
 
@@ -448,12 +522,14 @@ def test_generate_dqr_builds_expected_panels(
 
     output_hist = tmp_path / "hist.png"
 
+    output_quality = tmp_path / "quality.png"
+
     dqr.generate_dqr(
         input_snirf=(tmp_path / "input.snirf"),
         input_sidecar=sidecar,
         output_dqr=output_dqr,
         output_gvtd_histogram=(output_hist),
-        snr_thresh=5,
+        output_channel_quality=(output_quality),
         title="test",
     )
 
@@ -462,6 +538,9 @@ def test_generate_dqr_builds_expected_panels(
 
     assert output_hist.exists()
     assert output_hist.stat().st_size > 0
+
+    assert output_quality.exists()
+    assert output_quality.stat().st_size > 0
 
     assert len(gvtd_calls) == 2
 
@@ -522,6 +601,35 @@ def test_generate_dqr_builds_expected_panels(
         assert call["vmax"] == 25
 
         assert "pass SNR > 5" in call["title"]
+
+    sd_calls = [
+        call
+        for call in metric_calls
+        if call["title"].startswith("Source-Detector Distance")
+    ]
+
+    assert len(sd_calls) == 1
+
+    clean_fraction_calls = [
+        call
+        for call in metric_calls
+        if call["title"].startswith("Clean Time Fraction")
+    ]
+
+    assert len(clean_fraction_calls) == 1
+
+    mean_amp_calls = [
+        call
+        for call in metric_calls
+        if call["title"].startswith("Mean Amplitude")
+    ]
+
+    assert len(mean_amp_calls) == 2
+
+    assert {call["wavelength"] for call in mean_amp_calls} == {
+        760.0,
+        850.0,
+    }
 
     assert len(histogram_calls) == 2
 
@@ -651,3 +759,95 @@ def test_generate_dqr_reports_missing_sidecar_variable(
             output_dqr=(tmp_path / "dqr.png"),
             output_gvtd_histogram=(tmp_path / "hist.png"),
         )
+
+
+def test_generate_dqr_normalizes_landmarks_from_sidecar(
+    tmp_path,
+    monkeypatch,
+):
+    """DQR applies landmark normalization recorded in sidecar provenance."""
+    wavelengths = [
+        760.0,
+        850.0,
+    ]
+
+    sidecar = write_sidecar(
+        tmp_path,
+        make_sidecar(
+            wavelengths,
+            normalize_landmarks=True,
+        ),
+    )
+
+    rec = install_recording(
+        monkeypatch,
+        wavelengths,
+    )
+
+    original_geo3d = rec.geo3d
+    normalized_geo3d = object()
+    normalization_calls = []
+
+    def fake_normalize_landmarks_labels(geo3d):
+        normalization_calls.append(geo3d)
+        return normalized_geo3d
+
+    def fake_plot_gvtd(
+        values,
+        ax,
+        **kwargs,
+    ):
+        add_dummy_artist(
+            ax,
+            kwargs.get(
+                "label",
+                "GVTD",
+            ),
+        )
+
+    def fake_plot_histogram(
+        values,
+        ax,
+        **kwargs,
+    ):
+        add_dummy_artist(
+            ax,
+            kwargs.get(
+                "label",
+                "GVTD",
+            ),
+        )
+
+    monkeypatch.setattr(
+        dqr,
+        "normalize_landmarks_labels",
+        fake_normalize_landmarks_labels,
+    )
+
+    monkeypatch.setattr(
+        dqr,
+        "plot_gvtd",
+        fake_plot_gvtd,
+    )
+
+    monkeypatch.setattr(
+        dqr,
+        "plot_gvtd_histogram",
+        fake_plot_histogram,
+    )
+
+    monkeypatch.setattr(
+        dqr,
+        "plot_channel_metric",
+        lambda *args, **kwargs: None,
+    )
+
+    dqr.generate_dqr(
+        input_snirf=(tmp_path / "input.snirf"),
+        input_sidecar=sidecar,
+        output_dqr=(tmp_path / "dqr.png"),
+        output_gvtd_histogram=(tmp_path / "hist.png"),
+    )
+
+    assert normalization_calls == [original_geo3d]
+    assert rec.geo3d is normalized_geo3d
