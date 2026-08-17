@@ -8,6 +8,7 @@ import vtk.util.numpy_support as vnp
 import xarray as xr
 import pyvista as pv
 
+import cedalion
 import cedalion.vis.blocks as vbx
 from cedalion import cite
 
@@ -198,6 +199,11 @@ class LandmarksBuilder1010:
             landmarks (LabeledPoints): positions of "Nz", "Iz", "LPA", "RPA"
         """
         cite("Oostenveld2001")
+        if scalp_surface.units != cedalion.units.mm:
+            raise NotImplementedError(
+                "LandmarksBuilder1010 currently requires a scalp surface in "
+                f"mm; got units={scalp_surface.units}."
+            )
         if isinstance(scalp_surface, TrimeshSurface):
             scalp_surface = VTKSurface.from_trimeshsurface(scalp_surface)
 

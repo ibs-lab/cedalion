@@ -7,6 +7,7 @@ import pytest
 import trimesh
 import xarray as xr
 
+import cedalion
 import cedalion.dataclasses as cdc
 from cedalion.geometry.landmarks import (
     LandmarksBuilder1010,
@@ -262,7 +263,7 @@ def _icosphere_scalp():
     sphere = trimesh.creation.icosphere(subdivisions=4, radius=90.0)
     # squash into a vaguely head-shaped ellipsoid (a, b, c)
     sphere.vertices = sphere.vertices * np.array([85.0, 100.0, 90.0]) / 90.0
-    surf = cdc.TrimeshSurface(sphere, crs="ras", units="mm")
+    surf = cdc.TrimeshSurface(sphere, crs="ras", units=cedalion.units.mm)
 
     landmarks = cdc.build_labeled_points(
         [
