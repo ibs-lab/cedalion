@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
@@ -263,18 +265,17 @@ def get_spatial_smoothing_kernel(
 
     distances = cdist(vertices, vertices)
 
-    weights = distances.astype(np.float32, copy=True)
-    np.square(weights, out=weights)
-    weights /= sigma_mm**2
-    np.negative(weights, out=weights)
-    np.exp(weights, out=weights)
-    weights[weights < 1e-3] = 0
+    np.square(distances, out=distances)
+    distances /= sigma_mm**2
+    np.negative(distances, out=distances)
+    np.exp(distances, out=distances)
+    distances[distances < 1e-3] = 0
 
-    row_sums = weights.sum(axis=1, keepdims=True)
+    row_sums = distances.sum(axis=1, keepdims=True)
     row_sums[row_sums == 0] = 1.0
-    weights /= row_sums
+    distances /= row_sums
 
-    return weights
+    return distances
 
 
 def compute_Hglobal_from_PCA(
@@ -322,10 +323,17 @@ def compute_Hglobal_from_PCA(
     if spatial_dim not in data.dims:
         raise ValueError(f"Spatial dimension {spatial_dim!r} not found in data.")
 
+    if spatial_dim != "vertex":
+        warnings.warn(
+            "Spatial smoothing is primarily intended for spatial_dim='vertex'.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     if spectral_dim not in data.dims:
         raise ValueError(f"Spectral dimension {spectral_dim!r} not found in data.")
 
-    data_values = data.pint.dequantify() if hasattr(data, "pint") else data
+    data_values = data.pint.dequantify()
     data_values = data_values.transpose("time", spatial_dim, spectral_dim)
 
     smoothing_kernel = np.asarray(smoothing_kernel, dtype=np.float32)

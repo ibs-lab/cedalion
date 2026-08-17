@@ -756,7 +756,7 @@ def common_regressor_from_array(
         regressors = regressors.pint.dequantify()
 
         if regressors.ndim == 2:
-            regressors = regressors.transpose("time", dim3).values[:, None, :]
+            regressors = regressors.transpose("time", dim3).values
         elif regressors.ndim == 3:
             regressors = regressors.transpose("time", "regressor", dim3).values
         else:
@@ -764,8 +764,8 @@ def common_regressor_from_array(
     else:
         regressors = np.asarray(regressors)
 
-        if regressors.ndim == 2:
-            regressors = regressors[:, None, :]
+    if regressors.ndim == 2:
+        regressors = regressors[:, None, :]
 
     if regressors.ndim != 3:
         raise ValueError(
@@ -847,6 +847,9 @@ def global_component_regressor(
     if spatial_dim is None:
         spatial_dim = cdc.get_spatial_dimension(ts)
 
+    if spectral_dim is None:
+        spectral_dim = xrutils.other_dim(ts, spatial_dim, "time")
+
     _, global_component = global_component_subtract(
         ts,
         ts_weights=ts_weights,
@@ -854,6 +857,8 @@ def global_component_regressor(
         spatial_dim=spatial_dim,
         spectral_dim=spectral_dim,
     )
+
+    global_component = global_component.transpose("time", spectral_dim)
 
     return common_regressor_from_array(ts, global_component, regressor_names)
 

@@ -31,6 +31,59 @@ def test_avg_short_channel(rec):
     assert_approx(regressor.sel(chromo="HbR", time="0").item(), mean_hbr_0.magnitude)
 
 
+def test_global_component_regressor_orders_component_before_packaging(rec, monkeypatch):
+    ts = rec["conc"]
+
+    component = ts.mean("channel").transpose("chromo", "time")
+
+    captured = {}
+
+    def fake_global_component_subtract(*args, **kwargs):
+        return ts, component
+
+    def fake_common_regressor_from_array(
+        ts_arg,
+        regressors,
+        regressor_names,
+        time=None,
+    ):
+        captured["dims"] = regressors.dims
+        return dm.DesignMatrix(common=regressors, channel_wise=[])
+
+    monkeypatch.setattr(
+        dm,
+        "global_component_subtract",
+        fake_global_component_subtract,
+    )
+    monkeypatch.setattr(
+        dm,
+        "common_regressor_from_array",
+        fake_common_regressor_from_array,
+    )
+
+    dm.global_component_regressor(ts)
+
+    assert captured["dims"] == ("time", "chromo")
+
+
+@pytest.mark.parametrize("as_dataarray", [False, True])
+def test_common_regressor_from_2d_array(rec, as_dataarray):
+    ts = rec["conc"]
+
+    values = ts.mean("channel").pint.dequantify().transpose("time", "chromo")
+
+    regressors = values if as_dataarray else values.values
+
+    design = dm.common_regressor_from_array(
+        ts,
+        regressors,
+        regressor_names="global",
+    )
+
+    assert design.common.dims == ("time", "regressor", "chromo")
+    assert design.common.sizes["regressor"] == 1
+
+
 def test_make_design_matrix_channel_only(rec):
     ts_long, ts_short = cedalion.nirs.split_long_short_channels(
         rec["conc"], rec.geo3d, distance_threshold=1.5 * units.cm
