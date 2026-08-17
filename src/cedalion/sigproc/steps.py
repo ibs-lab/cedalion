@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -13,7 +14,8 @@ import cedalion.sigproc.motion
 import cedalion.sigproc.quality
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-from cedalion import units
+from cedalion import Quantity, units
+from cedalion.geometry.landmarks import normalize_landmarks_labels
 from cedalion.physunits import parse_quantity
 
 # We want to provide a simpler yaml-based interface to all the different preprocessing
@@ -22,6 +24,12 @@ from cedalion.physunits import parse_quantity
 
 # A registry of preprocessing adapters map method label to adapter(rec, ts, **params)
 PREPROC_STEP_ADAPTERS: dict[str, Callable] = {}
+
+_PRUNE_SDS = 1
+_PRUNE_LOW_SIGNAL = 2
+_PRUNE_POOR_SNR = 3
+_PRUNE_SCI_PSP = 4
+_PRUNE_SATURATED = 5
 
 
 def preproc_step(name):
@@ -42,6 +50,53 @@ class Context:
     sidecar: xr.DataTree
     ts: cdt.NDTimeSeries
     step_name: str
+
+
+def _prepare_sidecar_array(data: xr.DataArray) -> xr.DataArray:
+    """Prepare a DataArray for storage in the preprocessing sidecar.
+
+    Pint-backed arrays are dequantified so that they can be serialized to
+    NetCDF while retaining their unit metadata.
+    """
+    if data.pint.units is not None:
+        return data.pint.dequantify()
+
+    return data
+
+
+def _collapse_channel_mask(mask: xr.DataArray) -> xr.DataArray:
+    """Collapse a clean-data mask to one boolean value per channel."""
+    if "channel" not in mask.dims:
+        raise ValueError(f"mask must contain a channel dimension, got {mask.dims}.")
+
+    dims = [dim for dim in mask.dims if dim != "channel"]
+
+    if dims:
+        return mask.all(dim=dims)
+
+    return mask
+
+
+def _coerce_amplitude_threshold(
+    value: float | Quantity,
+    amplitude_units,
+):
+    """Express an amplitude threshold in the time series amplitude units."""
+    if amplitude_units is None:
+        if isinstance(value, Quantity):
+            if not value.dimensionless:
+                raise ValueError(
+                    "A dimensional amplitude threshold cannot be used with "
+                    "an unquantified amplitude time series."
+                )
+            return value.magnitude
+
+        return value
+
+    if isinstance(value, Quantity):
+        return value.to(amplitude_units)
+
+    return value * amplitude_units
 
 
 # Define adapter functions which wrap existing cedalion functionality and adapt from
@@ -164,6 +219,374 @@ def _psp(
     ctx.sidecar[ctx.step_name] = psp_values
     ctx.sidecar[ctx.step_name + "_mask"] = psp_mask_values
 
+
+
+@preproc_step("prune")
+def _prune(
+    ctx: Context,
+    *,
+    snr_thresh: float,
+    sd_thresh_min: Quantity,
+    sd_thresh_max: Quantity,
+    amp_thresh_min: float | Quantity,
+    amp_thresh_max: float | Quantity,
+    window_length: cdt.QTime,
+    sci_thresh: float,
+    psp_thresh: float,
+    perc_time_clean_thresh: float,
+    use_sci: bool = True,
+    use_psp: bool = True,
+):
+    """Prune amplitude channels and retain diagnostic quality information.
+
+    Initial pruning uses SNR, source-detector separation, and mean-amplitude
+    criteria. SCI and PSP are evaluated per channel, and channels that failed
+    the initial pruning are excluded from their clean-time masks.
+
+    The pruned amplitude is added to the recording using ``ctx.step_name``.
+    Individual metrics, masks, the final channel mask, and a categorical
+    pruning reason are retained in the preprocessing sidecar.
+
+    Args:
+        ctx: Current preprocessing context.
+        snr_thresh: Minimum signal-to-noise ratio.
+        sd_thresh_min: Minimum source-detector separation.
+        sd_thresh_max: Maximum source-detector separation.
+        amp_thresh_min: Minimum acceptable mean amplitude.
+        amp_thresh_max: Maximum acceptable mean amplitude.
+        window_length: Window length used for SCI and PSP.
+        sci_thresh: Minimum SCI value for a clean window.
+        psp_thresh: Minimum PSP value for a clean window.
+        perc_time_clean_thresh: Minimum fraction of clean windows required
+            for a channel to remain usable.
+        use_sci: Include SCI in the clean-time pruning criterion.
+        use_psp: Include PSP in the clean-time pruning criterion.
+
+    Raises:
+        ValueError: If thresholds are inconsistent or outside valid ranges.
+    """
+    if not 0.0 <= perc_time_clean_thresh <= 1.0:
+        raise ValueError("perc_time_clean_thresh must lie between 0 and 1.")
+
+    if sd_thresh_min >= sd_thresh_max:
+        raise ValueError("sd_thresh_min must be smaller than sd_thresh_max.")
+
+    amplitude_units = ctx.ts.pint.units
+
+    amp_thresh_min = _coerce_amplitude_threshold(
+        amp_thresh_min,
+        amplitude_units,
+    )
+    amp_thresh_max = _coerce_amplitude_threshold(
+        amp_thresh_max,
+        amplitude_units,
+    )
+
+    if amp_thresh_min >= amp_thresh_max:
+        raise ValueError("amp_thresh_min must be smaller than amp_thresh_max.")
+
+    # Initial quality metrics.
+    snr_values, snr_mask = cedalion.sigproc.quality.snr(
+        ctx.ts,
+        snr_thresh=snr_thresh,
+    )
+
+    sd_dist, sd_mask = cedalion.sigproc.quality.sd_dist(
+        ctx.ts,
+        ctx.rec.geo3d,
+        sd_range=(sd_thresh_min, sd_thresh_max),
+    )
+
+    mean_amp, amp_mask = cedalion.sigproc.quality.mean_amp(
+        ctx.ts,
+        amp_range=(amp_thresh_min, amp_thresh_max),
+    )
+
+    snr_channel_mask = _collapse_channel_mask(snr_mask)
+    sd_channel_mask = _collapse_channel_mask(sd_mask)
+    amp_channel_mask = _collapse_channel_mask(amp_mask)
+
+    initial_channel_mask = snr_channel_mask & sd_channel_mask & amp_channel_mask
+
+    # SCI and PSP are per-channel metrics. Compute them on the finite
+    # amplitude data, then explicitly exclude channels that already failed
+    # the initial pruning. This avoids feeding all-NaN channels into the
+    # metric implementations.
+    sci_values, sci_mask = cedalion.sigproc.quality.sci(
+        ctx.ts,
+        window_length,
+        sci_thresh,
+    )
+
+    psp_values, psp_mask = cedalion.sigproc.quality.psp(
+        ctx.ts,
+        window_length,
+        psp_thresh,
+    )
+
+    sci_mask = sci_mask & initial_channel_mask
+    psp_mask = psp_mask & initial_channel_mask
+
+    if use_sci and use_psp:
+        coupling_mask = sci_mask & psp_mask
+    elif use_sci:
+        coupling_mask = sci_mask
+    elif use_psp:
+        coupling_mask = psp_mask
+    else:
+        coupling_mask = None
+
+    if coupling_mask is None:
+        time_clean_fraction = xr.ones_like(
+            initial_channel_mask,
+            dtype=float,
+        )
+        time_clean_mask = xr.ones_like(
+            initial_channel_mask,
+            dtype=bool,
+        )
+    else:
+        time_clean_fraction = coupling_mask.mean(dim="time")
+
+        time_clean_mask = time_clean_fraction > perc_time_clean_thresh
+
+    final_channel_mask = initial_channel_mask & time_clean_mask
+
+    if not final_channel_mask.any().item():
+        raise ValueError("Pruning removed all channels with the configured thresholds.")
+
+    # The sidecar retains masks/diagnostics for every original channel, while
+    # the preprocessing time series contains only usable finite channels.
+    amp_pruned, _ = cedalion.sigproc.quality.prune_ch(
+        ctx.ts,
+        masks=[final_channel_mask],
+        operator="all",
+        flag_drop=True,
+    )
+
+    # Diagnostic pruning reason.
+    #
+    # Precedence matches the legacy report:
+    # poor SNR -> saturated -> low signal -> SDS -> SCI/PSP.
+    #
+    # SCI/PSP is only allowed to replace "good" for channels that passed
+    # the initial stage and subsequently failed the clean-time criterion.
+    low_signal = ~_collapse_channel_mask(mean_amp > amp_thresh_min)
+    saturated = ~_collapse_channel_mask(mean_amp < amp_thresh_max)
+
+    prune_reason = xr.zeros_like(
+        final_channel_mask,
+        dtype=np.int8,
+    )
+
+    prune_reason = xr.where(
+        ~snr_channel_mask,
+        _PRUNE_POOR_SNR,
+        prune_reason,
+    )
+
+    prune_reason = xr.where(
+        saturated,
+        _PRUNE_SATURATED,
+        prune_reason,
+    )
+
+    prune_reason = xr.where(
+        low_signal,
+        _PRUNE_LOW_SIGNAL,
+        prune_reason,
+    )
+
+    prune_reason = xr.where(
+        ~sd_channel_mask,
+        _PRUNE_SDS,
+        prune_reason,
+    )
+
+    coupling_failure = initial_channel_mask & ~time_clean_mask
+
+    prune_reason = xr.where(
+        coupling_failure,
+        _PRUNE_SCI_PSP,
+        prune_reason,
+    )
+
+    prune_reason.attrs["category_labels"] = (
+        "0=good;"
+        "1=source-detector distance;"
+        "2=low signal;"
+        "3=poor SNR;"
+        "4=SCI/PSP;"
+        "5=saturated"
+    )
+
+    ctx.rec[ctx.step_name] = amp_pruned
+
+    prefix = ctx.step_name
+
+    ctx.sidecar[prefix + "_snr"] = _prepare_sidecar_array(snr_values)
+    ctx.sidecar[prefix + "_snr_mask"] = _prepare_sidecar_array(snr_mask)
+
+    ctx.sidecar[prefix + "_sd_dist"] = _prepare_sidecar_array(sd_dist)
+    ctx.sidecar[prefix + "_sd_mask"] = _prepare_sidecar_array(sd_mask)
+
+    ctx.sidecar[prefix + "_mean_amp"] = _prepare_sidecar_array(mean_amp)
+    ctx.sidecar[prefix + "_amp_mask"] = _prepare_sidecar_array(amp_mask)
+
+    ctx.sidecar[prefix + "_sci"] = _prepare_sidecar_array(sci_values)
+    ctx.sidecar[prefix + "_sci_mask"] = _prepare_sidecar_array(sci_mask)
+
+    ctx.sidecar[prefix + "_psp"] = _prepare_sidecar_array(psp_values)
+    ctx.sidecar[prefix + "_psp_mask"] = _prepare_sidecar_array(psp_mask)
+
+    ctx.sidecar[prefix + "_time_clean_fraction"] = _prepare_sidecar_array(
+        time_clean_fraction
+    )
+    ctx.sidecar[prefix + "_time_clean_mask"] = _prepare_sidecar_array(time_clean_mask)
+
+    ctx.sidecar[prefix + "_initial_mask"] = _prepare_sidecar_array(initial_channel_mask)
+    ctx.sidecar[prefix + "_mask"] = _prepare_sidecar_array(final_channel_mask)
+    ctx.sidecar[prefix + "_reason"] = _prepare_sidecar_array(prune_reason)
+
+
+@preproc_step("snr")
+def _snr(
+    ctx: Context,
+    *,
+    snr_thresh: float = 2.0,
+):
+    """Calculate SNR and store the metric and mask in the sidecar.
+
+    This adapter does not modify the current preprocessing time series.
+
+    Args:
+        ctx: Current preprocessing context.
+        snr_thresh: SNR threshold used to construct the quality mask.
+    """
+    snr_values, snr_mask = cedalion.sigproc.quality.snr(
+        ctx.ts,
+        snr_thresh=snr_thresh,
+    )
+
+    ctx.sidecar[ctx.step_name] = _prepare_sidecar_array(snr_values)
+    ctx.sidecar[ctx.step_name + "_mask"] = _prepare_sidecar_array(snr_mask)
+
+
+@preproc_step("gvtd")
+def _gvtd(
+    ctx: Context,
+    *,
+    stat_type: str = "histogram_mode",
+    n_std: int = 10,
+):
+    """Calculate GVTD from amplitude and store its trace, mask, and threshold.
+
+    This adapter expects amplitude data. For an optical-density checkpoint
+    after motion correction, use the ``gvtd_from_od`` adapter.
+
+    Args:
+        ctx: Current preprocessing context.
+        stat_type: Statistic used to determine the GVTD threshold.
+        n_std: Number of standard deviations used for thresholding.
+    """
+    gvtd_values, gvtd_mask = cedalion.sigproc.quality.gvtd(
+        ctx.ts,
+        stat_type=stat_type,
+        n_std=n_std,
+    )
+
+    # TODO: Replace this private helper call if Cedalion exposes the GVTD
+    # threshold as a supported public API.
+    gvtd_threshold = cedalion.sigproc.quality._get_gvtd_threshold(
+        gvtd_values,
+        stat_type=stat_type,
+        n_std=n_std,
+    )
+
+    ctx.sidecar[ctx.step_name] = _prepare_sidecar_array(gvtd_values)
+    ctx.sidecar[ctx.step_name + "_mask"] = _prepare_sidecar_array(gvtd_mask)
+    ctx.sidecar[ctx.step_name + "_threshold"] = _prepare_sidecar_array(gvtd_threshold)
+
+
+@preproc_step("gvtd_from_od")
+def _gvtd_from_od(
+    ctx: Context,
+    *,
+    stat_type: str = "histogram_mode",
+    n_std: int = 10,
+):
+    """Calculate GVTD from an optical-density preprocessing checkpoint.
+
+    The current optical-density time series is converted back to relative
+    amplitude before calling the existing GVTD implementation. This allows
+    GVTD to be evaluated after motion correction without applying int2od()
+    directly to optical-density data.
+
+    Args:
+        ctx: Current preprocessing context.
+        stat_type: Statistic used to determine the GVTD threshold.
+        n_std: Number of standard deviations used for thresholding.
+    """
+    od = ctx.ts.pint.dequantify()
+
+    relative_amp = np.exp(-od)
+    relative_amp = relative_amp.pint.quantify("dimensionless")
+
+    gvtd_values, gvtd_mask = cedalion.sigproc.quality.gvtd(
+        relative_amp,
+        stat_type=stat_type,
+        n_std=n_std,
+    )
+
+    # TODO: Replace this private helper call if Cedalion exposes the GVTD
+    # threshold as a supported public API.
+    gvtd_threshold = cedalion.sigproc.quality._get_gvtd_threshold(
+        gvtd_values,
+        stat_type=stat_type,
+        n_std=n_std,
+    )
+
+    ctx.sidecar[ctx.step_name] = _prepare_sidecar_array(gvtd_values)
+    ctx.sidecar[ctx.step_name + "_mask"] = _prepare_sidecar_array(gvtd_mask)
+    ctx.sidecar[ctx.step_name + "_threshold"] = _prepare_sidecar_array(gvtd_threshold)
+
+
+@preproc_step("log_variance")
+def _log_variance(
+    ctx: Context,
+):
+    """Calculate log10 temporal variance of the current time series.
+
+    The result retains all non-time dimensions, typically channel and
+    wavelength. This adapter does not modify the preprocessing time series.
+
+    Args:
+        ctx: Current preprocessing context.
+
+    Raises:
+        ValueError: If the current time series has no time dimension.
+    """
+    if "time" not in ctx.ts.dims:
+        raise ValueError(
+            f"Log variance requires a time dimension, got dims {ctx.ts.dims}."
+        )
+
+    ts = _prepare_sidecar_array(ctx.ts)
+
+    variance = ts.var(
+        dim="time",
+        skipna=False,
+    )
+
+    with np.errstate(
+        divide="ignore",
+        invalid="ignore",
+    ):
+        log_variance = np.log10(variance)
+
+    log_variance = log_variance.where(np.isfinite(log_variance))
+
+    ctx.sidecar[ctx.step_name] = log_variance
 
 
 @preproc_step("spline")
@@ -316,6 +739,7 @@ def preprocess(
     output_sidecar: Path,
     steps: list[dict],
     keep_intermediate: bool = False,
+    normalize_landmarks: bool = False,
     # final_name : str # FIXME
 ) -> cdc.Recording:
 
@@ -340,7 +764,19 @@ def preprocess(
         # FIXME overwrite geo3d
         pass
 
+    if normalize_landmarks:
+        rec.geo3d = normalize_landmarks_labels(rec.geo3d)
+
     sidecar = xr.DataTree()
+    sidecar.attrs["preprocess"] = json.dumps(
+        {
+            "steps": steps,
+            "keep_intermediate": keep_intermediate,
+            "normalize_landmarks": normalize_landmarks,
+        },
+        sort_keys=True,
+        default=str,
+    )
 
     for step in steps:
         step_name = step["name"]  # mandatory
