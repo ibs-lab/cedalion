@@ -737,7 +737,7 @@ def preprocess(
     input_coordsystem: Path,
     output_snirf: Path,
     output_sidecar: Path,
-    steps: list[dict],
+    methods: list[dict],
     keep_intermediate: bool = False,
     normalize_landmarks: bool = False,
     # final_name : str # FIXME
@@ -770,7 +770,7 @@ def preprocess(
     sidecar = xr.DataTree()
     sidecar.attrs["preprocess"] = json.dumps(
         {
-            "steps": steps,
+            "steps": methods,
             "keep_intermediate": keep_intermediate,
             "normalize_landmarks": normalize_landmarks,
         },
@@ -778,30 +778,30 @@ def preprocess(
         default=str,
     )
 
-    for step in steps:
-        step_name = step["name"]  # mandatory
-        step_method = step["method"]  # mandatory
-        step_params = quantify_params(step.get("params", {}))  # optional
-        step_enabled = step.get("enable", True)  # optional
+    for m in methods:
+        m_name = m["name"]  # mandatory
+        m_method = m["method"]  # mandatory
+        m_params = quantify_params(m.get("params", {}))  # optional
+        m_enabled = m.get("enable", True)  # optional
 
-        if not step_enabled:
+        if not m_enabled:
             continue
 
         last_ts = rec[next(reversed(rec.timeseries))]
 
-        ctx = Context(rec=rec, sidecar=sidecar, ts=last_ts, step_name=step_name)
+        ctx = Context(rec=rec, sidecar=sidecar, ts=last_ts, step_name=m_name)
 
         # lookup adapter in registry
-        adapter = PREPROC_STEP_ADAPTERS.get(step_method)
+        adapter = PREPROC_STEP_ADAPTERS.get(m_method)
 
         if not adapter:
             raise ValueError(
-                f"Unknown method '{step_method}' in step '{step_name}'. "
+                f"Unknown method '{m_method}' in step '{m_name}'. "
                 "Known methods are: {sorted(PREPROC_STEP_ADAPTERS)}."
             )
 
         # call the adapter
-        adapter(ctx, **step_params)
+        adapter(ctx, **m_params)
 
 
     if not keep_intermediate:
