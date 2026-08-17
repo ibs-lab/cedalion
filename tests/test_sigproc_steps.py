@@ -631,7 +631,7 @@ def test_preprocess_normalizes_landmarks_and_stores_config(
         input_coordsystem=None,
         output_snirf=output_snirf,
         output_sidecar=output_sidecar,
-        steps=preprocess_steps,
+        methods=preprocess_steps,
         keep_intermediate=False,
         normalize_landmarks=True,
     )
