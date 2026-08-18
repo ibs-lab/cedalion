@@ -813,14 +813,30 @@ def preprocess(
     sidecar.to_netcdf(output_sidecar)
 
 
+def _collapse_coords(obj, dim, coord_names=("source", "detector")):
+    """Collapse coords that concat broadcast along `dim` back to 1D."""
+    updates = {}
+    for name in coord_names:
+        c = obj.coords[name]
+        if dim not in c.dims:
+            continue
+        valid = c.notnull()
+        first = c.isel({dim: valid.argmax(dim)})   # first non-nan along dim
+        first = first.where(valid.any(dim))        # all-nan channel stays nan
+        updates[name] = first.drop_vars(first.coords.keys() - set(first.dims))
+    return obj.drop_vars(updates).assign_coords(updates)
+
+
+
+
 def blockaverage(
     input_snirf: list[Path] | list[str],
     # input_preproc_sidecar : Path | str,
     output_snirf: Path,
     # output_sidecar: Path,
-    # ts_name : str, # FIXME
     t_pre: cdt.QTime,
     t_post: cdt.QTime,
+    ts_name : str | None = None,
     trial_types: list[str] | None = None,
 ):
     input_snirf = [Path(i) for i in input_snirf]
@@ -841,7 +857,10 @@ def blockaverage(
         rec = cedalion.io.read_snirf(fname)[0]
 
         # FIXME ideally users can select the time series by name
-        ts = rec[next(reversed(rec.timeseries))]
+        if ts_name:
+            ts = rec[ts_name]
+        else:
+            ts = rec[next(reversed(rec.timeseries))]
 
         # FIXME: check trial_types, issue warnings on misconfigurations
         if trial_types is not None:
@@ -862,6 +881,10 @@ def blockaverage(
 
     epochs = xr.concat(epochs, dim="epoch")  # concatenate epochs from all runs
 
+    # with channel pruning, the arrays in epochs had different numbers of channels and
+    # the concatenated source and detector coordinates are 2D. collapse these to 1D.
+    epochs = _collapse_coords(epochs, "epoch")
+
     baseline = epochs.sel(reltime=(epochs.reltime < 0)).mean("reltime")
     epochs = epochs - baseline  # baseline subtract
     blockaverage = epochs.groupby("trial_type").mean("epoch")  # mean across all epochs
@@ -871,14 +894,15 @@ def blockaverage(
     # FIXME workarounds around meas_list construction in write_snirf
     rec_out["amp"] = rec["amp"]
     rec_out.stim = rec.stim
+    rec_out.geo3d = rec.geo3d
 
     rec_out["hrf_blockaverage"] = blockaverage
     # FIXME which metadata to carry over?
 
-    cedalion.io.write_snirf(output_snirf, rec_out)
 
-    # with open(output_snirf, "w") as fout:
-    #    fout.write(" ")
+    print(blockaverage)
+
+    cedalion.io.write_snirf(output_snirf, rec_out)
 
     # with open(output_sidecar, "w") as fout:
     #    fout.write(" ")
