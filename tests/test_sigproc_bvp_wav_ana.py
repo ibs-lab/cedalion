@@ -5,7 +5,8 @@ from cedalion.sigproc.bvp_wav_ana_v12 import (
                 bvp_single_ch,
                 wct,
                 extract_bvp,
-                extract_waveforms)
+                extract_waveforms,
+                remove_artifact_waveforms,)
 from cedalion.dataclasses import build_timeseries
 
 
@@ -974,3 +975,245 @@ def test_extract_waveforms_filterlogic():
 
     assert np.all(np.isfinite(xy_normal))
     assert np.all(np.isfinite(zscore_normal))
+
+def test_remove_artifact_waveforms():
+    """Tests channel-wise detection and removal of artifact waveforms.
+
+    Each channel contains 40 physiological waveforms. One waveform per
+    channel is deliberately distorted. The test verifies the deviation
+    metric, percentile threshold, detected artifact, cleaned waveform
+    matrices, and preservation of the original matrices.
+    """
+
+    # --- Define coefficients of the physiological pulse waveform ---
+    a = np.array([
+        0.21362854, 0.05005765, 0.00135350, -0.00906460,
+        -0.00849233, -0.02022217, -0.01101648, -0.00662955,
+    ])
+
+    b = np.array([
+        -0.33609957, -0.12807130, -0.08131665, -0.03903412,
+        -0.02956690, -0.01606627, -0.00380470, -0.00521266,
+    ])
+
+    # --- Generate a physiological reference waveform ---
+    fs = 50.0
+    n_samples = 100
+    n_waveforms = 40
+
+    phase = np.arange(n_samples) / n_samples
+    k = np.arange(1, 9)[:, None]
+    angles = 2 * np.pi * k * phase
+
+    reference_waveform = np.sum(
+        a[:, None] * np.sin(angles)
+        + b[:, None] * (np.cos(angles) - 1),
+        axis=0,
+    )
+    reference_waveform = (
+        reference_waveform + np.sum(b)
+    )
+
+    # --- Build a two-channel BVP time series ---
+    channels = ["S1D1", "S2D2"]
+    time = np.arange(n_samples) / fs
+
+    bvp_ts = build_timeseries(
+        np.vstack([
+            reference_waveform,
+            0.8 * reference_waveform,
+        ]),
+        ["channel", "time"],
+        time,
+        channels,
+        "uM",
+        "s",
+    )
+
+    # The artifact appears at a different position and with a
+    # different direction in each channel.
+    artifact_specs = {
+        "S1D1": (9, 1.0),
+        "S2D2": (27, -1.0),
+    }
+
+    wav_storage_user = {}
+    wav_storage_details = {}
+    expected_results = {}
+
+    for channel in channels:
+        artifact_idx, artifact_direction = (
+            artifact_specs[channel]
+        )
+
+        # --- Create 40 initially identical waveforms ---
+        xy_normal = np.repeat(
+            reference_waveform[:, None],
+            n_waveforms,
+            axis=1,
+        )
+
+        # Add a localized distortion to one waveform.
+        artifact_distortion = (
+            artifact_direction
+            * 0.8
+            * np.exp(
+                -0.5
+                * ((phase - 0.65) / 0.06) ** 2
+            )
+        )
+
+        xy_normal[:, artifact_idx] = (
+            reference_waveform
+            + artifact_distortion
+        )
+
+        # --- Z-score each waveform independently ---
+        zscore_normal = (
+            xy_normal
+            - np.mean(xy_normal, axis=0)
+        ) / np.std(
+            xy_normal,
+            axis=0,
+        )
+
+        wav_storage_user[channel] = {}
+
+        wav_storage_details[channel] = {
+            "nparray_wav_xy_normal_all":
+                xy_normal.copy(),
+            "nparray_wav_xy_normal_zscore_all":
+                zscore_normal.copy(),
+        }
+
+        # --- Calculate the expected artifact scores ---
+        expected_mean = np.mean(
+            zscore_normal,
+            axis=1,
+        )
+
+        expected_deviation = np.sum(
+            np.abs(
+                zscore_normal
+                - expected_mean[:, None]
+            ),
+            axis=0,
+        )
+
+        expected_p975 = np.percentile(
+            expected_deviation,
+            97.5,
+        )
+
+        expected_artifact_idx = np.where(
+            expected_deviation > expected_p975
+        )[0]
+
+        # Verify that the artificial distortion is the only outlier.
+        np.testing.assert_array_equal(
+            expected_artifact_idx,
+            np.array([artifact_idx]),
+        )
+
+        expected_results[channel] = {
+            "xy_normal": xy_normal,
+            "zscore_normal": zscore_normal,
+            "deviation": expected_deviation,
+            "p975": expected_p975,
+            "artifact_idx": artifact_idx,
+        }
+
+    # --- Detect and remove artifact waveforms ---
+    result_user, result_details = (
+        remove_artifact_waveforms(
+            bvp_ts,
+            wav_storage_user,
+            wav_storage_details,
+        )
+    )
+
+    # The input dictionaries are updated in place.
+    assert result_user is wav_storage_user
+    assert result_details is wav_storage_details
+
+    # --- Check the channel-wise results ---
+    for channel in channels:
+        expected = expected_results[channel]
+        artifact_idx = expected["artifact_idx"]
+
+        user_results = result_user[channel]
+        details = result_details[channel]
+
+        expected_clean_xy = np.delete(
+            expected["xy_normal"],
+            artifact_idx,
+            axis=1,
+        )
+
+        expected_clean_zscore = np.delete(
+            expected["zscore_normal"],
+            artifact_idx,
+            axis=1,
+        )
+
+        # Check deviation scores and percentile threshold.
+        np.testing.assert_allclose(
+            details["bvp_wav_dev"],
+            expected["deviation"],
+            atol=1e-12,
+        )
+
+        np.testing.assert_allclose(
+            details["P_975"],
+            expected["p975"],
+            atol=1e-12,
+        )
+
+        # Check removal from both normalized matrices.
+        np.testing.assert_allclose(
+            user_results[
+                "nparray_wav_xy_normal_all_woa"
+            ],
+            expected_clean_xy,
+            atol=1e-12,
+        )
+
+        np.testing.assert_allclose(
+            user_results[
+                "nparray_wav_xy_normal_zscore_all_woa"
+            ],
+            expected_clean_zscore,
+            atol=1e-12,
+        )
+
+        assert user_results[
+            "nparray_wav_xy_normal_all_woa"
+        ].shape == (
+            n_samples,
+            n_waveforms - 1,
+        )
+
+        assert user_results[
+            "nparray_wav_xy_normal_zscore_all_woa"
+        ].shape == (
+            n_samples,
+            n_waveforms - 1,
+        )
+
+        # The original matrices must remain available unchanged.
+        np.testing.assert_allclose(
+            details[
+                "nparray_wav_xy_normal_all"
+            ],
+            expected["xy_normal"],
+            atol=1e-12,
+        )
+
+        np.testing.assert_allclose(
+            details[
+                "nparray_wav_xy_normal_zscore_all"
+            ],
+            expected["zscore_normal"],
+            atol=1e-12,
+        )
+

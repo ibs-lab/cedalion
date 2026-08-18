@@ -852,7 +852,7 @@ def remove_artifact_waveforms(
         actual_wavs_xynorm = wav_storage_details[ch]["nparray_wav_xy_normal_all"]
 
         # Number of waveforms
-        n_bvp_wav = actual_wavs_final.shape[1] - 1
+        n_bvp_wav = actual_wavs_final.shape[1]
 
         # Mean waveform (over all waveforms)
         bvp_wav_final_mean = np.mean(actual_wavs_final, axis=1)
