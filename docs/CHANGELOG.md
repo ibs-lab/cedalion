@@ -4,6 +4,10 @@
 ## Unreleased changes (available on the `dev` branch)
 --> 
 
+## Version 26.8.0-rc1 
+
+- Support for snakemake-based workflows added, by [Shannon Kelley](https://github.com/shankell212), [Reihaneh Taghizadegan](https://github.com/ReiGaan) and [Eike Middell](https://github.com/emiddell). ([#180](https://github.com/ibs-lab/cedalion/pull/180))
+
 ## Version 26.5.1 (2026-05-27)
 
 This is the shipping build of the 26.5 release announced on May 27th 2026; in 26.5.0 an issue with vertex-to-voxel mapping of the `TwoSurfaceHeadModel` was found.
