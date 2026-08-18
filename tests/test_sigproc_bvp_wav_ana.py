@@ -3,7 +3,10 @@ from cedalion.sigproc.bvp_wav_ana_v12 import (
                 interpft,
                 peakseek,
                 bvp_single_ch,
-                wct)
+                wct,
+                extract_bvp,
+                extract_waveforms)
+from cedalion.dataclasses import build_timeseries
 
 
 def test_interpft():
@@ -302,7 +305,7 @@ def test_wct():
 
     # --- Create sinusoidal test signals ---
     fs = 50.0
-    duration = 20.0
+    duration = 30.0
     signal_frequency = 1.25
     phase_shift = np.pi / 3
 
@@ -376,3 +379,538 @@ def test_wct():
 
     # --- Check phase difference ---
     assert abs(phase_error) < 0.15
+
+def test_extract_bvp():
+    """Tests multi-channel BVP extraction from an HbO time series.
+
+    The test uses the linear trend and physiological pulse signals from
+    test_bvp_single_ch. It verifies the output structure, channel metadata,
+    physical units, and the channel-wise results.
+    """
+
+    # --- Define coefficients of the physiological pulse waveform ---
+    a = np.array([
+        0.21362854, 0.05005765, 0.00135350, -0.00906460,
+        -0.00849233, -0.02022217, -0.01101648, -0.00662955,
+    ])
+
+    b = np.array([
+        -0.33609957, -0.12807130, -0.08131665, -0.03903412,
+        -0.02956690, -0.01606627, -0.00380470, -0.00521266,
+    ])
+
+    # --- Define sampling and signal parameters ---
+    fs = 20.0
+    fs_new = 50.0
+    duration = 30.0
+    pulse_frequency = 1.0
+    n_samples = int(fs * duration)
+
+    time = np.arange(n_samples) / fs
+    k = np.arange(1, 9)[:, None]
+
+    # --- Generate the physiological pulse waveform ---
+    angles = 2 * np.pi * k * pulse_frequency * time
+    pulse = np.sum(
+        a[:, None] * np.sin(angles)
+        + b[:, None] * (np.cos(angles) - 1),
+        axis=0)
+    pulse = pulse + np.sum(b)
+
+    # --- Generate the concentration signals ---
+    linear_concentration = np.linspace(
+        5.0,
+        15.0,
+        n_samples)
+
+    low_frequency_trend = (
+        1.2
+        + 0.25 * np.sin(2 * np.pi * 0.1 * time)
+        - 0.01 * time)
+    pulse_concentration = low_frequency_trend + pulse
+
+    concentration = np.vstack([
+        linear_concentration,
+        pulse_concentration,
+    ])
+
+    # --- Build a two-channel HbO concentration time series ---
+    channels = ["S1D1", "S2D2"]
+
+    hbo_conc_ts = build_timeseries(
+        concentration,
+        ["channel", "time"],
+        time,
+        channels,
+        "uM",
+        "s",
+        {
+            "source": ("channel", ["S1", "S2"]),
+            "detector": ("channel", ["D1", "D2"]),
+        },
+    )
+
+    # --- Extract the BVP without opening the confirmation dialog ---
+    result = extract_bvp(
+        hbo_conc_ts,
+        fs_new=fs_new,
+        request=False)
+
+    # --- Check dimensions, coordinates, metadata, and units ---
+    assert result.dims == ("channel", "compound", "time")
+    assert result.sizes["time"] == int((fs_new / fs) * n_samples)
+    assert result.pint.units == hbo_conc_ts.pint.units
+
+    np.testing.assert_array_equal(
+        result.channel.values,
+        channels)
+    np.testing.assert_array_equal(
+        result.compound.values,
+        ["bvp_ts", "hbo_conc_ts_50hz", "low_freq_trend"])
+    np.testing.assert_array_equal(
+        result.source.values,
+        ["S1", "S2"])
+    np.testing.assert_array_equal(
+        result.detector.values,
+        ["D1", "D2"])
+
+    # --- Check each channel against the single-channel implementation ---
+    result_values = result.pint.dequantify()
+
+    for channel, channel_concentration in zip(
+            channels,
+            concentration):
+
+        expected_bvp, expected_resampled, expected_trend = (
+            bvp_single_ch(
+                channel_concentration,
+                fs,
+                fs_new)
+        )
+
+        np.testing.assert_allclose(
+            result_values.sel(
+                channel=channel,
+                compound="bvp_ts"),
+            expected_bvp,
+            atol=1e-12)
+        np.testing.assert_allclose(
+            result_values.sel(
+                channel=channel,
+                compound="hbo_conc_ts_50hz"),
+            expected_resampled,
+            atol=1e-12)
+        np.testing.assert_allclose(
+            result_values.sel(
+                channel=channel,
+                compound="low_freq_trend"),
+            expected_trend,
+            atol=1e-12)
+
+def test_extract_waveforms_gerneral():
+    """Tests extraction and normalization of individual BVP waveforms.
+
+    A periodic physiological pulse waveform from test_bvp_single_ch is
+    provided in two channels with different amplitudes. The detected extrema,
+    extracted waveform segments, and normalized waveform matrices are checked.
+    """
+
+    # --- Define coefficients of the physiological pulse waveform ---
+    a = np.array([
+        0.21362854, 0.05005765, 0.00135350, -0.00906460,
+        -0.00849233, -0.02022217, -0.01101648, -0.00662955,
+    ])
+
+    b = np.array([
+        -0.33609957, -0.12807130, -0.08131665, -0.03903412,
+        -0.02956690, -0.01606627, -0.00380470, -0.00521266,
+    ])
+
+    # --- Generate thirty identical physiological pulse cycles ---
+    fs = 50.0
+    duration = 30.0
+    pulse_frequency = 1.0
+    n_samples = int(fs * duration)
+
+    time = np.arange(n_samples) / fs
+    k = np.arange(1, 9)[:, None]
+    angles = 2 * np.pi * k * pulse_frequency * time
+
+    pulse = np.sum(
+        a[:, None] * np.sin(angles)
+        + b[:, None] * (np.cos(angles) - 1),
+        axis=0)
+
+    # The mean of the multiharmonic expression is -sum(b).
+    pulse = pulse + np.sum(b)
+
+    # --- Create two channels with different pulse amplitudes ---
+    channels = ["S1D1", "S2D2"]
+    channel_scales = [1.0, 0.5]
+
+    bvp_data = np.vstack([
+        channel_scales[0] * pulse,
+        channel_scales[1] * pulse,
+    ])
+
+    bvp_ts = build_timeseries(
+        bvp_data,
+        ["channel", "time"],
+        time,
+        channels,
+        "uM",
+        "s",
+    )
+
+    # --- Extract and normalize the individual pulse waveforms ---
+    wav_storage_user, wav_storage_details = extract_waveforms(
+        bvp_ts)
+
+    # --- Define analytically known extrema ---
+    expected_min_idx = np.arange(
+        int(fs),
+        n_samples,
+        int(fs))
+    expected_max_idx = expected_min_idx[:-1] + 14
+    expected_waveform_count = len(expected_min_idx) - 1
+
+    # --- Check channel-wise output structure ---
+    assert set(wav_storage_user) == set(channels)
+    assert set(wav_storage_details) == set(channels)
+
+    for channel, scale in zip(channels, channel_scales):
+        user_results = wav_storage_user[channel]
+        details = wav_storage_details[channel]
+
+        assert set(user_results) == {
+            "bvp_max_value",
+            "bvp_max_idx",
+            "bvp_min_value",
+            "bvp_min_idx",
+        }
+        assert set(details) == {
+            "list_wav_raw_and_y_normal",
+            "nparray_wav_xy_normal_all",
+            "nparray_wav_xy_normal_zscore_all",
+        }
+
+        # --- Check detected diastolic minima and systolic maxima ---
+        np.testing.assert_array_equal(
+            user_results["bvp_min_idx"],
+            expected_min_idx)
+        np.testing.assert_array_equal(
+            user_results["bvp_max_idx"],
+            expected_max_idx)
+        np.testing.assert_allclose(
+            user_results["bvp_min_value"],
+            scale * pulse[expected_min_idx],
+            atol=1e-12)
+        np.testing.assert_allclose(
+            user_results["bvp_max_value"],
+            scale * pulse[expected_max_idx],
+            atol=1e-12)
+
+        # --- Check extracted raw and detrended waveforms ---
+        extracted_waveforms = (
+            details["list_wav_raw_and_y_normal"]
+        )
+
+        assert len(extracted_waveforms) == expected_waveform_count
+
+        for waveform_idx, waveform in enumerate(
+                extracted_waveforms):
+
+            start = expected_min_idx[waveform_idx]
+            stop = expected_min_idx[waveform_idx + 1]
+
+            np.testing.assert_allclose(
+                waveform["wav_raw"],
+                scale * pulse[start:stop],
+                atol=1e-12)
+            np.testing.assert_allclose(
+                waveform["wav_y_normal"][[0, -1]],
+                np.zeros(2),
+                atol=1e-12)
+            np.testing.assert_allclose(
+                waveform["wav_time_s"][[0, -1]],
+                np.array([0.0, 1.0]),
+                atol=1e-12)
+
+        # --- Check normalized waveform matrices ---
+        xy_normal = details[
+            "nparray_wav_xy_normal_all"
+        ]
+        zscore_normal = details[
+            "nparray_wav_xy_normal_zscore_all"
+        ]
+
+        assert xy_normal.shape == (
+            100,
+            expected_waveform_count)
+        assert zscore_normal.shape == (
+            100,
+            expected_waveform_count)
+        assert np.all(np.isfinite(xy_normal))
+        assert np.all(np.isfinite(zscore_normal))
+
+        # All input cycles are identical and must remain identical.
+        np.testing.assert_allclose(
+            xy_normal,
+            np.repeat(
+                xy_normal[:, :1],
+                expected_waveform_count,
+                axis=1),
+            atol=1e-12)
+        np.testing.assert_allclose(
+            zscore_normal,
+            np.repeat(
+                zscore_normal[:, :1],
+                expected_waveform_count,
+                axis=1),
+            atol=1e-12)
+
+        # The final normalization scales the mean maximum to one.
+        np.testing.assert_allclose(
+            np.max(np.mean(zscore_normal, axis=1)),
+            1.0,
+            atol=1e-12)
+
+    # Amplitude normalization must remove the channel scaling difference.
+    np.testing.assert_allclose(
+        wav_storage_details["S1D1"][
+            "nparray_wav_xy_normal_zscore_all"
+        ],
+        wav_storage_details["S2D2"][
+            "nparray_wav_xy_normal_zscore_all"
+        ],
+        atol=1e-12)
+
+def test_extract_waveforms_filterlogic(monkeypatch):
+    """Tests filtering of non-physiological BVP waveforms.
+
+    The signal contains a minimum belonging to an unusually short
+    waveform, an unusually shallow minimum, and an abnormally long
+    waveform. Each case is detected directly from the test signal.
+    """
+
+    # --- Define coefficients of the physiological pulse waveform ---
+    a = np.array([
+        0.21362854, 0.05005765, 0.00135350, -0.00906460,
+        -0.00849233, -0.02022217, -0.01101648, -0.00662955,
+    ])
+
+    b = np.array([
+        -0.33609957, -0.12807130, -0.08131665, -0.03903412,
+        -0.02956690, -0.01606627, -0.00380470, -0.00521266,
+    ])
+
+    fs = 50.0
+    k = np.arange(1, 9)[:, None]
+
+    # Most waveforms are 50 samples long.
+    #
+    # Filter cases:
+    #   100 -> 126: unusually short waveform
+    #   256:        unusually shallow minimum
+    #   391 -> 491: unusually long waveform
+    cycle_boundaries = np.array([
+        0, 50, 100, 126, 171, 221, 256, 291, 341, 391,
+        491, 541, 591, 641, 691,
+    ])
+
+    # --- Define the amplitude of each minimum ---
+    normal_minimum = np.sum(b)
+
+    minimum_values = np.full(
+        cycle_boundaries.size,
+        normal_minimum,
+    )
+
+    # Shallower minimum belonging to the short waveform.
+    minimum_values[
+        np.where(cycle_boundaries == 126)[0][0]
+    ] = -0.30
+
+    # Minimum with less than 10 % of the normal minimum depth.
+    minimum_values[
+        np.where(cycle_boundaries == 256)[0][0]
+    ] = -0.05
+
+    # --- Generate the waveform segments ---
+    bvp_signal = np.empty(
+        cycle_boundaries[-1] + 1)
+
+    for waveform_idx, (start, stop) in enumerate(zip(
+            cycle_boundaries[:-1],
+            cycle_boundaries[1:])):
+
+        waveform_length = stop - start
+
+        phase = np.linspace(
+            0.0,
+            1.0,
+            waveform_length + 1,
+        )
+
+        angles = 2 * np.pi * k * phase
+
+        physiological_waveform = np.sum(
+            a[:, None] * np.sin(angles)
+            + b[:, None] * (np.cos(angles) - 1),
+            axis=0,
+        )
+
+        minimum_trend = np.linspace(
+            minimum_values[waveform_idx],
+            minimum_values[waveform_idx + 1],
+            waveform_length + 1,
+        )
+
+        waveform = (
+            physiological_waveform
+            + minimum_trend
+        )
+
+        # Exclude the final sample because it is the first
+        # sample of the following waveform.
+        bvp_signal[start:stop] = waveform[:-1]
+
+    bvp_signal[cycle_boundaries[-1]] = (
+        minimum_values[-1]
+    )
+
+    # --- Build the BVP time series ---
+    time = np.arange(bvp_signal.size) / fs
+
+    bvp_ts = build_timeseries(
+        bvp_signal[None, :],
+        ["channel", "time"],
+        time,
+        ["S1D1"],
+        "uM",
+        "s",
+    )
+
+    # --- Verify the unfiltered minima in the test signal ---
+    detected_minima_idx, detected_minima_value = peakseek(
+        -bvp_signal,
+        minpeakdist=int(fs / 2),
+        minpeakh=0,
+    )
+
+    np.testing.assert_array_equal(
+        detected_minima_idx,
+        cycle_boundaries[1:-1],
+    )
+
+    np.testing.assert_allclose(
+        -detected_minima_value,
+        minimum_values[1:-1],
+        atol=1e-12,
+    )
+
+    # --- Extract and filter the individual waveforms ---
+    wav_storage_user, wav_storage_details = (
+        extract_waveforms(bvp_ts)
+    )
+
+    user_results = wav_storage_user["S1D1"]
+    details = wav_storage_details["S1D1"]
+
+    # Index 126 is removed because the preceding waveform is
+    # unusually short. Index 256 is removed because the minimum
+    # is unusually shallow.
+    expected_minima_idx = np.array([50, 100, 171, 221, 291,
+                                    341, 391, 491, 541, 591, 641])
+
+    expected_minima_value = np.full(
+        expected_minima_idx.size,
+        normal_minimum,
+    )
+
+    np.testing.assert_array_equal(
+        user_results["bvp_min_idx"],
+        expected_minima_idx,
+    )
+
+    np.testing.assert_allclose(
+        user_results["bvp_min_value"],
+        expected_minima_value,
+        atol=1e-12,
+    )
+
+    # The 100-sample waveform between 391 and 491 exceeds
+    # 1.5 times the local median duration and is rejected.
+    accepted_bounds = [
+        (50, 100),
+        (100, 171),
+        (171, 221),
+        (221, 291),
+        (291, 341),
+        (341, 391),
+        (491, 541),
+        (541, 591),
+        (591, 641),
+    ]
+
+    expected_max_idx = np.array([
+        start + np.argmax(bvp_signal[start:stop])
+        for start, stop in accepted_bounds
+    ])
+
+    expected_max_value = bvp_signal[
+        expected_max_idx
+    ]
+
+    # --- Check maxima of the retained waveforms ---
+    np.testing.assert_array_equal(
+        user_results["bvp_max_idx"],
+        expected_max_idx,
+    )
+
+    np.testing.assert_allclose(
+        user_results["bvp_max_value"],
+        expected_max_value,
+        atol=1e-12,
+    )
+
+    # --- Check the retained raw waveform segments ---
+    extracted_waveforms = details[
+        "list_wav_raw_and_y_normal"
+    ]
+
+    assert len(extracted_waveforms) == len(
+        accepted_bounds
+    )
+
+    for extracted_waveform, (start, stop) in zip(
+            extracted_waveforms,
+            accepted_bounds):
+
+        np.testing.assert_allclose(
+            extracted_waveform["wav_raw"],
+            bvp_signal[start:stop],
+            atol=1e-12,
+        )
+
+    # --- Check that only retained waveforms are normalized ---
+    xy_normal = details[
+        "nparray_wav_xy_normal_all"
+    ]
+
+    zscore_normal = details[
+        "nparray_wav_xy_normal_zscore_all"
+    ]
+
+    assert xy_normal.shape == (
+        100,
+        len(accepted_bounds),
+    )
+
+    assert zscore_normal.shape == (
+        100,
+        len(accepted_bounds),
+    )
+
+    assert np.all(np.isfinite(xy_normal))
+    assert np.all(np.isfinite(zscore_normal))
