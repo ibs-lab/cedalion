@@ -685,12 +685,13 @@ def test_extract_waveforms_gerneral():
         ],
         atol=1e-12)
 
-def test_extract_waveforms_filterlogic(monkeypatch):
+def test_extract_waveforms_filterlogic():
     """Tests filtering of non-physiological BVP waveforms.
 
-    The signal contains a minimum belonging to an unusually short
-    waveform, an unusually shallow minimum, and an abnormally long
-    waveform. Each case is detected directly from the test signal.
+    The signal contains a shallow minimum following an unusually short
+    waveform, a dicrotic notch falsely detected as a diastolic minimum,
+    and a transient baseline artifact that suppresses a true minimum
+    and therefore creates an abnormally long waveform.
     """
 
     # --- Define coefficients of the physiological pulse waveform ---
@@ -711,38 +712,35 @@ def test_extract_waveforms_filterlogic(monkeypatch):
     #
     # Filter cases:
     #   100 -> 126: unusually short waveform
-    #   256:        unusually shallow minimum
-    #   391 -> 491: unusually long waveform
-    cycle_boundaries = np.array([
-        0, 50, 100, 126, 171, 221, 256, 291, 341, 391,
+    #   256:        dicrotic notch detected as a shallow minimum
+    #   391 -> 491: unusually long waveform caused by an artifact
+    waveform_boundaries = np.array([
+        0, 50, 100, 126, 171, 221, 291, 341, 391, 441,
         491, 541, 591, 641, 691,
     ])
 
-    # --- Define the amplitude of each minimum ---
+    # --- Define the amplitude of each physiological minimum ---
     normal_minimum = np.sum(b)
 
     minimum_values = np.full(
-        cycle_boundaries.size,
+        waveform_boundaries.size,
         normal_minimum,
     )
 
-    # Shallower minimum belonging to the short waveform.
+    # The shallow minimum at 126 belongs to the unusually
+    # short waveform between samples 100 and 126.
     minimum_values[
-        np.where(cycle_boundaries == 126)[0][0]
+        np.where(waveform_boundaries == 126)[0][0]
     ] = -0.30
 
-    # Minimum with less than 10 % of the normal minimum depth.
-    minimum_values[
-        np.where(cycle_boundaries == 256)[0][0]
-    ] = -0.05
-
-    # --- Generate the waveform segments ---
+    # --- Generate the physiological waveform segments ---
     bvp_signal = np.empty(
-        cycle_boundaries[-1] + 1)
+        waveform_boundaries[-1] + 1
+    )
 
     for waveform_idx, (start, stop) in enumerate(zip(
-            cycle_boundaries[:-1],
-            cycle_boundaries[1:])):
+            waveform_boundaries[:-1],
+            waveform_boundaries[1:])):
 
         waveform_length = stop - start
 
@@ -771,12 +769,53 @@ def test_extract_waveforms_filterlogic(monkeypatch):
             + minimum_trend
         )
 
-        # Exclude the final sample because it is the first
-        # sample of the following waveform.
+        # The final sample is also the first sample of the
+        # following waveform and is therefore excluded here.
         bvp_signal[start:stop] = waveform[:-1]
 
-    bvp_signal[cycle_boundaries[-1]] = (
+    bvp_signal[waveform_boundaries[-1]] = (
         minimum_values[-1]
+    )
+
+    sample_idx = np.arange(bvp_signal.size)
+
+    # --- Add a pronounced dicrotic notch ---
+    # The notch is located inside the waveform from 221 to 291.
+    # Its value is less than 10 % of the normal minimum depth.
+    notch_idx = 256
+    notch_value = -0.05
+    notch_width = 1.5
+
+    notch_depth = (
+        bvp_signal[notch_idx]
+        - notch_value
+    )
+
+    bvp_signal -= notch_depth * np.exp(
+        -0.5
+        * ((sample_idx - notch_idx) / notch_width) ** 2
+    )
+
+    # --- Add a transient baseline artifact ---
+    # Without the artifact, sample 441 would be the physiological
+    # minimum separating the waveforms 391-441 and 441-491.
+    # The artifact raises this minimum above zero, causing peakseek
+    # to combine both pulses into one long waveform.
+    artifact_center_idx = 441
+    artifact_center_value = 0.05
+    artifact_width = 20.0
+
+    artifact_amplitude = (
+        artifact_center_value
+        - bvp_signal[artifact_center_idx]
+    )
+
+    bvp_signal += artifact_amplitude * np.exp(
+        -0.5
+        * (
+            (sample_idx - artifact_center_idx)
+            / artifact_width
+        ) ** 2
     )
 
     # --- Build the BVP time series ---
@@ -798,14 +837,37 @@ def test_extract_waveforms_filterlogic(monkeypatch):
         minpeakh=0,
     )
 
+    expected_detected_minima_idx = np.array([
+        50, 100, 126, 171, 221, 256, 291,
+        341, 391, 491, 541, 591, 641,
+    ])
+
     np.testing.assert_array_equal(
         detected_minima_idx,
-        cycle_boundaries[1:-1],
+        expected_detected_minima_idx,
     )
 
     np.testing.assert_allclose(
         -detected_minima_value,
-        minimum_values[1:-1],
+        bvp_signal[expected_detected_minima_idx],
+        atol=1e-12,
+    )
+
+    # The dicrotic notch must initially be detected as a minimum.
+    assert notch_idx in detected_minima_idx
+
+    # The artifact must suppress the physiological minimum at 441.
+    assert artifact_center_idx not in detected_minima_idx
+
+    np.testing.assert_allclose(
+        bvp_signal[notch_idx],
+        notch_value,
+        atol=1e-12,
+    )
+
+    np.testing.assert_allclose(
+        bvp_signal[artifact_center_idx],
+        artifact_center_value,
         atol=1e-12,
     )
 
@@ -817,16 +879,13 @@ def test_extract_waveforms_filterlogic(monkeypatch):
     user_results = wav_storage_user["S1D1"]
     details = wav_storage_details["S1D1"]
 
-    # Index 126 is removed because the preceding waveform is
-    # unusually short. Index 256 is removed because the minimum
-    # is unusually shallow.
-    expected_minima_idx = np.array([50, 100, 171, 221, 291,
-                                    341, 391, 491, 541, 591, 641])
-
-    expected_minima_value = np.full(
-        expected_minima_idx.size,
-        normal_minimum,
-    )
+    # Index 126 is removed because it belongs to an unusually
+    # short waveform. Index 256 is removed because the dicrotic
+    # notch is too shallow to represent a diastolic minimum.
+    expected_minima_idx = np.array([
+        50, 100, 171, 221, 291, 341,
+        391, 491, 541, 591, 641,
+    ])
 
     np.testing.assert_array_equal(
         user_results["bvp_min_idx"],
@@ -835,11 +894,12 @@ def test_extract_waveforms_filterlogic(monkeypatch):
 
     np.testing.assert_allclose(
         user_results["bvp_min_value"],
-        expected_minima_value,
+        bvp_signal[expected_minima_idx],
         atol=1e-12,
     )
 
-    # The 100-sample waveform between 391 and 491 exceeds
+    # The artifact-suppressed minimum at 441 produces the
+    # 100-sample waveform between 391 and 491. This exceeds
     # 1.5 times the local median duration and is rejected.
     accepted_bounds = [
         (50, 100),
