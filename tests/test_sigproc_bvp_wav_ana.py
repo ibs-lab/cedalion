@@ -7,7 +7,8 @@ from cedalion.sigproc.bvp_wav_ana_v12 import (
                 extract_bvp,
                 extract_waveforms,
                 remove_artifact_waveforms,
-                classify_waveforms)
+                classify_waveforms,
+                extract_bvpa,)
 from cedalion.dataclasses import build_timeseries
 from cedalion.dataclasses.bvp_container import BVP_Container
 
@@ -1310,4 +1311,275 @@ def test_classify_waveforms_delta():
         assert user_results["nparray_wav_delta_type2"].shape == (n_samples, 2)
 
         assert user_results["nparray_wav_delta_type3"].shape == (n_samples, 4)
+
+def test_extract_bvpa():
+    """Tests channel-wise extraction of the BVPA time series.
+
+    One channel contains constant upper and lower envelopes. The second
+    channel contains slowly varying physiological envelope values. The test
+    checks interpolation, smoothing, metadata, and shape preservation.
+    """
+
+    # --- Define sampling and extrema positions ---
+    fs = 50.0
+    n_samples = 500
+    sample_idx = np.arange(n_samples)
+    time = sample_idx / fs
+
+    min_idx = np.array([
+        48, 99, 151, 204, 252, 306, 357, 409, 458])
+
+    max_idx = np.array([
+        63, 115, 166, 219, 268, 321, 373, 425])
+
+    channels = ["S1D1", "S2D2"]
+
+    # --- Define realistic extrema values ---
+    max_values = {
+        "S1D1": np.full(len(max_idx), 0.18),
+        "S2D2": np.array([
+            0.16, 0.19, 0.20, 0.17,
+            0.11, 0.15, 0.18, 0.18])}
+
+    min_values = {
+        "S1D1": np.full(len(min_idx), -0.26),
+        "S2D2": np.array([
+            -0.27, -0.30, -0.29, -0.24, -0.21,
+            -0.26, -0.31, -0.25, -0.25])}
+
+    # --- Generate BVP signals passing through the extrema ---
+    def make_bvp_signal(
+            max_idx, min_idx, max_values, min_values, n_samples):
+
+        extrema_idx = np.concatenate((max_idx, min_idx))
+        extrema_values = np.concatenate((max_values, min_values))
+        sort_idx = np.argsort(extrema_idx)
+
+        return np.interp(
+                    np.arange(n_samples),
+                    extrema_idx[sort_idx],
+                    extrema_values[sort_idx])
+
+    bvp_data = np.vstack([
+        make_bvp_signal(
+            max_idx,
+            min_idx,
+            max_values[channel],
+            min_values[channel],
+            n_samples)
+        for channel in channels])
+
+    original_bvp_data = bvp_data.copy()
+
+    # --- Build a two-channel BVP time series ---
+    bvp_ts = build_timeseries(
+        bvp_data,
+        ["channel", "time"],
+        time,
+        channels,
+        "uM",
+        "s",
+        {"source": ("channel", ["S1", "S2"]),
+         "detector": ("channel", ["D1", "D2"])})
+
+    # --- Build the waveform storage ---
+    wav_storage_user = {}
+    original_wav_storage = {}
+
+    for channel in channels:
+        wav_storage_user[channel] = {
+            "bvp_max_value": max_values[channel].copy(),
+            "bvp_max_idx": max_idx.copy(),
+            "bvp_min_value": min_values[channel].copy(),
+            "bvp_min_idx": min_idx.copy()}
+
+        original_wav_storage[channel] = {
+            key: value.copy()
+            for key, value in wav_storage_user[channel].items()}
+
+    # --- Extract the BVPA time series ---
+    result = extract_bvpa(
+        bvp_ts,
+        wav_storage_user)
+
+    result_values = result.pint.dequantify()
+
+    # --- Check dimensions, coordinates, metadata, and units ---
+    assert result.dims == ("channel", "compound", "time")
+    assert result.sizes["time"] == n_samples
+    assert result.pint.units == bvp_ts.pint.units
+
+    np.testing.assert_array_equal(
+        result.channel.values,
+        channels)
+    np.testing.assert_array_equal(
+        result.compound.values,
+        ["env_up", "env_down", "bvpa_raw", "bvpa_smooth"])
+    np.testing.assert_array_equal(
+        result.samples.values,
+        sample_idx)
+    np.testing.assert_allclose(
+        result.time.values,
+        bvp_ts.time.values,
+        atol=1e-12)
+    np.testing.assert_array_equal(
+        result.source.values,
+        ["S1", "S2"])
+    np.testing.assert_array_equal(
+        result.detector.values,
+        ["D1", "D2"])
+
+    # --- Check shape preservation between interpolation points ---
+    def assert_shape_preserving(
+            envelope,
+            interpolation_idx,
+            interpolation_values):
+
+        tolerance = 1e-12
+
+        for interval_idx in range(len(interpolation_idx) - 1):
+            start = interpolation_idx[interval_idx]
+            stop = interpolation_idx[interval_idx + 1]
+
+            start_value = interpolation_values[interval_idx]
+            stop_value = interpolation_values[interval_idx + 1]
+
+            segment = envelope[start:stop + 1]
+
+            lower_bound = min(start_value, stop_value)
+            upper_bound = max(start_value, stop_value)
+
+            assert np.all(segment >= lower_bound - tolerance)
+            assert np.all(segment <= upper_bound + tolerance)
+
+            segment_diff = np.diff(segment)
+
+            if stop_value > start_value:
+                assert np.all(segment_diff >= -tolerance)
+            elif stop_value < start_value:
+                assert np.all(segment_diff <= tolerance)
+            else:
+                np.testing.assert_allclose(
+                    segment,
+                    start_value,
+                    atol=tolerance)
+
+    # --- Check channel-wise BVPA results ---
+    for channel in channels:
+        env_up = result_values.sel(
+            channel=channel,
+            compound="env_up").values
+
+        env_down = result_values.sel(
+            channel=channel,
+            compound="env_down").values
+
+        bvpa_raw = result_values.sel(
+            channel=channel,
+            compound="bvpa_raw").values
+
+        bvpa_smooth = result_values.sel(
+            channel=channel,
+            compound="bvpa_smooth").values
+
+        assert np.all(np.isfinite(env_up))
+        assert np.all(np.isfinite(env_down))
+        assert np.all(np.isfinite(bvpa_raw))
+        assert np.all(np.isfinite(bvpa_smooth))
+
+        # --- Check interpolation through the specified extrema ---
+        np.testing.assert_allclose(
+            env_up[max_idx],
+            max_values[channel],
+            atol=1e-12)
+        np.testing.assert_allclose(
+            env_down[min_idx],
+            min_values[channel],
+            atol=1e-12)
+
+        # --- Check raw BVPA calculation ---
+        np.testing.assert_allclose(
+            bvpa_raw,
+            env_up - env_down,
+            atol=1e-12)
+
+        assert np.all(bvpa_raw > 0.0)
+
+        # --- Check PCHIP shape preservation ---
+        up_idx = np.concatenate(([0], max_idx))
+        up_values = np.concatenate((
+            [max_values[channel][0]],
+            max_values[channel]))
+
+        down_idx = np.concatenate(([0], min_idx))
+        down_values = np.concatenate((
+            [min_values[channel][0]],
+            min_values[channel]))
+
+        assert_shape_preserving(
+            env_up,
+            up_idx,
+            up_values)
+
+        assert_shape_preserving(
+            env_down,
+            down_idx,
+            down_values)
+
+        # The final two extrema have equal values, so the extrapolated
+        # signal end must remain constant.
+        np.testing.assert_allclose(
+            env_up[max_idx[-1]:],
+            max_values[channel][-1],
+            atol=1e-12)
+        np.testing.assert_allclose(
+            env_down[min_idx[-1]:],
+            min_values[channel][-1],
+            atol=1e-12)
+
+    # --- Check analytically known constant channel ---
+    constant_env_up = result_values.sel(
+        channel="S1D1",
+        compound="env_up").values
+
+    constant_env_down = result_values.sel(
+        channel="S1D1",
+        compound="env_down").values
+
+    constant_bvpa_raw = result_values.sel(
+        channel="S1D1",
+        compound="bvpa_raw").values
+
+    constant_bvpa_smooth = result_values.sel(
+        channel="S1D1",
+        compound="bvpa_smooth").values
+
+    np.testing.assert_allclose(
+        constant_env_up,
+        0.18,
+        atol=1e-12)
+    np.testing.assert_allclose(
+        constant_env_down,
+        -0.26,
+        atol=1e-12)
+    np.testing.assert_allclose(
+        constant_bvpa_raw,
+        0.44,
+        atol=1e-12)
+    np.testing.assert_allclose(
+        constant_bvpa_smooth,
+        0.44,
+        atol=1e-10)
+
+    # --- Check input immutability ---
+    np.testing.assert_allclose(
+        bvp_ts.pint.dequantify().values,
+        original_bvp_data,
+        atol=1e-12)
+
+    for channel in channels:
+        for key in original_wav_storage[channel]:
+            np.testing.assert_array_equal(
+                wav_storage_user[channel][key],
+                original_wav_storage[channel][key])
 
