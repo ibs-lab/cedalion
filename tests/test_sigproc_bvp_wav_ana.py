@@ -6,8 +6,10 @@ from cedalion.sigproc.bvp_wav_ana_v12 import (
                 wct,
                 extract_bvp,
                 extract_waveforms,
-                remove_artifact_waveforms,)
+                remove_artifact_waveforms,
+                classify_waveforms,)
 from cedalion.dataclasses import build_timeseries
+from cedalion.dataclasses.bvp_container import BVP_Container
 
 
 def test_interpft():
@@ -1216,4 +1218,407 @@ def test_remove_artifact_waveforms():
             expected["zscore_normal"],
             atol=1e-12,
         )
+
+def test_classify_waveforms_max():
+    """Tests waveform classification by maximum amplitude.
+
+    Physiological waveforms with known maximum values are provided in two
+    channels and deliberately arranged in different orders. The calculated
+    maxima, percentile thresholds, and classified waveform matrices are
+    checked channel-wise.
+    """
+
+    # --- Define coefficients of the physiological pulse waveform ---
+    a = np.array([
+        0.21362854, 0.05005765, 0.00135350, -0.00906460,
+        -0.00849233, -0.02022217, -0.01101648, -0.00662955,
+    ])
+
+    b = np.array([
+        -0.33609957, -0.12807130, -0.08131665, -0.03903412,
+        -0.02956690, -0.01606627, -0.00380470, -0.00521266,
+    ])
+
+    # --- Generate a physiological reference waveform ---
+    fs = 50.0
+    n_samples = 100
+    phase = np.arange(n_samples) / n_samples
+    k = np.arange(1, 9)[:, None]
+    angles = 2 * np.pi * k * phase
+
+    reference_waveform = np.sum(
+        a[:, None] * np.sin(angles)
+        + b[:, None] * (np.cos(angles) - 1),
+        axis=0,
+    )
+    reference_waveform = (
+        reference_waveform + np.sum(b)
+    )
+
+    # --- Normalize the reference waveform to a maximum of one ---
+    reference_normalized = (
+        reference_waveform
+        - np.mean(reference_waveform)
+    ) / np.std(reference_waveform)
+
+    reference_normalized = (
+        reference_normalized
+        / np.max(reference_normalized)
+    )
+
+    # --- Build a two-channel BVP time series ---
+    channels = ["S1D1", "S2D2"]
+    time = np.arange(n_samples) / fs
+
+    bvp_ts = build_timeseries(
+        np.vstack([
+            reference_waveform,
+            0.8 * reference_waveform,
+        ]),
+        ["channel", "time"],
+        time,
+        channels,
+        "uM",
+        "s",
+    )
+
+    # Each channel contains the same maximum values in a
+    # different waveform order.
+    expected_maxima = {
+        "S1D1": np.arange(1.0, 9.0),
+        "S2D2": np.array([
+            4.0, 8.0, 1.0, 6.0,
+            3.0, 7.0, 2.0, 5.0,
+        ]),
+    }
+
+    bvp_cont = BVP_Container()
+    bvp_cont["bvp_ts"] = bvp_ts
+    bvp_cont.wav_storage_user = {}
+    bvp_cont.wav_storage_details = {}
+
+    waveform_matrices = {}
+
+    for channel in channels:
+        maxima = expected_maxima[channel]
+
+        waveforms = (
+            reference_normalized[:, None]
+            * maxima[None, :]
+        )
+
+        waveform_matrices[channel] = waveforms.copy()
+
+        bvp_cont.wav_storage_user[channel] = {
+            "nparray_wav_xy_normal_zscore_all_woa":
+                waveforms,
+        }
+        bvp_cont.wav_storage_details[channel] = {}
+
+    # --- Classify waveforms by their maxima ---
+    result_user, result_details = classify_waveforms(
+        bvp_cont,
+        "max",
+    )
+
+    assert result_user is bvp_cont.wav_storage_user
+    assert result_details is bvp_cont.wav_storage_details
+    assert set(result_user) == set(channels)
+    assert set(result_details) == set(channels)
+
+    # --- Check channel-wise classification results ---
+    for channel in channels:
+        maxima = expected_maxima[channel]
+        waveforms = waveform_matrices[channel]
+
+        user_results = result_user[channel]
+        details = result_details[channel]
+
+        expected_p25 = 2.75
+        expected_p75 = 6.25
+
+        idx_type1 = maxima < expected_p25
+        idx_type2 = maxima > expected_p75
+        idx_type3 = (
+            (maxima > expected_p25)
+            & (maxima < expected_p75)
+        )
+
+        assert set(user_results) == {
+            "nparray_wav_xy_normal_zscore_all_woa",
+            "nparray_wav_max_type1",
+            "nparray_wav_max_type2",
+            "nparray_wav_max_type3",
+        }
+        assert set(details) == {
+            "max_bvp_wav",
+            "max_P_25",
+            "max_P_75",
+        }
+
+        # --- Check classification metric and thresholds ---
+        np.testing.assert_allclose(
+            details["max_bvp_wav"],
+            maxima,
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            details["max_P_25"],
+            expected_p25,
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            details["max_P_75"],
+            expected_p75,
+            atol=1e-12,
+        )
+
+        # --- Check classified waveform matrices ---
+        np.testing.assert_allclose(
+            user_results["nparray_wav_max_type1"],
+            waveforms[:, idx_type1],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            user_results["nparray_wav_max_type2"],
+            waveforms[:, idx_type2],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            user_results["nparray_wav_max_type3"],
+            waveforms[:, idx_type3],
+            atol=1e-12,
+        )
+
+        assert user_results[
+            "nparray_wav_max_type1"
+        ].shape == (n_samples, 2)
+
+        assert user_results[
+            "nparray_wav_max_type2"
+        ].shape == (n_samples, 2)
+
+        assert user_results[
+            "nparray_wav_max_type3"
+        ].shape == (n_samples, 4)
+
+def test_classify_waveforms_delta():
+    """Tests waveform classification by delta.
+
+    Physiological waveforms with known deltas are provided
+    in two channels. Each channel additionally contains one waveform without
+    a dicrotic notch, which must be removed before classification.
+    """
+
+    # --- Define coefficients of the physiological pulse waveform ---
+    a = np.array([
+        0.21362854, 0.05005765, 0.00135350, -0.00906460,
+        -0.00849233, -0.02022217, -0.01101648, -0.00662955,
+    ])
+
+    b = np.array([
+        -0.33609957, -0.12807130, -0.08131665, -0.03903412,
+        -0.02956690, -0.01606627, -0.00380470, -0.00521266,
+    ])
+
+    # --- Generate a physiological waveform with a dicrotic notch ---
+    fs = 50.0
+    n_samples = 100
+    phase = np.arange(n_samples) / n_samples
+    k = np.arange(1, 9)[:, None]
+    angles = 2 * np.pi * k * phase
+
+    reference_waveform = np.sum(
+        a[:, None] * np.sin(angles)
+        + b[:, None] * (np.cos(angles) - 1),
+        axis=0,
+    )
+    reference_waveform = (
+        reference_waveform + np.sum(b)
+    )
+
+    # The physiological reference waveform contains one local
+    # minimum inside the accepted sample range from 20 to 60.
+    notch_idx, notch_value = peakseek(
+        -reference_waveform
+    )
+    notch_value = -notch_value
+
+    np.testing.assert_array_equal(
+        notch_idx,
+        np.array([38]),
+    )
+
+    reference_delta = (
+        np.max(reference_waveform)
+        - notch_value[0]
+    )
+
+    # --- Build a two-channel BVP time series ---
+    channels = ["S1D1", "S2D2"]
+    time = np.arange(n_samples) / fs
+
+    bvp_ts = build_timeseries(
+        np.vstack([
+            reference_waveform,
+            0.8 * reference_waveform,
+        ]),
+        ["channel", "time"],
+        time,
+        channels,
+        "uM",
+        "s",
+    )
+
+    # Both channels contain the same delta values in a
+    # different waveform order.
+    expected_deltas = {
+        "S1D1": np.arange(1.0, 9.0),
+        "S2D2": np.array([
+            4.0, 8.0, 1.0, 6.0,
+            3.0, 7.0, 2.0, 5.0,
+        ]),
+    }
+
+    bvp_cont = BVP_Container()
+    bvp_cont["bvp_ts"] = bvp_ts
+    bvp_cont.wav_storage_user = {}
+    bvp_cont.wav_storage_details = {}
+
+    valid_waveform_matrices = {}
+
+    for channel in channels:
+        delta_values = expected_deltas[channel]
+
+        valid_waveforms = (
+            reference_waveform[:, None]
+            * (
+                delta_values[None, :]
+                / reference_delta
+            )
+        )
+
+        # A parabolic waveform has no local minimum and therefore
+        # produces a delta of zero. It must be removed.
+        parabola_x = np.linspace(
+            -1.0,
+            1.0,
+            n_samples,
+        )
+
+        invalid_waveform = (
+            reference_waveform[0]
+            * parabola_x ** 2
+        )
+
+        waveforms = np.column_stack([
+            valid_waveforms,
+            invalid_waveform,
+        ])
+
+        valid_waveform_matrices[channel] = (
+            valid_waveforms.copy()
+        )
+
+        bvp_cont.wav_storage_user[channel] = {
+            "nparray_wav_xy_normal_all_woa":
+                waveforms,
+        }
+        bvp_cont.wav_storage_details[channel] = {}
+
+    # --- Classify waveforms by their delta ---
+    result_user, result_details = classify_waveforms(
+        bvp_cont,
+        "delta",
+    )
+
+    assert result_user is bvp_cont.wav_storage_user
+    assert result_details is bvp_cont.wav_storage_details
+    assert set(result_user) == set(channels)
+    assert set(result_details) == set(channels)
+
+    # --- Check channel-wise classification results ---
+    for channel in channels:
+        delta_values = expected_deltas[channel]
+        valid_waveforms = valid_waveform_matrices[
+            channel
+        ]
+
+        user_results = result_user[channel]
+        details = result_details[channel]
+
+        expected_p25 = 2.75
+        expected_p75 = 6.25
+
+        idx_type1 = delta_values < expected_p25
+        idx_type2 = delta_values > expected_p75
+        idx_type3 = (
+            (delta_values > expected_p25)
+            & (delta_values < expected_p75)
+        )
+
+        assert set(user_results) == {
+            "nparray_wav_xy_normal_all_woa",
+            "nparray_wav_delta_type1",
+            "nparray_wav_delta_type2",
+            "nparray_wav_delta_type3",
+        }
+        assert set(details) == {
+            "delta_bvp_wav",
+            "delta_P_25",
+            "delta_P_75",
+            "text_num_del_wavs",
+        }
+
+        # --- Check removed waveform and classification metric ---
+        assert details[
+            "text_num_del_wavs"
+        ] == f"{channel}:  1  of  9"
+
+        np.testing.assert_allclose(
+            details["delta_bvp_wav"],
+            delta_values,
+            atol=1e-12,
+        )
+
+        # --- Check percentile thresholds ---
+        np.testing.assert_allclose(
+            details["delta_P_25"],
+            expected_p25,
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            details["delta_P_75"],
+            expected_p75,
+            atol=1e-12,
+        )
+
+        # --- Check classified waveform matrices ---
+        np.testing.assert_allclose(
+            user_results["nparray_wav_delta_type1"],
+            valid_waveforms[:, idx_type1],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            user_results["nparray_wav_delta_type2"],
+            valid_waveforms[:, idx_type2],
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            user_results["nparray_wav_delta_type3"],
+            valid_waveforms[:, idx_type3],
+            atol=1e-12,
+        )
+
+        assert user_results[
+            "nparray_wav_delta_type1"
+        ].shape == (n_samples, 2)
+
+        assert user_results[
+            "nparray_wav_delta_type2"
+        ].shape == (n_samples, 2)
+
+        assert user_results[
+            "nparray_wav_delta_type3"
+        ].shape == (n_samples, 4)
 

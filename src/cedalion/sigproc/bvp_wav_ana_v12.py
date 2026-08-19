@@ -999,9 +999,12 @@ def classify_waveforms(
                     continue
 
                 if len(all_min_locs) == 1:
-                    if float(all_min_locs) > 20 and float(all_min_locs) < 60:
-                        min_bvp_wav[i] = float(all_min_values)
-                    if float(all_min_locs) <= 20 or float(all_min_locs) >= 60:
+                    min_loc = all_min_locs.item()
+                    min_value = all_min_values.item()
+
+                    if 20 < min_loc < 60:
+                        min_bvp_wav[i] = min_value
+                    else:
                         continue
 
             delta_bvp_wav = max_bvp_wav - min_bvp_wav
