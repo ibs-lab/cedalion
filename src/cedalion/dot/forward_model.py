@@ -595,14 +595,19 @@ class ForwardModel:
             attrs={"units": "mm"},
         )
 
-        if "parcel" in self.head_model.brain.vertices.coords:
+        parcel_coord_names = [
+            name
+            for name in self.head_model.brain.vertices.coords
+            if name == "parcel" or name.startswith("parcel_")
+        ]
+        for name in parcel_coord_names:
             parcels = np.concatenate(
                 (
-                    self.head_model.brain.vertices.coords["parcel"].values,
+                    self.head_model.brain.vertices.coords[name].values,
                     n_scalp * ["scalp"],
                 )
             )
-            Adot = Adot.assign_coords(parcel = ("vertex", parcels))
+            Adot = Adot.assign_coords(**{name: ("vertex", parcels)})
 
         save_Adot(sensitivity_fname, Adot)
 
@@ -696,9 +701,13 @@ class ForwardModel:
             "detector": ("flat_channel", flat_detector),
         }
 
-        if "parcel" in sensitivity.coords:
-            flat_parcels = np.hstack([sensitivity.parcel.values] * nchromos)
-            coords["parcel"] = (flat_vertex_dim, flat_parcels)
+        parcel_coord_names = [
+            name for name in sensitivity.coords
+            if name == "parcel" or name.startswith("parcel_")
+        ]
+        for name in parcel_coord_names:
+            flat_parcels = np.hstack([sensitivity.coords[name].values] * nchromos)
+            coords[name] = (flat_vertex_dim, flat_parcels)
 
         A = xr.DataArray(
             A,
@@ -718,6 +727,7 @@ class ForwardModel:
         minCh: int = 1,
         dHbO: float = 10,
         dHbR: float = -3,
+        parcel_coord: str = "parcel",
     ):
         """Calculate a mask for parcels based on their effective cortex sensitivity.
 
@@ -740,6 +750,9 @@ class ForwardModel:
                 dOD_thresh
             dHbO: change in HbO conc. in the parcel in [µM] used to calculate dOD
             dHbR: change in HbR conc. in the parcel in [µM] used to calculate dOD
+            parcel_coord: name of the parcel coordinate on Adot to group by, for head
+                models carrying multiple parcellations (e.g. "parcel_aal3",
+                "parcel_brodmann")
 
         Returns:
             A tuple (parcel_dOD, parcel_mask), where parcel_dOD (channel, parcel,
@@ -799,16 +812,16 @@ class ForwardModel:
                 dOD[wl, chromo] = (
                     Adots_brain.sel(flat_channel=wl)
                     .sel(flat_vertex=chromo)
-                    .groupby("parcel")
+                    .groupby(parcel_coord)
                     .sum("flat_vertex")
                     * dHb.sel(chromo=chromo)
                 )
 
         coords = {
             "channel": ("channel", Adot.coords["channel"].values),
-            "parcel": (
-                "parcel",
-                dOD[wavelengths[0], chromos[0]].coords["parcel"].values,
+            parcel_coord: (
+                parcel_coord,
+                dOD[wavelengths[0], chromos[0]].coords[parcel_coord].values,
             ),
         }
 
@@ -818,7 +831,7 @@ class ForwardModel:
         for wl in wavelengths:
             dOD_tot[wl] = xr.DataArray(
                 dOD[wl, chromos[0]].pint.magnitude + dOD[wl, chromos[1]].pint.magnitude,
-                dims=["channel", "parcel"],
+                dims=["channel", parcel_coord],
                 coords=coords,
             )
 
