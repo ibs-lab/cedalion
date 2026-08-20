@@ -1193,32 +1193,31 @@ def extract_pulse_rate(
         minima_idx = actual_wav_storage["bvp_min_idx"]
 
         # --- PR_raw: Differences between maxima ---
-        pulse_rate_dist = np.diff(minima_idx)
+        pulse_rate_dist = np.diff(minima_idx).astype(float)
 
         # --- filters out non physiological pulses (if diff between minima is too
         #     large --> value replaced by mean of neighbors) ---
         n = len(pulse_rate_dist)
 
-        for i in range(n - 1):
-            start = max(0, i-3)
+        for i in range(n):
+            start = max(0, i-4)
             end = min(n, i+5)
 
             window = pulse_rate_dist[start:end]
-            if len(window) == 0:
-                continue
-
             window_median = np.median(window)
 
-            if pulse_rate_dist[i] > (window_median * 1.6) and i == 0:
+            if pulse_rate_dist[i] <= window_median * 1.6:
+                continue
+
+            if n == 1:
+                continue
+            elif i == 0:
                 pulse_rate_dist[i] = pulse_rate_dist[i+1]
-                continue
-
-            if pulse_rate_dist[i] > (window_median * 1.6) and i == n:
+            elif i == n-1:
                 pulse_rate_dist[i] = pulse_rate_dist[i-1]
-                continue
-
-            if pulse_rate_dist[i] > (window_median * 1.6):
-                pulse_rate_dist[i] = np.mean([pulse_rate_dist[i-1], pulse_rate_dist[i+1]])  # noqa: E501
+            else:
+                pulse_rate_dist[i] = np.mean(
+                            [pulse_rate_dist[i-1], pulse_rate_dist[i+1]])
 
         # --- Interpolated PR time series ---
         pchip_x = minima_idx[1:]
@@ -1229,12 +1228,11 @@ def extract_pulse_rate(
         pulse_rate_intp = 1.0 / (pulse_rate_intp_help / fs / 60)
 
         # --- Append initial and final sequences ---
-        pulse_rate_start_seq = np.ones(minima_idx[1] - 1) * pulse_rate_intp[0]
-        pulse_rate_end_seq = np.ones(len(time) - minima_idx[-1]) * pulse_rate_intp[-1]
+        pulse_rate_intp_full = np.empty(len(time))
 
-        pulse_rate_intp_full = np.concatenate([pulse_rate_start_seq,
-                                               pulse_rate_intp,
-                                               pulse_rate_end_seq])
+        pulse_rate_intp_full[:minima_idx[1]] = pulse_rate_intp[0]
+        pulse_rate_intp_full[minima_idx[1]:minima_idx[-1] + 1] = pulse_rate_intp
+        pulse_rate_intp_full[minima_idx[-1] + 1:] = pulse_rate_intp[-1]
 
         # --- Loess smoothing (5 second window) ---
         N = 5 * fs
