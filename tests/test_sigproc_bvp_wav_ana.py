@@ -1,4 +1,5 @@
 import numpy as np
+from cedalion import units
 from cedalion.sigproc.bvp_wav_ana_v12 import (
                 interpft,
                 peakseek,
@@ -8,7 +9,8 @@ from cedalion.sigproc.bvp_wav_ana_v12 import (
                 extract_waveforms,
                 remove_artifact_waveforms,
                 classify_waveforms,
-                extract_bvpa,)
+                extract_bvpa,
+                extract_pulse_rate,)
 from cedalion.dataclasses import build_timeseries
 from cedalion.dataclasses.bvp_container import BVP_Container
 
@@ -1582,4 +1584,246 @@ def test_extract_bvpa():
             np.testing.assert_array_equal(
                 wav_storage_user[channel][key],
                 original_wav_storage[channel][key])
+
+def test_extract_pulse_rate():
+    """Tests pulse-rate calculation for constant and varying intervals."""
+
+    # --- Define sampling and realistic minima positions ---
+    fs = 50.0
+    n_samples = 500
+    sample_idx = np.arange(n_samples)
+    time = sample_idx / fs
+    channels = ["S1D1", "S2D2"]
+
+    minima_idx = {
+        "S1D1": np.array([
+            25, 75, 125, 175, 225, 275, 325, 375, 425]),
+        "S2D2": np.array([
+            25, 74, 125, 173, 225, 275, 328, 378, 429])}
+
+    bvp_data = np.zeros((len(channels), n_samples))
+    original_bvp_data = bvp_data.copy()
+
+    # --- Build a two-channel BVP time series ---
+    bvp_ts = build_timeseries(
+        bvp_data,
+        ["channel", "time"],
+        time,
+        channels,
+        "uM",
+        "s",
+        {"source": ("channel", ["S1", "S2"]),
+         "detector": ("channel", ["D1", "D2"])})
+
+    # --- Build the waveform storage ---
+    wav_storage_user = {
+        channel: {"bvp_min_idx": minima_idx[channel].copy()}
+        for channel in channels}
+
+    # --- Extract the pulse-rate time series ---
+    result = extract_pulse_rate(
+        bvp_ts,
+        wav_storage_user)
+
+    result_values = result.pint.dequantify()
+
+    # --- Check dimensions, coordinates, metadata, and units ---
+    assert result.dims == ("channel", "compound", "time")
+    assert result.sizes["time"] == n_samples
+    assert result.pint.units == units.min**-1
+
+    np.testing.assert_array_equal(
+        result.channel.values,
+        channels)
+    np.testing.assert_array_equal(
+        result.compound.values,
+        ["pulse_rate", "pulse_rate_smooth"])
+    np.testing.assert_array_equal(
+        result.samples.values,
+        sample_idx)
+    np.testing.assert_allclose(
+        result.time.values,
+        bvp_ts.time.values,
+        atol=1e-12)
+    np.testing.assert_array_equal(
+        result.source.values,
+        ["S1", "S2"])
+    np.testing.assert_array_equal(
+        result.detector.values,
+        ["D1", "D2"])
+
+    # --- Check shape preservation between interpolation points ---
+    def assert_shape_preserving(
+            pulse_rate,
+            interpolation_idx,
+            interpolation_values):
+
+        tolerance = 1e-12
+
+        for interval_idx in range(len(interpolation_idx) - 1):
+            start = interpolation_idx[interval_idx]
+            stop = interpolation_idx[interval_idx + 1]
+
+            start_value = interpolation_values[interval_idx]
+            stop_value = interpolation_values[interval_idx + 1]
+
+            segment = pulse_rate[start:stop + 1]
+
+            lower_bound = min(start_value, stop_value)
+            upper_bound = max(start_value, stop_value)
+
+            assert np.all(segment >= lower_bound - tolerance)
+            assert np.all(segment <= upper_bound + tolerance)
+
+            segment_diff = np.diff(segment)
+
+            if stop_value > start_value:
+                assert np.all(segment_diff >= -tolerance)
+            elif stop_value < start_value:
+                assert np.all(segment_diff <= tolerance)
+            else:
+                np.testing.assert_allclose(
+                    segment,
+                    start_value,
+                    atol=tolerance)
+
+    # --- Check channel-wise pulse-rate results ---
+    for channel in channels:
+        pulse_rate = result_values.sel(
+            channel=channel,
+            compound="pulse_rate").values
+
+        pulse_rate_smooth = result_values.sel(
+            channel=channel,
+            compound="pulse_rate_smooth").values
+
+        actual_minima_idx = minima_idx[channel]
+        pulse_rate_idx = actual_minima_idx[1:]
+        expected_pulse_rate = (
+            60 * fs / np.diff(actual_minima_idx))
+
+        assert np.all(np.isfinite(pulse_rate))
+        assert np.all(np.isfinite(pulse_rate_smooth))
+
+        # --- Check sample-to-BPM conversion at the interpolation points ---
+        np.testing.assert_allclose(
+            pulse_rate[pulse_rate_idx],
+            expected_pulse_rate,
+            atol=1e-12)
+
+        # --- Check constant sequences before and after interpolation ---
+        np.testing.assert_allclose(
+            pulse_rate[:pulse_rate_idx[0] + 1],
+            expected_pulse_rate[0],
+            atol=1e-12)
+        np.testing.assert_allclose(
+            pulse_rate[pulse_rate_idx[-1]:],
+            expected_pulse_rate[-1],
+            atol=1e-12)
+
+        assert_shape_preserving(
+            pulse_rate,
+            pulse_rate_idx,
+            expected_pulse_rate)
+
+    # --- Check analytically known constant channel ---
+    constant_pulse_rate = result_values.sel(
+        channel="S1D1",
+        compound="pulse_rate").values
+
+    constant_pulse_rate_smooth = result_values.sel(
+        channel="S1D1",
+        compound="pulse_rate_smooth").values
+
+    np.testing.assert_allclose(
+        constant_pulse_rate,
+        60.0,
+        atol=1e-12)
+    np.testing.assert_allclose(
+        constant_pulse_rate_smooth,
+        60.0,
+        atol=1e-10)
+
+    # --- Check input immutability ---
+    np.testing.assert_allclose(
+        bvp_ts.pint.dequantify().values,
+        original_bvp_data,
+        atol=1e-12)
+
+    for channel in channels:
+        np.testing.assert_array_equal(
+            wav_storage_user[channel]["bvp_min_idx"],
+            minima_idx[channel])
+
+def test_extract_pulse_rate_filterlogic():
+    """Tests correction of long first, middle, and last pulse intervals."""
+
+    # --- Define sampling and pulse intervals ---
+    fs = 50.0
+    n_samples = 500
+    sample_idx = np.arange(n_samples)
+    time = sample_idx / fs
+    channels = ["S1D1", "S2D2", "S3D3"]
+
+    pulse_intervals = {
+        "S1D1": np.array([100, 50, 50, 50, 50, 50, 50]),
+        "S2D2": np.array([50, 50, 50, 100, 50, 50, 50]),
+        "S3D3": np.array([50, 50, 50, 50, 50, 50, 100])}
+
+    minima_idx = {
+        channel: np.concatenate((
+            [25],
+            25 + np.cumsum(pulse_intervals[channel])))
+        for channel in channels}
+
+    # --- Build a three-channel BVP time series ---
+    bvp_ts = build_timeseries(
+        np.zeros((len(channels), n_samples)),
+        ["channel", "time"],
+        time,
+        channels,
+        "uM",
+        "s",
+        {"source": ("channel", ["S1", "S2", "S3"]),
+         "detector": ("channel", ["D1", "D2", "D3"])})
+
+    # --- Build the waveform storage ---
+    wav_storage_user = {
+        channel: {"bvp_min_idx": minima_idx[channel].copy()}
+        for channel in channels}
+
+    original_minima_idx = {
+        channel: minima_idx[channel].copy()
+        for channel in channels}
+
+    # --- Extract the pulse-rate time series ---
+    result = extract_pulse_rate(
+        bvp_ts,
+        wav_storage_user)
+
+    result_values = result.pint.dequantify()
+
+    # Each 100-sample interval is replaced by a neighboring 50-sample
+    # interval. At 50 Hz, the corrected pulse rate is therefore 60 BPM.
+    for channel in channels:
+        pulse_rate = result_values.sel(
+            channel=channel,
+            compound="pulse_rate").values
+
+        pulse_rate_smooth = result_values.sel(
+            channel=channel,
+            compound="pulse_rate_smooth").values
+
+        np.testing.assert_allclose(
+            pulse_rate,
+            60.0,
+            atol=1e-12)
+        np.testing.assert_allclose(
+            pulse_rate_smooth,
+            60.0,
+            atol=1e-10)
+
+        np.testing.assert_array_equal(
+            wav_storage_user[channel]["bvp_min_idx"],
+            original_minima_idx[channel])
 
