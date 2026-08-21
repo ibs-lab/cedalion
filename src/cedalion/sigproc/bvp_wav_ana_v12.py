@@ -1260,7 +1260,7 @@ def filter_pulse_rate(pulse_rate_ts: cdt.NDTimeSeries,
 
     Args:
         pulse_rate_ts: pulse rate time series created by the function
-        'extract_pulse_rate'.
+                       'extract_pulse_rate'.
         fmin: lower frequency border
         fmax: upper freqency border
         butter_order: order of Butterworth filter

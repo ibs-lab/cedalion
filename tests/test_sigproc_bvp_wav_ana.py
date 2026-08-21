@@ -10,7 +10,8 @@ from cedalion.sigproc.bvp_wav_ana_v12 import (
                 remove_artifact_waveforms,
                 classify_waveforms,
                 extract_bvpa,
-                extract_pulse_rate,)
+                extract_pulse_rate,
+                filter_pulse_rate,)
 from cedalion.dataclasses import build_timeseries
 from cedalion.dataclasses.bvp_container import BVP_Container
 
@@ -1826,4 +1827,142 @@ def test_extract_pulse_rate_filterlogic():
         np.testing.assert_array_equal(
             wav_storage_user[channel]["bvp_min_idx"],
             original_minima_idx[channel])
+
+def test_filter_pulse_rate():
+    """Tests bandpass filtering and extension of the pulse-rate time series."""
+
+    # --- Define sampling and frequency components ---
+    fs = 4.0
+    n_samples = 2000
+    sample_idx = np.arange(n_samples)
+    time = sample_idx / fs
+    channels = ["S1D1", "S2D2"]
+
+    low_frequency = np.sin(
+        2 * np.pi * 0.05 * time)
+
+    pass_frequency = np.sin(
+        2 * np.pi * 0.25 * time)
+
+    high_frequency = np.sin(
+        2 * np.pi * 0.8 * time)
+
+    # --- Build pulse-rate signals ---
+    pulse_rate_raw = np.vstack((
+        np.full(n_samples, 70.0),
+        np.full(n_samples, 75.0)))
+
+    pulse_rate_smooth = np.vstack((
+        60.0
+        + low_frequency
+        + 2.0 * pass_frequency
+        + high_frequency,
+        65.0
+        + 0.5 * low_frequency
+        + 3.0 * pass_frequency
+        + 1.5 * high_frequency))
+
+    pulse_rate_data = np.stack(
+        (pulse_rate_raw, pulse_rate_smooth),
+        axis=1)
+
+    original_pulse_rate_data = pulse_rate_data.copy()
+
+    # --- Build the pulse-rate time series ---
+    pulse_rate_ts = build_timeseries(
+        pulse_rate_data,
+        ["channel", "compound", "time"],
+        time,
+        channels,
+        "min**-1",
+        "s",
+        {"compound": (
+            "compound",
+            ["pulse_rate", "pulse_rate_smooth"]),
+         "source": ("channel", ["S1", "S2"]),
+         "detector": ("channel", ["D1", "D2"])})
+
+    # --- Filter the smoothed pulse-rate signal ---
+    result = filter_pulse_rate(
+        pulse_rate_ts,
+        fmin=0.1,
+        fmax=0.45,
+        butter_order=4)
+
+    result_values = result.pint.dequantify()
+
+    # --- Check dimensions, coordinates, metadata, and units ---
+    assert result.dims == ("channel", "compound", "time")
+    assert result.sizes["time"] == n_samples
+    assert result.pint.units == units.min**-1
+
+    np.testing.assert_array_equal(
+        result.channel.values,
+        channels)
+    np.testing.assert_array_equal(
+        result.compound.values,
+        ["pulse_rate", "pulse_rate_smooth", "pulse_rate_filt"])
+    np.testing.assert_array_equal(
+        result.samples.values,
+        sample_idx)
+    np.testing.assert_allclose(
+        result.time.values,
+        pulse_rate_ts.time.values,
+        atol=1e-12)
+    np.testing.assert_array_equal(
+        result.source.values,
+        ["S1", "S2"])
+    np.testing.assert_array_equal(
+        result.detector.values,
+        ["D1", "D2"])
+
+    # --- Check preservation of the original compounds ---
+    np.testing.assert_allclose(
+        result_values.sel(
+            compound=[
+                "pulse_rate",
+                "pulse_rate_smooth"]).values,
+        original_pulse_rate_data,
+        atol=1e-12)
+
+    # --- Check channel-wise frequency filtering ---
+    expected_pass_amplitude = {
+        "S1D1": 2.0,
+        "S2D2": 3.0}
+
+    for channel in channels:
+        pulse_rate_filt = result_values.sel(
+            channel=channel,
+            compound="pulse_rate_filt").values
+
+        assert np.all(np.isfinite(pulse_rate_filt))
+
+        pass_projection = (
+            np.dot(pass_frequency, pulse_rate_filt)
+            / np.dot(pass_frequency, pass_frequency))
+
+        low_projection = (
+            np.dot(low_frequency, pulse_rate_filt)
+            / np.dot(low_frequency, low_frequency))
+
+        high_projection = (
+            np.dot(high_frequency, pulse_rate_filt)
+            / np.dot(high_frequency, high_frequency))
+
+        # The 0.25-Hz component lies inside the passband.
+        np.testing.assert_allclose(
+            pass_projection,
+            expected_pass_amplitude[channel],
+            rtol=0.01,
+            atol=0.01)
+
+        # The 0.05-Hz and 0.8-Hz components lie outside the passband.
+        assert abs(low_projection) < 0.02
+        assert abs(high_projection) < 0.02
+
+    # --- Check input immutability ---
+    np.testing.assert_allclose(
+        pulse_rate_ts.pint.dequantify().values,
+        original_pulse_rate_data,
+        atol=1e-12)
 
