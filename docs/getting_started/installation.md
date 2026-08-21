@@ -234,7 +234,43 @@ $ apptainer run --nv --bind `pwd`/xkb:/var/lib/xkb,`pwd`/cedalion:/app cedalion.
 
 ### Docker
 
-Build the image from the repo root with `docker build -t cedalion .`, which copies the
-local source tree into the image and installs it into a conda environment using
-environment_dev.yml. Run it interactively with `docker run -it cedalion bash`, which
-drops you into a shell with the Cedalion conda environment automatically activated.
+The `Dockerfile` in the repository root builds an image that contains the conda
+environment described by `environment_dev.yml`, cedalion installed in editable mode and
+an X virtual framebuffer for pyvista's 3D plotting.
+
+Build the image from the repository root:
+
+```
+$ docker build -t cedalion .
+```
+
+To additionally install the NIRFASTer photon propagator (see step 6 above):
+
+```
+$ docker build -t cedalion --build-arg INSTALL_NIRFASTER=CPU .
+```
+
+Run an interactive shell with the `cedalion` environment activated:
+
+```
+$ docker run -it --rm cedalion
+```
+
+Run a jupyter notebook server and open it at the URL that is printed:
+
+```
+$ docker run -it --rm -p 8888:8888 cedalion \
+    jupyter notebook --ip 0.0.0.0 --no-browser --allow-root
+```
+
+To work on the source code from the host, mount your clone over `/cedalion`. The editable
+install picks the changes up:
+
+```
+$ docker run -it --rm -v `pwd`:/cedalion -p 8888:8888 cedalion
+```
+
+The entrypoint starts an X virtual framebuffer on `DISPLAY=:99`, so that pyvista renders
+offscreen without further setup. Shells opened with `docker exec` inherit that display and
+can render too. Should 3D plotting fail, the output of the X server is kept in
+`/tmp/xvfb.log` inside the container.
