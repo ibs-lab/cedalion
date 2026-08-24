@@ -71,4 +71,6 @@ dependencies:
       - snirf2bids @ git+https://github.com/emiddell/snirf2bids.git@v0.8.8
       - hatch-conda
       - pymeshlab
+      - "-e ./workflows[orchestration]"
+
       
