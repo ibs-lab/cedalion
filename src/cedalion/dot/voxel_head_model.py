@@ -290,10 +290,13 @@ class VoxelHeadModel:
             os.path.join(foldername, "scalp.ply"), file_type="ply"
         )
         if self.landmarks is not None:
-            self.landmarks.drop_vars("type").to_netcdf(
-                os.path.join(foldername, "landmarks.nc")
+            xrutils.save_dataarray_quantified(
+                self.landmarks.drop_vars("type"),
+                os.path.join(foldername, "landmarks.nc"),
             )
-        self.t_ijk2ras.to_netcdf(os.path.join(foldername, "t_ijk2ras.nc"))
+        xrutils.save_dataarray_quantified(
+            self.t_ijk2ras, os.path.join(foldername, "t_ijk2ras.nc")
+        )
         scipy.sparse.save_npz(
             os.path.join(foldername, "voxel_to_vertex_brain.npz"),
             self.voxel_to_vertex_brain,
@@ -344,21 +347,20 @@ class VoxelHeadModel:
 
         landmarks_path = os.path.join(foldername, "landmarks.nc")
         if os.path.exists(landmarks_path):
-            landmarks_ds = xr.load_dataset(landmarks_path)
-            landmarks = xr.DataArray(
-                landmarks_ds.to_array()[0],
-                coords={
-                    "label": ("label", landmarks_ds.label.values),
-                    "type": (
-                        "label",
-                        [cdc.PointType.LANDMARK] * len(landmarks_ds.label),
-                    ),
-                },
+            # landmarks are stored in the dimensionless ijk space
+            landmarks = xrutils.load_dataarray_quantified(
+                landmarks_path, fallback_units="dimensionless"
+            )
+            landmarks = landmarks.assign_coords(
+                type=("label", [cdc.PointType.LANDMARK] * len(landmarks.label))
             )
         else:
             landmarks = None
 
-        t_ijk2ras = xr.load_dataarray(os.path.join(foldername, "t_ijk2ras.nc"))
+        t_ijk2ras = xrutils.load_dataarray_quantified(
+            os.path.join(foldername, "t_ijk2ras.nc"), fallback_units="mm"
+        )
+        # pinv inverts the units, so t_ras2ijk is quantified as well
         t_ras2ijk = xrutils.pinv(t_ijk2ras)
 
         voxel_to_vertex_brain = scipy.sparse.load_npz(

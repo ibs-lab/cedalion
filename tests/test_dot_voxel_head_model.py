@@ -8,6 +8,7 @@ import warnings
 
 import numpy as np
 import pytest
+import xarray as xr
 from scipy.sparse import find
 
 import cedalion
@@ -92,6 +93,14 @@ def test_save_load_round_trip(colin27_voxel_head):
         assert (head.scalp.mesh.faces == head2.scalp.mesh.faces).all()
         assert (iu(head.t_ijk2ras) == iu(head2.t_ijk2ras)).all()
         assert (iu(head.t_ras2ijk) == iu(head2.t_ras2ijk)).all()
+
+        # units and CRS dim names must survive the netCDF round-trip
+        assert head2.t_ijk2ras.pint.units == head.t_ijk2ras.pint.units
+        assert head2.t_ras2ijk.pint.units == head.t_ras2ijk.pint.units
+        assert head2.t_ijk2ras.dims == head.t_ijk2ras.dims
+        assert head2.t_ras2ijk.dims == head.t_ras2ijk.dims
+        assert head2.landmarks.pint.units == head.landmarks.pint.units
+        assert head2.crs == head.crs
         assert _allclose_sparse(
             head.voxel_to_vertex_brain, head2.voxel_to_vertex_brain
         )
@@ -99,6 +108,60 @@ def test_save_load_round_trip(colin27_voxel_head):
             head.voxel_to_vertex_scalp, head2.voxel_to_vertex_scalp
         )
         assert np.array_equal(head.brain_mask, head2.brain_mask)
+
+
+def test_loaded_model_applies_transform(colin27_voxel_head):
+    """A loaded model must still be transformable (units survive save/load)."""
+    head = colin27_voxel_head
+
+    with tempfile.TemporaryDirectory() as dirpath:
+        tmp_folder = os.path.join(dirpath, "voxel_head")
+        head.save(tmp_folder)
+        head2 = VoxelHeadModel.load(tmp_folder)
+
+        head_ras = head.apply_transform(head.t_ijk2ras)
+        head2_ras = head2.apply_transform(head2.t_ijk2ras)
+
+        assert head2_ras.brain.crs == head_ras.brain.crs
+        assert head2_ras.brain.units == head_ras.brain.units
+        np.testing.assert_allclose(
+            head2_ras.brain.voxels, head_ras.brain.voxels, atol=1e-6
+        )
+        np.testing.assert_allclose(
+            head2_ras.scalp.mesh.vertices, head_ras.scalp.mesh.vertices, atol=1e-6
+        )
+
+        lm = head2.landmarks.points.apply_transform(head2.t_ijk2ras)
+        assert lm.pint.units == head_ras.landmarks.pint.units
+        np.testing.assert_allclose(
+            lm.pint.dequantify().values,
+            head_ras.landmarks.pint.dequantify().values,
+            atol=1e-6,
+        )
+
+
+def test_load_legacy_files_without_units(colin27_voxel_head):
+    """Test if head models stored before adding save_ and load_dataarray_quantified 
+    fall back to the right units.
+    The affine is mm, ijk landmarks are voxel indices and hence dimensionless.
+    """
+    head = colin27_voxel_head
+
+    with tempfile.TemporaryDirectory() as dirpath:
+        tmp_folder = os.path.join(dirpath, "voxel_head")
+        head.save(tmp_folder)
+
+        for fname in ["t_ijk2ras.nc", "landmarks.nc"]:
+            path = os.path.join(tmp_folder, fname)
+            array = xr.load_dataarray(path)
+            del array.attrs["units"]
+            array.to_netcdf(path)
+
+        head2 = VoxelHeadModel.load(tmp_folder)
+
+        assert head2.t_ijk2ras.pint.units == cedalion.units.Unit("mm")
+        assert head2.t_ras2ijk.pint.units == cedalion.units.Unit("1 / mm")
+        assert head2.landmarks.pint.units == cedalion.units.Unit("dimensionless")
 
 
 def test_apply_transform_round_trip(colin27_voxel_head):
@@ -154,8 +217,6 @@ def test_reduce_voxels_to_sensitivity(colin27_voxel_head):
     is_brain = np.zeros(n_brain + n_scalp, dtype=bool)
     is_brain[:n_brain] = True
 
-    import xarray as xr
-
     Adot = xr.DataArray(
         np.concatenate([Adot_brain, Adot_scalp], axis=1).astype(np.float32),
         dims=["channel", "vertex", "wavelength"],
@@ -192,7 +253,6 @@ def test_reduce_voxels_by_fluence(colin27_voxel_head, tmp_path):
     wavelengths = np.array([760.0])
 
     fluence_path = tmp_path / "fluence.h5"
-    import xarray as xr
     optode_pos = xr.DataArray(
         np.zeros((2, 3)),
         dims=["label", "ijk"],

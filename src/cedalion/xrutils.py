@@ -540,3 +540,52 @@ def check_units(array: xr.DataArray, dimension: str) -> bool:
         units = array.pint.units
 
     return (1*units).check(dimension)
+
+
+def save_dataarray_quantified(array: xr.DataArray, path: str) -> None:
+    """Write a DataArray to netCDF without losing its pint units.
+
+    netCDF cannot store a pint quantity: passing a quantified DataArray to
+    ``to_netcdf`` silently strips the units, emitting only a
+    ``UnitStrippedWarning``. Dequantifying first moves the units into
+    ``attrs["units"]``, where netCDF keeps them and from where
+    :func:`load_dataarray_quantified` restores them.
+
+    Args:
+        array: DataArray to write. May be quantified or not; an unquantified
+            array is written unchanged.
+        path: Destination netCDF file.
+    """
+    array.pint.dequantify().to_netcdf(path)
+
+
+def load_dataarray_quantified(
+    path: str, fallback_units: str | None = None
+) -> xr.DataArray:
+    """Read a DataArray from netCDF and restore its pint units.
+
+    Counterpart of :func:`save_dataarray_quantified`, which parks the units in
+    ``attrs["units"]`` where netCDF can keep them.
+
+    Dimension names — which encode the coordinate reference system for
+    cedalion's affine transforms and point clouds — are preserved by netCDF and
+    are taken from the file, never guessed.
+
+    Args:
+        path: netCDF file to read.
+        fallback_units: Units to assume if the file carries no ``units``
+            attribute, i.e. if it was written before units were stored. If
+            ``None``, such an array is returned unquantified.
+
+    Returns:
+        The DataArray, quantified if unit information was available.
+    """
+    array = xr.load_dataarray(path)
+
+    if array.attrs.get("units", None) is not None:
+        return array.pint.quantify()
+
+    if fallback_units is not None:
+        return array.pint.quantify(fallback_units)
+
+    return array
