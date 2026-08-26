@@ -81,7 +81,8 @@ def reduce_and_map_brain_voxels(
             CRS in which ``scalp_surface`` and ``brain_volume`` live.
         scalp_surface: Scalp surface mesh, in the target CRS.
         brain_volume: Brain voxels, in the target CRS, in the same row order
-            as ``np.argwhere(brain_mask.values)``.
+            as ``np.argwhere(brain_mask.values)``, i.e. derived from the very
+            same mask (see :func:`cedalion.geometry.segmentation.voxels_from_mask`).
         max_dist: Maximum allowed scalp-to-voxel distance.
 
     Returns:
@@ -111,8 +112,15 @@ def reduce_and_map_brain_voxels(
     ncells = cell_coords.sizes["label"]
 
     # flat indices of cells that belong to the brain mask; this is the same
-    # ordering used by `voxels_from_segmentation` (np.argwhere is row-major)
+    # ordering used by `voxels_from_mask` (np.argwhere is row-major)
     cell_indices_brain = np.flatnonzero(brain_mask.values)
+
+    if brain_volume.nvertices != len(cell_indices_brain):
+        raise ValueError(
+            "brain_volume and brain_mask disagree: "
+            f"{brain_volume.nvertices} voxels vs {len(cell_indices_brain)} masked "
+            "cells. Both must be derived from the same (optionally hole-filled) mask."
+        )
 
     # for each brain cell, distance to the closest scalp surface vertex
     dists, _ = scalp_surface.kdtree.query(

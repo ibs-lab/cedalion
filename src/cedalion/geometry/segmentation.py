@@ -19,6 +19,58 @@ import cedalion.dataclasses as cdc
 from cedalion import cite
 
 
+def combined_mask_from_segmentation(
+    segmentation_mask: xr.DataArray,
+    segmentation_types: List[str],
+    fill_holes_in_mask: bool = False,
+) -> xr.DataArray:
+    """Combine several segmentation types into one boolean mask.
+
+    Args:
+        segmentation_mask : xr.DataArray
+            Segmentation mask with dimensions segmentation type, i, j, k.
+        segmentation_types : List[str]
+            List of segmentation types to include.
+        fill_holes_in_mask : bool, optional
+            Fill holes in the combined mask, by default False.
+
+    Returns:
+        xr.DataArray
+            Boolean mask with dimensions i, j, k.
+    """
+    combined_mask = segmentation_mask.sel(
+        segmentation_type=segmentation_types
+    ).any("segmentation_type")
+
+    if fill_holes_in_mask:
+        combined_mask = combined_mask.copy(
+            data=scipy.ndimage.binary_fill_holes(combined_mask.values)
+        )
+
+    return combined_mask
+
+
+def voxels_from_mask(combined_mask: xr.DataArray) -> cdc.Voxels:
+    """Get the voxel coordinates of a boolean mask.
+
+    The voxels are returned in row-major order, i.e. in the same order in which
+    ``np.flatnonzero`` enumerates the set cells of ``combined_mask``. Callers that
+    keep a mask and its voxel coordinates side by side rely on this to line the two
+    up and must derive both from the same mask.
+
+    Args:
+        combined_mask : xr.DataArray
+            Boolean mask with dimensions i, j, k.
+
+    Returns:
+        cdc.Voxels
+            Voxels in voxel space.
+    """
+    voxels = np.argwhere(combined_mask.values)
+
+    return cdc.Voxels(voxels, "ijk", cedalion.units.Unit("1"))
+
+
 def voxels_from_segmentation(
     segmentation_mask: xr.DataArray,
     segmentation_types: List[str],
@@ -41,20 +93,11 @@ def voxels_from_segmentation(
         cdc.Voxels
             Voxels in voxel space.
     """
-    combined_mask = (
-        segmentation_mask.sel(segmentation_type=segmentation_types)
-        .any("segmentation_type")
-        .values
+    combined_mask = combined_mask_from_segmentation(
+        segmentation_mask, segmentation_types, fill_holes_in_mask
     )
 
-    if fill_holes_in_mask:
-        combined_mask = scipy.ndimage.binary_fill_holes(combined_mask).astype(
-            combined_mask.dtype
-        )
-
-    voxels = np.argwhere(combined_mask)
-
-    return cdc.Voxels(voxels, "ijk", cedalion.units.Unit("1"))
+    return voxels_from_mask(combined_mask)
 
 
 def surface_from_segmentation(
@@ -78,18 +121,11 @@ def surface_from_segmentation(
         A cedalion.Surface object.
     """
 
-    combined_mask = (
-        segmentation_mask.sel(segmentation_type=segmentation_types)
-        .any("segmentation_type")
-        .values
+    combined_mask = combined_mask_from_segmentation(
+        segmentation_mask, segmentation_types, fill_holes_in_mask
     )
 
-    if fill_holes_in_mask:
-        combined_mask = scipy.ndimage.binary_fill_holes(combined_mask).astype(
-            combined_mask.dtype
-        )
-
-    vertices, faces, normals, values = marching_cubes(combined_mask, isovalue)
+    vertices, faces, normals, values = marching_cubes(combined_mask.values, isovalue)
     mesh = trimesh.Trimesh(vertices, faces, vertex_normals=normals)
     mesh.fill_holes()
     mesh.fix_normals()

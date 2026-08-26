@@ -38,8 +38,9 @@ from cedalion.dot.utils import (
     reduce_and_map_brain_voxels,
 )
 from cedalion.geometry.segmentation import (
+    combined_mask_from_segmentation,
     surface_from_segmentation,
-    voxels_from_segmentation,
+    voxels_from_mask,
 )
 from cedalion.io import read_mrk_json, read_segmentation_masks
 
@@ -144,9 +145,12 @@ class VoxelHeadModel:
         else:
             landmarks_ijk = None
 
-        brain_voxels_ijk = voxels_from_segmentation(
+        # brain_mask_seg and brain_voxels_ijk must stay row-order aligned. Deriving
+        # the voxel coordinates from the very same mask is what guarantees it.
+        brain_mask_seg = combined_mask_from_segmentation(
             segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes
         )
+        brain_voxels_ijk = voxels_from_mask(brain_mask_seg)
 
         if scalp_surface_file is not None:
             scalp_mesh = trimesh.load(scalp_surface_file)
@@ -170,9 +174,8 @@ class VoxelHeadModel:
 
         scalp_ijk = scalp_ijk.fix_vertex_normals()
 
-        brain_mask_seg = segmentation_masks.sel(
-            segmentation_type=brain_seg_types
-        ).any("segmentation_type")
+        # the scalp mask feeds map_segmentation_mask_to_surface, which is kdtree-based
+        # and carries no ordering contract, so it needs no hole filling
         scalp_mask_seg = segmentation_masks.sel(
             segmentation_type=scalp_seg_types
         ).any("segmentation_type")
@@ -238,6 +241,25 @@ class VoxelHeadModel:
         clearer name can use this alias.
         """
         return self.voxel_to_vertex_brain
+
+    @property
+    def brain_cell_indices(self) -> np.ndarray:
+        """Flat segmentation-cell index of each brain voxel.
+
+        Read from ``voxel_to_vertex_brain`` rather than derived from
+        ``brain_mask``: column ``j`` of that matrix has exactly one nonzero and
+        its row index *is* the flat cell index of voxel ``j``.  This makes no
+        assumption about the order in which ``brain_mask`` enumerates its set
+        bits.
+        """
+        m = self.voxel_to_vertex_brain.tocsc()
+
+        if not (np.diff(m.indptr) == 1).all():
+            raise ValueError(
+                "each brain voxel must map from exactly one segmentation cell"
+            )
+
+        return m.indices[m.indptr[:-1]]
 
     def apply_transform(self, transform: cdt.AffineTransform) -> "VoxelHeadModel":
         """Apply an affine transform to surfaces, voxels and landmarks.
@@ -400,10 +422,9 @@ class VoxelHeadModel:
                 "kept_in_current must have shape (n_current_brain_voxels,)"
             )
 
-        # update the 3D brain mask: indices of currently-kept voxels in
-        # the segmentation grid are stored in flat order
-        flat_indices_current = np.flatnonzero(self.brain_mask)
-        assert flat_indices_current.shape[0] == self.brain.nvertices
+        # update the 3D brain mask. The cell index of each voxel is read from the
+        # mapping matrix, so no assumption about the mask's bit order is needed.
+        flat_indices_current = self.brain_cell_indices
         flat_indices_kept = flat_indices_current[kept_in_current]
 
         new_brain_mask = np.zeros_like(self.brain_mask, dtype=bool)
@@ -518,10 +539,8 @@ class VoxelHeadModel:
         # max over wavelengths, then flatten to match the segmentation cell order
         per_voxel = voxel_sum.max(axis=0).reshape(-1)
 
-        # restrict to currently-kept brain voxels (column order of
-        # voxel_to_vertex_brain matches np.flatnonzero(brain_mask))
-        flat_indices_current = np.flatnonzero(self.brain_mask)
-        per_brain_voxel = per_voxel[flat_indices_current]
+        # restrict to currently-kept brain voxels, in brain-voxel order
+        per_brain_voxel = per_voxel[self.brain_cell_indices]
 
         max_value = per_brain_voxel.max()
         if max_value <= 0:

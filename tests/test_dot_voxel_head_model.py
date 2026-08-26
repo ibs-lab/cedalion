@@ -6,8 +6,12 @@ import os
 import tempfile
 import warnings
 
+import dataclasses
+
+import nibabel as nib
 import numpy as np
 import pytest
+import scipy.ndimage
 import xarray as xr
 from scipy.sparse import find
 
@@ -48,6 +52,34 @@ def colin27_voxel_head():
     )
 
 
+
+def _voxels_from_mask(head):
+    """Voxel coordinates recovered from ``brain_mask`` alone, in set-bit order."""
+    return np.array(
+        np.unravel_index(np.flatnonzero(head.brain_mask), head.brain_mask.shape)
+    ).T
+
+
+def _permute_brain_voxels(head, seed=0):
+    """Scramble the brain voxel order without touching ``brain_mask``.
+
+    Voxels and the columns of ``voxel_to_vertex_brain`` move together, so the
+    model stays self-consistent while the convention that row ``j`` of
+    ``brain.voxels`` is the ``j``-th set bit of ``brain_mask`` no longer holds.
+    Code that assumes that convention silently picks the wrong voxels.
+    """
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(head.brain.nvertices)
+
+    permuted = dataclasses.replace(
+        head,
+        brain=cdc.Voxels(head.brain.voxels[perm], head.brain.crs, head.brain.units),
+        voxel_to_vertex_brain=head.voxel_to_vertex_brain.tocsc()[:, perm],
+    )
+    assert not np.array_equal(permuted.brain.voxels, _voxels_from_mask(permuted))
+    return permuted
+
+
 def test_from_segmentation_smoke(colin27_voxel_head):
     head = colin27_voxel_head
 
@@ -71,6 +103,30 @@ def test_from_segmentation_smoke(colin27_voxel_head):
 
     # alias property returns the same matrix object
     assert head.voxel_to_voxel_brain is head.voxel_to_vertex_brain
+
+
+
+def test_rebuild_survives_permuted_voxel_order(colin27_voxel_head):
+    """Reducing must read the voxel ordering from the mapping, not assume it."""
+    head = _permute_brain_voxels(colin27_voxel_head)
+
+    kept = np.zeros(head.brain.nvertices, dtype=bool)
+    kept[::3] = True
+    reduced = head._rebuild_brain_voxel_mapping(kept)
+
+    expected = head.brain.voxels[kept]
+    np.testing.assert_array_equal(reduced.brain.voxels, expected)
+
+    # the reduced model must describe those same voxels in mask and matrix.
+    # colin27's voxels are floats after the ijk->ras->ijk round trip, hence atol.
+    cells = reduced.brain_cell_indices
+    recovered = np.array(
+        np.unravel_index(cells, reduced.brain_mask.shape)
+    ).T
+    np.testing.assert_allclose(recovered, expected, atol=1e-6)
+    np.testing.assert_array_equal(
+        np.flatnonzero(reduced.brain_mask), np.sort(cells)
+    )
 
 
 def test_save_load_round_trip(colin27_voxel_head):
@@ -141,7 +197,7 @@ def test_loaded_model_applies_transform(colin27_voxel_head):
 
 
 def test_load_legacy_files_without_units(colin27_voxel_head):
-    """Test if head models stored before adding save_ and load_dataarray_quantified 
+    """Test if head models stored before adding save_ and load_dataarray_quantified
     fall back to the right units.
     The affine is mm, ijk landmarks are voxel indices and hence dimensionless.
     """
@@ -236,8 +292,13 @@ def test_reduce_voxels_to_sensitivity(colin27_voxel_head):
     assert Adot_reduced.sizes["vertex"] == reduced.brain.nvertices + n_scalp
 
 
-def test_reduce_voxels_by_fluence(colin27_voxel_head, tmp_path):
+@pytest.mark.parametrize("permute", [False, True])
+def test_reduce_voxels_by_fluence(colin27_voxel_head, tmp_path, permute):
     head = colin27_voxel_head
+    if permute:
+        # the fluence path carries the mask-ordering assumption independently
+        # of _rebuild_brain_voxel_mapping, so it needs its own check
+        head = _permute_brain_voxels(head)
     seg_shape = tuple(head.segmentation_masks.shape[-3:])
 
     # build a synthetic fluence volume that is 1.0 in a sub-bounding-box of
@@ -286,6 +347,14 @@ def test_reduce_voxels_by_fluence(colin27_voxel_head, tmp_path):
     # row indices in the new mapping correspond to the kept voxels
     new_flat = np.flatnonzero(reduced.brain_mask)
     np.testing.assert_array_equal(np.sort(new_flat), np.sort(keep_idx))
+
+    # and the retained coordinates must be those of the retained cells: picking
+    # the fluence values in mask order but the voxels in voxel order keeps the
+    # mask right while silently selecting the wrong voxels
+    recovered = np.array(
+        np.unravel_index(reduced.brain_cell_indices, reduced.brain_mask.shape)
+    ).T
+    np.testing.assert_allclose(recovered, reduced.brain.voxels, atol=1e-6)
 
 
 def test_get_standard_headmodel_voxel_kind():
