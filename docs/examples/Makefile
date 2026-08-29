@@ -31,6 +31,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
 					head_models/48_headmodel_landmarks_verification.ipynb \
 					head_models/51_spring_relaxation_registration.ipynb \
 					head_models/52_mni_atlas_labels_aal3_brodmann.ipynb \
+					head_models/53_photogrammetry_anonymization.ipynb \
 					augmentation/61_synthetic_artifacts_example.ipynb \
 					augmentation/62_synthetic_hrfs_example.ipynb \
 					physio/71_ampd_heartbeat.ipynb \
