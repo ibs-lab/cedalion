@@ -1009,10 +1009,13 @@ def image_to_channel_space(
         Adot_stacked = Adot_stacked.pint.quantify()
         img_stacked = stack_flat_vertex(img)
 
-        return unstack_flat_channel(
+        result = unstack_flat_channel(
             xrutils.contract(
                 Adot_stacked, img_stacked, dim="flat_vertex"
             )  # FIXME generalize?
+        )
+        return result.sel(
+            channel=Adot.channel.values, wavelength=Adot.wavelength.values
         )
     elif xrutils.check_units(img, "1/[length]"):
         Adot = Adot.pint.quantify()

@@ -401,12 +401,12 @@ def test_compute_stacked_sensitivity(monkeypatch, n_wavelength, n_chromo, vertex
 
 def test_image_to_channel_space():
     Adot = xr.DataArray(
-        np.ones((2, 3, 2), dtype=np.float32),
+        np.ones((4, 3, 2), dtype=np.float32),
         dims=["channel", "vertex", "wavelength"],
         coords={
-            "channel":   ("channel", ["S1D1", "S1D2"]),
-            "source":    ("channel", ["S1", "S1"]),
-            "detector":  ("channel", ["D1", "D2"]),
+            "channel":   ("channel", ["S1D1", "S2D1", "S10D1", "S3D2"]),
+            "source":    ("channel", ["S1", "S2", "S10", "S3"]),
+            "detector":  ("channel", ["D1", "D1", "D1", "D2"]),
             "wavelength":("wavelength", [760., 850.]),
             "is_brain":  ("vertex", [True, True, False]),
         },
@@ -431,6 +431,7 @@ def test_image_to_channel_space():
 
         assert set(ts.dims) == {"channel", "wavelength", "time"}
         assert cedalion.xrutils.check_units(ts, "")
+        assert list(ts.channel.values) == list(Adot.channel.values)
 
 
 def test_scale_to_landmarks():
