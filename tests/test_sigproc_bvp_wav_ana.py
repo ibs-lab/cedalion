@@ -11,7 +11,8 @@ from cedalion.sigproc.bvp_wav_ana_v12 import (
                 classify_waveforms,
                 extract_bvpa,
                 extract_pulse_rate,
-                filter_pulse_rate,)
+                filter_pulse_rate,
+                calc_wav_coh_bvpa_pr,)
 from cedalion.dataclasses import build_timeseries
 from cedalion.dataclasses.bvp_container import BVP_Container
 
@@ -458,7 +459,7 @@ def test_extract_bvp():
             expected_trend,
             atol=1e-12)
 
-def test_extract_waveforms_gerneral():
+def test_extract_waveforms_general():
     """Tests extraction and normalization of individual BVP waveforms.
 
     A periodic physiological pulse waveform from test_bvp_single_ch is
@@ -1966,3 +1967,197 @@ def test_filter_pulse_rate():
         original_pulse_rate_data,
         atol=1e-12)
 
+def test_calc_wav_coh_bvpa_pr():
+    """Tests channel-wise wavelet coherence and extension of waveform storage.
+
+    Each channel contains two sinusoidal signals with a known phase shift.
+    Coherence and phase are checked at the signal frequency, excluding
+    edge regions affected by the cone of influence.
+    """
+
+    # --- Define sampling and wavelet parameters ---
+    fs = 20.0
+    duration = 5 * 60.0
+    n_samples = int(fs * duration)
+    time = np.arange(n_samples) / fs
+    channels = ["S4D10", "S5D11"]
+
+    signal_frequency = 0.15
+    phase_shifts = {
+        "S4D10": np.pi / 3,
+        "S5D11": -np.pi / 4}
+
+    dj = 1 / 12
+    s0 = 2 / fs
+    J = 96
+
+    # --- Define slow variations and amplitude modulation ---
+    oscillation = 2 * np.pi * signal_frequency * time
+
+    slow_variation = (
+        np.sin(2 * np.pi * 0.008 * time)
+        + 0.5 * np.sin(2 * np.pi * 0.021 * time))
+
+    amplitude_modulation = (
+        1.0
+        + 0.25 * np.sin(2 * np.pi * 0.012 * time)
+        + 0.10 * np.sin(2 * np.pi * 0.031 * time))
+
+    # --- Create BVPA signals with a slowly varying baseline ---
+    bvpa_baseline = (
+        1.1
+        + 0.15 * slow_variation
+        + 0.0002 * time)
+
+    bvpa_data = np.vstack((
+        bvpa_baseline
+        + 0.22 * amplitude_modulation * np.sin(oscillation),
+        1.05 * bvpa_baseline
+        + 0.24 * amplitude_modulation * np.sin(oscillation)))
+
+    # --- Create pulse-rate oscillations with sharper peaks ---
+    pulse_rate_oscillations = np.vstack([
+        np.sin(oscillation + phase_shifts[channel])
+        - 0.25 * np.cos(2 * (oscillation + phase_shifts[channel]))
+        for channel in channels])
+
+    pulse_rate_baseline = (
+        61.0
+        + 2.0 * slow_variation
+        + 0.002 * time)
+
+    pulse_rate_data = np.vstack((
+        pulse_rate_baseline
+        + 8.5 * amplitude_modulation * pulse_rate_oscillations[0],
+        pulse_rate_baseline + 2.0
+        + 9.0 * amplitude_modulation * pulse_rate_oscillations[1]))
+
+    # --- Build independent input time series ---
+    bvpa_ts = build_timeseries(
+        bvpa_data.copy(),
+        ["channel", "time"],
+        time,
+        channels,
+        "uM",
+        "s",
+        {"source": ("channel", ["S4", "S5"]),
+         "detector": ("channel", ["D10", "D11"])})
+
+    pulse_rate_ts = build_timeseries(
+        pulse_rate_data.copy(),
+        ["channel", "time"],
+        time,
+        channels,
+        "min**-1",
+        "s",
+        {"source": ("channel", ["S4", "S5"]),
+         "detector": ("channel", ["D10", "D11"])})
+
+    # --- Build waveform storage with an existing entry per channel ---
+    wav_storage_details = {
+        channel: {"existing_value": channel}
+        for channel in channels}
+
+    # --- Calculate wavelet coherence ---
+    result = calc_wav_coh_bvpa_pr(
+        bvpa_ts,
+        pulse_rate_ts,
+        wav_storage_details,
+        dj=dj,
+        s0=s0,
+        J=J,
+        do_zscore=True,
+        do_detrend=True,
+        do_sig=False)
+
+    # --- Check in-place extension of the waveform storage ---
+    assert result is wav_storage_details
+    assert set(result) == set(channels)
+
+    matrix_fields = [
+        "wavelet_coherence",
+        "phase",
+        "cross_wavelet_transform",
+        "cwt_signal1",
+        "cwt_signal2"]
+
+    for channel in channels:
+        channel_result = result[channel]
+
+        assert channel_result["existing_value"] == channel
+
+        # --- Check dimensions and finite matrix values ---
+        expected_shape = (J + 1, n_samples)
+
+        for field in matrix_fields:
+            values = channel_result[field]
+
+            assert values.shape == expected_shape
+            assert np.all(np.isfinite(values))
+
+        coherence = channel_result["wavelet_coherence"]
+        phase = channel_result["phase"]
+        frequencies = channel_result["frequency"]
+        coi = channel_result["cone_of_interest"]
+
+        assert frequencies.shape == (J + 1,)
+        assert coi.shape == time.shape
+        assert channel_result["wc_time"].shape == time.shape
+
+        assert np.all(np.isfinite(frequencies))
+        assert np.all(frequencies > 0)
+        assert np.all(np.diff(frequencies) < 0)
+        assert np.all(np.isfinite(coi))
+        assert np.all(coi > 0)
+
+        np.testing.assert_allclose(
+            channel_result["wc_time"],
+            time,
+            rtol=0,
+            atol=1e-12)
+
+        # Significance estimation is disabled.
+        np.testing.assert_array_equal(
+            channel_result["significance"],
+            np.array([0]))
+
+        # --- Check the numerical bounds of wavelet coherence ---
+        assert np.all(coherence >= -1e-12)
+        assert np.all(coherence <= 1.0 + 1e-12)
+
+        # --- Select the signal frequency and exclude edge effects ---
+        assert frequencies[-1] < signal_frequency < frequencies[0]
+
+        frequency_idx = np.argmin(
+            np.abs(frequencies - signal_frequency))
+
+        signal_period = 1.0 / frequencies[frequency_idx]
+        valid_idx = signal_period <= coi
+
+        assert np.count_nonzero(valid_idx) > n_samples // 2
+
+        # --- Check coherence at the signal frequency ---
+        mean_coherence = np.mean(
+            coherence[frequency_idx, valid_idx])
+
+        assert mean_coherence > 0.95
+
+        # --- Check the circular mean phase ---
+        mean_phase = np.angle(
+            np.mean(np.exp(
+                1j * phase[frequency_idx, valid_idx])))
+
+        # W1 * conj(W2) produces the negative phase difference.
+        expected_phase = -phase_shifts[channel]
+        phase_error = np.angle(
+            np.exp(1j * (mean_phase - expected_phase)))
+
+        assert abs(phase_error) < 0.15
+
+    # --- Check input immutability ---
+    np.testing.assert_array_equal(
+        bvpa_ts.pint.dequantify().values,
+        bvpa_data)
+    np.testing.assert_array_equal(
+        pulse_rate_ts.pint.dequantify().values,
+        pulse_rate_data)

@@ -1334,8 +1334,8 @@ def calc_wav_coh_bvpa_pr(ts_1: cdt.NDTimeSeries,
     fs = float(fs_qty.to('Hz').magnitude)
     dt = 1.0 / fs
 
-    # ch_list = ts_1.channel.values
-    ch_list = ['S4D10']
+    ch_list = ts_1.channel.values
+    # ch_list = ['S4D10']
 
     for ch in ch_list:
         y_ts_1 = ts_1.sel(channel=ch).to_numpy()
