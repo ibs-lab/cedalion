@@ -253,9 +253,9 @@ running `python scripts/generate_contributors.py`.
 ### Scientific Credit
 
 This toolbox's documentation includes a dedicated
-[bibliography](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/references.html__) where you
+[bibliography](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/references.html) where you
 can browse the scientific papers whose methods are implemented in Cedalion. The reference keys
-follow the [BibTeX alpha bibliography style](https://www.bibtex.com/s/bibliography-style-base-alpha/__)
+follow the [BibTeX alpha bibliography style](https://www.bibtex.com/s/bibliography-style-base-alpha/)
 and can also be used to search the documentation for methods built on a given paper.
 
 If you contribute code based on a published method, please:

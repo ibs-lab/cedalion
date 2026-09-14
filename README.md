@@ -23,7 +23,7 @@ on you computer.
 To test the [example notebooks](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/examples.html) without installing Cedalion locally, you can also [run the notebooks on Google Colab](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/getting_started/colab_setup.html).
 
 ## Versions
-The `main` branch acts as a relase branch, i.e. the latest commit there is the most 
+The `main` branch acts as a release branch, i.e. the latest commit there is the most 
 current release. Development happens in the `dev` branch. Please refer to the [CHANGELOG](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/CHANGELOG.html) for a release 
 history and current differences between the `dev` and `main` branches.
 
@@ -34,7 +34,30 @@ For discussions and help please visit the [Cedalion forum on openfnirs.org](http
 
 
 ## How to cite Cedalion
-A paper for the toolbox is currently in the making. If you use this toolbox for a publication in the meantime, please cite us using GitHub's "Cite this repository" feature in the "About" section. If you want to contact us or learn more about the IBS-Lab please go to https://www.ibs-lab.com/
+
+If this toolbox was used in your published work, we kindly ask you to cite the Cedalion Tutorial Paper:
+
+> Eike Middell, Laura B. Carlton, Shakiba Moradi, et al. "Cedalion tutorial: a Python-based framework for comprehensive analysis of multimodal fNIRS and DOT from the lab to the everyday world," Neurophotonics 13(S3), S32602 (13 Aug 2026). [https://doi.org/10.1117/1.NPh.13.S3.S32602](https://doi.org/10.1117/1.NPh.13.S3.S32602)
+
+**BibTex**
+
+```bibtex
+@article{cedalion:2026,
+author = {Eike Middell and Laura B. Carlton and Shakiba Moradi and Tom{\'a}s Codina and Thomas Fischer and Josef Cutler and Shannon Kelley and Jacqueline Behrendt and Theekshana Dissanayake and Nils Harmening and Meryem A. Y{\"u}cel and David A. Boas and Alexander von L{\"u}hmann},
+title = {{Cedalion tutorial: a Python-based framework for comprehensive analysis of multimodal fNIRS and DOT from the lab to the everyday world}},
+volume = {13},
+journal = {Neurophotonics},
+number = {S3},
+publisher = {SPIE},
+pages = {S32602},
+year = {2026},
+doi = {10.1117/1.NPh.13.S3.S32602},
+URL = {https://doi.org/10.1117/1.NPh.13.S3.S32602}
+}
+```
+
+Furthermore, for methods implemented in Cedalion, check the [bibliography](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/references.html) as well as [the toolbox's functionality to cite
+methods used](https://doc.ibs.tu-berlin.de/cedalion/doc/dev/community/index.html#scientific-credit).
 
 
 ## License
