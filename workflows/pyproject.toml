@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cedalion-workflows"
+description = "Reproducible Snakemake workflows for the cedalion fNIRS toolbox"
+readme = "README.md"
+requires-python = ">=3.11"
+version = "0.1"
+#dynamic = ["version"]
+dependencies = []  
+
+[project.optional-dependencies]
+# Launcher profile: orchestration engine + executor. Not needed in step envs.
+orchestration = ["snakemake>=8", "snakemake-executor-plugin-slurm"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-cov", "ruff"]
+
+#[tool.hatch.version]
+#source = "vcs"
+#raw-options = { root = ".." }     # version from the repo-root git tags
+
+#[tool.hatch.build.hooks.vcs]
+#version-file = "src/cedalion_workflows/_version.py"
+#template = "__version__ = '{version}'\n"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cedalion_workflows"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "D"]
+[tool.ruff.lint.pydocstyle]
+convention = "google"

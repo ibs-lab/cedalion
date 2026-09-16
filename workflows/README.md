@@ -1,0 +1,1 @@
+This subfolder contains the `cedalion-workflows` package

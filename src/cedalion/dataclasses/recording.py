@@ -204,6 +204,10 @@ class Recording:
             for ts in self.timeseries.values()
             if "wavelength" in ts.coords
         ]
+
+        if not wl:
+            return []
+
         return list(np.unique(np.hstack(wl)))
 
     @property
