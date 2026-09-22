@@ -852,9 +852,11 @@ def blockaverage(
     print(f"{t_pre=} {t_post=}")
 
     epochs = []
+    available_trial_types = set()
 
     for fname in input_snirf:
         rec = cedalion.io.read_snirf(fname)[0]
+        available_trial_types.update(rec.stim.trial_type)
 
         # FIXME ideally users can select the time series by name
         if ts_name:
@@ -870,14 +872,34 @@ def blockaverage(
         else:
             selected_trials = sorted(set([i for i in rec.stim.trial_type]))
 
-        epochs.append(
-            ts.cd.to_epochs(
-                rec.stim,
-                selected_trials,
-                before=t_pre,
-                after=t_post,
-            )
+        epoch = ts.cd.to_epochs(
+            rec.stim,
+            selected_trials,
+            before=t_pre,
+            after=t_post,
         )
+
+        # Preprocessing may physically drop unusable channels from the selected
+        # time series. Restore the original channel axis from the amplitude
+        # data so channels pruned from every run remain represented as NaN.
+        original_amp = rec["amp"]
+        epoch = epoch.reindex(channel=original_amp.channel)
+
+        for coord_name in ("source", "detector"):
+            if coord_name in original_amp.coords:
+                epoch = epoch.assign_coords(
+                    {coord_name: original_amp.coords[coord_name]}
+                )
+
+        epochs.append(epoch)
+
+    if trial_types is not None:
+        missing_trial_types = sorted(set(trial_types) - available_trial_types)
+        if missing_trial_types:
+            raise ValueError(
+                "Requested trial types not found in any input recording: "
+                f"{missing_trial_types}"
+            )
 
     epochs = xr.concat(epochs, dim="epoch")  # concatenate epochs from all runs
 

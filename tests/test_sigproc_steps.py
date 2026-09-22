@@ -3,10 +3,12 @@
 import json
 
 import numpy as np
+import pandas as pd
 import pytest
 import xarray as xr
 
 from cedalion import units
+import cedalion.dataclasses as cdc
 import cedalion.sigproc.steps as steps
 
 
@@ -648,3 +650,276 @@ def test_preprocess_normalizes_landmarks_and_stores_config(
         "keep_intermediate": False,
         "normalize_landmarks": True,
     }
+
+
+def _make_blockaverage_recording(
+    conc_values,
+    *,
+    conc_channels,
+    amp_channels=None,
+    trial_type="A",
+):
+    """Create a minimal recording for blockaverage regression tests."""
+    if amp_channels is None:
+        amp_channels = conc_channels
+
+    conc_values = np.asarray(conc_values, dtype=float)
+    if conc_values.ndim == 1:
+        conc_values = conc_values[None, :]
+
+    channel_index = {
+        channel: index + 1
+        for index, channel in enumerate(amp_channels)
+    }
+
+    rec = cdc.Recording()
+
+    rec["conc"] = cdc.build_timeseries(
+        conc_values[:, :, None],
+        dims=["channel", "time", "chromo"],
+        time=np.arange(5, dtype=float),
+        channel=conc_channels,
+        value_units="uM",
+        time_units="s",
+        other_coords={
+            "chromo": ["HbO"],
+            "source": (
+                "channel",
+                [f"S{channel_index[channel]}" for channel in conc_channels],
+            ),
+            "detector": (
+                "channel",
+                [f"D{channel_index[channel]}" for channel in conc_channels],
+            ),
+        },
+    )
+
+    rec["amp"] = cdc.build_timeseries(
+        np.ones((len(amp_channels), 5, 1), dtype=float),
+        dims=["channel", "time", "wavelength"],
+        time=np.arange(5, dtype=float),
+        channel=amp_channels,
+        value_units="V",
+        time_units="s",
+        other_coords={
+            "wavelength": [760.0],
+            "source": (
+                "channel",
+                [f"S{channel_index[channel]}" for channel in amp_channels],
+            ),
+            "detector": (
+                "channel",
+                [f"D{channel_index[channel]}" for channel in amp_channels],
+            ),
+        },
+    )
+
+    rec.stim = pd.DataFrame(
+        {
+            "onset": [1.0],
+            "duration": [1.0],
+            "value": [1.0],
+            "trial_type": [trial_type],
+        }
+    )
+
+    return rec
+
+
+def _patch_blockaverage_io(monkeypatch, tmp_path, recordings):
+    """Mock SNIRF I/O and return synthetic input paths plus written outputs."""
+    input_paths = [
+        tmp_path / f"run{index}.snirf"
+        for index in range(1, len(recordings) + 1)
+    ]
+    recordings_by_path = dict(zip(input_paths, recordings, strict=True))
+
+    written = []
+
+    monkeypatch.setattr(
+        steps.cedalion.io,
+        "read_snirf",
+        lambda fname: [recordings_by_path[fname]],
+    )
+    monkeypatch.setattr(
+        steps.cedalion.io,
+        "write_snirf",
+        lambda path, recording: written.append((path, recording)),
+    )
+
+    return input_paths, written
+
+
+def test_blockaverage_partial_pruning(tmp_path, monkeypatch):
+    """Use valid epochs when a channel was pruned from only one run."""
+    run1 = _make_blockaverage_recording(
+        [
+            [0.0, 1.0, 3.0, 5.0, 7.0],
+            [0.0, 10.0, 20.0, 30.0, 40.0],
+        ],
+        conc_channels=["ch1", "ch2"],
+    )
+    run2 = _make_blockaverage_recording(
+        [[0.0, 2.0, 6.0, 10.0, 14.0]],
+        conc_channels=["ch1"],
+    )
+
+    input_paths, written = _patch_blockaverage_io(
+        monkeypatch,
+        tmp_path,
+        [run1, run2],
+    )
+    output_path = tmp_path / "blockaverage.snirf"
+
+    steps.blockaverage(
+        input_snirf=input_paths,
+        output_snirf=output_path,
+        t_pre="1 s",
+        t_post="2 s",
+        ts_name="conc",
+        trial_types=["A"],
+    )
+
+    assert len(written) == 1
+    assert written[0][0] == output_path
+
+    result = written[0][1]["hrf_blockaverage"]
+
+    assert result.channel.values.tolist() == ["ch1", "ch2"]
+    assert result.source.dims == ("channel",)
+    assert result.detector.dims == ("channel",)
+
+    np.testing.assert_allclose(
+        result.sel(
+            trial_type="A",
+            channel="ch1",
+            chromo="HbO",
+        ).pint.dequantify().values,
+        [0.0, 1.5, 4.5, 7.5],
+    )
+    np.testing.assert_allclose(
+        result.sel(
+            trial_type="A",
+            channel="ch2",
+            chromo="HbO",
+        ).pint.dequantify().values,
+        [0.0, 10.0, 20.0, 30.0],
+    )
+
+
+def test_blockaverage_all_runs_pruned(tmp_path, monkeypatch):
+    """Retain an always-pruned channel as NaN in the block-average output."""
+    run1 = _make_blockaverage_recording(
+        [[0.0, 1.0, 3.0, 5.0, 7.0]],
+        conc_channels=["ch1"],
+        amp_channels=["ch1", "ch2"],
+    )
+    run2 = _make_blockaverage_recording(
+        [[0.0, 2.0, 6.0, 10.0, 14.0]],
+        conc_channels=["ch1"],
+        amp_channels=["ch1", "ch2"],
+    )
+
+    input_paths, written = _patch_blockaverage_io(
+        monkeypatch,
+        tmp_path,
+        [run1, run2],
+    )
+
+    steps.blockaverage(
+        input_snirf=input_paths,
+        output_snirf=tmp_path / "blockaverage.snirf",
+        t_pre="1 s",
+        t_post="2 s",
+        ts_name="conc",
+        trial_types=["A"],
+    )
+
+    result = written[0][1]["hrf_blockaverage"]
+
+    assert result.channel.values.tolist() == ["ch1", "ch2"]
+    assert (
+        result.sel(
+            trial_type="A",
+            channel="ch2",
+            chromo="HbO",
+        )
+        .pint.dequantify()
+        .isnull()
+        .all()
+        .item()
+    )
+
+
+def test_blockaverage_trial_types_across_runs(tmp_path, monkeypatch):
+    """Combine trial types even when individual runs contain only a subset."""
+    run1 = _make_blockaverage_recording(
+        [0.0, 1.0, 3.0, 5.0, 7.0],
+        conc_channels=["ch1"],
+        trial_type="A",
+    )
+    run2 = _make_blockaverage_recording(
+        [0.0, 2.0, 6.0, 10.0, 14.0],
+        conc_channels=["ch1"],
+        trial_type="B",
+    )
+
+    input_paths, written = _patch_blockaverage_io(
+        monkeypatch,
+        tmp_path,
+        [run1, run2],
+    )
+
+    steps.blockaverage(
+        input_snirf=input_paths,
+        output_snirf=tmp_path / "blockaverage.snirf",
+        t_pre="1 s",
+        t_post="2 s",
+        ts_name="conc",
+        trial_types=["A", "B"],
+    )
+
+    result = written[0][1]["hrf_blockaverage"]
+
+    assert set(result.trial_type.values.tolist()) == {"A", "B"}
+
+    np.testing.assert_allclose(
+        result.sel(
+            trial_type="A",
+            channel="ch1",
+            chromo="HbO",
+        ).pint.dequantify().values,
+        [0.0, 1.0, 3.0, 5.0],
+    )
+    np.testing.assert_allclose(
+        result.sel(
+            trial_type="B",
+            channel="ch1",
+            chromo="HbO",
+        ).pint.dequantify().values,
+        [0.0, 2.0, 6.0, 10.0],
+    )
+
+
+def test_blockaverage_missing_trial_type(tmp_path, monkeypatch):
+    """Reject explicitly requested trial types that occur in no input run."""
+    rec = _make_blockaverage_recording(
+        np.arange(5, dtype=float),
+        conc_channels=["ch1"],
+        trial_type="A",
+    )
+    input_paths, _ = _patch_blockaverage_io(
+        monkeypatch,
+        tmp_path,
+        [rec],
+    )
+
+    with pytest.raises(ValueError, match="B"):
+        steps.blockaverage(
+            input_snirf=input_paths,
+            output_snirf=tmp_path / "blockaverage.snirf",
+            t_pre="1 s",
+            t_post="2 s",
+            ts_name="conc",
+            trial_types=["A", "B"],
+        )
