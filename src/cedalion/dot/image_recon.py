@@ -26,6 +26,7 @@ from cedalion.dot.head_model import TwoSurfaceHeadModel
 logger = logging.getLogger("cedalion")
 
 ReconMode = Literal["conc", "mua", "mua2conc"]
+SpatialNormalization = Literal["global", "per_compartment"]
 
 # predefined parameter sets
 
@@ -986,6 +987,16 @@ class ImageRecon:
             rescaled. A smaller alpha_spatial will more strongly suppress activation
             that is reconstructed on the scalp.
 
+        spatial_normalization: selects the compartment over which the maximum
+            sensitivity that scales alpha_spatial is taken.
+
+            - 'global': one maximum over all vertices (scalp and brain together).
+            - 'per_compartment': brain and scalp vertices are normalized separately,
+                each by the maximum sensitivity of its own compartment.
+
+            Ignored when alpha_spatial is None, and inconsequential when
+            brain_only is True, since then only one compartment is present.
+
         lambda_R_conc: regularization parameter that sets the expected magnitude of the
             image covariance.
 
@@ -1002,6 +1013,7 @@ class ImageRecon:
         *,
         alpha_meas: float = 0.001,
         alpha_spatial: float | None = None,
+        spatial_normalization: SpatialNormalization = "global",
         lambda_R_conc: float | None = None,
         apply_c_meas: bool = False,
         recon_mode: ReconMode = "mua",
@@ -1015,6 +1027,11 @@ class ImageRecon:
             raise ValueError(
                 "recon_mode must be set to either 'conc', 'mua' or 'mua2conc'!"
             )
+        if spatial_normalization not in ["global", "per_compartment"]:
+            raise ValueError(
+                "spatial_normalization must be set to either 'per_compartment' or "
+                "'global'!"
+            )
         # error handling of invalid params
 
         self.recon_mode = recon_mode
@@ -1022,6 +1039,7 @@ class ImageRecon:
         # regularization parameters
         self.alpha_meas = alpha_meas
         self.alpha_spatial = alpha_spatial
+        self.spatial_normalization = spatial_normalization
         self.apply_c_meas = apply_c_meas
         self.lambda_R_conc = lambda_R_conc
 
@@ -1267,11 +1285,25 @@ class ImageRecon:
         """
 
         B = np.sum((A**2), axis=0)
-        b = B.max()
 
         if self.alpha_spatial is None:
             lambda_spatial = 1.
+        elif self.spatial_normalization == "global":
+            b = B.max()
+            lambda_spatial = self.alpha_spatial * b
         else:
+            # Normalize per compartment. Brain and scalp sensitivities differ by ~6
+            # orders of magnitude, so a single global max is set by the scalp and makes
+            # lambda_spatial constant across all brain vertices, disabling depth
+            # weighting there. NeuroDOT's global max is a brain max only because its A
+            # carries no scalp compartment.
+            is_brain = A.is_brain.values.astype(bool)
+            Bv = B.values
+            if is_brain.all() or not is_brain.any():
+                b = Bv.max()
+            else:
+                b = np.where(is_brain, Bv[is_brain].max(), Bv[~is_brain].max())
+
             lambda_spatial = self.alpha_spatial * b
 
         L = np.sqrt(B + lambda_spatial)

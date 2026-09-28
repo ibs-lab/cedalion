@@ -1,5 +1,6 @@
 import cedalion.data
 import cedalion.dot as dot
+import cedalion.dot.forward_model as fwm
 import cedalion.typing as cdt
 import numpy as np
 import xarray as xr
