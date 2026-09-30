@@ -204,12 +204,15 @@ def test_run_nirfaster():
 
 
 
-def test_stacking_flat_channel():
-    channel = ["S1D1", "S1D2", "S2D1"]
-    source = ["S1", "S1", "S2"]
-    detector = ["D1", "D2", "D1"]
+@pytest.mark.parametrize("drop_index", [False, True])
+def test_stacking_flat_channel(drop_index):
+    # deliberately not sorted: unstacking must restore this order and not a
+    # lexicographically sorted one.
+    channel = ["S2D1", "S1D10", "S1D2", "S1D1"]
+    source = ["S2", "S1", "S1", "S1"]
+    detector = ["D1", "D10", "D2", "D1"]
     time = [1.,2.,3.,4.,5.]
-    wavelength = [760., 850.]
+    wavelength = [850., 760.]
 
     nch = len(channel)
     nt = len(time)
@@ -231,6 +234,14 @@ def test_stacking_flat_channel():
 
     # flat_channel : ('wavelength', 'channel')
     stacked = fw.stack_flat_channel(ts)
+
+    if drop_index:
+        # DataArray.stack creates a MultiIndex. Operations like xr.dot or the
+        # construction in compute_stacked_sensitivity yield a flat_channel dim
+        # with plain coordinates only. Test unstacking for this case, too.
+        stacked = stacked.reset_index("flat_channel")
+        assert "flat_channel" not in stacked.indexes
+
     unstacked = fw.unstack_flat_channel(stacked)
 
     assert stacked.dims == ("time", "flat_channel")  # stacked dim at the end
@@ -246,6 +257,12 @@ def test_stacking_flat_channel():
 
     assert unstacked.dims == ("time", "wavelength", "channel")  # stacked dim replaced
 
+    # coordinate order must be preserved
+    assert list(unstacked.channel.values) == channel
+    assert list(unstacked.source.values) == source
+    assert list(unstacked.detector.values) == detector
+    assert list(unstacked.wavelength.values) == wavelength
+
     assert (ts.values == unstacked.transpose(*ts.dims).values).all()
 
     assert unstacked.source.dims == ("channel",)
@@ -254,11 +271,14 @@ def test_stacking_flat_channel():
     assert ts.pint.units == stacked.pint.units == unstacked.pint.units
 
 
-def test_stacking_flat_vertex():
-    vertex = [1, 2 , 3]
-    parcel = ["a", "b", "b"]
+@pytest.mark.parametrize("drop_index", [False, True])
+def test_stacking_flat_vertex(drop_index):
+    # deliberately not sorted: unstacking must restore this order and not a
+    # sorted one.
+    vertex = [3, 1, 2]
+    parcel = ["b", "a", "b"]
     time = [1.,2.,3.,4.,5.]
-    chromo = ["HbO", "HbR"]
+    chromo = ["HbR", "HbO"]
 
     nvx = len(vertex)
     nt = len(time)
@@ -278,10 +298,16 @@ def test_stacking_flat_vertex():
 
     ts.time.attrs["units"] = "s"
 
-
-
     # flat_vertex : ('chromo', 'vertex')
     stacked = fw.stack_flat_vertex(ts)
+
+    if drop_index:
+        # DataArray.stack creates a MultiIndex. Operations like xr.dot or the
+        # construction in compute_stacked_sensitivity yield a flat_vertex dim
+        # with plain coordinates only. Test unstacking for this case, too.
+        stacked = stacked.reset_index("flat_vertex")
+        assert "flat_vertex" not in stacked.indexes
+
     unstacked = fw.unstack_flat_vertex(stacked)
 
     assert stacked.dims == ("time", "flat_vertex")  # stacked dim at the end
@@ -295,6 +321,11 @@ def test_stacking_flat_vertex():
     assert all(stacked.chromo == [chromo[0]] * nvx + [chromo[1]] * nvx)
 
     assert unstacked.dims == ("time", "chromo", "vertex")  # stacked dim replaced
+
+    # coordinate order must be preserved
+    assert list(unstacked.vertex.values) == vertex
+    assert list(unstacked.parcel.values) == parcel
+    assert list(unstacked.chromo.values) == chromo
 
     assert (ts.values == unstacked.transpose(*ts.dims).values).all()
 
@@ -401,12 +432,12 @@ def test_compute_stacked_sensitivity(monkeypatch, n_wavelength, n_chromo, vertex
 
 def test_image_to_channel_space():
     Adot = xr.DataArray(
-        np.ones((2, 3, 2), dtype=np.float32),
+        np.ones((4, 3, 2), dtype=np.float32),
         dims=["channel", "vertex", "wavelength"],
         coords={
-            "channel":   ("channel", ["S1D1", "S1D2"]),
-            "source":    ("channel", ["S1", "S1"]),
-            "detector":  ("channel", ["D1", "D2"]),
+            "channel":   ("channel", ["S1D1", "S2D1", "S10D1", "S3D2"]),
+            "source":    ("channel", ["S1", "S2", "S10", "S3"]),
+            "detector":  ("channel", ["D1", "D1", "D1", "D2"]),
             "wavelength":("wavelength", [760., 850.]),
             "is_brain":  ("vertex", [True, True, False]),
         },
@@ -431,6 +462,7 @@ def test_image_to_channel_space():
 
         assert set(ts.dims) == {"channel", "wavelength", "time"}
         assert cedalion.xrutils.check_units(ts, "")
+        assert list(ts.channel.values) == list(Adot.channel.values)
 
 
 def test_scale_to_landmarks():
