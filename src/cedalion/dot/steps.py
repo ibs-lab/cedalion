@@ -23,12 +23,29 @@ def sensitivity(
     output_fluence: str | Path,
     output_sensitivity: str | Path,
     head_model: str = "colin27",
+    align_montage : bool = False,
+    method : str = "nirfaster"
 ) -> None:
     """Compute fluence and sensitivity for a standard head model.
 
     The measurement geometry and measurement list are taken from the input
-    SNIRF recording. The probe is aligned and snapped to the scalp before
-    constructing the forward model.
+    SNIRF recording. Optionally the probe is aligned and relaxed onto the scalp
+    surface before the forward model is constructed. Fluence is simulated for
+    every optode and wavelength and then combined into the sensitivity matrix
+    (Jacobian) via the adjoint method.
+
+    Args:
+        input_snirf: SNIRF file providing the measurement geometry (``geo3d``)
+            and the measurement list of the ``amp`` time series.
+        output_fluence: Output HDF5 file storing the per-optode fluence.
+        output_sensitivity: Output NetCDF file storing the sensitivity matrix.
+        head_model: Standard head model to use. Either ``"colin27"`` or
+            ``"icbm152"``.
+        align_montage: If True, align the probe to the head model's landmarks
+            and relax the optodes onto the scalp surface. If False, the
+            geometry is used as stored in the SNIRF file.
+        method: Monte Carlo package used for the fluence simulation. Either
+            ``"nirfaster"`` or ``"mcx"``.
     """
     output_fluence = Path(output_fluence)
     output_sensitivity = Path(output_sensitivity)
@@ -38,15 +55,24 @@ def sensitivity(
     rec = cedalion.io.read_snirf(input_snirf)[0]
 
     head = get_standard_headmodel(head_model)
-    geo3d_snapped = head.align_and_snap_to_scalp(rec.geo3d)
+    geo3d = rec.geo3d
+
+    if align_montage:
+        geo3d = head.align_and_relax_to_scalp(geo3d)
 
     fwm = ForwardModel(
         head,
-        geo3d_snapped,
+        geo3d,
         rec._measurement_lists["amp"],
     )
 
-    fwm.compute_fluence_nirfaster(output_fluence)
+    if method == "nirfaster":
+        fwm.compute_fluence_nirfaster(output_fluence)
+    elif method == "mcx":
+        fwm.compute_fluence_mcx(output_fluence)
+    else:
+        raise ValueError("method must be either 'nirfaster' or 'mcx'")
+
     fwm.compute_sensitivity(output_fluence, output_sensitivity)
 
 
@@ -58,6 +84,7 @@ def image_reconstruction(
     alpha_meas_k: float = 0.01,
     alpha_spatial: float = 0.001,
     dOD_thresh: float = 0.001,
+    restrict_to_sensitive_parcels : bool = False
 ) -> None:
     """Reconstruct a brain concentration time series in image space.
 
@@ -144,13 +171,15 @@ def image_reconstruction(
 
     result = recon.reconstruct(y, c_meas=c_meas)
 
-    result = result.where(result.is_brain, drop=True)
-    result = result.where(result.parcel.isin(sensitive_parcels), drop=True)
+    if restrict_to_sensitive_parcels:
+        result = result.where(result.is_brain, drop=True)
+        result = result.where(result.parcel.isin(sensitive_parcels), drop=True)
 
     result = result.pint.dequantify()
     if "units" in y.time.attrs:
         result.time.attrs["units"] = str(y.time.attrs["units"])
     result.to_netcdf(output_image)
+
 
 def image_blockaverage(
     input_image: str | Path,

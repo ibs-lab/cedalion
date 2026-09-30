@@ -1,16 +1,19 @@
 from types import SimpleNamespace
 
+import pytest
+
 import cedalion.dot.steps as steps
 
+GEO3D = object()
+RELAXED_GEO3D = object()
+MEASUREMENT_LIST = object()
 
-def test_sensitivity(monkeypatch, tmp_path):
-    geo3d = object()
-    snapped_geo3d = object()
-    measurement_list = object()
 
+def _patch_sensitivity(monkeypatch):
+    """Patch the collaborators of steps.sensitivity and record their calls."""
     rec = SimpleNamespace(
-        geo3d=geo3d,
-        _measurement_lists={"amp": measurement_list},
+        geo3d=GEO3D,
+        _measurement_lists={"amp": MEASUREMENT_LIST},
     )
 
     calls = {}
@@ -20,9 +23,9 @@ def test_sensitivity(monkeypatch, tmp_path):
         return [rec]
 
     class FakeHead:
-        def align_and_snap_to_scalp(self, geometry):
-            calls["geometry"] = geometry
-            return snapped_geo3d
+        def align_and_relax_to_scalp(self, geometry):
+            calls["relaxed_geometry"] = geometry
+            return RELAXED_GEO3D
 
     def fake_get_standard_headmodel(name):
         calls["head_model"] = name
@@ -33,7 +36,10 @@ def test_sensitivity(monkeypatch, tmp_path):
             calls["forward_model"] = (head, geometry, meas_list)
 
         def compute_fluence_nirfaster(self, fname):
-            calls["fluence"] = fname
+            calls["fluence_nirfaster"] = fname
+
+        def compute_fluence_mcx(self, fname):
+            calls["fluence_mcx"] = fname
 
         def compute_sensitivity(self, fluence_fname, sensitivity_fname):
             calls["sensitivity"] = (fluence_fname, sensitivity_fname)
@@ -41,6 +47,12 @@ def test_sensitivity(monkeypatch, tmp_path):
     monkeypatch.setattr(steps.cedalion.io, "read_snirf", fake_read_snirf)
     monkeypatch.setattr(steps, "get_standard_headmodel", fake_get_standard_headmodel)
     monkeypatch.setattr(steps, "ForwardModel", FakeForwardModel)
+
+    return calls
+
+
+def test_sensitivity(monkeypatch, tmp_path):
+    calls = _patch_sensitivity(monkeypatch)
 
     input_snirf = tmp_path / "input.snirf"
     output_fluence = tmp_path / "fluence.h5"
@@ -55,17 +67,65 @@ def test_sensitivity(monkeypatch, tmp_path):
 
     assert calls["input_snirf"] == input_snirf
     assert calls["head_model"] == "colin27"
-    assert calls["geometry"] is geo3d
+
+    # Without align_montage the stored geometry is used unchanged.
+    assert "relaxed_geometry" not in calls
 
     _, fwm_geometry, fwm_measurement_list = calls["forward_model"]
-    assert fwm_geometry is snapped_geo3d
-    assert fwm_measurement_list is measurement_list
+    assert fwm_geometry is GEO3D
+    assert fwm_measurement_list is MEASUREMENT_LIST
 
-    assert calls["fluence"] == output_fluence
+    assert calls["fluence_nirfaster"] == output_fluence
+    assert "fluence_mcx" not in calls
     assert calls["sensitivity"] == (output_fluence, output_sensitivity)
 
 
-def test_image_reconstruction(monkeypatch, tmp_path):
+def test_sensitivity_align_montage(monkeypatch, tmp_path):
+    calls = _patch_sensitivity(monkeypatch)
+
+    steps.sensitivity(
+        input_snirf=tmp_path / "input.snirf",
+        output_fluence=tmp_path / "fluence.h5",
+        output_sensitivity=tmp_path / "sensitivity.h5",
+        align_montage=True,
+    )
+
+    assert calls["relaxed_geometry"] is GEO3D
+
+    _, fwm_geometry, _ = calls["forward_model"]
+    assert fwm_geometry is RELAXED_GEO3D
+
+
+def test_sensitivity_mcx(monkeypatch, tmp_path):
+    calls = _patch_sensitivity(monkeypatch)
+
+    output_fluence = tmp_path / "fluence.h5"
+
+    steps.sensitivity(
+        input_snirf=tmp_path / "input.snirf",
+        output_fluence=output_fluence,
+        output_sensitivity=tmp_path / "sensitivity.h5",
+        method="mcx",
+    )
+
+    assert calls["fluence_mcx"] == output_fluence
+    assert "fluence_nirfaster" not in calls
+
+
+def test_sensitivity_rejects_unknown_method(monkeypatch, tmp_path):
+    _patch_sensitivity(monkeypatch)
+
+    with pytest.raises(ValueError, match="nirfaster"):
+        steps.sensitivity(
+            input_snirf=tmp_path / "input.snirf",
+            output_fluence=tmp_path / "fluence.h5",
+            output_sensitivity=tmp_path / "sensitivity.h5",
+            method="unknown",
+        )
+
+
+def _patch_image_reconstruction(monkeypatch):
+    """Patch the collaborators of steps.image_reconstruction."""
     import numpy as np
     import xarray as xr
 
@@ -178,6 +238,14 @@ def test_image_reconstruction(monkeypatch, tmp_path):
 
     monkeypatch.setattr(steps, "ImageRecon", FakeImageRecon)
 
+    return calls
+
+
+def test_image_reconstruction(monkeypatch, tmp_path):
+    import xarray as xr
+
+    calls = _patch_image_reconstruction(monkeypatch)
+
     output_image = tmp_path / "image.nc"
 
     steps.image_reconstruction(
@@ -205,6 +273,27 @@ def test_image_reconstruction(monkeypatch, tmp_path):
     assert calls["recon_kwargs"]["alpha_spatial"] == 0.001
     assert calls["recon_kwargs"]["apply_c_meas"] is True
     assert calls["recon_kwargs"]["recon_mode"] == "mua2conc"
+
+    saved = xr.load_dataarray(output_image)
+
+    # By default all reconstructed vertices, brain and scalp, are kept.
+    assert saved.vertex.values.tolist() == [0, 1, 2]
+
+
+def test_image_reconstruction_restrict_to_sensitive_parcels(monkeypatch, tmp_path):
+    import xarray as xr
+
+    _patch_image_reconstruction(monkeypatch)
+
+    output_image = tmp_path / "image.nc"
+
+    steps.image_reconstruction(
+        input_snirf=tmp_path / "input.snirf",
+        input_sensitivity=tmp_path / "sensitivity.h5",
+        output_image=output_image,
+        timeseries="od",
+        restrict_to_sensitive_parcels=True,
+    )
 
     saved = xr.load_dataarray(output_image)
 
