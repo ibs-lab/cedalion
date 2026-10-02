@@ -155,8 +155,12 @@ def plot_surface(
 
     Returns:
         function: If `pick_landmarks` is True, returns a function that when called,
-        provides the current picked points and their labels. This function prints
-        warnings if some labels are missing or are repeated.
+        returns the currently picked landmarks as a
+        :class:`~cedalion.typing.LabeledPoints` array in the CRS and units of
+        `surface`. It is built with
+        :func:`~cedalion.dataclasses.build_labeled_points`, i.e. it has the same
+        structure as the output of :func:`cedalion.io.load_tsv`. This function
+        prints warnings if some labels are missing or are repeated.
 
     Initial Contributors:
         - Eike Middell | middell@tu-berlin.de | 2024
@@ -320,16 +324,17 @@ def plot_surface(
             elif len(set(labels)) != len(landmark_labels):
                 print("Warning: Some labels are repeated!")
 
-            landmarks = xr.DataArray(
-                    np.vstack(picked_points),
-                    dims=["label", "digitized"],
-                    coords={
-                        "label": ("label", labels),
-                        "type": ("label", [cdc.PointType.LANDMARK]*len(labels)),
-                        "group": ("label", ["L"]*len(labels)),
-                        },
-                ).pint.quantify("mm")
-            return landmarks
+            # Build the array the same way cedalion.io.load_tsv does, so that
+            # picked and loaded landmarks are interchangeable. The picked
+            # coordinates are raw mesh coordinates, hence they carry the CRS
+            # and the units of the plotted surface.
+            return cdc.build_labeled_points(
+                np.vstack(picked_points) if picked_points else None,
+                crs=surface.crs,
+                units=surface.units,
+                labels=list(labels),
+                types=[PointType.LANDMARK] * len(labels),
+            )
 
         plotter.enable_surface_point_picking(
             callback=place_landmark,

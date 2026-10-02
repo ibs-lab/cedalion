@@ -80,6 +80,7 @@ data_io/index
 sigproc/index
 machine_learning/index
 dot/index
+geometry/index
 physio/index
 plot_vis/index
 synth/index
