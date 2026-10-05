@@ -109,3 +109,43 @@ def test_image_recon(
 
 
     assert not np.iscomplex(x_reco.data).any()
+
+
+def test_gaussian_sbf_downsample_mesh_uses_mask_positionally():
+    from cedalion import units
+
+    sbf = dot.GaussianSpatialBasisFunctions.__new__(
+        dot.GaussianSpatialBasisFunctions
+    )
+    sbf.verbose = False
+
+    mesh = xr.DataArray(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+        ],
+        dims=("label", "mni"),
+        coords={"label": [0, 1, 2]},
+        attrs={"units": "mm"},
+    ).pint.quantify()
+
+    # Mimic the scalp part of a sensitivity matrix: same positional length as
+    # the scalp mesh, but global vertex labels instead of local surface labels.
+    mask = xr.DataArray(
+        [True, False, True],
+        dims=("vertex",),
+        coords={"vertex": [25000, 25001, 25002]},
+    )
+
+    result = sbf._downsample_mesh(
+        mesh,
+        threshold=0.5 * units.mm,
+        mask=mask,
+    )
+
+    assert result.sizes["vertex"] == 2
+    np.testing.assert_allclose(
+        result.pint.dequantify().values,
+        [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+    )

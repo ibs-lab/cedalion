@@ -75,6 +75,7 @@ def test_image_reconstruction(monkeypatch, tmp_path):
         coords={
             "wavelength": [760, 850],
             "channel": ["ch1", "ch2", "ch3"],
+            "parcel": ("vertex", ["p1", "p2", "p1"]),
         },
     )
 
@@ -748,3 +749,522 @@ def test_image_visualization_saves_significant_tmap(monkeypatch, tmp_path):
             expected,
             equal_nan=True,
         )
+
+
+def test_image_reconstruction_exposes_reconstruction_parameters(
+    monkeypatch, tmp_path
+):
+    import numpy as np
+    import xarray as xr
+
+    sensitivity = xr.DataArray(
+        np.ones((2, 1, 2)),
+        dims=("wavelength", "channel", "vertex"),
+        coords={
+            "wavelength": [760, 850],
+            "channel": ["ch1"],
+            "vertex": [0, 1],
+            "is_brain": ("vertex", [True, True]),
+            "parcel": ("vertex", ["p1", "p1"]),
+        },
+    )
+
+    od = xr.DataArray(
+        np.ones((2, 1, 4)),
+        dims=("wavelength", "channel", "time"),
+        coords={
+            "wavelength": [760, 850],
+            "channel": ["ch1"],
+            "time": [0.0, 1.0, 2.0, 3.0],
+        },
+    )
+
+    monkeypatch.setattr(
+        steps.cedalion.io,
+        "read_snirf",
+        lambda fname: [{"od": od}],
+    )
+    monkeypatch.setattr(steps, "load_Adot", lambda fname: sensitivity)
+    monkeypatch.setattr(
+        steps.ForwardModel,
+        "parcel_sensitivity",
+        lambda *args, **kwargs: (
+            None,
+            xr.DataArray(
+                [True],
+                dims=("parcel",),
+                coords={"parcel": ["p1"]},
+            ),
+        ),
+    )
+
+    c_meas = xr.DataArray(
+        np.ones((2, 1)),
+        dims=("wavelength", "channel"),
+        coords={"wavelength": [760, 850], "channel": ["ch1"]},
+    )
+    monkeypatch.setattr(
+        steps,
+        "measurement_variance",
+        lambda *args, **kwargs: c_meas,
+    )
+
+    calls = {}
+
+    class FakeImageRecon:
+        def __init__(self, Adot, **kwargs):
+            calls["kwargs"] = kwargs
+
+        def reconstruct(self, y, c_meas=None):
+            calls["c_meas"] = c_meas
+            return xr.DataArray(
+                np.ones((2, 2, 4)),
+                dims=("wavelength", "vertex", "time"),
+                coords={
+                    "wavelength": [760, 850],
+                    "vertex": [0, 1],
+                    "time": [0.0, 1.0, 2.0, 3.0],
+                    "is_brain": ("vertex", [True, True]),
+                    "parcel": ("vertex", ["p1", "p1"]),
+                },
+            )
+
+    monkeypatch.setattr(steps, "ImageRecon", FakeImageRecon)
+
+    steps.image_reconstruction(
+        input_snirf=tmp_path / "input.snirf",
+        input_sensitivity=tmp_path / "sensitivity.h5",
+        output_image=tmp_path / "image.nc",
+        timeseries="od",
+        alpha_meas=0.25,
+        alpha_spatial=None,
+        lambda_R_conc=1e-6,
+        apply_c_meas=False,
+        recon_mode="mua",
+        brain_only=True,
+    )
+
+    assert calls["kwargs"]["alpha_meas"] == 0.25
+    assert calls["kwargs"]["alpha_spatial"] is None
+    assert calls["kwargs"]["lambda_R_conc"] == 1e-6
+    assert calls["kwargs"]["apply_c_meas"] is False
+    assert calls["kwargs"]["recon_mode"] == "mua"
+    assert calls["kwargs"]["brain_only"] is True
+
+
+def test_image_reconstruction_gaussian_spatial_basis_functions(
+    monkeypatch, tmp_path
+):
+    import numpy as np
+    import xarray as xr
+
+    sensitivity = xr.DataArray(
+        np.ones((2, 1, 2)),
+        dims=("wavelength", "channel", "vertex"),
+        coords={
+            "wavelength": [760, 850],
+            "channel": ["ch1"],
+            "vertex": [0, 1],
+            "is_brain": ("vertex", [True, True]),
+            "parcel": ("vertex", ["p1", "p1"]),
+        },
+    )
+
+    od = xr.DataArray(
+        np.ones((2, 1, 4)),
+        dims=("wavelength", "channel", "time"),
+        coords={
+            "wavelength": [760, 850],
+            "channel": ["ch1"],
+            "time": [0.0, 1.0, 2.0, 3.0],
+        },
+    )
+
+    monkeypatch.setattr(
+        steps.cedalion.io,
+        "read_snirf",
+        lambda fname: [{"od": od}],
+    )
+    monkeypatch.setattr(steps, "load_Adot", lambda fname: sensitivity)
+    monkeypatch.setattr(
+        steps.ForwardModel,
+        "parcel_sensitivity",
+        lambda *args, **kwargs: (
+            None,
+            xr.DataArray(
+                [True],
+                dims=("parcel",),
+                coords={"parcel": ["p1"]},
+            ),
+        ),
+    )
+
+    c_meas = xr.DataArray(
+        np.ones((2, 1)),
+        dims=("wavelength", "channel"),
+        coords={"wavelength": [760, 850], "channel": ["ch1"]},
+    )
+    monkeypatch.setattr(
+        steps,
+        "measurement_variance",
+        lambda *args, **kwargs: c_meas,
+    )
+    monkeypatch.setattr(
+        steps,
+        "estimate_alpha_meas",
+        lambda *args, **kwargs: 0.25,
+    )
+
+    fake_head_ras = object()
+    calls = {}
+
+    class FakeHead:
+        t_ijk2ras = object()
+
+        def apply_transform(self, transform):
+            calls["head_transform"] = transform
+            return fake_head_ras
+
+    fake_head = FakeHead()
+
+    def fake_get_standard_headmodel(name):
+        calls["head_model"] = name
+        return fake_head
+
+    monkeypatch.setattr(
+        steps,
+        "get_standard_headmodel",
+        fake_get_standard_headmodel,
+    )
+
+    fake_sbf = object()
+
+    def fake_gaussian_sbf(head_model, Adot, **kwargs):
+        calls["sbf_head"] = head_model
+        calls["sbf_channels"] = Adot.channel.values.tolist()
+        calls["sbf_kwargs"] = kwargs
+        return fake_sbf
+
+    monkeypatch.setattr(
+        steps,
+        "GaussianSpatialBasisFunctions",
+        fake_gaussian_sbf,
+    )
+
+    class FakeImageRecon:
+        def __init__(self, Adot, **kwargs):
+            calls["recon_kwargs"] = kwargs
+
+        def reconstruct(self, y, c_meas=None):
+            return xr.DataArray(
+                np.ones((2, 2, 4)),
+                dims=("chromo", "vertex", "time"),
+                coords={
+                    "chromo": ["HbO", "HbR"],
+                    "vertex": [0, 1],
+                    "time": [0.0, 1.0, 2.0, 3.0],
+                    "is_brain": ("vertex", [True, True]),
+                    "parcel": ("vertex", ["p1", "p1"]),
+                },
+            )
+
+    monkeypatch.setattr(steps, "ImageRecon", FakeImageRecon)
+
+    steps.image_reconstruction(
+        input_snirf=tmp_path / "input.snirf",
+        input_sensitivity=tmp_path / "sensitivity.h5",
+        output_image=tmp_path / "image.nc",
+        timeseries="od",
+        spatial_basis_functions={
+            "type": "gaussian",
+            "head_model": "colin27",
+            "mask_threshold": -2,
+            "threshold_brain": "1 mm",
+            "threshold_scalp": "5 mm",
+            "sigma_brain": "1 mm",
+            "sigma_scalp": "5 mm",
+            "verbose": False,
+        },
+    )
+
+    assert calls["head_model"] == "colin27"
+    assert calls["head_transform"] is fake_head.t_ijk2ras
+    assert calls["sbf_head"] is fake_head_ras
+    assert calls["sbf_channels"] == ["ch1"]
+
+    assert calls["sbf_kwargs"]["mask_threshold"] == -2
+    assert calls["sbf_kwargs"]["verbose"] is False
+    assert calls["sbf_kwargs"]["threshold_brain"].to("mm").magnitude == 1
+    assert calls["sbf_kwargs"]["threshold_scalp"].to("mm").magnitude == 5
+    assert calls["sbf_kwargs"]["sigma_brain"].to("mm").magnitude == 1
+    assert calls["sbf_kwargs"]["sigma_scalp"].to("mm").magnitude == 5
+
+    assert calls["recon_kwargs"]["spatial_basis_functions"] is fake_sbf
+
+
+def test_image_group_average_visualization_saves_heatmap(tmp_path):
+    import numpy as np
+    import xarray as xr
+
+    mean = xr.DataArray(
+        np.array(
+            [
+                [
+                    [[1.0, 2.0, 3.0], [2.0, 3.0, 4.0]],
+                    [[-1.0, -2.0, -3.0], [-2.0, -3.0, -4.0]],
+                ]
+            ]
+        ),
+        dims=("trial_type", "chromo", "parcel", "reltime"),
+        coords={
+            "trial_type": ["motor"],
+            "chromo": ["HbO", "HbR"],
+            "parcel": ["p1", "p2"],
+            "reltime": [-1.0, 0.0, 1.0],
+        },
+        attrs={"units": "micromolar"},
+    )
+    mean.reltime.attrs["units"] = "second"
+
+    group = xr.Dataset(
+        {
+            "mean": mean,
+            "sem": xr.zeros_like(mean),
+            "n": xr.ones_like(mean, dtype=int),
+        }
+    )
+
+    input_image = tmp_path / "group.nc"
+    output_figure = tmp_path / "group.png"
+    group.to_netcdf(input_image)
+
+    steps.image_group_average_visualization(
+        input_image=input_image,
+        output_figure=output_figure,
+        trial_type="motor",
+    )
+
+    assert output_figure.exists()
+    assert output_figure.stat().st_size > 0
+
+
+def test_sensitivity_accepts_custom_surface_head_model(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    geo3d = object()
+    snapped_geo3d = object()
+    measurement_list = object()
+    rec = SimpleNamespace(
+        geo3d=geo3d,
+        _measurement_lists={"amp": measurement_list},
+    )
+
+    calls = {}
+
+    monkeypatch.setattr(
+        steps.cedalion.io,
+        "read_snirf",
+        lambda fname: [rec],
+    )
+
+    class FakeHead:
+        def align_and_snap_to_scalp(self, geometry):
+            calls["geometry"] = geometry
+            return snapped_geo3d
+
+    fake_head = FakeHead()
+
+    def fake_from_surfaces(**kwargs):
+        calls["head_kwargs"] = kwargs
+        return fake_head
+
+    monkeypatch.setattr(
+        steps,
+        "TwoSurfaceHeadModel",
+        SimpleNamespace(from_surfaces=fake_from_surfaces),
+        raising=False,
+    )
+
+    class FakeForwardModel:
+        def __init__(self, head, geometry, meas_list):
+            calls["forward_model"] = (head, geometry, meas_list)
+
+        def compute_fluence_nirfaster(self, fname):
+            calls["fluence"] = fname
+
+        def compute_sensitivity(self, fluence_fname, sensitivity_fname):
+            calls["sensitivity"] = (fluence_fname, sensitivity_fname)
+
+    monkeypatch.setattr(steps, "ForwardModel", FakeForwardModel)
+
+    output_fluence = tmp_path / "fluence.h5"
+    output_sensitivity = tmp_path / "sensitivity.h5"
+
+    head_model = {
+        "type": "surfaces",
+        "segmentation_dir": "/heads/sub-01",
+        "brain_surface_file": "/heads/sub-01/brain.obj",
+        "scalp_surface_file": "/heads/sub-01/scalp.obj",
+        "landmarks_ras_file": "/heads/sub-01/landmarks.json",
+        "coordinates_file": "/heads/sub-01/brain_vertex_coordinates.csv",
+    }
+
+    steps.sensitivity(
+        input_snirf=tmp_path / "input.snirf",
+        output_fluence=output_fluence,
+        output_sensitivity=output_sensitivity,
+        head_model=head_model,
+    )
+
+    assert calls["head_kwargs"] == {
+        "segmentation_dir": "/heads/sub-01",
+        "brain_surface_file": "/heads/sub-01/brain.obj",
+        "scalp_surface_file": "/heads/sub-01/scalp.obj",
+        "landmarks_ras_file": "/heads/sub-01/landmarks.json",
+        "coordinates_file": "/heads/sub-01/brain_vertex_coordinates.csv",
+    }
+    assert calls["forward_model"] == (
+        fake_head,
+        snapped_geo3d,
+        measurement_list,
+    )
+
+
+def test_load_head_model_accepts_custom_segmentation(monkeypatch):
+    calls = {}
+    fake_head = object()
+
+    def fake_from_segmentation(**kwargs):
+        calls["head_kwargs"] = kwargs
+        return fake_head
+
+    monkeypatch.setattr(
+        steps.TwoSurfaceHeadModel,
+        "from_segmentation",
+        fake_from_segmentation,
+    )
+
+    result = steps._load_head_model(
+        {
+            "type": "segmentation",
+            "segmentation_dir": "/heads/sub-01",
+            "landmarks_ras_file": "/heads/sub-01/landmarks.json",
+            "brain_face_count": 15000,
+            "scalp_face_count": 10000,
+        }
+    )
+
+    assert result is fake_head
+    assert calls["head_kwargs"] == {
+        "segmentation_dir": "/heads/sub-01",
+        "landmarks_ras_file": "/heads/sub-01/landmarks.json",
+        "brain_face_count": 15000,
+        "scalp_face_count": 10000,
+    }
+
+
+def test_image_reconstruction_without_parcels_skips_parcel_filtering(
+    monkeypatch,
+    tmp_path,
+):
+    import numpy as np
+    import xarray as xr
+
+    sensitivity = xr.DataArray(
+        np.ones((1, 2, 2)),
+        dims=("wavelength", "channel", "vertex"),
+        coords={
+            "wavelength": [760],
+            "channel": ["ch1", "ch2"],
+            "vertex": [0, 1],
+            "is_brain": ("vertex", [True, True]),
+        },
+        attrs={"units": "mm"},
+    )
+
+    od = xr.DataArray(
+        np.ones((1, 2, 4)),
+        dims=("wavelength", "channel", "time"),
+        coords={
+            "wavelength": [760],
+            "channel": ["ch1", "ch2"],
+            "time": np.arange(4, dtype=float),
+        },
+        attrs={"units": "1"},
+    )
+    od.time.attrs["units"] = "second"
+
+    class FakeRec:
+        def __getitem__(self, key):
+            assert key == "od"
+            return od
+
+    monkeypatch.setattr(
+        steps.cedalion.io,
+        "read_snirf",
+        lambda fname: [FakeRec()],
+    )
+    monkeypatch.setattr(
+        steps,
+        "load_Adot",
+        lambda fname: sensitivity,
+    )
+
+    def fail_parcel_sensitivity(*args, **kwargs):
+        raise AssertionError(
+            "parcel_sensitivity must not be called without parcel coordinates"
+        )
+
+    monkeypatch.setattr(
+        steps.ForwardModel,
+        "parcel_sensitivity",
+        fail_parcel_sensitivity,
+    )
+
+    c_meas = xr.DataArray(
+        np.ones((2,)),
+        dims=("channel",),
+        coords={"channel": ["ch1", "ch2"]},
+        attrs={"units": "1"},
+    )
+    monkeypatch.setattr(
+        steps,
+        "measurement_variance",
+        lambda *args, **kwargs: c_meas,
+    )
+
+    class FakeRecon:
+        def __init__(self, Adot, **kwargs):
+            pass
+
+        def reconstruct(self, y, c_meas=None):
+            result = xr.DataArray(
+                np.ones((1, 2, 4)),
+                dims=("chromo", "vertex", "time"),
+                coords={
+                    "chromo": ["HbO"],
+                    "vertex": [0, 1],
+                    "is_brain": ("vertex", [True, True]),
+                    "time": np.arange(4, dtype=float),
+                },
+                attrs={"units": "micromolar"},
+            )
+            result.time.attrs["units"] = "second"
+            return result
+
+    monkeypatch.setattr(steps, "ImageRecon", FakeRecon)
+
+    output = tmp_path / "image.nc"
+
+    steps.image_reconstruction(
+        input_snirf=tmp_path / "input.snirf",
+        input_sensitivity=tmp_path / "sensitivity.h5",
+        output_image=output,
+        timeseries="od",
+        alpha_meas=1.0,
+    )
+
+    saved = xr.load_dataarray(output)
+
+    assert saved.sizes["vertex"] == 2
+    assert "parcel" not in saved.coords

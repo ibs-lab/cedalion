@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pyvista as pv
 import statsmodels.api as sm
@@ -10,25 +11,62 @@ from statsmodels.stats.multitest import fdrcorrection
 
 import cedalion.io
 from cedalion.dot.forward_model import ForwardModel
-from cedalion.dot.head_model import get_standard_headmodel
-from cedalion.dot.image_recon import ImageRecon, estimate_alpha_meas
+from cedalion.dot.head_model import (
+    TwoSurfaceHeadModel,
+    get_standard_headmodel,
+)
+from cedalion.dot.image_recon import (
+    GaussianSpatialBasisFunctions,
+    ImageRecon,
+    estimate_alpha_meas,
+)
 from cedalion.io.forward_model import load_Adot
 from cedalion.sigproc.quality import measurement_variance
 from cedalion.vis.blocks import plot_surface
 from cedalion.physunits import parse_quantity
 
 
+def _load_head_model(
+    head_model: str | dict,
+) -> TwoSurfaceHeadModel:
+    """Load a standard or construct a custom two-surface head model."""
+    if isinstance(head_model, str):
+        return get_standard_headmodel(head_model)
+
+    if not isinstance(head_model, dict):
+        raise TypeError(
+            "head_model must be a standard model name or configuration dict."
+        )
+
+    config = head_model.copy()
+    model_type = config.pop("type", None)
+
+    if model_type == "surfaces":
+        return TwoSurfaceHeadModel.from_surfaces(**config)
+
+    if model_type == "segmentation":
+        return TwoSurfaceHeadModel.from_segmentation(**config)
+
+    raise ValueError(
+        "Unsupported head model type: "
+        f"{model_type!r}. Supported custom types are "
+        "'surfaces' and 'segmentation'."
+    )
+
+
 def sensitivity(
     input_snirf: str | Path,
     output_fluence: str | Path,
     output_sensitivity: str | Path,
-    head_model: str = "colin27",
+    head_model: str | dict = "colin27",
 ) -> None:
-    """Compute fluence and sensitivity for a standard head model.
+    """Compute fluence and sensitivity for a two-surface head model.
 
-    The measurement geometry and measurement list are taken from the input
-    SNIRF recording. The probe is aligned and snapped to the scalp before
-    constructing the forward model.
+    ``head_model`` may be the name of a bundled standard head model or a
+    configuration dictionary for constructing a custom model from surfaces or
+    segmentation. The measurement geometry and measurement list are taken from
+    the input SNIRF recording. The probe is aligned and snapped to the scalp
+    before constructing the forward model.
     """
     output_fluence = Path(output_fluence)
     output_sensitivity = Path(output_sensitivity)
@@ -37,7 +75,7 @@ def sensitivity(
 
     rec = cedalion.io.read_snirf(input_snirf)[0]
 
-    head = get_standard_headmodel(head_model)
+    head = _load_head_model(head_model)
     geo3d_snapped = head.align_and_snap_to_scalp(rec.geo3d)
 
     fwm = ForwardModel(
@@ -55,16 +93,24 @@ def image_reconstruction(
     input_sensitivity: str | Path,
     output_image: str | Path,
     timeseries: str = "od",
+    alpha_meas: float | None = None,
     alpha_meas_k: float = 0.01,
-    alpha_spatial: float = 0.001,
+    alpha_spatial: float | None = 0.001,
+    lambda_R_conc: float | None = None,
+    apply_c_meas: bool = True,
+    recon_mode: str = "mua2conc",
+    brain_only: bool = False,
+    spatial_basis_functions: dict | None = None,
     dOD_thresh: float = 0.001,
 ) -> None:
-    """Reconstruct a brain concentration time series in image space.
+    """Reconstruct a brain time series in image space.
 
     Measurement variance is estimated from the optical-density time series.
     Channels removed during preprocessing are also removed from the sensitivity
     matrix used for reconstruction and are treated as dropped when determining
-    spatial sensitivity.
+    spatial sensitivity. If parcel labels are present, insufficiently sensitive
+    parcels are removed. Head models without parcel labels are reconstructed in
+    vertex space without parcel filtering.
     """
     output_image = Path(output_image)
     output_image.parent.mkdir(parents=True, exist_ok=True)
@@ -90,18 +136,22 @@ def image_reconstruction(
         if channel not in retained_channels
     ]
 
-    # Determine which parcels remain sufficiently sensitive after channel pruning.
-    _, parcel_mask = ForwardModel.parcel_sensitivity(
-        sensitivity,
-        chan_droplist=dropped_channels,
-        dOD_thresh=dOD_thresh,
-    )
-    sensitive_parcels = (
-        parcel_mask.where(parcel_mask, drop=True).parcel.values.tolist()
-    )
+    # Determine which parcels remain sufficiently sensitive after channel
+    # pruning when the head model provides a parcellation. Individualized head
+    # models without parcel labels can still be reconstructed in vertex space.
+    sensitive_parcels = None
+    if "parcel" in sensitivity.coords:
+        _, parcel_mask = ForwardModel.parcel_sensitivity(
+            sensitivity,
+            chan_droplist=dropped_channels,
+            dOD_thresh=dOD_thresh,
+        )
+        sensitive_parcels = (
+            parcel_mask.where(parcel_mask, drop=True).parcel.values.tolist()
+        )
 
-    if not sensitive_parcels:
-        raise ValueError("No sufficiently sensitive parcels remain.")
+        if not sensitive_parcels:
+            raise ValueError("No sufficiently sensitive parcels remain.")
 
     # Keep the sensitivity matrix and measurement data on exactly the same
     # channel axis. The sensitivity ordering is used for both.
@@ -123,29 +173,62 @@ def image_reconstruction(
     # ImageRecon expects the diagonal measurement variance for this path.
     c_meas = measurement_variance(y, calc_covariance=False)
 
-    alpha_meas = float(
-        estimate_alpha_meas(
-            c_meas.pint.dequantify().values,
-            K=alpha_meas_k,
+    if alpha_meas is None:
+        alpha_meas = float(
+            estimate_alpha_meas(
+                c_meas.pint.dequantify().values,
+                K=alpha_meas_k,
+            )
         )
-    )
 
-    # Match Tomás's reconstruction strategy: include brain and scalp in the
-    # inverse problem, then retain only brain vertices in the saved result.
+    sbf = None
+    if spatial_basis_functions is not None:
+        sbf_config = spatial_basis_functions.copy()
+        sbf_type = sbf_config.pop("type", None)
+
+        if sbf_type != "gaussian":
+            raise ValueError(
+                "Unsupported spatial basis function type: "
+                f"{sbf_type!r}. Currently supported: 'gaussian'."
+            )
+
+        head_model = sbf_config.pop("head_model")
+        head_ijk = _load_head_model(head_model)
+        head = head_ijk.apply_transform(head_ijk.t_ijk2ras)
+
+        for key in (
+            "threshold_brain",
+            "threshold_scalp",
+            "sigma_brain",
+            "sigma_scalp",
+        ):
+            sbf_config[key] = parse_quantity(sbf_config[key])
+
+        sbf = GaussianSpatialBasisFunctions(
+            head,
+            sensitivity_recon,
+            **sbf_config,
+        )
+
     recon = ImageRecon(
         sensitivity_recon,
-        brain_only=False,
-        recon_mode="mua2conc",
-        spatial_basis_functions=None,
+        brain_only=brain_only,
+        recon_mode=recon_mode,
+        spatial_basis_functions=sbf,
         alpha_meas=alpha_meas,
         alpha_spatial=alpha_spatial,
-        apply_c_meas=True,
+        lambda_R_conc=lambda_R_conc,
+        apply_c_meas=apply_c_meas,
     )
 
     result = recon.reconstruct(y, c_meas=c_meas)
 
     result = result.where(result.is_brain, drop=True)
-    result = result.where(result.parcel.isin(sensitive_parcels), drop=True)
+    if sensitive_parcels is not None:
+        result = result.where(
+            result.parcel.isin(sensitive_parcels),
+            drop=True,
+        )
 
     result = result.pint.dequantify()
     if "units" in y.time.attrs:
@@ -339,6 +422,160 @@ def image_group_average(
     )
 
     result.to_netcdf(output_image)
+
+
+
+def image_group_average_visualization(
+    input_image: str | Path,
+    output_figure: str | Path,
+    trial_type: str,
+) -> None:
+    """Plot group-average parcel responses as compact heatmaps.
+
+    Parcels are sorted by peak absolute post-stimulus HbO response. Individual
+    parcel labels are hidden so the figure remains readable when many parcels
+    are present.
+
+    Args:
+        input_image: Group-average NetCDF file produced by
+            :func:`image_group_average`.
+        output_figure: Output PNG filename.
+        trial_type: Trial type to visualize.
+    """
+    output_figure = Path(output_figure)
+    output_figure.parent.mkdir(parents=True, exist_ok=True)
+
+    group = xr.load_dataset(input_image)
+
+    if "mean" not in group:
+        raise ValueError("Group-average input must contain a 'mean' variable.")
+
+    mean = group["mean"]
+
+    required_dims = {"trial_type", "chromo", "parcel", "reltime"}
+    missing_dims = required_dims - set(mean.dims)
+    if missing_dims:
+        raise ValueError(
+            "Group-average mean is missing required dimensions: "
+            f"{sorted(missing_dims)}"
+        )
+
+    if trial_type not in mean.trial_type.values:
+        raise ValueError(
+            f"Trial type {trial_type!r} is not present in group average."
+        )
+
+    mean = mean.sel(trial_type=trial_type)
+
+    available_chromos = mean.chromo.values.tolist()
+    chromos = [
+        chromo
+        for chromo in ("HbO", "HbR")
+        if chromo in available_chromos
+    ]
+    if not chromos:
+        chromos = available_chromos
+
+    sort_chromo = "HbO" if "HbO" in available_chromos else chromos[0]
+    sort_data = mean.sel(chromo=sort_chromo).transpose(
+        "parcel",
+        "reltime",
+    )
+
+    if np.any(sort_data.reltime.values >= 0):
+        sort_data = sort_data.sel(reltime=slice(0, None))
+
+    sort_metric = np.nanmax(
+        np.abs(sort_data.values),
+        axis=1,
+    )
+    sort_metric = np.where(
+        np.isfinite(sort_metric),
+        sort_metric,
+        -np.inf,
+    )
+    order = np.argsort(sort_metric)[::-1]
+
+    mean = mean.isel(parcel=order)
+    n_parcels = mean.sizes["parcel"]
+
+    finite = mean.values[np.isfinite(mean.values)]
+    if finite.size:
+        limit = float(np.nanpercentile(np.abs(finite), 99))
+        if not np.isfinite(limit) or limit == 0:
+            limit = float(np.nanmax(np.abs(finite)))
+    else:
+        limit = 1.0
+
+    if not np.isfinite(limit) or limit == 0:
+        limit = 1.0
+
+    reltime = np.asarray(mean.reltime.values, dtype=float)
+
+    fig, axes = plt.subplots(
+        len(chromos),
+        1,
+        figsize=(10, max(5.0, 2.5 * len(chromos))),
+        sharex=True,
+        squeeze=False,
+        constrained_layout=True,
+    )
+
+    image_artist = None
+
+    for ax, chromo in zip(axes[:, 0], chromos, strict=True):
+        values = np.asarray(
+            mean.sel(chromo=chromo)
+            .transpose("parcel", "reltime")
+            .values,
+            dtype=float,
+        )
+
+        image_artist = ax.imshow(
+            values,
+            aspect="auto",
+            origin="upper",
+            interpolation="nearest",
+            cmap="RdBu_r",
+            vmin=-limit,
+            vmax=limit,
+            extent=(
+                float(reltime[0]),
+                float(reltime[-1]),
+                n_parcels,
+                0,
+            ),
+        )
+
+        ax.axvline(0.0, linestyle="--", linewidth=1.5)
+        ax.set_title(str(chromo))
+        ax.set_ylabel(f"Parcels (n={n_parcels})")
+        ax.set_yticks([])
+
+    time_units = mean.reltime.attrs.get("units")
+    xlabel = "Relative time"
+    if time_units is not None:
+        xlabel += f" ({time_units})"
+    axes[-1, 0].set_xlabel(xlabel)
+
+    fig.suptitle(f"Group average: {trial_type}")
+
+    if image_artist is not None:
+        data_units = mean.attrs.get("units")
+        colorbar = fig.colorbar(
+            image_artist,
+            ax=axes[:, 0].tolist(),
+            shrink=0.9,
+            pad=0.02,
+        )
+
+        label = "Group mean"
+        if data_units is not None:
+            label += f" ({data_units})"
+        colorbar.set_label(label)
+
+    fig.savefig(output_figure, dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
 
 
@@ -561,7 +798,7 @@ def image_statistics(
             if n_valid < 2:
                 continue
 
-            # Match Tomás's intercept-only OLS one-sample test:
+            # Perform an intercept-only OLS one-sample test:
             # feature_i = beta_0 + error, H0: beta_0 == 0.
             design = np.ones((n_valid, 1), dtype=float)
             fit = sm.OLS(values, design).fit()
@@ -681,10 +918,10 @@ def image_visualization(
     input_statistics: str | Path,
     input_image: str | Path,
     output_figure: str | Path,
-    head_model: str = "colin27",
+    head_model: str | dict = "colin27",
     trial_type: str = "motor",
 ) -> None:
-    """Plot FDR-significant parcel t-values on the standard brain surface.
+    """Plot FDR-significant parcel t-values on the reconstruction surface.
 
     Parcel-level t-statistics are expanded onto the reconstructed vertices
     using the parcel coordinate stored in the image reconstruction. Vertices
@@ -696,7 +933,8 @@ def image_visualization(
         input_image: Image-reconstruction NetCDF file containing vertex IDs
             and parcel labels.
         output_figure: Output PNG filename.
-        head_model: Standard head model used for reconstruction.
+        head_model: Standard model name or custom head-model configuration
+            used for reconstruction.
         trial_type: Trial type to visualize.
     """
     output_figure = Path(output_figure)
@@ -704,7 +942,7 @@ def image_visualization(
 
     statistics = xr.load_dataset(input_statistics)
     image = xr.load_dataarray(input_image)
-    head = get_standard_headmodel(head_model)
+    head = _load_head_model(head_model)
 
     vertex_map = _parcel_statistics_to_vertex_map(
         statistics=statistics,
