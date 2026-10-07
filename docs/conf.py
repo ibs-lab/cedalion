@@ -48,6 +48,7 @@ html_theme_options = {
 html_css_files = [
     "css/rtd_fixes.css",
     "css/contributors.css",
+    "css/tutorial_videos.css",
 ]
 
 html_js_files = [
@@ -63,6 +64,16 @@ def setup(app):
         context["READTHEDOCS"] = True
 
     app.connect("html-page-context", _force_readthedocs, priority=600)
+
+    # tutorial_videos.rst links many notebooks via nbgallery (a toctree). Sphinx
+    # would make it the parent of those notebooks (sidebar, breadcrumbs, prev/next)
+    # because it comes first in the root toctree and is read last. Drop it from the
+    # toctree hierarchy so notebooks keep their parents; nbsphinx renders galleries
+    # from the toctree nodes themselves, so the cards are unaffected.
+    def _detach_tutorial_videos(_app, env):
+        env.toctree_includes.pop("tutorial_videos", None)
+
+    app.connect("env-updated", _detach_tutorial_videos)
 
 # -- Configure MyST -----------------------------------------------------------
 
