@@ -24,7 +24,8 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinxcontrib.bibtex",
-    "sphinx.ext.linkcode"
+    "sphinx.ext.linkcode",
+    "sphinx_design",
     #"autoapi.extension"
 ]
 
@@ -49,6 +50,7 @@ html_css_files = [
     "css/rtd_fixes.css",
     "css/contributors.css",
     "css/tutorial_videos.css",
+    "css/landing.css",
 ]
 
 html_js_files = [
@@ -81,6 +83,8 @@ myst_enable_extensions = [
     "substitution",
     "dollarmath",
     "amsmath",
+    "colon_fence",  # ::: fences for nested sphinx-design directives
+    "attrs_inline",  # [text]{.class} spans, used for the feature map on index.md
 ]
 
 myst_heading_anchors = 2

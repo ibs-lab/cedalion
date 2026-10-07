@@ -1,77 +1,59 @@
-/* Layout for docs/tutorial_videos.rst: thumbnail tiles, max. two per row. */
+/* Tiles on docs/tutorial_videos.rst. Layout (max. two per row) comes from the
+   sphinx-design grids in the page; colours are set in landing.css. */
 
-.rst-content .video-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.5rem 1.25rem;
-    margin: 0.5rem 0 1.5rem;
+.sd-card.video-card {
+    border-radius: 10px;
+    border-color: #dbe7ef;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
 }
 
-@media (max-width: 640px) {
-    .rst-content .video-grid {
-        grid-template-columns: minmax(0, 1fr);
-    }
-}
-
-.rst-content .video-grid figure.video-tile {
-    margin: 0;
-    width: 100%;
-}
-
-.rst-content .video-grid figure.video-tile img {
-    display: block;
-    width: 100%;
-    height: auto;
+.sd-card.video-card .sd-card-img-top {
     aspect-ratio: 16 / 9;
     object-fit: cover;
-    border: 1px solid #e1e4e5;
-    border-radius: 6px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    margin: 0;
 }
 
-.rst-content .video-grid figure.video-tile-available a.image-reference img {
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.rst-content .video-grid figure.video-tile-available a.image-reference:hover img,
-.rst-content .video-grid figure.video-tile-available a.image-reference:focus img {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
-}
-
-.rst-content .video-grid figure.video-tile figcaption {
-    text-align: left;
-    margin-top: 0.5rem;
+.sd-card.video-card .sd-card-body {
+    padding: 0.6rem 0.9rem;
     font-size: 0.9em;
     line-height: 1.4;
 }
 
-.rst-content .video-grid figure.video-tile figcaption p {
-    margin: 0;
+.rst-content .sd-card.video-card .sd-card-body p {
+    margin-bottom: 0.2rem;
 }
 
-.rst-content .video-grid figure.video-tile .legend {
+.sd-card.video-card .sd-card-footer {
+    padding: 0.4rem 0.9rem;
     font-size: 0.85em;
-    color: #555;
-    margin-top: 0.2rem;
+    font-weight: 600;
+    color: #0a8f9a;
 }
 
-.rst-content .video-grid figure.video-tile .legend p {
-    margin: 0;
+.sd-card.video-card-available {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.rst-content .tutorial-placeholder {
+.sd-card.video-card-available:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
+}
+
+.sd-card.tutorial-placeholder {
     border: 2px dashed #c9d1d9;
     border-radius: 6px;
     background: #f8f9fa;
+    box-shadow: none;
     color: #6a737d;
     font-style: italic;
     text-align: center;
-    padding: 0.75rem 1rem;
     margin: 0.5rem 0 1.5rem;
 }
 
-.rst-content .tutorial-placeholder p {
+.sd-card.tutorial-placeholder .sd-card-body {
+    padding: 0.75rem 1rem;
+}
+
+.rst-content .sd-card.tutorial-placeholder p {
     margin: 0;
 }

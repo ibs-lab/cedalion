@@ -49,6 +49,7 @@ dependencies:
   - sphinx-autodoc-typehints
   - sphinx_rtd_theme=3.0
   - sphinx-autoapi
+  - sphinx-design
 
   - hatchling
   - hatch-vcs
