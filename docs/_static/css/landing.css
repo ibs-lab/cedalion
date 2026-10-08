@@ -1,0 +1,231 @@
+/* Landing page (docs/index.md) and shared sphinx-design colours.
+   Colours follow cedalion.tools / the IBS logo. */
+
+:root {
+    --cdl-cyan: #11c1cf;
+    --cdl-cyan-ink: #0a8f9a;
+    --cdl-navy: #173553;
+    --cdl-border: #dbe7ef;
+    --cdl-shadow: 0 6px 22px rgba(16, 33, 51, 0.10);
+
+    --sd-color-primary: var(--cdl-navy);
+    --sd-color-primary-highlight: #0f2438;
+    --sd-color-primary-text: #ffffff;
+    --sd-color-info: var(--cdl-cyan);
+    --sd-color-info-highlight: var(--cdl-cyan-ink);
+    --sd-color-info-text: #ffffff;
+    --sd-color-card-border-hover: var(--cdl-cyan);
+}
+
+/* Give the landing page more room than the theme's 800px text column. */
+.wy-nav-content:has(.cdl-landing) {
+    max-width: 1100px;
+}
+
+/* The page title is replaced by the hero; keep it for screen readers and the
+   browser tab only. */
+.rst-content:has(.cdl-landing) h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+/* ---- Hero ---------------------------------------------------------------- */
+
+.cdl-hero {
+    margin-bottom: 0.5rem;
+}
+
+/* Centre the logo vertically against the title, text and button. */
+.cdl-hero > .sd-row {
+    align-items: center;
+}
+
+.rst-content .cdl-hero .sd-col > :last-child {
+    margin-bottom: 0;
+}
+
+.rst-content img.cdl-hero-logo {
+    display: block;
+    width: 100%;
+    max-width: 200px;
+    margin: 0 auto;
+}
+
+.cdl-hero-title {
+    display: block;
+    font-size: 2.8rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--cdl-navy);
+    margin-bottom: 0.75rem;
+}
+
+.cdl-hero p {
+    font-size: 1.05rem;
+}
+
+.cdl-hero .cdl-hero-button {
+    font-weight: 600;
+    padding: 0.5rem 1.4rem;
+}
+
+/* ---- Version note ---------------------------------------------------------- */
+
+.rst-content .admonition.note.cdl-version-note {
+    background: #e8f8fa;
+    border-left: 4px solid var(--cdl-cyan);
+    border-radius: 0 10px 10px 0;
+    overflow: hidden;
+}
+
+.rst-content .admonition.note.cdl-version-note .admonition-title {
+    background: var(--cdl-navy);
+}
+
+.rst-content .admonition.note.cdl-version-note p:last-child {
+    margin-bottom: 0;
+}
+
+/* ---- Resource tiles ------------------------------------------------------- */
+
+.cdl-resources {
+    margin: 1.5rem 0 2rem;
+}
+
+.sd-card.cdl-resource {
+    border-radius: 18px;
+    border-color: var(--cdl-border);
+    box-shadow: var(--cdl-shadow);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.sd-card.cdl-resource:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.18);
+}
+
+.sd-card.cdl-resource .sd-card-img-top {
+    padding: 14px 14px 0;
+    border-radius: 26px;
+}
+
+.sd-card.cdl-resource .sd-card-body {
+    padding: 0.5rem 0.4rem 0.7rem;
+}
+
+.sd-card.cdl-resource .sd-card-title {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--cdl-navy);
+}
+
+/* ---- Feature map ---------------------------------------------------------- */
+
+.cdl-feature-map {
+    position: relative;
+    margin: 1rem 0 2rem;
+}
+
+.rst-content .cdl-feature-map img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 18px;
+    box-shadow: var(--cdl-shadow);
+}
+
+.rst-content .cdl-feature-map p {
+    margin: 0;
+    line-height: 0;
+}
+
+.cdl-feature-map .fm-hs {
+    position: absolute;
+    display: block;
+}
+
+.cdl-feature-map .fm-hs a {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    border: 3px solid transparent;
+    text-indent: -9999px;
+    overflow: hidden;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.cdl-feature-map .fm-hs a:hover,
+.cdl-feature-map .fm-hs a:focus-visible {
+    border-color: var(--cdl-cyan);
+    background-color: rgba(17, 193, 207, 0.14);
+    outline: none;
+}
+
+/* Hotspot positions in % of cedalion_features.png (1974 x 994 px). */
+.cdl-feature-map .fm-preprocessing-glm { left: 0.00%; top: 0.00%; width: 65.96%; height: 9.26%; }
+.cdl-feature-map .fm-photogrammetric-coregistration { left: 1.11%; top: 10.87%; width: 18.54%; height: 35.61%; }
+.cdl-feature-map .fm-channel-quality { left: 20.77%; top: 10.87%; width: 27.00%; height: 6.84%; }
+.cdl-feature-map .fm-artifact-rejection { left: 20.77%; top: 19.52%; width: 27.00%; height: 6.84%; }
+.cdl-feature-map .fm-filtering-detrending { left: 20.77%; top: 28.17%; width: 27.00%; height: 6.84%; }
+.cdl-feature-map .fm-modified-beer-lambert-law { left: 20.77%; top: 36.72%; width: 27.00%; height: 6.84%; }
+.cdl-feature-map .fm-general-linear-model { left: 48.94%; top: 10.87%; width: 16.01%; height: 35.61%; }
+.cdl-feature-map .fm-multimodal-machine-learning { left: 67.93%; top: 0.00%; width: 32.07%; height: 9.26%; }
+.cdl-feature-map .fm-sensor-fusion { left: 68.74%; top: 10.87%; width: 21.48%; height: 6.84%; }
+.cdl-feature-map .fm-latent-component-analysis { left: 68.74%; top: 19.42%; width: 21.48%; height: 10.36%; }
+.cdl-feature-map .fm-feature-extraction { left: 68.74%; top: 31.29%; width: 21.48%; height: 6.84%; }
+.cdl-feature-map .fm-classification { left: 68.74%; top: 39.84%; width: 21.48%; height: 6.84%; }
+.cdl-feature-map .fm-head-models { left: 1.01%; top: 53.32%; width: 14.59%; height: 35.81%; }
+.cdl-feature-map .fm-parcellation-networks { left: 16.51%; top: 53.32%; width: 14.59%; height: 35.81%; }
+.cdl-feature-map .fm-head-models-atlases { left: 0.00%; top: 90.85%; width: 32.02%; height: 9.15%; }
+.cdl-feature-map .fm-photon-simulation { left: 35.06%; top: 53.52%; width: 14.59%; height: 35.61%; }
+.cdl-feature-map .fm-image-reconstruction { left: 50.51%; top: 53.52%; width: 14.59%; height: 35.61%; }
+.cdl-feature-map .fm-diffuse-optical-tomography { left: 34.04%; top: 91.05%; width: 31.97%; height: 8.95%; }
+.cdl-feature-map .fm-synthetic-hrfs { left: 68.95%; top: 53.82%; width: 14.64%; height: 35.51%; }
+.cdl-feature-map .fm-synthetic-artifacts { left: 84.40%; top: 53.82%; width: 14.64%; height: 35.51%; }
+.cdl-feature-map .fm-realistic-data-augmentation { left: 67.98%; top: 91.05%; width: 32.02%; height: 8.95%; }
+
+/* ---- Where to find what ----------------------------------------------------- */
+
+.sd-card.cdl-path {
+    border-radius: 14px;
+    border-color: var(--cdl-border);
+    border-top: 4px solid var(--cdl-cyan);
+    box-shadow: var(--cdl-shadow);
+}
+
+.sd-card.cdl-path .sd-card-title {
+    color: var(--cdl-navy);
+}
+
+.rst-content .sd-card.cdl-path ul {
+    margin-bottom: 0;
+}
+
+.rst-content .sd-card.cdl-path li {
+    margin-bottom: 0.25rem;
+}
+
+/* ---- Partner and funding logos ----------------------------------------------- */
+
+.cdl-logos {
+    margin: 1rem 0 2rem;
+}
+
+.rst-content .cdl-logos img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    max-height: 64px;
+    margin: 0 auto;
+    opacity: 0.92;
+    transition: opacity 0.2s ease;
+}
+
+.rst-content .cdl-logos a:hover img {
+    opacity: 1;
+}

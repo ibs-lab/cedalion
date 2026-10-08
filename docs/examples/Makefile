@@ -8,6 +8,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
 					plots_visualization/12_plots_example.ipynb \
 					machine_learning/50_finger_tapping_lda_classification.ipynb \
 					machine_learning/50b_advanced_finger_tapping_lda_classification.ipynb \
+					machine_learning/51_multimodal_source_decomposition_on_synthetic_fNIRS-EEG_data.ipynb \
 					machine_learning/52_ica_erbm_fingertapping_example.ipynb \
 					machine_learning/53_constrained_ICA_example.ipynb \
 					modeling/31_glm_basis_functions.ipynb \
@@ -28,6 +29,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
 					head_models/44_head_models_crs_scaling.ipynb \
 					head_models/45_parcel_sensitivity.ipynb \
 					head_models/46_precompute_fluence.ipynb \
+					head_models/47_image_reconstruction_regularizations.ipynb \
 					head_models/48_headmodel_landmarks_verification.ipynb \
 					head_models/51_spring_relaxation_registration.ipynb \
 					head_models/52_mni_atlas_labels_aal3_brodmann.ipynb \
