@@ -662,7 +662,7 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         threshold = threshold.to(mesh_units).magnitude
 
         mesh = mesh.rename({"label": "vertex"}).pint.dequantify()
-        mesh_masked = mesh[mask, :].values
+        mesh_masked = mesh[np.asarray(mask, dtype=bool), :].values
         nmasked = mesh_masked.shape[0]
 
         sel_indices = [0]
