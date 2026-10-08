@@ -40,6 +40,7 @@ TISSUE_LABELS: Dict[str, TissueType] = {
 # FIXME units, reference
 
 # fmt: off
+# reduced scattering coefficient µs' (mm⁻¹)
 TISSUE_PROPS_SCATTERING = {
     TissueType.SKIN  : 0.6600,
     TissueType.SKULL : 0.8600,
@@ -50,6 +51,7 @@ TISSUE_PROPS_SCATTERING = {
     TissueType.OTHER : 0.8600,
 }
 
+# absorption coefficient µa (mm⁻¹)
 TISSUE_PROPS_ABSORPTION = {
     TissueType.SKIN  : 0.0191,
     TissueType.SKULL : 0.0136,
@@ -60,6 +62,7 @@ TISSUE_PROPS_ABSORPTION = {
     TissueType.OTHER : 0.0191,
 }
 
+# anisotropy g
 TISSUE_PROPS_ANISOTROPY = {
     TissueType.SKIN  : 0.0010,
     TissueType.SKULL : 0.0010,
@@ -70,6 +73,7 @@ TISSUE_PROPS_ANISOTROPY = {
     TissueType.OTHER : 0.0010,
 }
 
+# refractive index n
 TISSUE_PROPS_REFRACTION = {
     TissueType.SKIN  : 1.0000,
     TissueType.SKULL : 1.0000,
