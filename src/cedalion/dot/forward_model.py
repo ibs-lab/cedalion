@@ -321,11 +321,23 @@ class ForwardModel:
 
         return result
 
-    def compute_fluence_mcx(self, fluence_fname : str | Path, **kwargs):
+    def compute_fluence_mcx(
+        self,
+        fluence_fname : str | Path,
+        optodes : list[str] | None = None,
+        **kwargs,
+    ):
         """Compute fluence for each channel and wavelength using MCX package.
 
         Args:
             fluence_fname : the output hdf5 file to store the fluence
+            optodes: Labels of the emitting optodes to simulate. Defaults to all
+                optodes. Simulating a subset produces a partial fluence file whose
+                ``fluence_all`` contains only these optodes, while
+                ``fluence_at_optodes`` still samples all optode positions. Partial
+                files can be merged, e.g. with
+                :func:`cedalion.dot.steps.merge_fluence`, which allows splitting
+                large probes across several jobs.
             kwargs: key-value pairs are passed to MCX's configuration dict. For example
                 nphoton (int) to control the number of photons to simulate.
                 See https://pypi.org/project/pmcx for further options.
@@ -356,14 +368,22 @@ class ForwardModel:
         cite("Yan2020")
         wavelengths = self.measurement_list.wavelength.unique()
         n_wavelength = len(wavelengths)
-        n_optodes = len(self.optode_pos)
+        all_labels = self.optode_pos.label.values.tolist()
+
+        if optodes is None:
+            emitting = list(range(len(all_labels)))
+        else:
+            unknown = [o for o in optodes if o not in all_labels]
+            if unknown:
+                raise ValueError(f"unknown optode labels: {unknown}")
+            emitting = [all_labels.index(o) for o in optodes]
 
         units = "1 / millimeter ** 2"
 
         fluence_at_optodes = xr.DataArray(
             dims=["optode1", "optode2", "wavelength"],
             coords={
-                "optode1": self.optode_pos.label.values,
+                "optode1": self.optode_pos.label.values[emitting],
                 "optode2": self.optode_pos.label.values,
                 "wavelength": wavelengths,
             },
@@ -372,13 +392,15 @@ class ForwardModel:
 
         with FluenceFile(fluence_fname, "w") as fluence_file:
             fluence_file.create_fluence_dataset(
-                self.optode_pos,
+                self.optode_pos[emitting],
                 wavelengths,
                 self.volume.shape,
                 units
             )
 
-            for i_opt in tqdm(range(n_optodes), desc="simulating fluence"):
+            for i_out, i_opt in enumerate(
+                tqdm(emitting, desc="simulating fluence")
+            ):
 
                 # run MCX or MCXCL
                 # shape: [i,j,k]
@@ -388,11 +410,11 @@ class ForwardModel:
                 # currently tissue props are wavelength independent -> copy
                 for i_wl in range(n_wavelength):
                     # calculate fluence at all optode positions. used for normalization
-                    fluence_at_optodes[i_opt, :, i_wl] = self._fluence_at_optodes(
+                    fluence_at_optodes[i_out, :, i_wl] = self._fluence_at_optodes(
                         fluence, i_opt
                     )
 
-                    fluence_file.set_fluence_by_index(i_opt,i_wl, fluence)
+                    fluence_file.set_fluence_by_index(i_out, i_wl, fluence)
 
             fluence_file.set_fluence_at_optodes(fluence_at_optodes)
 

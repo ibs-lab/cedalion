@@ -344,3 +344,92 @@ class FluenceFile:
         fluence_all.attrs.clear()
 
         return fluence_all
+
+    @staticmethod
+    def combine_fluence_files(
+        input_fnames: list[str | Path], output_fname: str | Path
+    ):
+        """Combine fluence files computed for disjoint sets of optodes.
+
+        Args:
+            input_fnames: Partial fluence files, e.g. computed for different subsets
+                of a probe's optodes. Together they must cover every optode exactly
+                once.
+            output_fname: Output fluence file covering all optodes.
+
+        Raises:
+            ValueError: If the files have different wavelengths or volume shapes,
+                if an optode occurs in more than one file or if the fluence of an
+                optode is missing.
+        """
+        if isinstance(input_fnames, (str, Path)):
+            input_fnames = [input_fnames]
+        if not input_fnames:
+            raise ValueError("At least one input fluence file is required.")
+
+        shards = [FluenceFile(fname, "r") for fname in input_fnames]
+        try:
+            first = shards[0].file["fluence_all"]
+            # optode2 of fluence_at_optodes always lists all optodes of the probe
+            all_labels = [
+                str(i) for i in shards[0].get_fluence_at_optodes().optode2.values
+            ]
+            wavelengths = np.asarray(shards[0].wavelengths)
+            units = first.attrs["units"]
+            volume_shape = first.shape[2:]
+
+            label_source = {}
+            label_type = {}
+            for i_shard, shard in enumerate(shards):
+                ds = shard.file["fluence_all"]
+                if not np.allclose(shard.wavelengths, wavelengths):
+                    raise ValueError("Fluence files have different wavelengths.")
+                if ds.shape[2:] != volume_shape:
+                    raise ValueError("Fluence files have different volume shapes.")
+                for label, ptype in zip(ds.attrs["label"], ds.attrs["type"]):
+                    label = str(label)
+                    if label in label_source:
+                        raise ValueError(
+                            f"Optode {label} occurs in more than one file."
+                        )
+                    label_source[label] = i_shard
+                    label_type[label] = int(ptype)
+
+            missing = [label for label in all_labels if label not in label_source]
+            if missing:
+                raise ValueError(f"No fluence found for optodes {missing}.")
+
+            optode_pos = xr.DataArray(
+                np.zeros((len(all_labels), 3)),
+                dims=["label", "ijk"],
+                coords={
+                    "label": ("label", all_labels),
+                    "type": (
+                        "label",
+                        [cdc.PointType(label_type[x]) for x in all_labels],
+                    ),
+                },
+            )
+
+            fluence_at_optodes = xr.concat(
+                [shard.get_fluence_at_optodes() for shard in shards], dim="optode1"
+            )
+            fluence_at_optodes = fluence_at_optodes.assign_coords(
+                optode1=[str(i) for i in fluence_at_optodes.optode1.values],
+                optode2=[str(i) for i in fluence_at_optodes.optode2.values],
+            ).sel(optode1=all_labels, optode2=all_labels)
+
+            with FluenceFile(output_fname, "w") as fout:
+                fout.create_fluence_dataset(
+                    optode_pos, wavelengths, tuple(volume_shape), units
+                )
+                for i_label, label in enumerate(all_labels):
+                    shard = shards[label_source[label]]
+                    for i_wl, wl in enumerate(wavelengths):
+                        fout.set_fluence_by_index(
+                            i_label, i_wl, shard.get_fluence(label, float(wl))
+                        )
+                fout.set_fluence_at_optodes(fluence_at_optodes)
+        finally:
+            for shard in shards:
+                shard.file.close()
