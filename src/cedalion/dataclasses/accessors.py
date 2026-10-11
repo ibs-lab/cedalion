@@ -578,6 +578,15 @@ class StatsModelsAccessor:
         if callable(attr):
             result = SMCallableWrapper(self, name)
         else:
+            if isinstance(attr, pd.Series):
+                # Per-sample results like resid can cover different samples in each
+                # fit, e.g. if glm.fit was called with a mask. Align them on the
+                # union of all samples and fill the missing ones with NaN.
+                index = attr.index
+                for obj in self._array.values.flat:
+                    index = index.union(getattr(obj, name).index)
+                attr = attr.reindex(index)
+
             result = self._build_array(name, attr)
 
             for i in range(self._array.shape[0]):
@@ -587,7 +596,7 @@ class StatsModelsAccessor:
                     if np.isscalar(attr):
                         result[i, j] = x
                     elif isinstance(attr, pd.Series):
-                        result[i, j, :] = x
+                        result[i, j, :] = x.reindex(index)
                     elif isinstance(attr, pd.DataFrame):
                         result[i, j, :, :] = x.values
                     else:

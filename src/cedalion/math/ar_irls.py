@@ -8,7 +8,33 @@ import pandas as pd
 from cedalion.sigproc.frequency import sampling_rate
 from cedalion import cite, units
 
-def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4.685)):
+def _valid_after_filter(mask: np.ndarray, p: int) -> np.ndarray:
+    """Find the samples of an AR-filtered series that only depend on unmasked samples.
+
+    The output of an AR whitening filter of order p at sample t depends on the input
+    samples t-p, ..., t. It is valid only if all of these are unmasked. The first p
+    samples, for which the filter is not yet initialized, are never valid.
+
+    Args:
+        mask: 1-D boolean array, ``True`` for unmasked samples.
+        p: order of the AR filter.
+
+    Returns:
+        1-D boolean array, ``True`` for valid samples of the filtered series.
+    """
+    masked = (~mask).astype(int)
+    invalid = np.convolve(masked, np.ones(p + 1, dtype=int))[: len(mask)] > 0
+    invalid[:p] = True
+    return ~invalid
+
+
+def ar_irls_GLM(
+    y,
+    x,
+    pmax: int | None = 40,
+    M=sm.robust.norms.TukeyBiweight(c=4.685),
+    mask: np.ndarray | None = None,
+):
     """This function implements the AR-IRLS GLM model.
 
     The autoregressive iteratively reweighted least squares GLM model is described in
@@ -27,6 +53,10 @@ def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4
         M: Robust norm for the IRLS step (default: Tukey bi-weight, ``c=4.685``).
             Tuning constant reference values: 4.685 → 95% efficiency,
             4.00 → ~90%, 3.55 → ~85%.
+        mask: Optional 1-D boolean array. Samples that are ``False`` are ignored in
+            the fit. Filtered samples within the AR order after a masked sample are
+            ignored, too, because the whitening filter would mix in masked samples.
+            If ``None``, all non-finite samples of ``y`` are masked.
 
     Returns:
         Fitted ``statsmodels.RLM`` results object containing betas, t-stats,
@@ -43,19 +73,24 @@ def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4
     """
 
     cite("Barker2013")
-    mask = np.isfinite(y.values)
+    if mask is None:
+        mask = np.isfinite(y.values)
+    else:
+        mask = np.asarray(mask, dtype=bool)
 
     if pmax is None:
         fs = sampling_rate(y).to(units.Hz)
         pmax = 2 * np.ceil(fs)
 
-    yorg : pd.Series = pd.Series(y.values[mask].copy())
-    xorg : pd.DataFrame = x[mask].reset_index(drop=True)
+    # Keep all samples to preserve their temporal order for the AR filter. The values
+    # of masked samples are replaced but never enter the fit.
+    yorg : pd.Series = pd.Series(np.where(mask, y.values, 0.0))
+    xorg : pd.DataFrame = x.reset_index(drop=True)
 
     y = yorg.copy()
     x = xorg.copy()
 
-    rlm_model = sm.RLM(y, x, M=M)
+    rlm_model = sm.RLM(y[mask], x[mask], M=M)
     params = rlm_model.fit()
 
     resid = pd.Series(y - x @ params.params)
@@ -63,8 +98,11 @@ def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4
         y = yorg.copy()
         x = xorg.copy()
 
-        # Update the AR whitening filter
-        arcoef = cedalion.math.ar_model.bic_arfit(resid, pmax=pmax)
+        # Update the AR whitening filter. The AR coefficients are estimated from the
+        # concatenated residuals of the unmasked samples.
+        arcoef = cedalion.math.ar_model.bic_arfit(
+            resid[mask].reset_index(drop=True), pmax=pmax
+        )
         wf = np.hstack([1, -arcoef.params[1:]])
         p = len(wf) - 1
 
@@ -80,8 +118,9 @@ def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4
         xf.columns = x.columns
 
         # fit the model ignoring the first p samples, for which the AR filter is not
-        # yet fully initialized.
-        rlm_model = sm.RLM(yf[p:], xf.iloc[p:], M=M)
+        # yet fully initialized, and the filtered samples affected by masked samples.
+        valid = _valid_after_filter(mask, p)
+        rlm_model = sm.RLM(yf[valid], xf[valid], M=M)
         params = rlm_model.fit()
 
         resid = pd.Series(yorg - xorg @ params.params)
