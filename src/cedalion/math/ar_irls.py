@@ -62,6 +62,10 @@ def ar_irls_GLM(
         Fitted ``statsmodels.RLM`` results object containing betas, t-stats,
         and residuals after prewhitening.
 
+    Raises:
+        ValueError: If too few samples remain to estimate all regressors after
+            excluding the filtered samples that follow masked samples.
+
     Note:
         Do **not** low-pass filter before calling this function — the AR step
         needs access to the full spectrum to estimate stable prewhitening filters.
@@ -120,6 +124,12 @@ def ar_irls_GLM(
         # fit the model ignoring the first p samples, for which the AR filter is not
         # yet fully initialized, and the filtered samples affected by masked samples.
         valid = _valid_after_filter(mask, p)
+        if valid.sum() <= x.shape[1]:
+            raise ValueError(
+                f"Only {valid.sum()} samples remain to estimate {x.shape[1]} "
+                f"regressors after excluding the {p} samples that follow each masked "
+                "sample. Merge short gaps in the mask or reduce the maximum AR order."
+            )
         rlm_model = sm.RLM(yf[valid], xf[valid], M=M)
         params = rlm_model.fit()
 

@@ -1,8 +1,8 @@
 # Changelog
 
-<!--
 ## Unreleased changes (available on the `dev` branch)
---> 
+
+- `glm.fit` accepts a boolean `mask` to exclude time segments from the fit (`True`/`CLEAN`: use the sample, `False`/`TAINTED`: ignore it). A mask with only a time dimension applies to all channels, one with time, channel (or parcel, vertex) and chromo dimensions masks segments individually. The design matrix is not masked, so `glm.predict` still yields predictions for masked segments. AR-IRLS no longer joins the segments before and after a gap. See the example notebook `37_glm_masking`. **Behavior change:** NaNs or infs in unmasked samples of the time series and non-finite regressors in the design matrix now raise a `ValueError`. Previously, AR-IRLS and RLS silently skipped samples with NaNs, OLS and WLS returned NaN results, and GLS and GLSAR failed. Pass `mask=np.isfinite(ts)` to exclude NaNs from the fit. By [Elsa-Henriette Harms](https://github.com/elsahh).
 
 ## Version 26.8.0-rc1 
 

@@ -169,10 +169,12 @@ def _check_design_matrix_is_finite(design_matrix: DesignMatrix):
         other_dims = [d for d in array.dims if d != "regressor"]
         bad = (~np.isfinite(array)).any(other_dims)
         if bad.any():
+            bad_regressors = ", ".join(map(str, array.regressor.values[bad.values]))
             raise ValueError(
                 "The design matrix must be finite, but these regressors contain NaNs "
-                f"or infs: {', '.join(map(str, array.regressor.values[bad.values]))}. "
-                "To exclude time points from the fit, use the mask argument instead."
+                f"or infs: {bad_regressors}. Replace them with finite values and "
+                "exclude the affected samples of the time series with the mask "
+                "argument."
             )
 
 

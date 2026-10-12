@@ -5,6 +5,7 @@ import xarray as xr
 
 import cedalion
 import cedalion.math.ar_irls
+import cedalion.math.ar_model
 import cedalion.dataclasses as cdc
 import cedalion.models.glm as glm
 from cedalion.models.glm.basis_functions import (
@@ -351,6 +352,34 @@ def test_glm_corrupted_segment_biases_unmasked_fit():
     assert max(deviations) > 1
 
 
+@pytest.mark.parametrize("noise_model", ["ols", "wls", "rls", "gls", "ar_irls"])
+def test_glm_masked_samples_do_not_influence_fit(noise_model):
+    ts, dms = _masking_rec()
+    ts1, mask1 = _corrupt(ts, "S1D1", 20, 25, 1e4 * units.uM)
+    ts1, mask2 = _corrupt(ts1, "S2D1", 40, 45, np.nan * units.uM)
+    ts2, _ = _corrupt(ts, "S1D1", 20, 25, -3 * units.uM)
+    ts2, _ = _corrupt(ts2, "S2D1", 40, 45, 7 * units.uM)
+    mask = mask1 & mask2
+
+    params1 = glm.fit(ts1, dms, noise_model, max_jobs=1, mask=mask).sm.params
+    params2 = glm.fit(ts2, dms, noise_model, max_jobs=1, mask=mask).sm.params
+
+    np.testing.assert_array_equal(params1.values, params2.values)
+
+
+@pytest.mark.parametrize("noise_model", ["ols", "ar_irls"])
+def test_glm_mask_parallel_matches_serial(noise_model):
+    ts, dms = _masking_rec()
+    ts, mask1 = _corrupt(ts, "S1D1", 20, 25, 1e4 * units.uM)
+    ts, mask2 = _corrupt(ts, "S2D1", 40, 45, np.nan * units.uM)
+    mask = mask1 & mask2
+
+    serial = glm.fit(ts, dms, noise_model, max_jobs=1, mask=mask).sm.params
+    parallel = glm.fit(ts, dms, noise_model, max_jobs=2, mask=mask).sm.params
+
+    np.testing.assert_array_equal(parallel.values, serial.values)
+
+
 @pytest.mark.parametrize("noise_model", NOISE_MODELS)
 def test_glm_all_true_mask_matches_no_mask(noise_model):
     ts, dms = _masking_rec()
@@ -394,6 +423,19 @@ def test_glm_design_matrix_must_be_finite():
     dms.common.loc[{"regressor": "HRF StimA", "time": dms.common.time[5]}] = np.nan
 
     with pytest.raises(ValueError, match="design matrix must be finite.*HRF StimA"):
+        glm.fit(ts, dms, "ols", max_jobs=1)
+
+    ts, dms = _masking_rec()
+    short = (
+        ts.pint.dequantify()
+        .expand_dims(regressor=["short"])
+        .transpose("time", "channel", "regressor", "chromo")
+        .copy()
+    )
+    short[100:120] = np.nan
+    dms = dms & glm.design_matrix.DesignMatrix(channel_wise=[short])
+
+    with pytest.raises(ValueError, match="short. Replace them.*mask argument"):
         glm.fit(ts, dms, "ols", max_jobs=1)
 
 
@@ -461,3 +503,22 @@ def test_valid_after_filter():
     expected = np.array([0, 0, 1, 1, 0, 0, 0, 1, 1, 1], dtype=bool)
 
     np.testing.assert_array_equal(valid, expected)
+
+
+
+def test_ar_irls_raises_if_too_few_samples_remain(monkeypatch):
+    class FixedOrderAR:
+        params = np.r_[0.0, np.full(12, 0.01)]
+
+    monkeypatch.setattr(
+        cedalion.math.ar_model, "bic_arfit", lambda *args, **kwargs: FixedOrderAR()
+    )
+
+    n = 400
+    x = pd.DataFrame({"const": np.ones(n), "b": np.sin(np.arange(n) / 10)})
+    y = pd.Series(1 + x["b"] + rng.normal(0, 0.1, n))
+    # unmasked stretches of 10 samples are shorter than the AR order 12
+    mask = (np.arange(n) // 10) % 2 == 0
+
+    with pytest.raises(ValueError, match="Only 0 samples remain"):
+        cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=30, mask=mask)
