@@ -51,33 +51,36 @@ DATASETS = pooch.create(
         "icbm152_parcellation.zip": "sha256:b69ffdb3ff2fe3d85a6d5c139e59147d05ca97127589c1e4c2a8d031850f0148",  # noqa:E501
 
         #   current
-        "hm_colin27.zip": "sha256:481aed79d9542d96b62b182cb624176108464933faf8cc7be2877cdc9a914c39",  # noqa:E501
-        "hm_icbm152.zip": "sha256:91bb99709b6ceadd41674acc0db6cf26d70dccb57e41797b474aa9ce6aeed3e8",  # noqa:E501
-        "fs_reconall_colin27.zip": "sha256:988b74efddb7cc2551dced25d8cbee89e8b32f1d8e1f07d84796e59db6b5f736",  # noqa:E501
-        "fs_reconall_icbm152.zip": "sha256:c8d7ae1923724d15074a03155920b4a817b8054f38cf6f5f37b4f37b26dbdfb6",  # noqa:E501
+        "hm_colin27.zip": "sha256:3b4d4788cb594a6fe367fa0a115dd12af8eeba7d6cb9227196dd97f4dc9566ac",  # noqa:E501
+        "hm_icbm152.zip": "sha256:75eda43b14df77560f8145e53ea031fd214f940238121d3b0926cb28a301bd04",  # noqa:E501
+        "fs_reconall_colin27.zip": "sha256:1803c42a421ca850b89479ac9ac2de4c53fbe5e65241f70b97f6502ee435ba7b",  # noqa:E501
+        "fs_reconall_icbm152.zip": "sha256:81284f9f65e727fd1244e82ef575e22dc3abe45c7603b1aad7fdc384feda5d72",  # noqa:E501
 
         "fieldtrip_standard1005.elc": "sha256:1ee59197946d62de872db2ac7f2243a596662c231427366f6dc5d84ed237f853",  # noqa:E501
 
         # precomputed forward model results
-        "fluence_fingertapping_colin27.h5": "sha256:2ac04296e066527805ee32281698e3a1916022b76aae7f1d2c2bfbbd8524f38e",  # noqa:E501
-        "fluence_fingertapping_icbm152.h5": "sha256:a0600ee1d51d938cf866d6b3cbd3786308ad78412255e3e71bd251634d0cbbdb",  # noqa:E501
-        "fluence_fingertappingDOT_colin27.h5": "sha256:37857936df0f632d161e213a49dc42d69fc2e69e0b67abbf72004a50c54a4830",  # noqa:E501
-        "fluence_fingertappingDOT_icbm152.h5": "sha256:1e68f217a9c43a483d4280f02087bb3f2a6bd39fe60003c76fbdfac744711a4e",  # noqa:E501
+        "fluence_fingertapping_colin27.h5": "sha256:659c24675db9c3bd598727c75c05842ab621193cefea05fdb8f08110f6877f35",  # noqa:E501
+        "fluence_fingertapping_icbm152.h5": "sha256:a14c7aa142f61019b7e41606b5df29a5a30504609f17dca4ce2e31e7b68889da",  # noqa:E501
+        "fluence_fingertappingDOT_colin27.h5": "sha256:ded2eef45c58f8d29cb2323d0f7cd31779bdcae5bdc2ac45cf54d33323386e03",  # noqa:E501
+        "fluence_fingertappingDOT_icbm152.h5": "sha256:9e6c5a031a724b23dd3253e4a56150c1b88cd45443c352e5a2655ad83e1c15e0",  # noqa:E501
 
-        "sensitivity_fingertapping_colin27.nc": "sha256:f0ed07ba0e18e8eafdd5e023fb8cf3710b321bfe291d67a6ad4252cb7cad0b3c",  # noqa:E501
-        "sensitivity_fingertapping_icbm152.nc": "sha256:6192571b0d343de330af8672690dfa94a18dc6d01e189de59e80dfa894419f2d",  # noqa:E501
-        "sensitivity_fingertappingDOT_colin27.nc": "sha256:0cf9f3b9ec84ed3833ad544555629059f447c2e8836f045c6dac871bdaf933e7",  # noqa:E501
-        "sensitivity_fingertappingDOT_icbm152.nc": "sha256:d62ca54688c0f29c0f13abd8c6ee6d194be7694a7efb12f2ce062ae338194755",  # noqa:E501
-        "sensitivity_ninja_cap_56x144_colin27.nc": "sha256:356d63fb7c8325574155e2c20753e9357ed00caa7aef6d3e70d1347f22bc1288",  # noqa:E501
-        "sensitivity_ninja_cap_56x144_icbm152.nc": "sha256:f739eef082982244a17b3cf588c2cb76d7279b8c7a306f4f3dfdfe9b1138f64f",  # noqa:E501
-        "sensitivity_ninja_uhd_cap_164x496_colin27.nc": "sha256:349c5d92783068bbe3427eac33142052d61c0c7097af8ea1682760b60699f0ff",  # noqa:E501
-        "sensitivity_ninja_uhd_cap_164x496_icbm152.nc": "sha256:1bbd17155617326f19bd25dbdda62956af7c5f20e1aa56d56d72bf6cfb38e2d3",  # noqa:E501
-        "sensitivity_nn22_resting_colin27.nc": "sha256:75f5842f86c6feed2018b3f5a161c57088f862de852e14a5c710839009af14fe",  # noqa:E501
-        "sensitivity_nn22_resting_icbm152.nc": "sha256:bed9c80973d8525510829c1ba36bb7766eb47f580bdfebef504bb60d8e79d623",  # noqa:E501
+        "sensitivity_fingertapping_colin27.nc": "sha256:3fb8adf273d22f71ba2500a90f196e890450052696501a4c67e1cd49cb45d21e",  # noqa:E501
+        "sensitivity_fingertapping_icbm152.nc": "sha256:b71d891b0beec3518eea866d77993ca5ece6e89392d40cde62c382456b70b623",  # noqa:E501
+        "sensitivity_fingertappingDOT_colin27.nc": "sha256:0d773edc82bbbc00ff9dee21f1cd85f610437111fc7afe2fdbd3a147668b0709",  # noqa:E501
+        "sensitivity_fingertappingDOT_icbm152.nc": "sha256:55764b4aef00aded0b0ac4e06a1bf702c070d8dfb676bd4c48f6928a15e550e8",  # noqa:E501
+        "sensitivity_ninja_cap_56x144_colin27.nc": "sha256:3c5a74775e87792a43e1b10c18343269c1692055eb21fd82360fe3f4fe496ebf",  # noqa:E501
+        "sensitivity_ninja_cap_56x144_icbm152.nc": "sha256:d1ce1e70c043ee44899f4637d7cb7a7cb77e8aacb01d16f2b90d2aa01b30fd3b",  # noqa:E501
+        "sensitivity_ninja_uhd_cap_164x496_colin27.nc": "sha256:2284589c67775b5f99f4fa483c0786ac8241dadd422cff05c0b2aa66fe9a379e",  # noqa:E501
+        "sensitivity_ninja_uhd_cap_164x496_icbm152.nc": "sha256:e2d912255255040f413e3b5d1438572dc91de18f9fcb9896fa3c6b03770e5625",  # noqa:E501
+        "sensitivity_nn22_resting_colin27.nc": "sha256:5ce778a1b14b7e6d677c9dcd5368f469abea5c6d173400d9b3fc9403cbedbdc5",  # noqa:E501
+        "sensitivity_nn22_resting_icbm152.nc": "sha256:dec7d7918ebcf5f021dc6680229c3d7a2ea193268413fab68eb059b2b6f31215",  # noqa:E501
 
-        "sensitivity_lumo_testdataset_colin27.nc" : "sha256:4608ba838a775f981059d736054e5d476b8e3fe24badb11fc813799c12d29d09", # noqa:E501
-        "sensitivity_kernel_testdataset_colin27.nc" : "sha256:56e9bd7bef9395dea23541c4d1eef48bee0e9a1d11f1bfe5c736e8998a1c89ac", # noqa:E501
-        "sensitivity_artinis_testdataset_colin27.nc" : "sha256:9b00d69134ae6283d29ddce60f7f1818ead95b27bcd11f9ccfe2f2a1d77a7036", # noqa:E501
+        "sensitivity_lumo_testdataset_colin27.nc" : "sha256:a2d09fb7fa37a3e44fa99f314149d2194d59760cd11768751e6cd29d9e648256", # noqa:E501
+        "sensitivity_lumo_testdataset_icbm152.nc" : "sha256:0666e948d90d208441dd68b049eb116ee020051ca8e339bdf4203da01488fc73", # noqa:E501
+        "sensitivity_kernel_testdataset_colin27.nc" : "sha256:450b5a3e11ab8474fd24ec254afc122d4a0c5a3ffb9384cac67cc459ba6bbc61", # noqa:E501
+        "sensitivity_kernel_testdataset_icbm152.nc" : "sha256:f3987da1bdf7d69e25915d39f0a04d992517810a2c1d241a5a56178e511d2b95", # noqa:E501
+        "sensitivity_artinis_testdataset_colin27.nc" : "sha256:cc38f8e76abf2d00de848ce7afc089c4188780e672e687f50292d5e09fc23b6e", # noqa:E501
+        "sensitivity_artinis_testdataset_icbm152.nc" : "sha256:f2a0fef64f736b5ea98324b7fd61a2b5622f204b317aba306f42997f16f41a23", # noqa:E501
 
         # atlases:
         "atlas_aal3.zip" : "sha256:8e2dcea9c1df1cd71855584a1f6bd11b6c6f3a60d11ce85d37e6f41966474af3", # noqa:E501

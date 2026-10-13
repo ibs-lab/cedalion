@@ -1161,11 +1161,11 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            # FIXME: disabled while investigating the voxel parcel labels
-            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,
+            surfaces_are_zero_based=False,
         )
 
         head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})
@@ -1182,11 +1182,11 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            # FIXME: disabled while investigating the voxel parcel labels
-            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,
+            surfaces_are_zero_based=False,
         )
 
         head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})
