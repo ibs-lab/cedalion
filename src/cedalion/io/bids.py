@@ -807,9 +807,7 @@ def load_from_bids_optodes_tsv(tsv_filename : Path | str) -> cdt.LabeledPoints:
     tsv_filename = Path(tsv_filename)
 
     if str(tsv_filename).endswith("_optodes.tsv"):
-        coordsystem_filename = Path(
-            str(tsv_filename).replace("_optodes.tsv", "_coordsystem.json")
-        )
+        coordsystem_filename = bids_sibling(tsv_filename, "coordsystem.json")
     else:
         coordsystem_filename = None
 
@@ -858,3 +856,243 @@ def load_from_bids_optodes_tsv(tsv_filename : Path | str) -> cdt.LabeledPoints:
     return build_labeled_points(
         np.array(coordinates), crs=crs, units=units, labels=labels, types=types
     )
+
+
+def bids_sibling(fname: Path | str, suffix: str) -> Path:
+    """Return the path of a BIDS file that shares the entities of ``fname``.
+
+    Example: ``bids_sibling("sub-01_optodes.tsv", "coordsystem.json")`` returns
+    ``sub-01_coordsystem.json``.
+
+    Args:
+        fname: Path of a BIDS file, e.g. ``sub-01_optodes.tsv``.
+        suffix: Suffix and extension of the sibling file, e.g. ``channels.tsv``.
+
+    Returns:
+        Path of the sibling file in the same directory.
+    """
+    fname = Path(fname)
+    if "_" not in fname.name:
+        raise ValueError(f"{fname.name!r} is not a BIDS file name (no '_suffix').")
+    prefix = fname.name.rsplit("_", 1)[0]
+    return fname.with_name(f"{prefix}_{suffix}")
+
+
+def export_to_bids_coordsystem_json(
+    json_filename: Path | str,
+    points: cdt.LabeledPoints,
+    units: str = "mm",
+    coordinate_system: str = "Other",
+    coordinate_system_description: str | None = None,
+    processing_description: str | None = None,
+):
+    """Export the coordinate system and landmarks to a BIDS _coordsystem.json.
+
+    All points that are neither sources nor detectors (landmarks, electrodes, ...)
+    are stored as ``AnatomicalLandmarkCoordinates``. Sources and detectors belong
+    into the accompanying ``_optodes.tsv`` (see :func:`export_to_bids_optodes_tsv`).
+
+    Args:
+        json_filename: Path to the output json file.
+        points: LabeledPoints in the coordinate system described by the file.
+        units: Coordinate units (``"m"``, ``"cm"`` or ``"mm"``).
+        coordinate_system: A BIDS coordinate system keyword (``NIRSCoordinateSystem``).
+        coordinate_system_description: Description of the coordinate system. Required
+            by BIDS for ``coordinate_system="Other"``, in which case it defaults to
+            a description naming the CRS of ``points``.
+        processing_description: Optional ``NIRSCoordinateProcessingDescription``,
+            e.g. ``"surface_projection"``.
+    """
+
+    cite("Gorgolewski2016")
+    cite("Luke2025")
+
+    if (coordinate_system == "Other") and (coordinate_system_description is None):
+        coordinate_system_description = (
+            f"cedalion coordinate reference system '{points.points.crs}'"
+        )
+
+    is_optode = (points.type == PointType.SOURCE) | (points.type == PointType.DETECTOR)
+    landmarks = points[~is_optode].pint.to(units).pint.dequantify()
+
+    cs = {
+        "NIRSCoordinateSystem": coordinate_system,
+        "NIRSCoordinateUnits": units,
+    }
+    if coordinate_system_description is not None:
+        cs["NIRSCoordinateSystemDescription"] = coordinate_system_description
+    if processing_description is not None:
+        cs["NIRSCoordinateProcessingDescription"] = processing_description
+
+    if len(landmarks) > 0:
+        cs["AnatomicalLandmarkCoordinates"] = {
+            str(label): [float(v) for v in xyz]
+            for label, xyz in zip(landmarks.label.values, landmarks.values)
+        }
+        cs["AnatomicalLandmarkCoordinateSystem"] = coordinate_system
+        cs["AnatomicalLandmarkCoordinateUnits"] = units
+        if coordinate_system_description is not None:
+            cs["AnatomicalLandmarkCoordinateSystemDescription"] = (
+                coordinate_system_description
+            )
+
+    with open(json_filename, "w") as f:
+        json.dump(cs, f, indent=4)
+
+
+def export_to_bids_channels_tsv(
+    tsv_filename: Path | str,
+    meas_list: pd.DataFrame,
+    channel_type: str = "NIRSCWAMPLITUDE",
+    units: str = "n/a",
+):
+    """Export a measurement list to a BIDS _channels.tsv.
+
+    Each row of the measurement list (one source-detector pair at one wavelength)
+    becomes one BIDS channel, named ``"<source><detector> <wavelength>"``.
+
+    Args:
+        tsv_filename: Path to the output tsv file.
+        meas_list: Measurement list with columns ``source``, ``detector`` and
+            ``wavelength`` (nm).
+        channel_type: BIDS channel type, e.g. ``"NIRSCWAMPLITUDE"`` or
+            ``"NIRSCWOPTICALDENSITY"``.
+        units: Units of the channel data (an SI symbol, ``"unitless"`` or ``"n/a"``).
+    """
+
+    cite("Gorgolewski2016")
+    cite("Luke2025")
+
+    source = meas_list["source"].astype(str).values
+    detector = meas_list["detector"].astype(str).values
+    wavelength = meas_list["wavelength"].astype(float).values
+
+    df = pd.DataFrame(
+        {
+            "name": [
+                f"{s}{d} {wl:g}" for s, d, wl in zip(source, detector, wavelength)
+            ],
+            "type": channel_type,
+            "source": source,
+            "detector": detector,
+            "wavelength_nominal": wavelength,
+            "units": units,
+        }
+    )
+    df.to_csv(tsv_filename, sep="\t", index=False, na_rep="n/a")
+
+
+def load_from_bids_channels_tsv(tsv_filename: Path | str) -> pd.DataFrame:
+    """Load the NIRS channels of a BIDS _channels.tsv as a measurement list.
+
+    Channels without source or detector (e.g. accelerometers) are skipped.
+
+    Args:
+        tsv_filename: Path to the BIDS ``*_channels.tsv`` file.
+
+    Returns:
+        Measurement list with columns ``channel`` (``<source><detector>``),
+        ``source``, ``detector``, ``wavelength`` (nm), ``type`` and ``units``.
+    """
+
+    cite("Gorgolewski2016")
+    cite("Luke2025")
+
+    df = pd.read_csv(
+        tsv_filename,
+        sep="\t",
+        na_values=["n/a"],
+        keep_default_na=False,
+        dtype={"name": str, "type": str, "source": str, "detector": str, "units": str},
+    )
+    df = df[df["source"].notna() & df["detector"].notna()]
+
+    return pd.DataFrame(
+        {
+            "channel": (df["source"] + df["detector"]).values,
+            "source": df["source"].values,
+            "detector": df["detector"].values,
+            "wavelength": df["wavelength_nominal"].astype(float).values,
+            "type": df["type"].values,
+            "units": df["units"].values,
+        }
+    )
+
+
+def export_to_bids_probe(
+    optodes_tsv_filename: Path | str,
+    points: cdt.LabeledPoints,
+    meas_list: pd.DataFrame | None = None,
+    units: str = "mm",
+    coordinate_system: str = "Other",
+    coordinate_system_description: str | None = None,
+    processing_description: str | None = None,
+    channel_type: str = "NIRSCWAMPLITUDE",
+    channel_units: str = "n/a",
+):
+    """Export a probe to BIDS _optodes.tsv, _coordsystem.json and _channels.tsv.
+
+    The coordinate system file and the channels file are written next to the
+    optodes file, e.g. ``sub-01_optodes.tsv``, ``sub-01_coordsystem.json`` and
+    ``sub-01_channels.tsv``.
+
+    Args:
+        optodes_tsv_filename: Path of the ``*_optodes.tsv`` file.
+        points: Probe geometry. Sources and detectors are written to the optodes
+            file, all other points as landmarks to the coordinate system file.
+        meas_list: Optional measurement list written to the channels file (see
+            :func:`export_to_bids_channels_tsv`).
+        units: Coordinate units.
+        coordinate_system: BIDS coordinate system keyword.
+        coordinate_system_description: Description of the coordinate system (see
+            :func:`export_to_bids_coordsystem_json`).
+        processing_description: Optional processing description of the coordinates.
+        channel_type: BIDS type of the channels.
+        channel_units: Units of the channel data.
+    """
+    optodes_tsv_filename = Path(optodes_tsv_filename)
+    if not optodes_tsv_filename.name.endswith("_optodes.tsv"):
+        raise ValueError(
+            f"{optodes_tsv_filename.name!r} must end with '_optodes.tsv'."
+        )
+
+    export_to_bids_optodes_tsv(optodes_tsv_filename, points, units=units)
+    export_to_bids_coordsystem_json(
+        bids_sibling(optodes_tsv_filename, "coordsystem.json"),
+        points,
+        units=units,
+        coordinate_system=coordinate_system,
+        coordinate_system_description=coordinate_system_description,
+        processing_description=processing_description,
+    )
+    if meas_list is not None:
+        export_to_bids_channels_tsv(
+            bids_sibling(optodes_tsv_filename, "channels.tsv"),
+            meas_list,
+            channel_type=channel_type,
+            units=channel_units,
+        )
+
+
+def load_from_bids_probe(
+    optodes_tsv_filename: Path | str,
+) -> tuple[cdt.LabeledPoints, pd.DataFrame | None]:
+    """Load a probe written by :func:`export_to_bids_probe`.
+
+    Args:
+        optodes_tsv_filename: Path of the ``*_optodes.tsv`` file. The accompanying
+            ``*_coordsystem.json`` and ``*_channels.tsv`` are read if they exist.
+
+    Returns:
+        A tuple of the probe geometry (sources, detectors and landmarks) and the
+        measurement list (see :func:`load_from_bids_channels_tsv`), which is None
+        if there is no channels file.
+    """
+    points = load_from_bids_optodes_tsv(optodes_tsv_filename)
+
+    channels_filename = bids_sibling(optodes_tsv_filename, "channels.tsv")
+    meas_list = None
+    if channels_filename.exists():
+        meas_list = load_from_bids_channels_tsv(channels_filename)
+
+    return points, meas_list
