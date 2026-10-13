@@ -334,6 +334,122 @@ def get_kernel_testdataset():
     return cedalion.io.read_snirf(fname_snirf)[0]
 
 
+EXAMPLE_PROBES = (
+    "fingertapping",
+    "fingertappingDOT",
+    "nn22_resting",
+    "ninja_cap_56x144",
+    "ninja_uhd_cap_164x496",
+    "lumo_testdataset",
+    "kernel_testdataset",
+    "artinis_testdataset",
+)
+
+
+class ExampleProbe(namedtuple("ExampleProbe", ["geo3d", "meas_list", "amp"])):
+    """Probe geometry, measurement list and amplitudes of an example dataset.
+
+    Attributes:
+        geo3d: Optode and landmark positions.
+        meas_list: Measurement list.
+        amp: Amplitude time series. For probes without recordings (ninja caps), a
+            one-sample time series with the channels of the measurement list.
+    """
+
+    __slots__ = ()
+
+
+def get_example_probe(
+    name: str, max_channel_distance: cdt.QLength | None = None
+) -> ExampleProbe:
+    """Probe of one of cedalion's example datasets, prepared for registration.
+
+    These are the probes for which :func:`get_precomputed_fluence` and
+    :func:`get_precomputed_sensitivity` provide forward models. Compared to the raw
+    datasets, landmark labels are normalized and missing landmarks are added, so
+    that every probe can be registered to the standard head models.
+
+    Args:
+        name: One of :data:`EXAMPLE_PROBES`.
+        max_channel_distance: Only for ``"lumo_testdataset"``: drop channels with
+            larger source-detector distances. Defaults to 3.5 cm.
+
+    Returns:
+        The probe geometry, measurement list and amplitude time series.
+    """
+    from cedalion.geometry.landmarks import normalize_landmarks_labels
+    from cedalion.nirs import channel_distances
+
+    def from_recording(rec, geo3d=None):
+        geo3d = rec.geo3d if geo3d is None else geo3d
+        return ExampleProbe(geo3d, rec._measurement_lists["amp"], rec["amp"])
+
+    def from_probe_files(geo3d, landmarks, meas_list):
+        geo3d = xr.concat((geo3d, landmarks), dim="label").pint.quantify("mm")
+        amp = cdc.empty_timeseries_from_measurement_list(meas_list)
+        return ExampleProbe(geo3d, meas_list, amp)
+
+    if name == "fingertapping":
+        return from_recording(get_fingertapping())
+
+    if name == "fingertappingDOT":
+        return from_recording(get_fingertappingDOT())
+
+    if name == "nn22_resting":
+        return from_recording(get_nn22_resting_state())
+
+    if name == "ninja_cap_56x144":
+        return from_probe_files(*get_ninja_cap_probe())
+
+    if name == "ninja_uhd_cap_164x496":
+        return from_probe_files(*get_ninja_uhd_cap_probe())
+
+    if name == "lumo_testdataset":
+        if max_channel_distance is None:
+            max_channel_distance = 3.5 * cedalion.units.cm
+
+        rec = get_lumo_testdataset()
+        geo3d = normalize_landmarks_labels(rec.geo3d)
+
+        amp = rec["amp"]
+        amp = amp.sel(channel=channel_distances(amp, geo3d) < max_channel_distance)
+
+        meas_list = rec._measurement_lists["amp"]
+        channels = meas_list.source.astype(str) + meas_list.detector.astype(str)
+        meas_list = meas_list[channels.isin(amp.channel.values)]
+
+        return ExampleProbe(geo3d, meas_list, amp)
+
+    if name == "artinis_testdataset":
+        rec = get_artinis_testdataset()
+        geo3d = normalize_landmarks_labels(rec.geo3d)
+        geo3d = geo3d.pint.dequantify().pint.quantify("cm").pint.to("mm")
+
+        # The dataset lacks landmarks but is in MNI space. Adopt the landmarks of
+        # the colin27 head model (RAS, mm).
+        colin27_landmarks = {
+            "Nz": [-0.679195, 83.259347, -39.408527],
+            "Iz": [0.0045, -118.565, -23.078],
+            "LPA": [-86.0761, -19.9897, -47.986],
+            "RPA": [85.7939, -20.0093, -48.031],
+            "Cz": [0.938423, -9.965052, 97.700135],
+        }
+        landmarks = cdc.build_labeled_points(
+            list(colin27_landmarks.values()),
+            crs=geo3d.points.crs,
+            units="mm",
+            labels=list(colin27_landmarks.keys()),
+            types=[cdc.PointType.LANDMARK] * len(colin27_landmarks),
+        )
+        return from_recording(rec, xr.concat((geo3d, landmarks), dim="label"))
+
+    if name == "kernel_testdataset":
+        rec = get_kernel_testdataset()
+        return from_recording(rec, normalize_landmarks_labels(rec.geo3d))
+
+    raise ValueError(f"Unknown example probe {name!r}. Available: {EXAMPLE_PROBES}")
+
+
 def get_precomputed_fluence(dataset: str, head_model: str) -> Path:
     """Precomputed forward model results for examples and documentation.
 
