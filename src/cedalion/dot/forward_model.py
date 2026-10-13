@@ -140,7 +140,6 @@ class ForwardModel:
         # Slightly realign the optode positions to the closest scalp voxel
         self.optode_pos = head_model.snap_to_scalp_voxels(self.optode_pos)
 
-
         self.optode_pos = self.optode_pos.pint.dequantify()
         self.optode_dir = self.optode_dir.pint.dequantify()
 
@@ -152,6 +151,51 @@ class ForwardModel:
         self.volume = self.head_model.segmentation_masks.sum("segmentation_type")
         self.volume = self.volume.values.astype(np.uint8)
         self.unitinmm = self._get_unitinmm()
+
+        # The scalp mesh does not coincide with the voxelized skin, so the snapped
+        # voxel can lie several voxels below the surface - and how deep depends on
+        # the side of the head. Move every optode to the outermost tissue voxel
+        # along its normal. optode_pos holds integer voxel indices from here on.
+        # Cedalion's ijk convention: an integer index denotes the voxel centre.
+        self.optode_pos = self._move_to_surface_voxel(self.optode_pos, self.optode_dir)
+
+    def _move_to_surface_voxel(
+        self, pos: xr.DataArray, dir: xr.DataArray
+    ) -> xr.DataArray:
+        """Return integer indices of the outermost tissue voxel along -dir.
+
+        Args:
+            pos: Optode positions in voxel space (integer index = voxel centre).
+            dir: Unit vectors pointing into the head.
+
+        Returns:
+            Copy of pos with the coordinates replaced by the indices of the
+            outermost tissue voxel found by walking against dir.
+        """
+        pos = pos.copy()
+        shape = np.array(self.volume.shape)
+
+        def in_volume(q):
+            return (q >= 0).all() and (q < shape).all()
+
+        for i in range(len(pos)):
+            p = np.round(pos.values[i]).astype(int)
+            d = dir.values[i]
+
+            # if the snapped voxel is in air, step inward until tissue is hit
+            while in_volume(p) and self.volume[tuple(p)] == 0:
+                p = np.round(p + d).astype(int)
+
+            # then step outward while the next voxel is still tissue
+            while True:
+                q = np.round(p - d).astype(int)
+                if not in_volume(q) or self.volume[tuple(q)] == 0:
+                    break
+                p = q
+
+            pos.values[i] = p
+
+        return pos
 
     def _get_voxel_dimensions(self) -> pint.Quantity:
         """Calculate the x,y and z voxel dimensions in scanner space.
@@ -196,13 +240,19 @@ class ForwardModel:
         kwargs.setdefault("nphoton", 1e8)
         kwargs.setdefault("cuda", True)
 
+        # MCX (with issrcfrom0=1) places voxel [i,j,k] at [i,i+1]x[j,j+1]x[k,k+1],
+        # whereas cedalion's integer index denotes the voxel centre. Launch from
+        # the voxel centre: at an integer MCX position (a voxel corner) the result
+        # depends on the sign of srcdir.
+        srcpos = self.optode_pos.values[i_optode] + 0.5
+
         cfg = {
             "nphoton": kwargs['nphoton'],
             "vol": self.volume,
             "tstart": 0,
             "tend": 5e-9,
             "tstep": 5e-9,
-            "srcpos": self.optode_pos.values[i_optode],
+            "srcpos": srcpos,
             "srcdir": self.optode_dir.values[i_optode],
             "prop": self.tissue_properties[:,:,i_wl],
             "issrcfrom0": 1,
@@ -255,7 +305,8 @@ class ForwardModel:
         for i_opt in range(n_optodes):
             for i_step in range(MAX_STEPS):
                 pos = self.optode_pos[i_opt] + i_step * self.optode_dir[i_opt]
-                i, j, k = np.floor(pos.values).astype(int)
+                # integer index = voxel centre, so round to find the voxel
+                i, j, k = np.round(pos.values).astype(int)
 
                 if fluence[i, j, k] > 0:
                     result[i_opt] = fluence[i, j, k]
