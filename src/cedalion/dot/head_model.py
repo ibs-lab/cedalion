@@ -238,17 +238,27 @@ class TwoSurfaceHeadModel:
         fill_holes: bool = False,
         coordinates_file: Path | str | None = None,
         voxel_to_vertex_mapping_file_brain : Path | None = None,
-
+        surfaces_are_zero_based: bool = False,
     ) -> "TwoSurfaceHeadModel":
         """Constructor from seg.masks, brain and head surfaces as gained from MRI scans.
+
+        Surface files must be given in voxel (ijk) coordinates of the segmentation
+        masks, where a voxel coordinate denotes the voxel's centre. Cedalion indexes
+        voxels zero-based, whereas surfaces exported from 1-based environments
+        (e.g. MATLAB, Brainstorm) are offset by one voxel in each axis. By default
+        (``surfaces_are_zero_based=False``) the surfaces are assumed to be 1-based and
+        are shifted into cedalion's zero-based system; pass
+        ``surfaces_are_zero_based=True`` for surfaces that are already zero-based.
 
         Args:
             segmentation_dir: Folder containing the segmentation masks in NIFTI
                 format.
             mask_files: Dictionary mapping segmentation types to NIFTI
                 filenames.
-            brain_surface_file: Path to the brain surface.
-            scalp_surface_file: Path to the scalp surface.
+            brain_surface_file: Path to the brain surface in ijk coordinates. See
+                ``surfaces_are_zero_based``.
+            scalp_surface_file: Path to the scalp surface in ijk coordinates. See
+                ``surfaces_are_zero_based``.
             landmarks_ras_file: Filename of the landmarks in RAS space.
             brain_seg_types: List of segmentation types to be included in
                 the brain surface.
@@ -260,6 +270,9 @@ class TwoSurfaceHeadModel:
             fill_holes: Whether to fill holes in the segmentation masks.
             coordinates_file: path to file with additional vertex coordinates.
             voxel_to_vertex_mapping_file_brain : precomputed voxel to vertex mapping
+            surfaces_are_zero_based: Whether the voxel coordinates in the surface
+                files are zero-based. If False (default), they are interpreted as
+                1-based and shifted by -1 in each axis.
 
         Returns:
             TwoSurfaceHeadModel: An instance of the TwoSurfaceHeadModel class.
@@ -301,10 +314,16 @@ class TwoSurfaceHeadModel:
         else:
             landmarks_ijk = None
 
+        def load_surface_ijk(fname):
+            mesh = trimesh.load(fname)
+            if not surfaces_are_zero_based:
+                # translate 1-based voxel coordinates into cedalion's 0-based system
+                mesh.vertices = mesh.vertices - 1.0
+            return cdc.TrimeshSurface(mesh, "ijk", cedalion.units.Unit("1"))
+
         # derive surfaces from segmentation masks
         if brain_surface_file is not None:
-            brain_ijk = trimesh.load(brain_surface_file)
-            brain_ijk = cdc.TrimeshSurface(brain_ijk, 'ijk', cedalion.units.Unit("1"))
+            brain_ijk = load_surface_ijk(brain_surface_file)
         else:
             brain_ijk = surface_from_segmentation(
                 segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes
@@ -314,8 +333,7 @@ class TwoSurfaceHeadModel:
         # grouped together, yielding a uniformly filled head volume.
 
         if scalp_surface_file is not None:
-            scalp_ijk = trimesh.load(scalp_surface_file)
-            scalp_ijk = cdc.TrimeshSurface(scalp_ijk, 'ijk', cedalion.units.Unit("1"))
+            scalp_ijk = load_surface_ijk(scalp_surface_file)
         else:
             all_seg_types = segmentation_masks.segmentation_type.values
             scalp_ijk = surface_from_segmentation(
@@ -1001,9 +1019,7 @@ class TwoSurfaceHeadModel:
 
         ijk2mni152 = ijk2mni152.pint.dequantify()  # FIXME?
 
-        voxel_coords = cedalion.io.anatomy.cell_coordinates(
-            img, ijk2mni152, center=True
-        )
+        voxel_coords = cedalion.io.anatomy.cell_coordinates(img, ijk2mni152)
         voxel_coords = voxel_coords.pint.dequantify()
 
         flat_voxel_coords = voxel_coords.values.reshape(-1, 3)
@@ -1145,11 +1161,11 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            # FIXME: disabled while investigating the voxel parcel labels
-            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,
+            surfaces_are_zero_based=False,
         )
 
         head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})
@@ -1166,11 +1182,11 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
             scalp_surface_file=f.basedir / f.scalp_surface_obj,
             landmarks_ras_file=f.basedir / f.landmarks_ras_file,
             coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            # FIXME: disabled while investigating the voxel parcel labels
-            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
+            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
             brain_face_count=None,
             scalp_face_count=None,
             smoothing=0,
+            surfaces_are_zero_based=False,
         )
 
         head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})

@@ -127,15 +127,17 @@ def read_segmentation_masks(
     return masks, affine
 
 
-def cell_coordinates(mask, affine, units="mm", center=False):
-    """Get the coordinates of each voxel in the transformed mask.
+def cell_coordinates(mask, affine, units="mm"):
+    """Get the coordinates of each voxel centre in the transformed mask.
+
+    Following NIfTI convention, voxel coordinates in ijk-space denote the centre of
+    that voxel and the affine maps it to the centre's world coordinates. (See also
+    nifti1.h: "The (x,y,z) coordinates refer to the CENTER of a voxel.")
 
     Args:
         mask (xr.DataArray): A binary mask of shape (i, j, k).
         affine (np.ndarray): Affine transformation matrix.
         units (str): Units of the output coordinates.
-        center: if true the cells' center positions are returned. Otherwise it
-            is the position of the lower-left corner of the voxel.
 
     Returns:
         xr.DataArray: Coordinates of the center of each voxel in the mask.
@@ -145,10 +147,7 @@ def cell_coordinates(mask, affine, units="mm", center=False):
     j = np.arange(mask.shape[1])
     k = np.arange(mask.shape[2])
 
-    if center:
-        ii, jj, kk = np.meshgrid(i + 0.5, j + 0.5, k + 0.5, indexing="ij")
-    else:
-        ii, jj, kk = np.meshgrid(i, j, k, indexing="ij")
+    ii, jj, kk = np.meshgrid(i, j, k, indexing="ij")
 
     coords = np.stack((ii, jj, kk), -1)  # shape (ni,nj,nk,3)
 
