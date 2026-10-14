@@ -10,13 +10,12 @@ import pandas as pd
 import pooch
 import xarray as xr
 import json
-import scipy
-import gzip
 
 import cedalion
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 import cedalion.io
+from cedalion.io.anatomy import HEADMODEL_MANIFEST, HeadModelFiles  # noqa: F401
 from cedalion.io.forward_model import load_Adot
 from cedalion.utils import deprecated
 
@@ -51,8 +50,8 @@ DATASETS = pooch.create(
         "icbm152_parcellation.zip": "sha256:b69ffdb3ff2fe3d85a6d5c139e59147d05ca97127589c1e4c2a8d031850f0148",  # noqa:E501
 
         #   current
-        "hm_colin27.zip": "sha256:3b4d4788cb594a6fe367fa0a115dd12af8eeba7d6cb9227196dd97f4dc9566ac",  # noqa:E501
-        "hm_icbm152.zip": "sha256:75eda43b14df77560f8145e53ea031fd214f940238121d3b0926cb28a301bd04",  # noqa:E501
+        "hm_colin27.zip": "sha256:b023cb1e04808daf54c55ea08d962abf69c64c6d6ca6fa2b4b6a27f28858cdc7",  # noqa:E501
+        "hm_icbm152.zip": "sha256:b45a7e27383eb92ff6aa4a80e2b78fcdcb0bb2f3a85b0ba1686417f470792c46",  # noqa:E501
         "fs_reconall_colin27.zip": "sha256:1803c42a421ca850b89479ac9ac2de4c53fbe5e65241f70b97f6502ee435ba7b",  # noqa:E501
         "fs_reconall_icbm152.zip": "sha256:81284f9f65e727fd1244e82ef575e22dc3abe45c7603b1aad7fdc384feda5d72",  # noqa:E501
 
@@ -552,31 +551,12 @@ def get_spa_fnirs() -> cdc.Recording:
     return rec
 
 
-@dataclass
-class HeadModelFiles:
-    basedir : Path
-    mask_files : dict[str, str]
-    landmarks_ras_file : str
-    brain_vertex_coordinates : str
-    scalp_surface_obj : str
-    brain_surface_obj : str
-    freesurfer_surface_obj : str
-    inflated_surface_obj : str
-    parcel_colors : str
-    voxel_to_vertex_mapping : str
-
-    def load_parcel_colors(self):
-        with (self.basedir / self.parcel_colors).open("r") as fin:
-            return json.load(fin)
-
-
-    def load_voxel_to_vertex_mapping(self):
-        with gzip.GzipFile(self.basedir / self.voxel_to_vertex_mapping) as fin:
-            return scipy.io.mmread(fin)
-
-
-    def load_brain_vertex_coordinates(self):
-        return pd.read_csv(self.basedir / self.brain_vertex_coordinates)
+def _find_manifest(fnames: list[str]) -> Path:
+    """Return the head model manifest among the files of an unzipped dataset."""
+    manifests = [Path(f) for f in fnames if Path(f).name == HEADMODEL_MANIFEST]
+    if len(manifests) != 1:
+        raise ValueError(f"expected exactly one {HEADMODEL_MANIFEST} in dataset.")
+    return manifests[0]
 
 
 
@@ -595,24 +575,7 @@ def get_colin27_headmodel_files() -> HeadModelFiles:
 
     fnames = DATASETS.fetch("hm_colin27.zip", processor=pooch.Unzip())
 
-    return HeadModelFiles(
-        basedir=Path(os.path.commonpath(fnames)),
-        mask_files={
-            "csf": "mask_csf.nii",
-            "gm": "mask_gray.nii",
-            "scalp": "mask_skin.nii",
-            "skull": "mask_bone.nii",
-            "wm": "mask_white.nii",
-        },
-        landmarks_ras_file="landmarks.mrk.json",
-        brain_vertex_coordinates="brain_vertex_coordinates.csv",
-        scalp_surface_obj="mask_scalp.obj",
-        brain_surface_obj="mask_brain.obj",
-        freesurfer_surface_obj="cortex_pial_high.obj",
-        inflated_surface_obj="cortex_pial_inflated.obj",
-        parcel_colors="parcel_colors.json",
-        voxel_to_vertex_mapping="voxel_to_vertex_brain.mtx.gz",
-    )
+    return HeadModelFiles.from_manifest(_find_manifest(fnames))
 
 
 def get_icbm152_headmodel_files() -> HeadModelFiles:
@@ -630,24 +593,8 @@ def get_icbm152_headmodel_files() -> HeadModelFiles:
 
     fnames = DATASETS.fetch("hm_icbm152.zip", processor=pooch.Unzip())
 
-    return HeadModelFiles(
-        basedir=Path(os.path.commonpath(fnames)),
-        mask_files={
-            "csf": "mask_csf.nii",
-            "gm": "mask_gray.nii",
-            "scalp": "mask_skin.nii",
-            "skull": "mask_bone.nii",
-            "wm": "mask_white.nii",
-        },
-        landmarks_ras_file="landmarks.mrk.json",
-        brain_vertex_coordinates="brain_vertex_coordinates.csv",
-        scalp_surface_obj="mask_scalp.obj",
-        brain_surface_obj="mask_brain.obj",
-        freesurfer_surface_obj="cortex_pial_high.obj",
-        inflated_surface_obj="cortex_pial_inflated.obj",
-        parcel_colors="parcel_colors.json",
-        voxel_to_vertex_mapping="voxel_to_vertex_brain.mtx.gz",
-    )
+    return HeadModelFiles.from_manifest(_find_manifest(fnames))
+
 
 def get_colin27_freesurfer_directory() -> Path:
     """Return the path to the FreeSurfer recon-all output for the Colin27 atlas.
