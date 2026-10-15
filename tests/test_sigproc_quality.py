@@ -23,6 +23,44 @@ def test_sci(rec):
 def test_psp(rec):
     _, _ = quality.psp(rec["amp"], 2 * units.s, psp_thresh=0.1)
 
+
+def _heartbeat_in_one_window(start, stop, fs=10.0, duration=60.0):
+    """One channel whose two wavelengths share a heartbeat only in (start, stop].
+
+    Outside that span the wavelengths carry independent noise. A window holding the
+    heartbeat therefore has a high SCI and PSP and every other window a low one, so
+    the time label of the best window shows which samples the window contains.
+    """
+    time = np.arange(int(duration * fs)) / fs
+    heartbeat = 0.5 * np.sin(2 * np.pi * 1.2 * time)
+    heartbeat[(time <= start) | (time > stop)] = 0
+
+    rng = np.random.default_rng(0)
+    noise = 0.05 * rng.standard_normal((2, time.size))
+
+    return cdc.build_timeseries(
+        (1 + heartbeat + noise)[np.newaxis],
+        dims=["channel", "wavelength", "time"],
+        time=time,
+        channel=["S1D1"],
+        value_units="V",
+        time_units="s",
+        other_coords={"wavelength": [760.0, 850.0]},
+    )
+
+
+@pytest.mark.parametrize("metric", [quality.sci, quality.psp], ids=["sci", "psp"])
+def test_window_is_labelled_by_its_last_sample(metric):
+    # the heartbeat fills exactly the 5 s window that holds the samples (20 s, 25 s]
+    amp = _heartbeat_in_one_window(start=20, stop=25)
+
+    values, _ = metric(amp, 5 * units.s, 0)  # the threshold plays no role here
+    best_window = values.sel(channel="S1D1").idxmax("time")
+
+    # that window is labelled with its last sample, 25 s, not its first, 20 s
+    assert float(best_window) == 25.0
+
+
 def test_snr(rec):
     _, _ = quality.snr(rec["amp"], snr_thresh=2.0)
 
