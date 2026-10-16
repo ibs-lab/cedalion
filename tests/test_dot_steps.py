@@ -1,35 +1,165 @@
-from types import SimpleNamespace
-
 import pytest
 
 import cedalion.dot.steps as steps
 
-GEO3D = object()
-RELAXED_GEO3D = object()
-MEASUREMENT_LIST = object()
+@pytest.fixture(scope="module")
+def tapping_snirf():
+    import pooch
 
+    import cedalion.data
 
-def _patch_sensitivity(monkeypatch):
-    """Patch the collaborators of steps.sensitivity and record their calls."""
-    rec = SimpleNamespace(
-        geo3d=GEO3D,
-        _measurement_lists={"amp": MEASUREMENT_LIST},
+    fnames = cedalion.data.DATASETS.fetch(
+        "fingertappingDOT.zip", processor=pooch.Unzip()
     )
+    return [f for f in fnames if f.endswith(".snirf")][0]
 
-    calls = {}
 
-    def fake_read_snirf(fname):
-        calls["input_snirf"] = fname
+def _register(tmp_path, snirf, **kwargs):
+    output_optodes = tmp_path / "sub-01_optodes.tsv"
+    steps.register_probe(snirf, output_optodes, head_model="colin27", **kwargs)
+    return output_optodes
+
+
+def _scalp_distance(head, geo3d):
+    """Distance of each optode to the scalp surface."""
+    import numpy as np
+    import pyvista as pv
+
+    import cedalion.dataclasses as cdc
+
+    optodes = geo3d[geo3d.type.isin([cdc.PointType.SOURCE, cdc.PointType.DETECTOR])]
+    optodes = optodes.pint.dequantify().values
+    scalp = pv.wrap(head.scalp.mesh)
+    _, closest = scalp.find_closest_cell(optodes, return_closest_point=True)
+    return np.linalg.norm(optodes - closest, axis=1)
+
+
+@pytest.mark.parametrize(
+    "kwargs, expected_crs",
+    [
+        ({}, "mni"),
+        ({"method": "spring_relax"}, "mni"),
+        ({"scale_to": "landmarks"}, "pos"),
+        (
+            {
+                "scale_to": "headsize",
+                "circumference": "56 cm",
+                "nz_cz_iz": "35 cm",
+                "lpa_cz_rpa": "36 cm",
+            },
+            "ellipsoid",
+        ),
+    ],
+)
+def test_register_probe(tmp_path, tapping_snirf, kwargs, expected_crs):
+    import json
+
+    output_optodes = _register(tmp_path, tapping_snirf, **kwargs)
+
+    assert output_optodes.exists()
+    assert (tmp_path / "sub-01_channels.tsv").exists()
+    with open(tmp_path / "sub-01_coordsystem.json") as fin:
+        registration = json.load(fin)[steps.REGISTRATION_FIELD]
+    assert registration["head_model"] == "colin27"
+    assert registration["crs"] == expected_crs
+
+    head, geo3d, meas_list = steps._load_registered_probe(output_optodes, "colin27")
+
+    assert head.crs == geo3d.points.crs == expected_crs
+    assert head.t_ijk2ras.dims == (expected_crs, "ijk")
+    assert {"source", "detector", "wavelength"} <= set(meas_list.columns)
+    # optodes stay on the scalp of the registered head
+    assert _scalp_distance(head, geo3d).max() < 1e-3
+
+
+@pytest.mark.parametrize(
+    "landmarks, expected",
+    [
+        (["Nz", "Iz", "LPA", "RPA", "Cz"], "general"),
+        (["Nz", "LPA", "RPA"], "trans_rot_isoscale"),
+        (["Nz", "HP_1"], "identity"),
+    ],
+)
+def test_auto_initial_align_mode(landmarks, expected):
+    import numpy as np
+
+    import cedalion.dataclasses as cdc
+
+    def points(labels):
+        return cdc.build_labeled_points(
+            np.zeros((len(labels), 3)),
+            crs="digitized",
+            units="mm",
+            labels=labels,
+            types=[cdc.PointType.LANDMARK] * len(labels),
+        )
+
+    head_landmarks = points(["Nz", "Iz", "LPA", "RPA", "Cz", "Fpz"])
+    assert steps._auto_initial_align_mode(points(landmarks), head_landmarks) == expected
+
+
+def test_register_probe_with_fiducials_only(monkeypatch, tmp_path, tapping_snirf):
+    """A probe with only the three fiducials (typical for BIDS) is registered."""
+    import cedalion.dataclasses as cdc
+
+    read_snirf = steps.cedalion.io.read_snirf
+
+    def read_snirf_fiducials_only(fname):
+        rec = read_snirf(fname)[0]
+        geo3d = rec.geo3d.points.rename({"NASION": "Nz"})
+        keep = (geo3d.type != cdc.PointType.LANDMARK) | geo3d.label.isin(
+            ["Nz", "LPA", "RPA"]
+        )
+        rec.geo3d = geo3d[keep]
         return [rec]
 
-    class FakeHead:
-        def align_and_relax_to_scalp(self, geometry):
-            calls["relaxed_geometry"] = geometry
-            return RELAXED_GEO3D
+    monkeypatch.setattr(steps.cedalion.io, "read_snirf", read_snirf_fiducials_only)
 
-    def fake_get_standard_headmodel(name):
-        calls["head_model"] = name
-        return FakeHead()
+    output_optodes = _register(tmp_path, tapping_snirf)
+    head, geo3d, _ = steps._load_registered_probe(output_optodes, "colin27")
+
+    assert _scalp_distance(head, geo3d).max() < 1e-3
+
+    with pytest.raises(ValueError, match="trans_rot_isoscale"):
+        _register(tmp_path, tapping_snirf, initial_align_mode="identity",
+                  scale_to="landmarks")
+
+
+def test_register_probe_requires_headsize(tmp_path, tapping_snirf):
+    with pytest.raises(ValueError, match="circumference"):
+        _register(tmp_path, tapping_snirf, scale_to="headsize")
+
+
+def test_load_registered_probe_warns_on_other_head_model(
+    monkeypatch, tmp_path, tapping_snirf
+):
+    output_optodes = _register(tmp_path, tapping_snirf)
+    colin27 = steps.get_standard_headmodel("colin27")
+    monkeypatch.setattr(
+        steps, "STANDARD_HEAD_MODELS", steps.STANDARD_HEAD_MODELS + ("other",)
+    )
+    monkeypatch.setattr(steps, "get_standard_headmodel", lambda name: colin27)
+
+    with pytest.warns(UserWarning, match="registered to head model"):
+        steps._load_registered_probe(output_optodes, "other")
+
+
+def test_load_registered_probe_requires_registration(tmp_path, tapping_snirf):
+    import json
+
+    output_optodes = _register(tmp_path, tapping_snirf)
+    fname = tmp_path / "sub-01_coordsystem.json"
+    cs = json.loads(fname.read_text())
+    del cs[steps.REGISTRATION_FIELD]
+    fname.write_text(json.dumps(cs))
+
+    with pytest.raises(ValueError, match="register_probe"):
+        steps._load_registered_probe(output_optodes, "colin27")
+
+
+def _patch_forward_model(monkeypatch):
+    """Patch the forward model used by steps.sensitivity and record its calls."""
+    calls = {}
 
     class FakeForwardModel:
         def __init__(self, head, geometry, meas_list):
@@ -44,65 +174,43 @@ def _patch_sensitivity(monkeypatch):
         def compute_sensitivity(self, fluence_fname, sensitivity_fname):
             calls["sensitivity"] = (fluence_fname, sensitivity_fname)
 
-    monkeypatch.setattr(steps.cedalion.io, "read_snirf", fake_read_snirf)
-    monkeypatch.setattr(steps, "get_standard_headmodel", fake_get_standard_headmodel)
     monkeypatch.setattr(steps, "ForwardModel", FakeForwardModel)
 
     return calls
 
 
-def test_sensitivity(monkeypatch, tmp_path):
-    calls = _patch_sensitivity(monkeypatch)
+def test_sensitivity(monkeypatch, tmp_path, tapping_snirf):
+    calls = _patch_forward_model(monkeypatch)
 
-    input_snirf = tmp_path / "input.snirf"
+    input_optodes = _register(tmp_path, tapping_snirf, scale_to="landmarks")
     output_fluence = tmp_path / "fluence.h5"
     output_sensitivity = tmp_path / "sensitivity.h5"
 
     steps.sensitivity(
-        input_snirf=input_snirf,
+        input_optodes=input_optodes,
         output_fluence=output_fluence,
         output_sensitivity=output_sensitivity,
         head_model="colin27",
     )
 
-    assert calls["input_snirf"] == input_snirf
-    assert calls["head_model"] == "colin27"
-
-    # Without align_montage the stored geometry is used unchanged.
-    assert "relaxed_geometry" not in calls
-
-    _, fwm_geometry, fwm_measurement_list = calls["forward_model"]
-    assert fwm_geometry is GEO3D
-    assert fwm_measurement_list is MEASUREMENT_LIST
+    # the forward model gets the registered head and probe in the same CRS
+    head, geo3d, meas_list = calls["forward_model"]
+    assert head.crs == geo3d.points.crs == "pos"
+    assert len(meas_list) > 0
 
     assert calls["fluence_nirfaster"] == output_fluence
     assert "fluence_mcx" not in calls
     assert calls["sensitivity"] == (output_fluence, output_sensitivity)
 
 
-def test_sensitivity_align_montage(monkeypatch, tmp_path):
-    calls = _patch_sensitivity(monkeypatch)
+def test_sensitivity_mcx(monkeypatch, tmp_path, tapping_snirf):
+    calls = _patch_forward_model(monkeypatch)
 
-    steps.sensitivity(
-        input_snirf=tmp_path / "input.snirf",
-        output_fluence=tmp_path / "fluence.h5",
-        output_sensitivity=tmp_path / "sensitivity.h5",
-        align_montage=True,
-    )
-
-    assert calls["relaxed_geometry"] is GEO3D
-
-    _, fwm_geometry, _ = calls["forward_model"]
-    assert fwm_geometry is RELAXED_GEO3D
-
-
-def test_sensitivity_mcx(monkeypatch, tmp_path):
-    calls = _patch_sensitivity(monkeypatch)
-
+    input_optodes = _register(tmp_path, tapping_snirf)
     output_fluence = tmp_path / "fluence.h5"
 
     steps.sensitivity(
-        input_snirf=tmp_path / "input.snirf",
+        input_optodes=input_optodes,
         output_fluence=output_fluence,
         output_sensitivity=tmp_path / "sensitivity.h5",
         method="mcx",
@@ -112,16 +220,30 @@ def test_sensitivity_mcx(monkeypatch, tmp_path):
     assert "fluence_nirfaster" not in calls
 
 
-def test_sensitivity_rejects_unknown_method(monkeypatch, tmp_path):
-    _patch_sensitivity(monkeypatch)
+def test_sensitivity_rejects_unknown_method(monkeypatch, tmp_path, tapping_snirf):
+    _patch_forward_model(monkeypatch)
+    input_optodes = _register(tmp_path, tapping_snirf)
 
     with pytest.raises(ValueError, match="nirfaster"):
         steps.sensitivity(
-            input_snirf=tmp_path / "input.snirf",
+            input_optodes=input_optodes,
             output_fluence=tmp_path / "fluence.h5",
             output_sensitivity=tmp_path / "sensitivity.h5",
             method="unknown",
         )
+
+
+def test_load_head_model(monkeypatch, tmp_path):
+    monkeypatch.setattr(steps, "get_standard_headmodel", lambda name: ("std", name))
+    monkeypatch.setattr(
+        steps.TwoSurfaceHeadModel, "from_manifest", lambda fname: ("manifest", fname)
+    )
+
+    manifest = tmp_path / "headmodel_manifest.json"
+
+    assert steps._load_head_model("colin27") == ("std", "colin27")
+    assert steps._load_head_model(str(manifest)) == ("manifest", manifest)
+    assert steps._load_head_model(tmp_path) == ("manifest", manifest)
 
 
 def _patch_image_reconstruction(monkeypatch):
@@ -743,6 +865,40 @@ def test_parcel_statistics_to_vertex_map_masks_nonsignificant():
     np.testing.assert_allclose(result, expected, equal_nan=True)
 
 
+def test_parcel_statistics_to_vertex_map_ignores_scalp_vertices():
+    import numpy as np
+    import xarray as xr
+
+    statistics = xr.Dataset(
+        {
+            "t": (("trial_type", "parcel"), [[2.5]]),
+            "rejected": (("trial_type", "parcel"), [[True]]),
+        },
+        coords={"trial_type": ["motor"], "parcel": ["p1"]},
+    )
+
+    # vertices 0..2 are on the brain, 3..4 on the scalp
+    image = xr.DataArray(
+        np.zeros((5, 1)),
+        dims=("vertex", "time"),
+        coords={
+            "vertex": [0, 1, 2, 3, 4],
+            "parcel": ("vertex", ["p1", "p1", "p1", "scalp", "scalp"]),
+            "is_brain": ("vertex", [True, True, True, False, False]),
+            "time": [0.0],
+        },
+    )
+
+    result = steps._parcel_statistics_to_vertex_map(
+        statistics=statistics,
+        image=image,
+        nvertices=3,
+        trial_type="motor",
+    )
+
+    np.testing.assert_allclose(result, [2.5, 2.5, 2.5])
+
+
 def test_image_visualization_saves_significant_tmap(monkeypatch, tmp_path):
     from pathlib import Path
     from types import SimpleNamespace
@@ -941,8 +1097,9 @@ def test_image_reconstruction_exposes_reconstruction_parameters(
     assert calls["kwargs"]["brain_only"] is True
 
 
+@pytest.mark.parametrize("registered", [False, True])
 def test_image_reconstruction_gaussian_spatial_basis_functions(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, registered
 ):
     import numpy as np
     import xarray as xr
@@ -1059,14 +1216,24 @@ def test_image_reconstruction_gaussian_spatial_basis_functions(
 
     monkeypatch.setattr(steps, "ImageRecon", FakeImageRecon)
 
+    fake_head_registered = object()
+    input_optodes = tmp_path / "sub-01_optodes.tsv" if registered else None
+
+    def fake_load_registered_probe(fname, head_model):
+        calls["registered"] = (fname, head_model)
+        return fake_head_registered, None, None
+
+    monkeypatch.setattr(steps, "_load_registered_probe", fake_load_registered_probe)
+
     steps.image_reconstruction(
         input_snirf=tmp_path / "input.snirf",
         input_sensitivity=tmp_path / "sensitivity.h5",
         output_image=tmp_path / "image.nc",
         timeseries="od",
+        head_model="colin27",
+        input_optodes=input_optodes,
         spatial_basis_functions={
             "type": "gaussian",
-            "head_model": "colin27",
             "mask_threshold": -2,
             "threshold_brain": "1 mm",
             "threshold_scalp": "5 mm",
@@ -1076,9 +1243,15 @@ def test_image_reconstruction_gaussian_spatial_basis_functions(
         },
     )
 
-    assert calls["head_model"] == "colin27"
-    assert calls["head_transform"] is fake_head.t_ijk2ras
-    assert calls["sbf_head"] is fake_head_ras
+    if registered:
+        # the basis functions are built on the registered head model
+        assert calls["registered"] == (input_optodes, "colin27")
+        assert calls["sbf_head"] is fake_head_registered
+    else:
+        assert "registered" not in calls
+        assert calls["head_model"] == "colin27"
+        assert calls["head_transform"] is fake_head.t_ijk2ras
+        assert calls["sbf_head"] is fake_head_ras
     assert calls["sbf_channels"] == ["ch1"]
 
     assert calls["sbf_kwargs"]["mask_threshold"] == -2
@@ -1135,121 +1308,6 @@ def test_image_group_average_visualization_saves_heatmap(tmp_path):
 
     assert output_figure.exists()
     assert output_figure.stat().st_size > 0
-
-
-def test_sensitivity_accepts_custom_surface_head_model(monkeypatch, tmp_path):
-    from types import SimpleNamespace
-
-    geo3d = object()
-    snapped_geo3d = object()
-    measurement_list = object()
-    rec = SimpleNamespace(
-        geo3d=geo3d,
-        _measurement_lists={"amp": measurement_list},
-    )
-
-    calls = {}
-
-    monkeypatch.setattr(
-        steps.cedalion.io,
-        "read_snirf",
-        lambda fname: [rec],
-    )
-
-    class FakeHead:
-        def align_and_snap_to_scalp(self, geometry):
-            calls["geometry"] = geometry
-            return snapped_geo3d
-
-    fake_head = FakeHead()
-
-    def fake_from_surfaces(**kwargs):
-        calls["head_kwargs"] = kwargs
-        return fake_head
-
-    monkeypatch.setattr(
-        steps,
-        "TwoSurfaceHeadModel",
-        SimpleNamespace(from_surfaces=fake_from_surfaces),
-        raising=False,
-    )
-
-    class FakeForwardModel:
-        def __init__(self, head, geometry, meas_list):
-            calls["forward_model"] = (head, geometry, meas_list)
-
-        def compute_fluence_nirfaster(self, fname):
-            calls["fluence"] = fname
-
-        def compute_sensitivity(self, fluence_fname, sensitivity_fname):
-            calls["sensitivity"] = (fluence_fname, sensitivity_fname)
-
-    monkeypatch.setattr(steps, "ForwardModel", FakeForwardModel)
-
-    output_fluence = tmp_path / "fluence.h5"
-    output_sensitivity = tmp_path / "sensitivity.h5"
-
-    head_model = {
-        "type": "surfaces",
-        "segmentation_dir": "/heads/sub-01",
-        "brain_surface_file": "/heads/sub-01/brain.obj",
-        "scalp_surface_file": "/heads/sub-01/scalp.obj",
-        "landmarks_ras_file": "/heads/sub-01/landmarks.json",
-        "coordinates_file": "/heads/sub-01/brain_vertex_coordinates.csv",
-    }
-
-    steps.sensitivity(
-        input_snirf=tmp_path / "input.snirf",
-        output_fluence=output_fluence,
-        output_sensitivity=output_sensitivity,
-        head_model=head_model,
-    )
-
-    assert calls["head_kwargs"] == {
-        "segmentation_dir": "/heads/sub-01",
-        "brain_surface_file": "/heads/sub-01/brain.obj",
-        "scalp_surface_file": "/heads/sub-01/scalp.obj",
-        "landmarks_ras_file": "/heads/sub-01/landmarks.json",
-        "coordinates_file": "/heads/sub-01/brain_vertex_coordinates.csv",
-    }
-    assert calls["forward_model"] == (
-        fake_head,
-        snapped_geo3d,
-        measurement_list,
-    )
-
-
-def test_load_head_model_accepts_custom_segmentation(monkeypatch):
-    calls = {}
-    fake_head = object()
-
-    def fake_from_segmentation(**kwargs):
-        calls["head_kwargs"] = kwargs
-        return fake_head
-
-    monkeypatch.setattr(
-        steps.TwoSurfaceHeadModel,
-        "from_segmentation",
-        fake_from_segmentation,
-    )
-
-    result = steps._load_head_model(
-        {
-            "type": "segmentation",
-            "segmentation_dir": "/heads/sub-01",
-            "landmarks_ras_file": "/heads/sub-01/landmarks.json",
-            "brain_face_count": 15000,
-            "scalp_face_count": 10000,
-        }
-    )
-
-    assert result is fake_head
-    assert calls["head_kwargs"] == {
-        "segmentation_dir": "/heads/sub-01",
-        "landmarks_ras_file": "/heads/sub-01/landmarks.json",
-        "brain_face_count": 15000,
-        "scalp_face_count": 10000,
-    }
 
 
 def test_image_reconstruction_without_parcels_skips_parcel_filtering(

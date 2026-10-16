@@ -1,15 +1,23 @@
 """Workflow-callable DOT processing steps."""
 
+import dataclasses
+import json
+import warnings
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import pyvista as pv
 import statsmodels.api as sm
 import xarray as xr
 from statsmodels.stats.multitest import fdrcorrection
 
+import cedalion.dataclasses as cdc
 import cedalion.io
+import cedalion.io.bids
+import cedalion.typing as cdt
+from cedalion import xrutils
 from cedalion.dot.forward_model import ForwardModel
 from cedalion.dot.head_model import (
     TwoSurfaceHeadModel,
@@ -20,93 +28,256 @@ from cedalion.dot.image_recon import (
     ImageRecon,
     estimate_alpha_meas,
 )
+from cedalion.io.anatomy import HEADMODEL_MANIFEST
 from cedalion.io.forward_model import load_Adot
 from cedalion.sigproc.quality import measurement_variance
 from cedalion.vis.blocks import plot_surface
 from cedalion.physunits import parse_quantity
 
 
-def _load_head_model(
-    head_model: str | dict,
-) -> TwoSurfaceHeadModel:
-    """Load a standard or construct a custom two-surface head model."""
-    if isinstance(head_model, str):
+STANDARD_HEAD_MODELS = ("colin27", "icbm152")
+
+# key in a registered probe's _coordsystem.json under which register_probe stores
+# the head model and its transformation into the probe's coordinate system
+REGISTRATION_FIELD = "CedalionHeadModel"
+
+
+def _load_head_model(head_model: str | Path) -> TwoSurfaceHeadModel:
+    """Load a two-surface head model.
+
+    Args:
+        head_model: Either the name of a standard head model (``"colin27"`` or
+            ``"icbm152"``) or the path to a ``headmodel_manifest.json`` or to the
+            folder containing it.
+
+    Returns:
+        The head model in voxel space (``ijk``).
+    """
+    if head_model in STANDARD_HEAD_MODELS:
         return get_standard_headmodel(head_model)
 
-    if not isinstance(head_model, dict):
-        raise TypeError(
-            "head_model must be a standard model name or configuration dict."
+    fname = Path(head_model)
+    if fname.is_dir():
+        fname = fname / HEADMODEL_MANIFEST
+
+    return TwoSurfaceHeadModel.from_manifest(fname)
+
+
+def _auto_initial_align_mode(
+    geo3d: cdt.LabeledPoints, landmarks: cdt.LabeledPoints
+) -> str:
+    """Pick the landmark-based alignment by the number of landmarks shared."""
+    n_common = len(geo3d.points.common_labels(landmarks))
+
+    if n_common > 3:
+        return "general"
+    elif n_common == 3:
+        return "trans_rot_isoscale"
+    else:
+        return "identity"
+
+
+def register_probe(
+    input_snirf: str | Path,
+    output_optodes: str | Path,
+    head_model: str | Path = "colin27",
+    method: str = "snap",
+    initial_align_mode: str = "auto",
+    scale_to: str | None = None,
+    circumference: str | None = None,
+    nz_cz_iz: str | None = None,
+    lpa_cz_rpa: str | None = None,
+    timeseries: str = "amp",
+) -> None:
+    """Register a probe to the scalp of a head model.
+
+    The probe is moved onto the scalp in a coordinate system ``X`` in which the
+    registered head model is defined:
+
+    - ``scale_to=None``: the head model is not changed and ``X`` is its RAS space.
+      The probe is transformed into it by a landmark-based alignment.
+    - ``scale_to="landmarks"``: the head model is fitted to the probe's landmarks
+      (:meth:`TwoSurfaceHeadModel.scale_to_landmarks`) and ``X`` is the probe's
+      coordinate system.
+    - ``scale_to="headsize"``: the head model is scaled to the head size measurements
+      (:meth:`TwoSurfaceHeadModel.scale_to_headsize`) and ``X`` is ``"ellipsoid"``.
+      The probe is transformed into it by a landmark-based alignment.
+
+    In all cases the head model is related to ``X`` by an affine transformation of
+    its voxel space. The registered probe is written as BIDS ``*_optodes.tsv``,
+    ``*_coordsystem.json`` and ``*_channels.tsv``. The coordinate system file
+    additionally stores the head model specification and the transformation from
+    voxel space into ``X`` under the key ``"CedalionHeadModel"``, from which
+    subsequent steps reconstruct the registered head model.
+
+    Args:
+        input_snirf: SNIRF file providing the probe geometry (``geo3d``) and the
+            measurement list.
+        output_optodes: Output BIDS ``*_optodes.tsv``.
+        head_model: Head model specification (see :func:`_load_head_model`).
+        method: ``"snap"`` projects each optode onto its nearest scalp vertex.
+            ``"spring_relax"`` preserves the probe geometry by spring relaxation
+            (:meth:`TwoSurfaceHeadModel.align_and_relax_to_scalp`).
+        initial_align_mode: Landmark-based alignment of the probe before it is
+            moved onto the scalp. One of ``"general"``, ``"trans_rot_isoscale"``,
+            ``"identity"`` and, for ``"spring_relax"``, ``"trans_rot"``. ``"auto"``
+            selects ``"general"`` if the probe shares more than three landmarks
+            with the head model, ``"trans_rot_isoscale"`` for three shared
+            landmarks and otherwise ``"identity"``, which assumes that the probe is
+            already given in the head model's coordinate system. With
+            ``scale_to="landmarks"`` the mode is also used to fit the head model.
+        scale_to: ``None``, ``"landmarks"`` or ``"headsize"``, see above.
+        circumference: Head circumference, e.g. ``"56 cm"``.
+            Required for ``scale_to="headsize"``.
+        nz_cz_iz: Distance from nasion over Cz to inion.
+            Required for ``scale_to="headsize"``.
+        lpa_cz_rpa: Distance from left over Cz to right preauricular point.
+            Required for ``scale_to="headsize"``.
+        timeseries: Time series in the SNIRF file that defines the channels.
+    """
+    output_optodes = Path(output_optodes)
+    output_optodes.parent.mkdir(parents=True, exist_ok=True)
+
+    rec = cedalion.io.read_snirf(input_snirf)[0]
+    geo3d = rec.geo3d
+    meas_list = rec._measurement_lists[timeseries]
+
+    head_ijk = _load_head_model(head_model)
+
+    if initial_align_mode == "auto":
+        initial_align_mode = _auto_initial_align_mode(geo3d, head_ijk.landmarks)
+
+    if scale_to is None:
+        head = head_ijk.apply_transform(head_ijk.t_ijk2ras)
+    elif scale_to == "landmarks":
+        if initial_align_mode not in ("general", "trans_rot_isoscale"):
+            raise ValueError(
+                "scale_to='landmarks' requires initial_align_mode 'general' or "
+                "'trans_rot_isoscale' and at least three landmarks shared with the "
+                "head model."
+            )
+        head = head_ijk.scale_to_landmarks(
+            geo3d[geo3d.type == cdc.PointType.LANDMARK], mode=initial_align_mode
         )
+    elif scale_to == "headsize":
+        if None in (circumference, nz_cz_iz, lpa_cz_rpa):
+            raise ValueError(
+                "scale_to='headsize' requires circumference, nz_cz_iz and lpa_cz_rpa."
+            )
+        head = head_ijk.scale_to_headsize(
+            parse_quantity(circumference),
+            parse_quantity(nz_cz_iz),
+            parse_quantity(lpa_cz_rpa),
+        )
+    else:
+        raise ValueError("scale_to must be None, 'landmarks' or 'headsize'.")
 
-    config = head_model.copy()
-    model_type = config.pop("type", None)
+    if method == "snap":
+        geo3d = head.align_and_snap_to_scalp(geo3d, mode=initial_align_mode)
+    elif method == "spring_relax":
+        geo3d, _ = head.align_and_relax_to_scalp(
+            geo3d, meas_list, initial_align_mode=initial_align_mode
+        )
+    else:
+        raise ValueError("method must be either 'snap' or 'spring_relax'.")
 
-    if model_type == "surfaces":
-        return TwoSurfaceHeadModel.from_surfaces(**config)
+    t_ijk2crs = head.t_ijk2ras.pint.to("mm").pint.dequantify()
 
-    if model_type == "segmentation":
-        return TwoSurfaceHeadModel.from_segmentation(**config)
-
-    raise ValueError(
-        "Unsupported head model type: "
-        f"{model_type!r}. Supported custom types are "
-        "'surfaces' and 'segmentation'."
+    cedalion.io.bids.export_to_bids_probe(
+        output_optodes,
+        geo3d,
+        meas_list,
+        units="mm",
+        processing_description="surface_projection",
+        extra_fields={
+            REGISTRATION_FIELD: {
+                "head_model": str(head_model),
+                "crs": head.crs,
+                "units": "mm",
+                "t_ijk2crs": t_ijk2crs.values.tolist(),
+            }
+        },
     )
 
 
+def _load_registered_probe(
+    input_optodes: str | Path,
+    head_model: str | Path,
+) -> tuple[TwoSurfaceHeadModel, cdt.LabeledPoints, pd.DataFrame]:
+    """Load a probe written by :func:`register_probe` and its registered head model.
+
+    Returns:
+        A tuple of the head model and the probe geometry, both in the probe's
+        coordinate system, and the measurement list.
+    """
+    coordsystem_fname = cedalion.io.bids.bids_sibling(input_optodes, "coordsystem.json")
+    with open(coordsystem_fname) as fin:
+        registration = json.load(fin).get(REGISTRATION_FIELD)
+
+    if registration is None:
+        raise ValueError(
+            f"{coordsystem_fname} contains no '{REGISTRATION_FIELD}' entry. "
+            "Register the probe with register_probe first."
+        )
+
+    if registration["head_model"] != str(head_model):
+        warnings.warn(
+            f"The probe was registered to head model {registration['head_model']!r} "
+            f"but head model {str(head_model)!r} is used."
+        )
+
+    geo3d, meas_list = cedalion.io.bids.load_from_bids_probe(input_optodes)
+    geo3d = geo3d.points.set_crs(registration["crs"])
+
+    t_ijk2crs = cdc.affine_transform_from_numpy(
+        np.asarray(registration["t_ijk2crs"]),
+        from_crs="ijk",
+        to_crs=registration["crs"],
+        from_units="1",
+        to_units=registration["units"],
+    )
+
+    # replace() avoids modifying cached standard head models
+    head_ijk = dataclasses.replace(
+        _load_head_model(head_model),
+        t_ijk2ras=t_ijk2crs,
+        t_ras2ijk=xrutils.pinv(t_ijk2crs),
+    )
+
+    return head_ijk.apply_transform(t_ijk2crs), geo3d, meas_list
+
+
 def sensitivity(
-    input_snirf: str | Path,
+    input_optodes: str | Path,
     output_fluence: str | Path,
     output_sensitivity: str | Path,
-    head_model: str | dict = "colin27",
-    align_montage: bool = False,
+    head_model: str | Path = "colin27",
     method: str = "nirfaster",
 ) -> None:
     """Compute fluence and sensitivity for a two-surface head model.
 
-    The measurement geometry and measurement list are taken from the input
-    SNIRF recording. Optionally the probe is aligned and relaxed onto the scalp
-    surface before the forward model is constructed. Fluence is simulated for
-    every optode and wavelength and then combined into the sensitivity matrix
-    (Jacobian) via the adjoint method.
+    The probe geometry and measurement list are taken from a probe registered with
+    :func:`register_probe`, which also defines how the head model is scaled and
+    aligned. Fluence is simulated for every optode and wavelength and then combined
+    into the sensitivity matrix (Jacobian) via the adjoint method.
 
     Args:
-        input_snirf: SNIRF file providing the measurement geometry (``geo3d``)
-            and the measurement list of the ``amp`` time series.
+        input_optodes: BIDS ``*_optodes.tsv`` written by :func:`register_probe`.
         output_fluence: Output HDF5 file storing the per-optode fluence.
         output_sensitivity: Output NetCDF file storing the sensitivity matrix.
-        head_model: Either a standard head model (``"colin27"`` or ``"icbm152"``) or
-            a configuration dictionary.
-        align_montage: If True, align the probe to the head model's landmarks
-            and relax the optodes onto the scalp surface. If False, the
-            geometry is used as stored in the SNIRF file.
+        head_model: Head model specification (see :func:`_load_head_model`). Must
+            be the head model the probe was registered to.
         method: Monte Carlo package used for the fluence simulation. Either
             ``"nirfaster"`` or ``"mcx"``.
-
-    ``head_model`` may be the name of a bundled standard head model or a
-    configuration dictionary for constructing a custom model from surfaces or
-    segmentation. The measurement geometry and measurement list are taken from
-    the input SNIRF recording. The probe is aligned and snapped to the scalp
-    before constructing the forward model.
     """
     output_fluence = Path(output_fluence)
     output_sensitivity = Path(output_sensitivity)
     output_fluence.parent.mkdir(parents=True, exist_ok=True)
     output_sensitivity.parent.mkdir(parents=True, exist_ok=True)
 
-    rec = cedalion.io.read_snirf(input_snirf)[0]
+    head, geo3d, meas_list = _load_registered_probe(input_optodes, head_model)
 
-    head = _load_head_model(head_model)
-    geo3d = rec.geo3d
-
-    if align_montage:
-        geo3d = head.align_and_relax_to_scalp(geo3d)
-
-    fwm = ForwardModel(
-        head,
-        geo3d,
-        rec._measurement_lists["amp"],
-    )
+    fwm = ForwardModel(head, geo3d, meas_list)
 
     if method == "nirfaster":
         fwm.compute_fluence_nirfaster(output_fluence)
@@ -133,6 +304,8 @@ def image_reconstruction(
     spatial_basis_functions: dict | None = None,
     dOD_thresh: float = 0.001,
     restrict_to_sensitive_parcels: bool = False,
+    head_model: str | Path = "colin27",
+    input_optodes: str | Path | None = None,
 ) -> None:
     """Reconstruct a brain time series in image space.
 
@@ -142,6 +315,13 @@ def image_reconstruction(
     parcel labels are present and ``restrict_to_sensitive_parcels`` is set to True,
     insufficiently sensitive parcels are removed. Head models without parcel labels are
     reconstructed in vertex space without parcel filtering.
+
+    ``head_model`` (see :func:`_load_head_model`) is only used to construct the
+    ``spatial_basis_functions``, a configuration dictionary with ``type="gaussian"``
+    and the keyword arguments of :class:`GaussianSpatialBasisFunctions`. If
+    ``input_optodes``, the probe registration used to compute the sensitivity matrix
+    (see :func:`register_probe`), is given, the basis functions are constructed on the
+    registered (e.g. scaled) head model. Otherwise the unregistered head model is used.
     """
     output_image = Path(output_image)
     output_image.parent.mkdir(parents=True, exist_ok=True)
@@ -223,9 +403,11 @@ def image_reconstruction(
                 f"{sbf_type!r}. Currently supported: 'gaussian'."
             )
 
-        head_model = sbf_config.pop("head_model")
-        head_ijk = _load_head_model(head_model)
-        head = head_ijk.apply_transform(head_ijk.t_ijk2ras)
+        if input_optodes is not None:
+            head, _, _ = _load_registered_probe(input_optodes, head_model)
+        else:
+            head_ijk = _load_head_model(head_model)
+            head = head_ijk.apply_transform(head_ijk.t_ijk2ras)
 
         for key in (
             "threshold_brain",
@@ -833,10 +1015,10 @@ def _parcel_statistics_to_vertex_map(
     nvertices: int,
     trial_type: str,
 ) -> np.ndarray:
-    """Map significant parcel t-values onto reconstructed image vertices.
+    """Map significant parcel t-values onto reconstructed brain vertices.
 
     Vertices that were not reconstructed, belong to non-significant parcels,
-    or have non-finite t-values remain NaN.
+    or have non-finite t-values remain NaN. Scalp vertices of the image are ignored.
     """
     if "t" not in statistics or "rejected" not in statistics:
         raise ValueError("Statistics must contain 't' and 'rejected' variables.")
@@ -863,6 +1045,10 @@ def _parcel_statistics_to_vertex_map(
         if is_rejected and np.isfinite(tval):
             significant[parcel] = tval
 
+    # images that are not restricted to the brain also contain scalp vertices
+    if "is_brain" in image.coords:
+        image = image.sel(vertex=image.is_brain.values)
+
     vertex_map = np.full(nvertices, np.nan, dtype=float)
 
     for vertex, parcel in zip(
@@ -888,7 +1074,7 @@ def image_visualization(
     input_statistics: str | Path,
     input_image: str | Path,
     output_figure: str | Path,
-    head_model: str | dict = "colin27",
+    head_model: str | Path = "colin27",
     trial_type: str = "motor",
 ) -> None:
     """Plot FDR-significant parcel t-values on the reconstruction surface.
@@ -903,8 +1089,8 @@ def image_visualization(
         input_image: Image-reconstruction NetCDF file containing vertex IDs
             and parcel labels.
         output_figure: Output PNG filename.
-        head_model: Standard model name or custom head-model configuration
-            used for reconstruction.
+        head_model: Head model specification used for reconstruction (see
+            :func:`_load_head_model`).
         trial_type: Trial type to visualize.
     """
     output_figure = Path(output_figure)

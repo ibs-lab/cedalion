@@ -652,6 +652,53 @@ def test_preprocess_normalizes_landmarks_and_stores_config(
     }
 
 
+def test_preprocess_uses_bids_optodes(tmp_path, monkeypatch):
+    """Probe geometry from a BIDS *_optodes.tsv replaces the SNIRF geometry."""
+
+    class FakePreprocessRecording:
+        def __init__(self):
+            self.timeseries = {"amp": _make_timeseries()}
+            self.geo3d = object()
+            self.stim = None
+
+        def __getitem__(self, name):
+            return self.timeseries[name]
+
+    rec = FakePreprocessRecording()
+    bids_geo3d = object()
+    loaded = []
+
+    def fake_load_from_bids_optodes_tsv(fname):
+        loaded.append(fname)
+        return bids_geo3d
+
+    monkeypatch.setattr(steps.cedalion.io, "read_snirf", lambda *a, **kw: [rec])
+    monkeypatch.setattr(steps.cedalion.io, "write_snirf", lambda path, recording: None)
+    monkeypatch.setattr(
+        steps.cedalion.io.bids,
+        "load_from_bids_optodes_tsv",
+        fake_load_from_bids_optodes_tsv,
+    )
+    monkeypatch.setattr(steps, "normalize_landmarks_labels", lambda geo3d: geo3d)
+
+    input_optodes = tmp_path / "sub-01_optodes.tsv"
+    input_optodes.write_text("name\ttype\tx\ty\tz\n")
+
+    steps.preprocess(
+        input_snirf=tmp_path / "input.snirf",
+        input_events=None,
+        input_optodes=input_optodes,
+        input_coordsystem=tmp_path / "sub-01_coordsystem.json",
+        output_snirf=tmp_path / "preproc.snirf",
+        output_sidecar=tmp_path / "sidecar.nc",
+        methods=[{"name": "od", "method": "int2od", "enable": False}],
+        normalize_landmarks=True,
+    )
+
+    assert loaded == [input_optodes]
+    assert rec.geo3d is bids_geo3d
+
+
 def _make_blockaverage_recording(
     conc_values,
     *,

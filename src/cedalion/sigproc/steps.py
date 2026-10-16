@@ -9,6 +9,7 @@ import xarray as xr
 
 import cedalion.dataclasses as cdc
 import cedalion.io
+import cedalion.io.bids
 import cedalion.nirs
 import cedalion.sigproc.motion
 import cedalion.sigproc.quality
@@ -760,9 +761,10 @@ def preprocess(
         rec.stim = stim_df
 
     if input_optodes and input_optodes.exists():
-        # FIXME check coordsystem
-        # FIXME overwrite geo3d
-        pass
+        # probe geometry provided with the dataset replaces the one in the SNIRF file.
+        # Coordinate system, units and landmarks are read from the accompanying
+        # *_coordsystem.json.
+        rec.geo3d = cedalion.io.bids.load_from_bids_optodes_tsv(input_optodes)
 
     if normalize_landmarks:
         rec.geo3d = normalize_landmarks_labels(rec.geo3d)
