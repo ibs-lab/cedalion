@@ -79,6 +79,69 @@ def build_spatial_activation(
     return blob_img
 
 
+def build_spatial_activation_voxels(
+    brain: cdc.Voxels,
+    seed_voxels: list[int] | int,
+    spatial_scale: cdt.QLength = 1 * units.cm,
+    intensity_scale: cdt.QConcentration = 1 * units.micromolar,
+    hbr_scale: float = None,
+):
+    """Generates a spatial activation at one or multiple seed voxels.
+
+    Voxel-space analogue of :func:`build_spatial_activation`: builds a 3D
+    Gaussian blob in the brain volume by plugging Euclidean distances
+    from the seed voxel(s) into a Gaussian PDF.  The returned array has
+    a ``vertex`` dimension whose entries index brain voxels (rather than
+    surface-mesh vertices), so it plugs directly into
+    :func:`cedalion.dot.forward_model.image_to_channel_space` and
+    :func:`build_synthetic_hrf_timeseries` without any further changes.
+
+    Args:
+        brain (cdc.Voxels): Brain voxels (e.g. ``head.brain`` of a
+            :class:`~cedalion.dot.voxel_head_model.VoxelHeadModel`).
+        seed_voxels (list[int] | int): Indices of the seed voxels into
+            ``brain.voxels``.
+        spatial_scale (Quantity): Standard deviation of the Gaussian
+            blob (a length).
+        intensity_scale (Quantity): Scaling factor for the intensity of
+            the blob.
+        hbr_scale (float): Scaling factor for HbR relative to HbO.  If
+            ``None`` the returned array has no ``chromo`` dimension.
+
+    Returns:
+        xr.DataArray: Spatial image with activation values for each
+        brain voxel along the ``vertex`` dimension (and ``chromo`` if
+        ``hbr_scale`` is given).
+    """
+
+    seed_voxels = np.atleast_1d(seed_voxels)
+
+    spatial_scale_unit = (spatial_scale / brain.units).to_base_units().magnitude
+
+    # Distance from each brain voxel to its nearest seed voxel.
+    seed_positions = brain.voxels[seed_voxels]
+    seed_kdtree = type(brain.kdtree)(seed_positions)
+    distances_from_seeds, _ = seed_kdtree.query(brain.voxels)
+
+    norm_pdf = stats.norm(scale=spatial_scale_unit).pdf
+    blob_img = norm_pdf(distances_from_seeds)
+    blob_img = blob_img / np.max(blob_img)
+    blob_img = xr.DataArray(blob_img, dims=["vertex"])
+
+    if hbr_scale is not None:
+        blob_img = np.stack([blob_img, blob_img * hbr_scale], axis=1)
+        blob_img = xr.DataArray(
+            blob_img,
+            dims=["vertex", "chromo"],
+            coords={"chromo": ["HbO", "HbR"]},
+        )
+
+    blob_img = blob_img * intensity_scale
+    blob_img = blob_img.pint.to(units.molar)
+
+    return blob_img
+
+
 def build_stim_df(
     max_time: cdt.QTime,
     max_num_stims: int | None = None,

@@ -4,6 +4,7 @@ from .head_model import (
     get_standard_headmodel,
     get_inflated_cortex_surface,
 )
+from .voxel_head_model import VoxelHeadModel
 from . image_recon import (
     ImageRecon,
     OriginalGaussianSpatialBasisFunctions,
