@@ -113,6 +113,10 @@ def psp(
         A tuple (psp, psp_mask), where psp is a DataArray with coords from the input
         NDTimeseries containing the peak spectral power. psp_mask is a boolean mask
         DataArray with coords from psp, true where psp_thresh is met.
+
+        Each window's time coordinate is the time of its last sample: the value at
+        time t describes the samples in (t - window_length, t]. The first window
+        contains a single sample and is set to the value of the second window.
     """
 
     cite("Pollonini2014")
@@ -128,9 +132,10 @@ def psp(
     nsamples = int(np.ceil(nsamples))
 
     # This creates a new DataArray with a new dimension "window", that is
-    # window_len_samples large. The time dimension will contain the time coordinate of
-    # the first sample in the window. Setting the stride size to the same value as the
-    # window length will result in non-overlapping windows.
+    # window_len_samples large. Rolling windows end at their label, so the time
+    # dimension will contain the time coordinate of the last sample in the window.
+    # Setting the stride size to the same value as the window length will result in
+    # non-overlapping windows.
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
     windows = windows.fillna(1e-6)
 
@@ -481,6 +486,10 @@ def sci(
         A tuple (sci, sci_mask), where sci is a DataArray with coords from the input
         NDTimeseries containing the scalp-coupling index. Sci_mask is a boolean mask
         DataArray with coords from sci, true where sci_thresh is met.
+
+        Each window's time coordinate is the time of its last sample: the value at
+        time t describes the samples in (t - window_length, t]. The first window
+        contains a single sample and is set to the value of the second window.
     """
 
     cite("Pollonini2014")
@@ -498,9 +507,10 @@ def sci(
     nsamples = int(np.ceil(nsamples))
 
     # This creates a new DataArray with a new dimension "window", that is
-    # window_len_samples large. The time dimension will contain the time coordinate of
-    # the first sample in the window. Setting the stride size to the same value as the
-    # window length will result in non-overlapping windows.
+    # window_len_samples large. Rolling windows end at their label, so the time
+    # dimension will contain the time coordinate of the last sample in the window.
+    # Setting the stride size to the same value as the window length will result in
+    # non-overlapping windows.
     windows = amp.rolling(time=nsamples).construct("window", stride=nsamples)
 
     sci = (windows - windows.mean("window")).prod("wavelength").sum("window") / nsamples
