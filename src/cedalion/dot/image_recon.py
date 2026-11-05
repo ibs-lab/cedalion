@@ -1165,7 +1165,8 @@ class ImageRecon:
         """Precompute everything that depends only on inputs in the constructor."""
 
         if self.brain_only:
-            Adot = self.Adot.sel(vertex=self.Adot.is_brain.values)
+            dim = "kernel" if self.sbf is not None else "vertex"
+            Adot = Adot.sel({dim: Adot.is_brain.values})
 
         # calculate D and F for the selected choice of recon_mode and sbf.
         if self.recon_mode == "conc":
