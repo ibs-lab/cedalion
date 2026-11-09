@@ -1,16 +1,14 @@
 # Changelog
 
-<!--
 ## Unreleased changes (available on the `dev` branch)
---> 
+
+### Fixes
+
+- Fixed `cedalion.sim.synthetic_artifact.add_artifacts` with `mode="manual"`, which raised an `AttributeError` whenever an artifact was added, because the per-channel scaling factors were stored in a dict instead of a `DataArray`. Manual mode now scales artifacts only by `scale`, as documented. By [Elsa-Henriette Harms](https://github.com/elsahh).
 
 ## Version 26.8.0-rc1 
 
 - Support for snakemake-based workflows added, by [Shannon Kelley](https://github.com/shankell212), [Reihaneh Taghizadegan](https://github.com/ReiGaan) and [Eike Middell](https://github.com/emiddell). ([#180](https://github.com/ibs-lab/cedalion/pull/180))
-
-### Fixes
-
-- Fixed `cedalion.sim.synthetic_artifact.add_artifacts` with `mode="manual"`, which always raised an `AttributeError` because the per-channel scaling factors were stored in a dict instead of a `DataArray`. Manual mode now scales artifacts only by `scale`, as documented.
 
 ## Version 26.5.1 (2026-05-27)
 
