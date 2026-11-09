@@ -230,9 +230,10 @@ def _check_design_matrix_is_finite(design_matrix: DesignMatrix):
             raise ValueError(
                 "The design matrix must be finite, but these regressors contain NaNs "
                 f"or infs: {_labels_where(bad, array.regressor)}. "
-                "Replace them with finite values and "
-                "exclude the affected samples of the time series with the mask "
-                "argument."
+                "Replace them with finite values and exclude the affected samples "
+                "with the mask argument, e.g. with "
+                "design_matrix, dm_mask = design_matrix.fill_nonfinite(ts) and "
+                "mask=np.isfinite(ts) & dm_mask."
             )
 
 

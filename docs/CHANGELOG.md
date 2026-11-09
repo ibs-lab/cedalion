@@ -8,6 +8,10 @@
 
 - The AR-IRLS noise model compares all AR model orders on the same samples. Previously, each order was evaluated on a different number of samples, so the selected order depended on the units of the data, and data with small values, e.g. OD or molar concentrations, could get too low orders. `pmax=None` in `ar_irls_GLM` no longer fails, by [Elsa-Henriette Harms](https://github.com/elsahh).
 
+- Added `DesignMatrix.fill_nonfinite`, which replaces NaNs and infs in the regressors and returns a mask that excludes the affected samples from `glm.fit`. This handles, e.g., short-channel regressors of short channels with NaNs, see the example notebook `37_glm_masking`, by [Elsa-Henriette Harms](https://github.com/elsahh).
+
+- `max_corr_short_channel_regressor` correlates each pair of long and short channels over the samples at which both are finite. Previously, short channels with NaNs or infs were never selected, and a time point at which all short channels were NaN raised an error, by [Elsa-Henriette Harms](https://github.com/elsahh).
+
 ## Version 26.8.0-rc1 
 
 - Support for snakemake-based workflows added, by [Shannon Kelley](https://github.com/shankell212), [Reihaneh Taghizadegan](https://github.com/ReiGaan) and [Eike Middell](https://github.com/emiddell). ([#180](https://github.com/ibs-lab/cedalion/pull/180))
