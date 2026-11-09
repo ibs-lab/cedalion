@@ -20,6 +20,18 @@ from joblib import Parallel, delayed, parallel_config
 import cedalion.math.ar_irls
 
 
+_NOISE_MODELS = ("ols", "rls", "wls", "ar_irls", "gls", "glsar")
+
+
+def _check_noise_model(noise_model: str):
+    """Raise a ValueError if noise_model is not one of _NOISE_MODELS."""
+    if noise_model not in _NOISE_MODELS:
+        raise ValueError(
+            f"unsupported noise_model '{noise_model}'. Please select one "
+            f"of these: {', '.join(_NOISE_MODELS)}"
+        )
+
+
 def _channel_fit(y, x, noise_model="ols", ar_order=30, mask=None):
     """Fit a single channel's time series with the specified linear noise model.
 
@@ -40,13 +52,7 @@ def _channel_fit(y, x, noise_model="ols", ar_order=30, mask=None):
         NotImplementedError: If ``noise_model`` is ``"glsar"`` and the mask contains
             gaps between unmasked samples.
     """
-    available_models = ["ols", "rls", "wls", "ar_irls", "gls", "glsar"]
-
-    if noise_model not in available_models:
-        raise ValueError(
-            f"unsupported noise_model '{noise_model}'. Please select one"
-            f"of these: {', '.join(available_models)}"
-        )
+    _check_noise_model(noise_model)
 
     if mask is None:
         mask = np.ones(len(x), dtype=bool)
@@ -80,14 +86,20 @@ def _channel_fit(y, x, noise_model="ols", ar_order=30, mask=None):
         ols_resid = statsmodels.api.OLS(y, x).fit().resid.values  # need a numpy array
         # estimate the lag-1 autocorrelation only from pairs of adjacent samples
         adjacent = np.diff(idx) == 1
+        if adjacent.sum() < 2:
+            raise ValueError(
+                "noise_model 'gls' needs at least two pairs of adjacent unmasked "
+                "samples to estimate the autocorrelation."
+            )
         resid_fit = statsmodels.api.OLS(
             ols_resid[1:][adjacent],
-            statsmodels.api.add_constant(ols_resid[:-1][adjacent]),
+            statsmodels.api.add_constant(ols_resid[:-1][adjacent], has_constant="add"),
         ).fit()
         rho = resid_fit.params[1]
         # AR(1) covariance from the lags between the original sample positions,
         # so that gaps left by masked samples are accounted for.
-        order = np.abs(idx[:, None] - idx[None, :])
+        order = np.subtract.outer(idx, idx)
+        np.abs(order, out=order)
         reg_result = statsmodels.api.GLS(y, x, sigma=rho**order).fit()
     elif noise_model == "glsar":
         idx = np.flatnonzero(mask)
@@ -103,6 +115,23 @@ def _channel_fit(y, x, noise_model="ols", ar_order=30, mask=None):
     return reg_result
 
 
+def _labeled_channel_fit(label: str, *args):
+    """Call :func:`_channel_fit` and name the fitted time series if the fit fails.
+
+    The name is added as a note to the exception, so its type is preserved.
+    """
+    try:
+        return _channel_fit(*args)
+    except Exception as e:
+        e.add_note(f"Raised while fitting {label}.")
+        raise
+
+
+def _labels_where(bad: xr.DataArray, coord: xr.DataArray) -> str:
+    """Join the labels in coord at which the 1-D boolean array bad is True."""
+    return ", ".join(map(str, coord.values[bad.values]))
+
+
 def _prepare_mask(ts: cdt.NDTimeSeries, mask: xr.DataArray | None) -> xr.DataArray:
     """Validate the mask passed to :func:`fit` and broadcast it to the shape of ts.
 
@@ -114,13 +143,20 @@ def _prepare_mask(ts: cdt.NDTimeSeries, mask: xr.DataArray | None) -> xr.DataArr
         A boolean mask with the same dimensions and shape as ``ts``.
 
     Raises:
-        TypeError: If the mask is not boolean.
-        ValueError: If the mask's dimensions or coordinates don't match ``ts``, or if
+        TypeError: If the mask is not a boolean DataArray.
+        ValueError: If the mask's dimensions or coordinates don't match ``ts``, e.g.
+            if the mask has labels that ``ts`` doesn't have or vice versa, or if
             ``ts`` contains non-finite values that are not masked.
     """
     if mask is None:
         mask = xr.ones_like(ts, dtype=bool)
     else:
+        if not isinstance(mask, xr.DataArray):
+            raise TypeError(
+                f"mask must be an xr.DataArray but is a {type(mask).__name__}, "
+                "e.g. mask=np.isfinite(ts) instead of mask=np.isfinite(ts.values)."
+            )
+
         if mask.dtype != bool:
             raise TypeError(f"mask must be boolean but has dtype '{mask.dtype}'.")
 
@@ -134,9 +170,32 @@ def _prepare_mask(ts: cdt.NDTimeSeries, mask: xr.DataArray | None) -> xr.DataArr
                 f"have. Collapse them first, e.g. with mask.all({extra_dims})."
             )
 
+        # The mask must have exactly the labels of the time series, e.g. a mask of
+        # all channels is not silently cut down to the long channels being fitted.
+        for d in mask.dims:
+            if d == "time" or d not in mask.indexes or d not in ts.indexes:
+                continue
+            only_mask = mask.indexes[d].difference(ts.indexes[d])
+            only_ts = ts.indexes[d].difference(mask.indexes[d])
+            if len(only_mask) or len(only_ts):
+                raise ValueError(
+                    f"The '{d}' coordinates of mask and time series don't match "
+                    f"(only in mask: {', '.join(map(str, only_mask)) or '-'}; "
+                    f"only in time series: {', '.join(map(str, only_ts)) or '-'}). "
+                    f"Select the matching labels, e.g. mask.sel({d}=ts.{d})."
+                )
+
         try:
+            # Align labeled dimensions by label, e.g. channels in a different order.
+            mask = mask.sel(
+                {
+                    d: ts[d].values
+                    for d in mask.dims
+                    if d != "time" and d in mask.indexes and d in ts.indexes
+                }
+            )
             _, mask = xr.align(ts, mask, join="exact")
-        except ValueError as e:
+        except (KeyError, ValueError) as e:
             raise ValueError(
                 "The coordinates of mask and time series don't match."
             ) from e
@@ -148,10 +207,9 @@ def _prepare_mask(ts: cdt.NDTimeSeries, mask: xr.DataArray | None) -> xr.DataArr
         spatial_dim = cdc.get_spatial_dimension(ts)
         other_dims = [d for d in ts.dims if d != spatial_dim]
         bad = unmasked_nonfinite.any(other_dims)
-        bad_labels = ", ".join(map(str, ts[spatial_dim].values[bad.values]))
         raise ValueError(
             "The time series contains NaNs or infs that are not masked "
-            f"({spatial_dim}: {bad_labels}). "
+            f"({spatial_dim}: {_labels_where(bad, ts[spatial_dim])}). "
             "To exclude them from the fit, pass mask=np.isfinite(ts)."
         )
 
@@ -169,10 +227,10 @@ def _check_design_matrix_is_finite(design_matrix: DesignMatrix):
         other_dims = [d for d in array.dims if d != "regressor"]
         bad = (~np.isfinite(array)).any(other_dims)
         if bad.any():
-            bad_regressors = ", ".join(map(str, array.regressor.values[bad.values]))
             raise ValueError(
                 "The design matrix must be finite, but these regressors contain NaNs "
-                f"or infs: {bad_regressors}. Replace them with finite values and "
+                f"or infs: {_labels_where(bad, array.regressor)}. "
+                "Replace them with finite values and "
                 "exclude the affected samples of the time series with the mask "
                 "argument."
             )
@@ -213,20 +271,34 @@ def fit(
             missing dimensions are broadcast: a mask with only a time dimension
             masks the same segments everywhere, a mask with dimensions time and
             channel (or parcel, vertex) and optionally chromo (or wavelength)
-            masks segments individually. Masked samples may contain NaNs, unmasked
-            samples must be finite. To exclude all NaNs and infs in ``ts``, pass
-            ``mask=np.isfinite(ts)``. The design matrix is not masked, so
+            masks segments individually. Labeled dimensions are matched by label and
+            must have exactly the labels of ``ts``, e.g. a mask computed for all
+            channels must be reduced to the fitted channels with
+            ``mask.sel(channel=ts.channel)``. Masked samples may contain NaNs,
+            unmasked samples must be finite. To exclude all NaNs and infs in ``ts``,
+            pass ``mask=np.isfinite(ts)``. The design matrix is not masked, so
             :func:`predict` still yields predictions for masked segments.
 
     Returns:
         thetas as a DataArray
 
     Raises:
-        ValueError: If the design matrix or the unmasked samples of ``ts`` contain
-            NaNs or infs, if the mask doesn't match ``ts``, or if a channel (or
-            parcel, vertex) has too few unmasked samples to estimate all regressors.
+        ValueError: If ``noise_model`` is not supported, if the design matrix or the
+            unmasked samples of ``ts`` contain NaNs or infs, if the mask doesn't
+            match ``ts``, or if a channel (or parcel, vertex) has too few unmasked
+            samples to estimate all regressors. With ``noise_model="gls"``, also if
+            fewer than two pairs of adjacent unmasked samples remain to estimate
+            the autocorrelation. With ``noise_model="ar_irls"``, also if too few
+            samples remain after excluding the filtered samples that follow masked
+            samples.
+        NotImplementedError: If ``noise_model`` is ``"glsar"`` and the mask has gaps
+            between unmasked samples.
 
+        Errors raised while fitting a single channel (or parcel, vertex) carry a
+        note that names it.
     """
+
+    _check_noise_model(noise_model)
 
     cite("Barker2013")
     # FIXME: unit handling?
@@ -245,10 +317,9 @@ def fit(
         [d for d in mask.dims if d not in ("time", spatial_dim)]
     )
     if too_few.any():
-        bad_labels = ", ".join(map(str, ts[spatial_dim].values[too_few.values]))
         raise ValueError(
             f"Too few unmasked samples to estimate {n_regressors} regressors "
-            f"({spatial_dim}: {bad_labels})."
+            f"({spatial_dim}: {_labels_where(too_few, ts[spatial_dim])})."
         )
 
 
@@ -276,7 +347,8 @@ def fit(
 
         if max_jobs == 1:
             for chan in tqdm(group_y[spatial_dim].values, disable=not verbose):
-                result = _channel_fit(
+                result = _labeled_channel_fit(
+                    f"{spatial_dim} {chan}, {dim3_name} {dim3}",
                     group_y.loc[:, chan],
                     x,
                     noise_model,
@@ -289,6 +361,7 @@ def fit(
             for chan in group_y[spatial_dim].values:
                 args_list.append(
                     [
+                        f"{spatial_dim} {chan}, {dim3_name} {dim3}",
                         group_y.loc[:, chan],
                         x,
                         noise_model,
@@ -300,7 +373,7 @@ def fit(
             with parallel_config(backend='threading', n_jobs=max_jobs):
                 batch_results = tqdm(
                     Parallel(return_as="generator")(
-                        delayed(_channel_fit)(*args) for args in args_list
+                        delayed(_labeled_channel_fit)(*args) for args in args_list
                     ),
                     total=len(args_list)
                 )

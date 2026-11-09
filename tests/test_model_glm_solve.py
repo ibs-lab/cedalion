@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 import pandas as pd
+import scipy.signal
 import xarray as xr
 
 import cedalion
@@ -248,7 +249,7 @@ def _masking_rec(spatial_dim="channel"):
     fs = 10.0
     nsample = 600
     ts = cdc.build_timeseries(
-        rng.normal(0, 0.05, (nsample, 2, 2)),
+        np.random.default_rng(0).normal(0, 0.05, (nsample, 2, 2)),
         dims=["time", "channel", "chromo"],
         time=np.arange(nsample) / fs,
         channel=["S1D1", "S2D1"],
@@ -446,6 +447,9 @@ def test_glm_invalid_masks_raise():
     with pytest.raises(TypeError, match="boolean"):
         glm.fit(ts, dms, "ols", max_jobs=1, mask=mask.astype(int))
 
+    with pytest.raises(TypeError, match="xr.DataArray"):
+        glm.fit(ts, dms, "ols", max_jobs=1, mask=mask.values)
+
     with pytest.raises(ValueError, match="'time' dimension"):
         glm.fit(ts, dms, "ols", max_jobs=1, mask=mask.all("time"))
 
@@ -460,6 +464,13 @@ def test_glm_invalid_masks_raise():
 
     with pytest.raises(ValueError, match="coordinates"):
         glm.fit(ts, dms, "ols", max_jobs=1, mask=mask.isel(time=slice(1, None)))
+
+    with pytest.raises(ValueError, match="only in time series: S2D1"):
+        glm.fit(ts, dms, "ols", max_jobs=1, mask=mask.sel(channel=["S1D1"]))
+
+    extra_channel = mask.reindex(channel=["S1D1", "S2D1", "S9D9"], fill_value=True)
+    with pytest.raises(ValueError, match="only in mask: S9D9"):
+        glm.fit(ts, dms, "ols", max_jobs=1, mask=extra_channel)
 
     too_few = mask.copy()
     too_few.loc[{"channel": "S2D1", "chromo": "HbR"}] = False
@@ -480,6 +491,88 @@ def test_glm_glsar_mask():
         glm.fit(ts, dms, "glsar", max_jobs=1, mask=gap)
 
 
+def test_glm_mask_is_aligned_by_label():
+    ts, dms = _masking_rec()
+    ts, mask = _corrupt(ts, "S1D1", 20, 25, 1e4 * units.uM)
+    permuted = mask.isel(channel=[1, 0], chromo=[1, 0])
+
+    params = glm.fit(ts, dms, "ols", max_jobs=1, mask=mask).sm.params
+    params_permuted = glm.fit(ts, dms, "ols", max_jobs=1, mask=permuted).sm.params
+
+    np.testing.assert_array_equal(params_permuted.values, params.values)
+
+
+def test_glm_gls_covariance_accounts_for_gaps():
+    ts, dms = _masking_rec()
+    gap = _segment(ts, 20, 25)
+    mask = xr.DataArray(~gap, dims="time", coords={"time": ts.time})
+
+    result = glm.fit(ts, dms, "gls", max_jobs=1, mask=mask)
+    sigma = result[0, 0].item().model.sigma
+
+    # sigma = rho**lag, with the lags between the original sample positions. The
+    # unmasked samples before and after the gap are gap.sum() + 1 samples apart.
+    rho = sigma[0, 1]
+    last_before_gap = np.flatnonzero(gap)[0] - 1
+    np.testing.assert_allclose(
+        sigma[last_before_gap, last_before_gap + 1], rho ** (gap.sum() + 1)
+    )
+
+
+def test_glm_gls_needs_adjacent_samples():
+    ts, dms = _masking_rec()
+    alternating = xr.DataArray(
+        np.arange(ts.sizes["time"]) % 2 == 0, dims="time", coords={"time": ts.time}
+    )
+
+    with pytest.raises(ValueError, match="adjacent"):
+        glm.fit(ts, dms, "gls", max_jobs=1, mask=alternating)
+
+
+@pytest.mark.parametrize("max_jobs", [1, 2])
+def test_glm_fit_errors_name_the_channel(monkeypatch, max_jobs):
+    class FixedOrderAR:
+        params = np.r_[0.0, np.full(12, 0.01)]
+
+    monkeypatch.setattr(
+        cedalion.math.ar_model, "bic_arfit", lambda *args, **kwargs: FixedOrderAR()
+    )
+
+    ts, dms = _masking_rec()
+    mask = xr.ones_like(ts.pint.dequantify(), dtype=bool)
+    # unmasked stretches of 10 samples are shorter than the AR order 12
+    fragmented = (np.arange(ts.sizes["time"]) // 10) % 2 == 0
+    mask.loc[{"channel": "S2D1", "chromo": "HbR"}] = fragmented
+
+    with pytest.raises(ValueError, match="Only 0 samples") as excinfo:
+        glm.fit(ts, dms, "ar_irls", max_jobs=max_jobs, mask=mask)
+
+    assert excinfo.value.__notes__ == ["Raised while fitting channel S2D1, chromo HbR."]
+
+
+@pytest.mark.parametrize("max_jobs", [1, 2])
+def test_glm_fit_errors_keep_their_type(monkeypatch, max_jobs):
+    def singular(*args, **kwargs):
+        raise np.linalg.LinAlgError("Singular matrix")
+
+    monkeypatch.setattr(glm.solve, "_channel_fit", singular)
+    ts, dms = _masking_rec()
+
+    with pytest.raises(np.linalg.LinAlgError) as excinfo:
+        glm.fit(ts, dms, "ols", max_jobs=max_jobs)
+
+    assert "Raised while fitting channel" in excinfo.value.__notes__[0]
+
+
+def test_glm_fit_unknown_noise_model_is_not_blamed_on_a_channel():
+    ts, dms = _masking_rec()
+
+    with pytest.raises(ValueError, match="unsupported noise_model") as excinfo:
+        glm.fit(ts, dms, "foo", max_jobs=1)
+
+    assert not getattr(excinfo.value, "__notes__", [])
+
+
 @pytest.mark.parametrize("spatial_dim", ["channel", "parcel", "vertex"])
 def test_glm_mask_resid_aligned_with_samples(spatial_dim):
     """Residuals of channels with different masks must refer to the same samples."""
@@ -497,12 +590,91 @@ def test_glm_mask_resid_aligned_with_samples(spatial_dim):
     np.testing.assert_allclose(resid.values, expected.values)
 
 
+def _ar_noise(n, seed, coefs=(0.8, -0.2), scale=0.1):
+    """AR noise from its own seed, so that BIC selects an AR order > 0."""
+    white = np.random.default_rng(seed).normal(0, scale, n)
+    return scipy.signal.lfilter([1], np.r_[1, -np.asarray(coefs)], white)
+
+
 def test_valid_after_filter():
     mask = np.array([1, 1, 1, 1, 0, 1, 1, 1, 1, 1], dtype=bool)
     valid = cedalion.math.ar_irls._valid_after_filter(mask, p=2)
     expected = np.array([0, 0, 1, 1, 0, 0, 0, 1, 1, 1], dtype=bool)
 
     np.testing.assert_array_equal(valid, expected)
+
+
+@pytest.mark.parametrize("scale", [1e-6, 1e3])
+def test_bic_arfit_order_does_not_depend_on_units(scale):
+    dd = pd.Series(_ar_noise(2000, seed=1, coefs=(0.5, 0.2, -0.1, 0.1), scale=1.0))
+
+    order = len(cedalion.math.ar_model.bic_arfit(dd, pmax=20).params) - 1
+    scaled = cedalion.math.ar_model.bic_arfit(dd * scale, pmax=20)
+
+    assert order > 0
+    assert len(scaled.params) - 1 == order
+
+
+def test_bic_arfit_returns_pmax_if_bic_still_decreases():
+    dd = pd.Series(_ar_noise(5000, seed=2, coefs=(0.5, 0.2, 0.1, 0.05, 0.05)))
+
+    with pytest.warns(UserWarning, match="pmax was reached"):
+        result = cedalion.math.ar_model.bic_arfit(dd, pmax=2)
+
+    assert len(result.params) - 1 == 2
+
+
+def test_bic_arfit_pmax_zero():
+    dd = pd.Series(_ar_noise(500, seed=3))
+
+    with pytest.warns(UserWarning, match="pmax was reached"):
+        result = cedalion.math.ar_model.bic_arfit(dd, pmax=0)
+
+    assert len(result.params) == 1
+
+
+def test_ar_irls_default_pmax_from_sampling_rate():
+    n = 1000
+    time = np.arange(n) / 10.0
+    y = xr.DataArray(
+        _ar_noise(n, seed=4),
+        dims="time",
+        coords={"time": time, "samples": ("time", np.arange(n))},
+    )
+    y.time.attrs["units"] = "s"
+    x = pd.DataFrame({"const": np.ones(n), "b": np.sin(time)})
+
+    result = cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=None)
+
+    assert np.isfinite(result.params).all()
+
+
+def test_ar_irls_excludes_filtered_samples_that_reach_into_gaps():
+    """Filtered samples whose AR filter window contains a masked sample are not fitted.
+
+    ar_irls_GLM replaces masked samples internally. An offset added to the time series,
+    which the constant regressor absorbs, changes the jump into and out of each gap.
+    The other betas are only unaffected if the filtered samples next to the gaps are
+    excluded from the fit.
+    """
+    n = 2000
+    x = pd.DataFrame({"const": np.ones(n), "b": np.sin(np.arange(n) / 20)})
+    y = pd.Series(2 * x["b"] + _ar_noise(n, seed=3))
+    mask = np.ones(n, dtype=bool)
+    mask[500:520] = False
+    mask[1200:1260] = False
+
+    result = cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=10, mask=mask)
+    result_offset = cedalion.math.ar_irls.ar_irls_GLM(y + 100, x, pmax=10, mask=mask)
+
+    # The AR order is > 0, so the first filtered sample after a gap is excluded.
+    assert 520 not in result.resid.index
+    np.testing.assert_allclose(
+        result_offset.params["b"], result.params["b"], rtol=1e-6
+    )
+    np.testing.assert_allclose(
+        result_offset.params["const"], result.params["const"] + 100, rtol=1e-6
+    )
 
 
 
