@@ -4,7 +4,7 @@
 
 ### Fixes
 
-- Fixed `cedalion.sim.synthetic_artifact.add_artifacts` with `mode="manual"`, which raised an `AttributeError` whenever an artifact was added, because the per-channel scaling factors were stored in a dict instead of a `DataArray`. Manual mode now scales artifacts only by `scale`, as documented. By [Elsa-Henriette Harms](https://github.com/elsahh).
+- Fixed `cedalion.sim.synthetic_artifact.add_artifacts` raising an `AttributeError` with `mode="manual"`, by [Elsa-Henriette Harms](https://github.com/elsahh).
 
 ## Version 26.8.0-rc1 
 
