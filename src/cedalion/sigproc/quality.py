@@ -144,7 +144,6 @@ def psp(
     norm_unbiased = nsamples - np.abs(lags)  # shape (nlags,)
 
     hamming_window = np.hamming(nlags)
-    hamming_window_norm = np.sum(hamming_window) ** 2
 
     # nsample / (sigma(wl1)*sigma(wl2)) , shape(nchannel, ntime)
     corr_coeff_denom = nsamples / np.sqrt(np.sum(np.power(sig, 2), axis=-1)).prod(-1)
@@ -159,12 +158,23 @@ def psp(
     corr *= corr_coeff_denom.T[:, :, None]
     norm_unbiased = nsamples - np.abs(lags)  # shape (nlags,)
     corr /= norm_unbiased[None, None, :]
-    corr *= hamming_window[None, None, :]
 
-    fft_out = np.fft.rfft(corr, axis=-1)  # shape (ntime, nchannel, nfreqs)
-    power = (np.abs(fft_out) ** 2) / hamming_window_norm
+    # One-sided periodogram of the cross-correlation with 'spectrum' scaling. This
+    # matches QT-NIRS (MATLAB periodogram(..., 'power')): the window is normalized
+    # by sum(window)**2 and all coefficients except DC and Nyquist are doubled.
+    fs = sampling_rate(amp).to("Hz").magnitude
+    freqs, power = signal.periodogram(
+        corr,
+        fs=fs,
+        window=hamming_window,
+        nfft=nlags,
+        scaling="spectrum",
+        axis=-1,
+    )  # power shape (ntime, nchannel, nfreqs)
 
-    psp = np.max(power, axis=2).T  # shape(nchannel, ntime)
+    # QT-NIRS: max(pxx(f < fcut_max))
+    freq_mask = freqs < cardiac_fmax.to("Hz").magnitude
+    psp = np.max(power[..., freq_mask], axis=2).T  # shape(nchannel, ntime)
 
     # keep dims channel and time
     psp = windows.isel(wavelength=0, window=0).drop_vars("wavelength").copy(data=psp)
