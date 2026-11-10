@@ -20,6 +20,7 @@ from warnings import warn
 import numpy as np
 import pandas as pd
 import pint
+import scipy.ndimage
 import xarray as xr
 
 import cedalion
@@ -246,6 +247,17 @@ class ForwardModel:
         # depends on the sign of srcdir.
         srcpos = self.optode_pos.values[i_optode] + 0.5
 
+        # The fluence of each optode serves two purposes in compute_sensitivity:
+        # as the forward field of a source and as the adjoint field of a detector.
+        # The measurement that is normalized against is the fluence in the detector's
+        # voxel. The adjoint source of a fluence measurement is an isotropic point
+        # source. Launching isotropically therefore makes the adjoint identity
+        #   sum_v Phi_s(v) Phi_d(v) dV / Phi_s(d) = -d ln(Phi_s(d)) / d mu_a
+        # hold exactly (up to Monte Carlo noise). A pencil beam ("pencil") is not
+        # the adjoint of a fluence measurement and overestimates the sensitivity
+        # by a geometry dependent factor of about 2 (see compute_sensitivity).
+        srctype = kwargs.pop("srctype", "isotropic")
+
         cfg = {
             "nphoton": kwargs['nphoton'],
             "vol": self.volume,
@@ -254,6 +266,7 @@ class ForwardModel:
             "tstep": 5e-9,
             "srcpos": srcpos,
             "srcdir": self.optode_dir.values[i_optode],
+            "srctype": srctype,
             "prop": self.tissue_properties[:,:,i_wl],
             "issrcfrom0": 1,
             "isnormalized": 1,
@@ -341,6 +354,14 @@ class ForwardModel:
             kwargs: key-value pairs are passed to MCX's configuration dict. For example
                 nphoton (int) to control the number of photons to simulate.
                 See https://pypi.org/project/pmcx for further options.
+                By default photons are launched isotropically from the centre of the
+                optode's surface voxel (``srctype="isotropic"``), because the same
+                fluence field is used as the adjoint field of a detector whose
+                measurement is the fluence in its voxel (see
+                :meth:`compute_sensitivity`). ``srctype="pencil"`` restores the
+                previous behaviour of launching a pencil beam along the surface
+                normal, which overestimates the sensitivity by a geometry dependent
+                factor of about 2.
 
         Returns:
             xr.DataArray: Fluence in each voxel for each channel and wavelength.
@@ -513,7 +534,15 @@ class ForwardModel:
         mesh.gen_intmat(igrid, jgrid, kgrid)
         # calculate fluence
         data,_ = mesh.femdata(0, solver=solver, opt=solver_opt)
-        amplitude_optode = np.reshape(data.amplitude, (n_optodes,-1))
+
+        # NIRFASTer moves the sources one scattering length below the surface. The
+        # fluence fields are those of point sources at these positions, which also
+        # act as adjoint fields of the detectors (see compute_sensitivity). For a
+        # consistent normalization the fluence of each optode has to be evaluated
+        # at the moved positions of the other optodes, not at the boundary nodes
+        # where data.amplitude is sampled (data.amplitude is about half the fluence
+        # at the moved position, which would double the sensitivity).
+        source_coords = np.asarray(mesh.source.coord, dtype=float)  # (n_optodes, 3)
 
         wavelengths = self.measurement_list.wavelength.unique()
         n_wavelength = len(wavelengths)
@@ -555,7 +584,10 @@ class ForwardModel:
 
                     fluence_file.set_fluence_by_index(i_opt,i_wl, fluence)
 
-                    fluence_at_optodes[i_opt, :, i_wl] = amplitude_optode[:,i_opt]
+                    # trilinear interpolation of the fluence at the optode positions
+                    fluence_at_optodes[i_opt, :, i_wl] = scipy.ndimage.map_coordinates(
+                        fluence, source_coords.T, order=1, mode="nearest"
+                    )
 
             fluence_file.set_fluence_at_optodes(fluence_at_optodes)
 
@@ -564,13 +596,32 @@ class ForwardModel:
         fluence_fname: str | Path,
         sensitivity_fname: str | Path,
     ):
-        """Compute sensitivity matrix from fluence via the adjoint Monte Carlo method.
+        r"""Compute sensitivity matrix from fluence via the adjoint Monte Carlo method.
 
         The sensitivity matrix (Jacobian) maps absorption changes in each voxel/vertex
         to changes in the measured optical density. It is computed using the adjoint
         Monte Carlo approach (:cite:t:`Boas2005`, :cite:t:`Yao2016`): the fluence
         from source and detector optodes is multiplied element-wise and projected onto
-        the head surface.
+        the head surface:
+
+        .. math::
+
+            A_{sd}(v) = \frac{\Phi_s(v) \Phi_d(v) \Delta V}{\Phi_s(d)}
+
+        where :math:`\Phi_s(d)` is the fluence of the source in the detector's voxel
+        (averaged with the reciprocal :math:`\Phi_d(s)`). For this expression to be
+        the derivative :math:`\partial OD / \partial \mu_a(v)`, the detector
+        field :math:`\Phi_d` must be the adjoint field of the normalizing
+        measurement. The measurement is the fluence in a voxel, whose adjoint source
+        is an isotropic point source at the detector. Hence both
+        :meth:`compute_fluence_mcx` (``srctype="isotropic"``) and
+        :meth:`compute_fluence_nirfaster` (point sources, normalization at the moved
+        source positions) compute fluence fields of isotropic point sources. A
+        consequence that can be used for validation is that for a uniform absorption
+        change the sensitivities of a channel sum up to the mean photon pathlength,
+        :math:`\sum_v A_{sd}(v) = \langle L \rangle = -\partial \ln \Phi_s(d) /
+        \partial \mu_a`, i.e. to the source-detector distance times the
+        differential pathlength factor.
 
         Args:
             fluence_fname : the input hdf5 file to store the fluence
