@@ -1045,6 +1045,43 @@ def _calculate_delta_threshold(ts, segments, threshold_samples):
     return seg_deltas_thresh
 
 
+def pad_time(
+    ts: xr.DataArray, pad_samples: int | tuple[int, int], mode: str = "edge", **kwargs
+) -> xr.DataArray:
+    """Pad a time series along time and keep the time coordinate uniformly sampled.
+
+    ``DataArray.pad`` pads the coordinates as well, which yields repeated time
+    stamps at the edges. A sampling rate derived from such a time axis (as in
+    :func:`cedalion.sigproc.frequency.sampling_rate`) is too high and subsequent
+    filters and window lengths become wrong. This helper extrapolates the time
+    coordinate linearly instead and renumbers the ``samples`` coordinate.
+
+    Args:
+        ts: time series with a ``time`` dimension.
+        pad_samples: number of samples to pad on both sides, or a tuple
+            (before, after).
+        mode: padding mode passed to ``DataArray.pad``.
+        **kwargs: further keyword arguments passed to ``DataArray.pad``.
+
+    Returns:
+        The padded time series.
+    """
+    padded = ts.pad(time=pad_samples, mode=mode, **kwargs)
+
+    pad_before = pad_samples[0] if isinstance(pad_samples, tuple) else pad_samples
+
+    time = ts.time.values
+    dt = np.mean(np.diff(time))
+    n = padded.sizes["time"]
+    new_time = time[0] + (np.arange(n) - pad_before) * dt
+
+    coords = {"time": ("time", new_time, dict(ts.time.attrs))}
+    if "samples" in ts.coords:
+        coords["samples"] = ("time", np.arange(n))
+
+    return padded.assign_coords(coords)
+
+
 def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
     """Detect baselineshifts in fNIRSdata.
 
@@ -1085,14 +1122,14 @@ def detect_baselineshift(ts: cdt.NDTimeSeries, outlier_mask: cdt.NDTimeSeries):
     )  # filter the data between 0-2Hz
 
     # pad timeseries for 12s before and after with edge values
-    ts_padded = ts_lowpass.pad(time=pad_samples, mode="edge")
+    ts_padded = pad_time(ts_lowpass, pad_samples, mode="edge")
 
     # FIXME why does the original implementation filter twice?
     ts_lowpass_padded = ts_padded.cd.freq_filter(
         0, 2, butter_order=4
     )  # filter the data between 0-2Hz
 
-    outlier_mask_padded = outlier_mask.pad(time=pad_samples, mode="edge")
+    outlier_mask_padded = pad_time(outlier_mask, pad_samples, mode="edge")
 
     shift_mask = xrutils.mask(ts_padded, CLEAN)
 

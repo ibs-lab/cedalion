@@ -22,6 +22,7 @@ from .quality import (
     detect_outliers,
     id_motion,
     id_motion_refine,
+    pad_time,
     TAINTED,
 )
 
@@ -251,10 +252,11 @@ def spline_sg(
     PADDING_TIME = 12 * units.s # FIXME configurable?
     extend = int(np.round(PADDING_TIME  * fs))  # extension for padding
 
-    # pad fNIRSdata and tIncCh for motion correction
-    fNIRSdata_lpf2_pad = fNIRSdata_lpf2.pad(time=extend, mode="edge")
+    # pad fNIRSdata and tIncCh for motion correction. Homer3 replicates the edge
+    # values of both the data and the artifact mask.
+    fNIRSdata_lpf2_pad = pad_time(fNIRSdata_lpf2, extend, mode="edge")
 
-    tIncCh_pad = tIncCh.pad(time=extend, mode="constant", constant_values=False)
+    tIncCh_pad = pad_time(tIncCh, extend, mode="edge")
 
     dodSpline = spline(fNIRSdata_lpf2_pad, tIncCh_pad, p)
 
