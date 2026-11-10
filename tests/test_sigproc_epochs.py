@@ -6,6 +6,7 @@ from numpy.testing import assert_allclose
 
 import cedalion.dataclasses as cdc
 import cedalion.data
+import cedalion.nirs
 from cedalion.sigproc.epochs import to_epochs
 from cedalion import units
 
@@ -106,7 +107,7 @@ def test_to_epochs_reltime(timeseries):
 
 
 def test_to_epochs_interpolation(timeseries):
-    """Test linear interpolation for onsets between timestamps"""
+    """Test linear interpolation for onsets between timestamps."""
 
     df_stim = pd.DataFrame(
         {"onset": [0.5], "duration": [1.0], "value": [1.0], "trial_type": ["A"]}
@@ -341,3 +342,49 @@ def test_to_epochs_dimension_independence():
     ts_vertex = ts_vertex_chromo[:, :, 0]
 
     to_epochs(ts_vertex, **kwargs)
+
+
+def test_to_epochs_time_axis_in_milliseconds():
+    """Epochs are identical whether the time axis is given in s or in ms.
+
+    Regression test: the time axis was assumed to be in seconds, so onsets in
+    seconds were compared with millisecond time stamps.
+    """
+    fs = 10.0
+    t = np.arange(0, 60, 1 / fs)
+    rng = np.random.default_rng(0)
+    data = rng.standard_normal((1, 2, len(t)))
+
+    def make_ts(time, time_units):
+        return cdc.build_timeseries(
+            data,
+            dims=["channel", "wavelength", "time"],
+            time=time,
+            channel=["S1D1"],
+            value_units="V",
+            time_units=time_units,
+            other_coords={
+                "wavelength": [760.0, 850.0],
+                "source": ("channel", ["S1"]),
+                "detector": ("channel", ["D1"]),
+            },
+        )
+
+    df_stim = pd.DataFrame(
+        {
+            "onset": [10.0, 30.0],
+            "duration": [5.0, 5.0],
+            "value": [1.0, 1.0],
+            "trial_type": ["A", "A"],
+        }
+    )
+
+    epochs_s = make_ts(t, "s").cd.to_epochs(df_stim, ["A"], 2 * units.s, 10 * units.s)
+    epochs_ms = make_ts(t * 1000, "ms").cd.to_epochs(
+        df_stim, ["A"], 2 * units.s, 10 * units.s
+    )
+
+    assert epochs_s.sizes["epoch"] == 2
+    np.testing.assert_allclose(
+        epochs_ms.pint.dequantify().values, epochs_s.pint.dequantify().values
+    )
