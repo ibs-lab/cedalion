@@ -1,4 +1,3 @@
-import cedalion.data
 import cedalion.dot as dot
 import cedalion.typing as cdt
 import numpy as np
@@ -109,3 +108,49 @@ def test_image_recon(
 
 
     assert not np.iscomplex(x_reco.data).any()
+
+
+def test_compute_lambda_R_indirect(recon_data: ReconData):
+    """lambda_R_indirect converts the prior variance from conc. to absorption space.
+
+    Regression test: the extinction coefficient matrix (chromo, wavelength) was
+    contracted over its wavelength axis instead of its chromophore axis.
+    """
+    import cedalion.dot.forward_model as fwm
+    from cedalion import nirs
+
+    lambda_R_conc = 1e-6
+    recon = dot.ImageRecon(
+        recon_data.Adot,
+        recon_mode="mua",
+        alpha_meas=1e-3,
+        alpha_spatial=1e-2,
+        lambda_R_conc=lambda_R_conc,
+    )
+    result = recon.compute_lambda_R_indirect()
+
+    # independent reference implementation
+    Adot = recon_data.Adot
+    E = nirs.get_extinction_coefficients("prahl", Adot.wavelength.values)
+    E = E.pint.dequantify().transpose("chromo", "wavelength").values
+
+    def prior_R(A):  # A: (channel, vertex)
+        B = (A**2).sum(axis=0)
+        return 1.0 / (B + recon.alpha_spatial * B.max())
+
+    A_stacked = fwm.ForwardModel.compute_stacked_sensitivity(Adot)
+    R_direct = lambda_R_conc * prior_R(A_stacked.values)
+    nv = Adot.sizes["vertex"]
+    is_brain = Adot.is_brain.values
+    R_max = np.array([R_direct[:nv][is_brain].max(), R_direct[nv:][is_brain].max()])
+
+    expected = []
+    for i_wl, wl in enumerate(Adot.wavelength.values):
+        R_wl = prior_R(Adot.sel(wavelength=wl).transpose("channel", "vertex").values)
+        expected.append((E[:, i_wl] ** 2 @ R_max) / R_wl[is_brain].max())
+
+    np.testing.assert_allclose(result.values, expected, rtol=1e-10)
+
+    # without lambda_R_conc the scaling is 1 for every wavelength
+    recon = dot.ImageRecon(recon_data.Adot, recon_mode="mua", alpha_meas=1e-3)
+    np.testing.assert_array_equal(recon.compute_lambda_R_indirect().values, [1.0, 1.0])
