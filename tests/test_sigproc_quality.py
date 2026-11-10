@@ -138,3 +138,137 @@ def test_stimulus_mask():
 
     assert all(stim_mask[0,:] == [True, False, True])
     assert all(stim_mask[1, :] == [True, True, False])
+
+
+def _two_channel_mask(values):
+    """Boolean (channel, wavelength, time) mask from a (channel, time) array."""
+    values = np.asarray(values, dtype=bool)
+    nch, nt = values.shape
+    return cdc.build_timeseries(
+        np.stack([values, values], axis=1),
+        dims=["channel", "wavelength", "time"],
+        time=np.arange(nt, dtype=float),
+        channel=[f"S1D{i + 1}" for i in range(nch)],
+        value_units="1",
+        time_units="s",
+        other_coords={
+            "wavelength": [760.0, 850.0],
+            "source": ("channel", ["S1"] * nch),
+            "detector": ("channel", [f"D{i + 1}" for i in range(nch)]),
+        },
+    ).astype(bool)
+
+
+def test_id_motion_refine_info_operator_all():
+    """ma_info of operator 'all' reports the artifact fraction and count.
+
+    Regression test: the fraction and count were computed from the CLEAN samples
+    (polarity inverted) and the transitions were counted in the wrong direction.
+    """
+    # channel 1 has one artifact of 3 samples (TAINTED == False) out of 20
+    values = np.ones((2, 20), dtype=bool)
+    values[1, 5:8] = False
+    ma_mask = _two_channel_mask(values)
+
+    mask_by_channel, info_by_channel = quality.id_motion_refine(ma_mask, "by_channel")
+    mask_all, info_all = quality.id_motion_refine(ma_mask, "all")
+
+    assert mask_all.dims == ("time",)
+    assert (~mask_all.values).sum() == 3
+
+    info_by_channel = info_by_channel.set_index("channel")
+    assert_allclose(info_by_channel.loc["S1D2", "ma_fraction"], 0.15)
+    assert info_by_channel.loc["S1D2", "ma_count"] == 1
+
+    assert_allclose(info_all["ma_fraction"].item(), 0.15)
+    assert info_all["ma_count"].item() == 1
+
+
+def test_stimulus_mask_with_non_default_index():
+    """stimulus_mask works for stim DataFrames with a non-default index.
+
+    Regression test: the DataFrame index was used as positional row index.
+    """
+    t = np.arange(10)
+    mask = cdc.build_timeseries(
+        np.array([[1, 1, 1, 1, 1, 1, 0, 1, 1, 1]]),
+        dims=["channel", "time"],
+        time=t,
+        channel=["S1D1"],
+        value_units="1",
+        time_units="s",
+        other_coords={"source": ("channel", ["S1"]), "detector": ("channel", ["D1"])},
+    ).astype(bool)
+
+    df_stim = pd.DataFrame(
+        {
+            "onset": [1.0, 3.0, 5.0],
+            "duration": [1.0, 1.0, 3.0],
+            "value": [1.0, 1.0, 1.0],
+            "trial_type": ["a", "b", "a"],
+        }
+    )
+
+    # filtering by trial_type yields a DataFrame with index [0, 2]
+    stim_mask = quality.stimulus_mask(df_stim[df_stim.trial_type == "a"], mask)
+
+    assert stim_mask.sizes["stim"] == 2
+    assert all(stim_mask[:, 0].values == [True, False])
+
+
+def test_measurement_variance_covariance_dimension_order():
+    """The covariance does not depend on the dimension order of the time series."""
+    rng = np.random.default_rng(seed=0)
+    nch, nt = 3, 100
+    data = rng.standard_normal((nch, 2, nt))
+    ts = cdc.build_timeseries(
+        data,
+        dims=["channel", "wavelength", "time"],
+        time=np.arange(nt) / 10.0,
+        channel=[f"S1D{i + 1}" for i in range(nch)],
+        value_units="1",
+        time_units="s",
+        other_coords={
+            "wavelength": [760.0, 850.0],
+            "source": ("channel", ["S1"] * nch),
+            "detector": ("channel", [f"D{i + 1}" for i in range(nch)]),
+        },
+    )
+
+    cov = quality.measurement_variance(ts, calc_covariance=True)
+    cov_t = quality.measurement_variance(
+        ts.transpose("time", "channel", "wavelength"), calc_covariance=True
+    )
+
+    expected = np.cov(data[:, 0, :], ddof=1)
+    assert_allclose(cov.sel(wavelength=760.0).values, expected)
+    assert_allclose(cov_t.sel(wavelength=760.0).values, expected)
+
+
+def test_sd_dist_range_is_inclusive():
+    """Channels at exactly the range limits are kept (Homer3 semantics)."""
+    geo3d = cdc.build_labeled_points(
+        np.array([[0.0, 0.0, 0.0], [30.0, 0.0, 0.0], [10.0, 0.0, 0.0]]),
+        labels=["S1", "D1", "D2"],
+        types=[cdc.PointType.SOURCE, cdc.PointType.DETECTOR, cdc.PointType.DETECTOR],
+        crs="pos",
+        units="mm",
+    )
+    ts = cdc.build_timeseries(
+        np.ones((2, 2, 5)),
+        dims=["channel", "wavelength", "time"],
+        time=np.arange(5.0),
+        channel=["S1D1", "S1D2"],
+        value_units="V",
+        time_units="s",
+        other_coords={
+            "wavelength": [760.0, 850.0],
+            "source": ("channel", ["S1", "S1"]),
+            "detector": ("channel", ["D1", "D2"]),
+        },
+    )
+
+    _, mask = quality.sd_dist(ts, geo3d, sd_range=(10 * units.mm, 30 * units.mm))
+
+    assert bool(mask.sel(channel="S1D1")) == quality.CLEAN
+    assert bool(mask.sel(channel="S1D2")) == quality.CLEAN

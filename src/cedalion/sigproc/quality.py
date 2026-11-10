@@ -626,7 +626,9 @@ def sd_dist(
     ).round(3)
     # create sd_mask and update according to sd_thresh thresholds
     sd_mask = xrutils.mask(sd_dist, CLEAN)
-    sd_mask = sd_mask.where((sd_dist > sd_range[0]) & (sd_dist < sd_range[1]), TAINTED)
+    sd_mask = sd_mask.where(
+        (sd_dist >= sd_range[0]) & (sd_dist <= sd_range[1]), TAINTED
+    )
 
     return sd_dist, sd_mask
 
@@ -759,10 +761,6 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
         `pandas.DataFrame` that contains 1) channels with motion artifacts, 2) # of
         artifacts detected per channel and 3) fraction of artifacts/total time.
     """
-    # combine artifact masks (if multiple masks are provided).
-    # Will result in a single mask containing all motion indicators
-    mask = reduce(lambda x, y: x | y, ma_mask)
-
     # collapse motion artifact masks according to operator instruction
     if operator.lower() == "by_channel":
         # find whether "wavelength" or "concentration" exists as a dimension in ma_mask
@@ -801,10 +799,11 @@ def id_motion_refine(ma_mask: cdt.NDTimeSeries, operator: str):
         ma_mask_new = ma_mask.all(dim=dims2collapse)
 
         ## --- extract motion artifact info --- ##
-        global_frac = (mask.sum(dim="time") / mask.sizes["time"]).values
-        # Count number of motion artifacts (transitions in the mask) for each channel
-        transitions = mask.astype(int).diff(dim="time") == 1
-        transitions_ct = transitions.sum(dim="time").values
+        # fraction of time points marked as artifact (TAINTED == False)
+        global_frac = float(1 - ma_mask_new.mean(dim="time"))
+        # Count number of motion artifacts (CLEAN -> TAINTED transitions in the mask)
+        transitions = ma_mask_new.astype(int).diff(dim="time") == -1
+        transitions_ct = int(transitions.sum(dim="time"))
         # Store motion artifact info in a pandas dataframe
         ma_info = pd.DataFrame(
             {
@@ -1182,7 +1181,7 @@ def stimulus_mask(df_stim : pd.DataFrame, mask : xr.DataArray) -> xr.DataArray:
 
     result = np.zeros((len(df_stim), mask.sizes["channel"]), dtype=bool)
 
-    for i, r in df_stim.iterrows():
+    for i, (_, r) in enumerate(df_stim.iterrows()):
         tmp = mask.sel(
             time=(r["onset"] <= mask.time) & (mask.time < (r["onset"] + r["duration"]))
         )
@@ -1323,7 +1322,7 @@ def measurement_variance(
     # Compute covariance for each other_dim coordinate
     for i, other_val in enumerate(other_dim_values):
         data_slice = ts.sel({other_dim: other_val})
-        data_matrix = data_slice.values  # Shape: (n_channels, n_time)
+        data_matrix = data_slice.transpose("channel", "time").values
         cov_matrix_2d = np.cov(data_matrix, ddof=1)  # Shape: (n_channels, n_channels)
 
         # Replace covariance of bad channels
