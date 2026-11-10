@@ -2,6 +2,7 @@ import itertools
 import functools
 import operator
 
+import numpy as np
 import pytest
 from pint.testsuite.helpers import assert_quantity_almost_equal as assert_approx
 import pandas as pd
@@ -135,3 +136,48 @@ def test_make_design_matrix_combinations(rec, ts_key, spectral_dim, spatial_dim)
         assert spectral_dim in dms.common.dims
 
 
+
+
+@pytest.mark.parametrize(
+    "basis_class", [glm.GaussianKernels, bfuncs.GaussianKernelsWithTails]
+)
+def test_gaussian_kernels_width(basis_class):
+    """The kernels are Gaussians with standard deviation t_std (as in Homer3).
+
+    Regression test: the exponent was divided by (2 t_std)**2 instead of
+    2 t_std**2, i.e. the kernels were sqrt(2) times wider than documented.
+    """
+    fs = 10.0
+    t = np.arange(0, 60, 1 / fs)
+    ts = cdc.build_timeseries(
+        np.zeros((1, 2, len(t))),
+        dims=["channel", "chromo", "time"],
+        time=t,
+        channel=["S1D1"],
+        value_units="uM",
+        time_units="s",
+        other_coords={
+            "chromo": ["HbO", "HbR"],
+            "source": ("channel", ["S1"]),
+            "detector": ("channel", ["D1"]),
+        },
+    )
+    t_std = 3.0
+    basis = basis_class(
+        t_pre=5 * units.s,
+        t_post=20 * units.s,
+        t_delta=3 * units.s,
+        t_std=t_std * units.s,
+    )
+    kernels = basis(ts)  # dims (time, component)
+    kernels = kernels.transpose("time", "component")
+    time = kernels.time.values
+
+    # pick a kernel whose centre lies well inside the time range and estimate its
+    # standard deviation from its second moment
+    i_component = kernels.sizes["component"] // 2
+    kernel = kernels.isel(component=i_component).values
+    mu = np.sum(kernel * time) / np.sum(kernel)
+    std = np.sqrt(np.sum(kernel * (time - mu) ** 2) / np.sum(kernel))
+
+    np.testing.assert_allclose(std, t_std, rtol=0.02)
