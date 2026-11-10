@@ -347,24 +347,25 @@ class RandomGaussianSum(TemporalBasisFunction):
     def __call__(self, ts: cdt.NDTimeSeries) -> xr.DataArray:
         fs = sampling_rate(ts).to(units.Hz)
 
-        # Add margin for smoother edges
-        self.t_start += 2 * self.t_std
-        self.t_end -= 2 * self.t_std
+        # Add margin for smoother edges. Use local variables: the instance must not
+        # change between calls.
+        t_start = self.t_start + 2 * self.t_std
+        t_end = self.t_end - 2 * self.t_std
 
         # Extend by 3*t_std to capture the full Gaussian
-        smpl_start = int(np.floor((self.t_start - 3 * self.t_std) * fs))
-        smpl_end = int(np.ceil((self.t_end + 3 * self.t_std) * fs)) + 1
+        smpl_start = int(np.floor((t_start - 3 * self.t_std) * fs))
+        smpl_end = int(np.ceil((t_end + 3 * self.t_std) * fs)) + 1
         t_hrf = np.arange(smpl_start, smpl_end) / fs
         t_hrf = t_hrf.to("s")
 
-        duration = self.t_end - self.t_start
+        duration = t_end - t_start
         n_gauss = max(1, int(np.floor(duration / self.t_delta)))
 
-        mu = self.t_start + np.arange(n_gauss) * self.t_delta
+        mu = t_start + np.arange(n_gauss) * self.t_delta
 
         # Gaussian envelope for std of weight distribution
-        mid = ((self.t_start + self.t_end) / 2.0).magnitude
-        spread = ((self.t_end - self.t_start) / 2.5).magnitude
+        mid = ((t_start + t_end) / 2.0).magnitude
+        spread = ((t_end - t_start) / 2.5).magnitude
         mu_float = mu.to("s").magnitude
         envelope = np.exp(-((mu_float - mid) ** 2) / spread**2)
         stds = (
