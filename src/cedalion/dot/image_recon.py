@@ -1772,42 +1772,55 @@ class ImageRecon:
 
         """
 
+        Adot = self.Adot.transpose("channel", "vertex", "wavelength")
+        wavelengths = Adot.wavelength
+
         # FIXME catch earlier?
         if self.lambda_R_conc is None:
             return xr.DataArray(
-                [1.0, 1.0],
+                np.ones(len(wavelengths)),
                 dims=["wavelength"],
-                coords={"wavelength": self.Adot.wavelength},
+                coords={"wavelength": wavelengths},
             )
 
-        conc2mua = nirs.get_extinction_coefficients("prahl", self.Adot.wavelength)
+        # extinction coefficients, dims (chromo, wavelength)
+        conc2mua = nirs.get_extinction_coefficients("prahl", wavelengths)
+        conc2mua = conc2mua.pint.dequantify()  # FIXME: check units
 
-        A_stacked = fwm.ForwardModel.compute_stacked_sensitivity(self.Adot)
-        nV_brain = self.Adot.is_brain.sum().values
-        nV_head = self.Adot.shape[1]
+        A_stacked = fwm.ForwardModel.compute_stacked_sensitivity(Adot)
 
-        R_direct = self._calculate_prior_R(A_stacked)
+        R_direct = self._calculate_prior_R(A_stacked)  # dims (flat_vertex,)
         R_direct = self.lambda_R_conc * R_direct
 
-        R_direct_max = [
-            R_direct[:nV_brain].max().values,
-            R_direct[nV_head : nV_head + nV_brain].max().values,
-        ]
+        # maximum prior variance of the brain vertices for each chromophore
+        is_brain = R_direct.is_brain.values
+        chromo = R_direct.chromo.values
+        R_direct_max = xr.DataArray(
+            [
+                R_direct.values[is_brain & (chromo == c)].max()
+                for c in conc2mua.chromo.values
+            ],
+            dims=["chromo"],
+            coords={"chromo": conc2mua.chromo.values},
+        )
 
-        # Convert direct prior to indirect (OD space)
-        R_indirect_wl1 = self._calculate_prior_R(self.Adot.isel(wavelength=0))
-        R_indirect_wl2 = self._calculate_prior_R(self.Adot.isel(wavelength=1))
+        # Convert direct prior to indirect (OD space):
+        # mua_wl = sum_c eps[c, wl] * conc_c
+        # => Var(mua_wl) = sum_c eps[c, wl]^2 Var(conc_c)
+        R_indirect_converted = xr.dot(conc2mua**2, R_direct_max, dim="chromo")
 
-        conc2mua = conc2mua.pint.dequantify()  # FIXME: check units
-        R_indirect_converted = conc2mua.values**2 @ R_direct_max  # / units.mm**2
-
-        lambda_wl1 = R_indirect_converted[0] / R_indirect_wl1[:nV_brain].max()
-        lambda_wl2 = R_indirect_converted[1] / R_indirect_wl2[:nV_brain].max()
+        lambda_R_indirect = []
+        for wl in wavelengths.values:
+            R_indirect_wl = self._calculate_prior_R(Adot.sel(wavelength=wl))
+            R_indirect_wl_max = R_indirect_wl.values[Adot.is_brain.values].max()
+            lambda_R_indirect.append(
+                float(R_indirect_converted.sel(wavelength=wl)) / R_indirect_wl_max
+            )
 
         lambda_R_indirect = xr.DataArray(
-            [lambda_wl1, lambda_wl2],
+            lambda_R_indirect,
             dims=["wavelength"],
-            coords={"wavelength": self.Adot.wavelength},
+            coords={"wavelength": wavelengths},
         )
 
         return lambda_R_indirect
