@@ -138,3 +138,55 @@ def test_stimulus_mask():
 
     assert all(stim_mask[0,:] == [True, False, True])
     assert all(stim_mask[1, :] == [True, True, False])
+
+
+def _gvtd_test_data(rng, dims=("channel", "wavelength", "time"), n_wavelength=2):
+    fs = 10.0
+    t = np.arange(0, 60, 1 / fs)
+    nch = 3
+    amp = 1.0 + 0.01 * rng.standard_normal((nch, n_wavelength, len(t)))
+    # make the last wavelength much noisier so that its contribution is visible
+    amp[:, -1, :] += 0.2 * rng.standard_normal((nch, len(t)))
+    ts = cdc.build_timeseries(
+        amp,
+        dims=["channel", "wavelength", "time"],
+        time=t,
+        channel=[f"S1D{i}" for i in range(nch)],
+        value_units="V",
+        time_units="s",
+        other_coords={
+            "wavelength": [760.0 + 30 * i for i in range(n_wavelength)],
+            "source": ("channel", ["S1"] * nch),
+            "detector": ("channel", [f"D{i}" for i in range(nch)]),
+        },
+    )
+    return ts.transpose(*dims)
+
+
+def test_gvtd_uses_all_measurements_and_is_dimension_order_independent():
+    """GVTD is the RMS over all channel x wavelength measurements.
+
+    Regression test: a positional slice intended to drop the last time sample
+    removed the last wavelength instead, so only the first wavelength entered the
+    RMS and other dimension orders / wavelength counts crashed.
+    """
+    rng = np.random.default_rng(seed=0)
+    ts = _gvtd_test_data(rng)
+
+    gvtd, _ = quality.gvtd(ts)
+    assert gvtd.dims == ("time",)
+    assert gvtd.sizes["time"] == ts.sizes["time"]
+
+    # the noisy second wavelength must contribute
+    gvtd_wl0, _ = quality.gvtd(ts.isel(wavelength=[0]))
+    assert float(gvtd.mean()) > 3 * float(gvtd_wl0.mean())
+
+    # dimension order independence
+    for dims in [("time", "channel", "wavelength"), ("wavelength", "channel", "time")]:
+        gvtd_t, _ = quality.gvtd(ts.transpose(*dims))
+        assert_allclose(gvtd_t.values, gvtd.values)
+
+    # other numbers of wavelengths
+    for n_wavelength in [1, 3]:
+        gvtd_n, _ = quality.gvtd(_gvtd_test_data(rng, n_wavelength=n_wavelength))
+        assert gvtd_n.dims == ("time",)

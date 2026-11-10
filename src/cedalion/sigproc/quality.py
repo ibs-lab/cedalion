@@ -184,6 +184,11 @@ def psp(
 def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
     """Calculate GVTD metric based on :cite:t:`Sherafati2020`.
 
+    The GVTD is the root mean square over all measurements (channels and
+    wavelengths) of the temporal derivative of the band-pass filtered optical
+    density. To compute it for a subset of measurements, e.g. one wavelength as
+    NeuroDOT does, select them before calling this function.
+
     Args:
         amplitudes (:class:`NDTimeSeries`, (channel, wavelength, time)): input time
             series
@@ -216,14 +221,15 @@ def gvtd(amplitudes: NDTimeSeries, stat_type: str = "default", n_std: int = 10):
     # Step 1: Find the matrix of the temporal derivatives
     dataDiff = od_filtered - od_filtered.shift(time=-1)
 
-    # Step 2: Find the RMS across the channels for each time-point of dataDiff
-    GVTD = np.sqrt((dataDiff[:, :-1] ** 2).mean(dim="channel"))
+    # Step 2: Find the RMS across all measurements (channels and wavelengths) for
+    # each time-point of dataDiff
+    non_time_dims = [d for d in dataDiff.dims if d != "time"]
+    GVTD = np.sqrt((dataDiff**2).mean(dim=non_time_dims))
 
     # Step 3: Add a zero in the beginning for GVTD to have the same number of
-    # time-points as your original dataMatrix
-    GVTD = GVTD.squeeze()
+    # time-points as your original dataMatrix. The last sample of dataDiff is
+    # undefined (NaN) and is dropped.
     GVTD.values = np.hstack([0, GVTD.values[:-1]])
-    GVTD = GVTD.drop_vars("wavelength")
 
     # Step 4: Scale to have units of OD/s
     GVTD *= freq.sampling_rate(amplitudes)
