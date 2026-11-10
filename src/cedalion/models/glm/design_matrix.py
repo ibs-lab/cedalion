@@ -529,7 +529,8 @@ def _pad_time_axis(time: ArrayLike, onsets: ArrayLike):
     if min_onset < time[0]:
         dt = (time[1:] - time[:-1]).mean()
         pad_before = int(np.ceil(np.abs(min_onset - time[0]) / dt))
-        padded_time = np.hstack((np.arange(-pad_before, 0) * dt, time))
+        # the padding must continue the time axis before time[0], not before 0
+        padded_time = np.hstack((time[0] + np.arange(-pad_before, 0) * dt, time))
     else:
         pad_before = 0
         padded_time = time
@@ -557,11 +558,15 @@ def build_stim_array(
 
     """
 
-    smpl_start = time.searchsorted(onsets)
+    # An onset that coincides with a sample up to floating point error (e.g.
+    # 100 + (-5.1) vs 94.9) must map to that sample and not to the next one.
+    eps = 1e-6 * np.median(np.diff(time)) if len(time) > 1 else 0.0
+
+    smpl_start = time.searchsorted(onsets - eps)
     if durations is None:
         smpl_stop = smpl_start + 1
     else:
-        smpl_stop = time.searchsorted(onsets + durations)
+        smpl_stop = time.searchsorted(onsets + durations - eps)
         # when durations are provided make sure that a trial is at least one sample
         # wide
         too_short_mask = smpl_stop == smpl_start
