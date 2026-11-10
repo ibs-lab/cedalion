@@ -167,9 +167,8 @@ def build_event_df(
 def overlaps(onset, dur, min_interval, existing_events):
     new_start = onset
     new_end = onset + dur + min_interval
-    for e in existing_events:
-        es = e[0]  # onset
-        ee = e[0] + e[1] + min_interval  # onset + duration + interval
+    for es, ed in zip(existing_events["onset"], existing_events["duration"]):
+        ee = es + ed + min_interval  # onset + duration + interval
         # check overlap
         if not (new_end <= es or new_start >= ee):
             return True
