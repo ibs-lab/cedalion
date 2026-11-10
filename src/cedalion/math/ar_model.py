@@ -8,7 +8,10 @@ from warnings import warn
 def bic_arfit(dd, pmax=30):
     """This function computes the ar coefficients up to a max model order.
 
-    BIC is used to select the model
+    The model order in 0..pmax with the minimum BIC is selected
+    (:cite:t:`Barker2013`). The BICs of all orders are evaluated on the same
+    samples (the first pmax samples are held back for every order) to make them
+    comparable.
 
     Args:
         dd: pd.Series
@@ -19,19 +22,18 @@ def bic_arfit(dd, pmax=30):
     """
 
     dd = dd - dd.mean()
+    pmax = int(pmax)
 
-    last_bic = np.inf
-    for p in range(pmax + 1):
-        model = sm.tsa.AutoReg(dd, lags=p).fit()
-        if model.bic > last_bic:
-            break
-        else:
-            last_bic = model.bic
-    else:
+    bics = [
+        sm.tsa.AutoReg(dd, lags=p, hold_back=pmax).fit().bic for p in range(pmax + 1)
+    ]
+
+    # Select the best model order: the global BIC minimum
+    best_p = int(np.argmin(bics))
+
+    if best_p == pmax:
         warn("pmax was reached before finding the optimal BIC.")
 
-    # Select the best model order
-    best_p = p - 1
     return sm.tsa.AutoReg(dd, lags=best_p).fit()
 
 
