@@ -112,9 +112,16 @@ def read_segmentation_masks(
         affine = _get_affine_from_niftii(f)
         affines.append(affine)
 
-    # check that sforms match for all masks
+    # check that the affine transforms match for all masks
+    reference = np.asarray(affines[0].pint.dequantify().values, dtype=float)
     for i in range(1, len(affines)):
-        assert np.all(affines[i] == affines[i])
+        affine = np.asarray(affines[i].pint.dequantify().values, dtype=float)
+        if not np.allclose(affine, reference):
+            raise ValueError(
+                "the affine transforms of the segmentation masks differ: "
+                f"'{mask_files[list(mask_files.keys())[i]]}' vs "
+                f"'{mask_files[list(mask_files.keys())[0]]}'."
+            )
 
     masks = xr.concat(masks, dim="segmentation_type")
 
