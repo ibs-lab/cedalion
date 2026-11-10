@@ -274,3 +274,166 @@ def test_image_recon_unknown_channel_raises(recon_data: ReconData):
     )
     with pytest.raises(ValueError):
         recon.reconstruct(y)
+
+
+def _mock_gaussian_sbf(Adot: xr.DataArray, n_kernels_brain=6, n_kernels_scalp=3):
+    """A GaussianSpatialBasisFunctions instance with a random sparse kernel matrix."""
+    from scipy.sparse import csr_array
+
+    rng = np.random.default_rng(seed=7)
+    is_brain = Adot.is_brain.values
+    n_vertex = Adot.sizes["vertex"]
+    n_vertex_brain = int(is_brain.sum())
+    n_kernels = n_kernels_brain + n_kernels_scalp
+
+    G = np.zeros((n_kernels, n_vertex))
+    G[:n_kernels_brain, :n_vertex_brain] = rng.uniform(
+        0, 1, (n_kernels_brain, n_vertex_brain)
+    )
+    G[n_kernels_brain:, n_vertex_brain:] = rng.uniform(
+        0, 1, (n_kernels_scalp, n_vertex - n_vertex_brain)
+    )
+    G[rng.uniform(size=G.shape) < 0.3] = 0.0  # make it sparse
+
+    sbf = dot.GaussianSpatialBasisFunctions.__new__(dot.GaussianSpatialBasisFunctions)
+    sbf.verbose = False
+    sbf._G = csr_array(G)
+    sbf._G_kernel = np.arange(n_kernels)
+    sbf._G_kernel_is_brain = np.arange(n_kernels) < n_kernels_brain
+    sbf._G_vertex_is_brain = is_brain.copy()
+    sbf._G_vertex_parcel = None
+    sbf.nkernel_brain = n_kernels_brain
+    sbf.nvertices_brain = n_vertex_brain
+    sbf._compute_H(Adot.transpose("channel", "vertex", "wavelength"))
+    return sbf, G
+
+
+@pytest.mark.parametrize("brain_only", [False, True])
+@pytest.mark.parametrize("alpha_spatial", [None, 1.0])
+@pytest.mark.parametrize("recon_mode", ["mua", "conc"])
+def test_image_noise_with_spatial_basis_functions(
+    recon_data: ReconData, recon_mode, alpha_spatial, brain_only
+):
+    """With SBFs the image noise is diag(G^T W C W^T G).
+
+    Regression test: kernel-space variances were mapped to image space with G
+    (linearly), which ignores the covariance of overlapping kernels and has the
+    wrong scale (off by a vertex dependent factor of 100-2000 in the audit).
+    """
+    rng = np.random.default_rng(seed=5)
+    sbf, G = _mock_gaussian_sbf(recon_data.Adot)
+
+    c_meas = xr.DataArray(
+        rng.uniform(0.5, 2.0, size=recon_data.c_meas.shape),
+        dims=recon_data.c_meas.dims,
+        coords=recon_data.c_meas.coords,
+    )
+
+    recon = dot.ImageRecon(
+        recon_data.Adot,
+        recon_mode=recon_mode,
+        alpha_meas=1e-3,
+        alpha_spatial=alpha_spatial,
+        apply_c_meas=True,
+        brain_only=brain_only,
+        spatial_basis_functions=sbf,
+    )
+    noise = recon.get_image_noise(c_meas)
+
+    if brain_only:
+        G = G[: sbf.nkernel_brain, : sbf.nvertices_brain]
+
+    if recon_mode == "mua":
+        for wl in recon_data.Adot.wavelength.values:
+            W = recon._W.sel(wavelength=wl).transpose("kernel", "channel")
+            C = np.diag(c_meas.sel(wavelength=wl).sel(channel=W.channel.values).values)
+            W_img = G.T @ W.values
+            expected = np.diag(W_img @ C @ W_img.T)
+            np.testing.assert_allclose(
+                noise.sel(wavelength=wl).transpose("vertex").values, expected
+            )
+    else:
+        W = recon._W.transpose("flat_kernel", "flat_channel")
+        c = [
+            float(c_meas.sel(wavelength=wl, channel=ch))
+            for wl, ch in zip(W.wavelength.values, W.channel.values)
+        ]
+        for chromo in ["HbO", "HbR"]:
+            W_c = W.values[W.chromo.values == chromo]
+            W_img = G.T @ W_c
+            expected = np.diag(W_img @ np.diag(c) @ W_img.T)
+            np.testing.assert_allclose(
+                noise.sel(chromo=chromo).transpose("vertex").values, expected
+            )
+
+
+@pytest.mark.parametrize("use_sbf", [False, True])
+@pytest.mark.parametrize("alpha_spatial", [None, 1.0])
+@pytest.mark.parametrize("recon_mode", ["mua", "conc"])
+def test_image_noise_posterior(
+    recon_data: ReconData, recon_mode, alpha_spatial, use_sbf
+):
+    """The posterior variance equals diag(Sigma_p - W A Sigma_p), mapped through G."""
+    rng = np.random.default_rng(seed=6)
+    c_meas = xr.DataArray(
+        rng.uniform(0.5, 2.0, size=recon_data.c_meas.shape),
+        dims=recon_data.c_meas.dims,
+        coords=recon_data.c_meas.coords,
+    )
+
+    sbf, G = _mock_gaussian_sbf(recon_data.Adot) if use_sbf else (None, None)
+
+    recon = dot.ImageRecon(
+        recon_data.Adot,
+        recon_mode=recon_mode,
+        alpha_meas=1e-3,
+        alpha_spatial=alpha_spatial,
+        apply_c_meas=True,
+        lambda_R_conc=1e-6,
+        spatial_basis_functions=sbf,
+    )
+    posterior = recon.get_image_noise_posterior(c_meas).pint.dequantify()
+
+    A = sbf.H if use_sbf else recon_data.Adot
+    A = A.transpose("channel", ..., "wavelength")
+
+    def prior_R(A2d):  # A2d: (channel, space)
+        B = (A2d**2).sum(axis=0)
+        if alpha_spatial is None:
+            return np.ones_like(B)
+        return 1.0 / (B + alpha_spatial * B.max())
+
+    def expected_variance(W, A2d, R):
+        cov = np.diag(R) - (W @ A2d) * R[None, :]
+        if use_sbf:
+            return np.diag(G.T @ cov @ G)
+        return np.diag(cov)
+
+    if recon_mode == "mua":
+        lambda_R = recon.compute_lambda_R_indirect()
+        for wl in recon_data.Adot.wavelength.values:
+            W = recon._W.sel(wavelength=wl)
+            W = W.transpose(W.dims[0], "channel").values
+            A2d = A.sel(wavelength=wl).values
+            R = float(lambda_R.sel(wavelength=wl)) * prior_R(A2d)
+            np.testing.assert_allclose(
+                posterior.sel(wavelength=wl).transpose("vertex").values,
+                expected_variance(W, A2d, R),
+                rtol=1e-8,
+            )
+    else:
+        import cedalion.dot.forward_model as fwm
+
+        A_stacked = fwm.ForwardModel.compute_stacked_sensitivity(A)
+        W = recon._W.transpose(recon._W.dims[0], "flat_channel")
+        R = 1e-6 * prior_R(A_stacked.values)
+        chromo = A_stacked[A_stacked.dims[1]].chromo.values
+        for c in ["HbO", "HbR"]:
+            mask = chromo == c
+            W_c = W.values[mask]
+            A_c = A_stacked.values[:, mask]
+            np.testing.assert_allclose(
+                posterior.sel(chromo=c).transpose("vertex").values,
+                expected_variance(W_c, A_c, R[mask]),
+                rtol=1e-8,
+            )
