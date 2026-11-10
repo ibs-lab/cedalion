@@ -93,8 +93,12 @@ def test_spline_smoothing_parameter_follows_csaps():
 
     corrected = {p: mc.spline(ts, mask, p) for p in [0.01, 0.99, 1.0]}
 
+    # spline() corrects the samples between the CLEAN->TAINTED and the
+    # TAINTED->CLEAN transition, i.e. [seg.start - 1, seg.stop - 1)
+    corrected_seg = slice(seg.start, seg.stop - 1)
+
     def segment_std(p):
-        return np.std(corrected[p].pint.dequantify().values[0, 0, seg])
+        return np.std(corrected[p].pint.dequantify().values[0, 0, corrected_seg])
 
     # p=1 interpolates the data: the artifact segment is removed entirely and only
     # a constant (the shifted baseline) remains
