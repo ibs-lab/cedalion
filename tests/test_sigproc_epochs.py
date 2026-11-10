@@ -6,6 +6,7 @@ from numpy.testing import assert_allclose
 
 import cedalion.dataclasses as cdc
 import cedalion.data
+import cedalion.nirs
 from cedalion.sigproc.epochs import to_epochs
 from cedalion import units
 

@@ -92,8 +92,9 @@ def to_epochs(
     value_units = ts.pint.units
     ts = ts.pint.dequantify()
 
+    # interpolate on the time axis in seconds (same units as the onsets)
     interpolator = interp1d(
-        ts.time.values, ts.values, axis=ts.dims.index("time"), fill_value="extrapolate"
+        time, ts.values, axis=ts.dims.index("time"), fill_value="extrapolate"
     )
 
     epochs = []
