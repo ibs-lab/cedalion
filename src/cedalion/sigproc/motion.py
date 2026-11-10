@@ -645,11 +645,22 @@ def _pad_to_power_2(signal : np.ndarray) -> tuple[np.ndarray, int]:
     return padded, len(signal)
 
 
-def _clip_coeffs_to_iqr_bounds(block: np.ndarray, iqr_factor: float):
-    """Restrict coefficients to a multiple of the interquartile range."""
+def _clip_coeffs_to_iqr_bounds(
+    block: np.ndarray, iqr_factor: float, n_stats: int | None = None
+):
+    """Set coefficients outside the interquartile bounds to zero (in place).
 
-    # Compute statistics on valid data length
-    q25, q75 = np.percentile(block, [25, 75])
+    Args:
+        block: 1D array of wavelet coefficients. Modified in place.
+        iqr_factor: multiple of the interquartile range beyond which coefficients are
+            considered outliers.
+        n_stats: if given, compute the quantiles only on the first n_stats
+            coefficients (those that stem from the unpadded signal).
+    """
+    stats = block if n_stats is None else block[:n_stats]
+
+    # MATLAB's quantile corresponds to numpy's "hazen" method
+    q25, q75 = np.percentile(stats, [25, 75], method="hazen")
     iqr_val = q75 - q25
 
     # Set thresholds
@@ -662,39 +673,52 @@ def _clip_coeffs_to_iqr_bounds(block: np.ndarray, iqr_factor: float):
 def _filter_wavelet_coeffs(
     coeffs: list[tuple[np.ndarray, np.ndarray]], iqr_factor: float, signal_length: int
 ):
-    """Deletes outlier coefficients based on IQR."""
+    """Delete outlier detail coefficients based on the IQR (Homer3 WaveletAnalysis).
 
-    n = len(coeffs[0][0]) # length of padded timeseries
+    Args:
+        coeffs: output of pywt.swt: [(cA_n, cD_n), ..., (cA_1, cD_1)], i.e. the first
+            entry holds the coarsest level n.
+        iqr_factor: multiple of the interquartile range beyond which coefficients are
+            set to zero.
+        signal_length: length of the unpadded signal.
+
+    Returns:
+        Filtered coefficients in the same layout as coeffs.
+
+    At level j the stationary wavelet transform of a signal of length n (a power of
+    two) contains the 2**j decimated discrete wavelet transforms of the circularly
+    shifted signal, interleaved in time. Homer3 (WaveletAnalysis.m, WT_inv.m)
+    stores these as 2**j blocks of n / 2**j coefficients and computes the quantiles
+    for each block separately, using only the coefficients that stem from the
+    unpadded signal. The coarsest detail level is not thresholded.
+    """
+
     n_levels = len(coeffs)
-
-    # coeffs contain approximation (cA) and detail (cD) coeffients in the following
-    # order: [(cAn, cDn), ..., (cA2, cD2), (cA1, cD1)] for level 1..n_levels
 
     filtered_coeffs = []
 
     cAf = coeffs[0][0].copy()  # approximation coeffs at the highest level
 
     for i, (cA, cD) in enumerate(coeffs):
-        level = n_levels - i - 1  # here level = 0...n_levels-1
-        n_blocks = 2**level
-        block_length = n // n_blocks
-
+        level = n_levels - i  # level 1 is the finest scale
         cDf = cD.copy()
 
-        # Split time series into 2**level blocks and filter each block individually.
-        # In SWT the coefficient arrays at each level have the length of the padded
-        # time series n. The coefficients beyond signal_length relate to the padding.
-        # Don't process these.
-        for i_block in range(n_blocks):
-            block_start = i_block * block_length
-            block_end = (i_block + 1) * block_length
-            block_end = min(signal_length, block_end)
+        if i == 0:
+            # Homer3 leaves the detail coefficients of the coarsest level untouched
+            filtered_coeffs.append((cAf, cDf))
+            continue
 
-            if block_end <= block_start:
-                continue
+        step = 2**level
+        # number of coefficients per shifted transform that relate to the unpadded
+        # signal (Homer3: SignalLength_tmp = fix(SignalLength_tmp / 2) per level)
+        n_valid = signal_length // step
+        if n_valid == 0:
+            filtered_coeffs.append((cAf, cDf))
+            continue
 
-            # filter detail coefficents
-            _clip_coeffs_to_iqr_bounds(cDf[block_start:block_end], iqr_factor)
+        for shift in range(step):
+            # view on the decimated transform of the signal shifted by `shift`
+            _clip_coeffs_to_iqr_bounds(cDf[shift::step], iqr_factor, n_stats=n_valid)
 
         filtered_coeffs.append((cAf, cDf))
 
@@ -746,12 +770,12 @@ def normalize_signal(signal, wavelet='db2'):
     return normalized_signal, norm_coef
 
 @deprecated("This function was renamed to 'wavelet'.")
-def motion_correct_wavelet(od, iqr=1.5, wavelet='db2', level=4):
+def motion_correct_wavelet(od, iqr=1.5, wavelet='db2', level=None):
     renamed_func = globals()['wavelet']
     return renamed_func(od, iqr, wavelet, level)
 
 
-def wavelet(od, iqr=1.5, wavelet='db2', level=4):
+def wavelet(od, iqr=1.5, wavelet='db2', level: int | None = None):
     """Wavelet-based motion correction, specializing in spike correction.
 
     Implements the wavelet-based motion correction algorithm described in
@@ -763,7 +787,11 @@ def wavelet(od, iqr=1.5, wavelet='db2', level=4):
         iqr: The interquartile range factor for outlier detection. Set to -1 to disable.
             Increasing iqr will delete less coefficients.
         wavelet: The wavelet to use for decomposition (default: 'db2')
-        level: The level of decomposition to use (default: 4)
+        level: The number of decomposition levels. By default (None) the signal,
+            zero-padded to a length of 2**N samples, is decomposed into N - 4 levels,
+            which corresponds to Homer3's default of L=4 remaining approximation
+            levels. The detail coefficients of all but the coarsest level are
+            thresholded.
 
     Returns:
         The corrected time series.
@@ -796,7 +824,10 @@ def wavelet(od, iqr=1.5, wavelet='db2', level=4):
 
             # Use SWT for initial decomposition
             n = int(np.log2(len(normalized_signal)))
-            actual_level = min(level, n-1)
+            if level is None:
+                actual_level = max(1, n - 4)  # Homer3: L = 4
+            else:
+                actual_level = min(level, n - 1)
             coeffs = pywt.swt(normalized_signal, wavelet, level=actual_level)
 
             # Filter coefficients
