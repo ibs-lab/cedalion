@@ -107,6 +107,24 @@ class SpatialBasisFunctions(ABC):
     def kernel_to_image_space_mua(self, mua_img: xr.DataArray) -> xr.DataArray:
         """Transform an image from kernel to image space in recon. mode 'mua'."""
 
+    def kernel_covariance_to_image_variance(
+        self, cov: np.ndarray, brain_only: bool = False
+    ) -> np.ndarray:
+        """Transform a covariance matrix of kernel weights into per-vertex variances.
+
+        For an image x = G.T @ w with kernel weights w of covariance ``cov``, the
+        variance of each vertex is diag(G.T @ cov @ G).
+
+        Args:
+            cov: covariance matrix of the kernel weights, shape (kernel, kernel).
+            brain_only: if True, cov refers to the brain kernels only and variances
+                are returned for the brain vertices only.
+
+        Returns:
+            Variances per vertex, shape (vertex,).
+        """
+        raise NotImplementedError()
+
     @abstractmethod
     def to_file(self, fname : Path | str):
         """Serialize prepared spatial basis functions into a file.
@@ -938,6 +956,49 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         return img
 
 
+    def kernel_covariance_to_image_variance(
+        self, cov: np.ndarray, brain_only: bool = False
+    ) -> np.ndarray:
+        """Transform a covariance matrix of kernel weights into per-vertex variances.
+
+        Computes diag(G.T @ cov @ G) in chunks of vertices.
+
+        Args:
+            cov: covariance matrix of the kernel weights, shape (kernel, kernel).
+            brain_only: if True, cov refers to the brain kernels only and variances
+                are returned for the brain vertices only.
+
+        Returns:
+            Variances per vertex, shape (vertex,).
+        """
+        cov = np.asarray(cov)
+
+        if brain_only:
+            G = self._G[: self.nkernel_brain, :]
+        else:
+            G = self._G
+
+        if cov.shape != (G.shape[0], G.shape[0]):
+            raise ValueError(
+                f"cov must have shape {(G.shape[0], G.shape[0])}, got {cov.shape}."
+            )
+
+        n_vertex = G.shape[1]
+        variance = np.empty(n_vertex)
+
+        chunk_size = 4096
+        for v0 in range(0, n_vertex, chunk_size):
+            v1 = min(v0 + chunk_size, n_vertex)
+            G_chunk = G[:, v0:v1]  # sparse (kernel, chunk)
+            cov_G = (G_chunk.T @ cov.T).T  # dense (kernel, chunk)
+            variance[v0:v1] = np.asarray(G_chunk.multiply(cov_G).sum(axis=0)).ravel()
+
+        if brain_only:
+            variance = variance[self._G_vertex_is_brain]
+
+        return variance
+
+
     def to_file(self, fname : Path | str):
         """Serialize prepared Gaussian spatial basis functions to HDF5 file.
 
@@ -1656,13 +1717,17 @@ class ImageRecon:
 
         c_meas = self._align_to_flat_channel(c_meas, W)
 
-        # noise variance: diag(W @ C_meas @ W.T)
-        noise_var = self._propagate_variance(W, c_meas, "flat_channel")
-
-        # Apply spatial basis transformation if needed
         if self.sbf is not None:
-            noise_var = self.sbf.kernel_to_image_space_conc(noise_var)
+            # The pseudo-inverse in image space is G.T @ W. Propagating the
+            # measurement variances through it yields the image variances
+            # diag(G.T W C W.T G). (Applying G to kernel-space variances would
+            # ignore the covariance between overlapping kernels and have the
+            # wrong scale.)
+            W = self.sbf.kernel_to_image_space_conc(W)  # (chromo, vertex, flat_ch.)
+            noise_var = self._propagate_variance(W, c_meas, "flat_channel")
         else:
+            # noise variance: diag(W @ C_meas @ W.T)
+            noise_var = self._propagate_variance(W, c_meas, "flat_channel")
             noise_var = fwm.unstack_flat_vertex(noise_var)
 
         return noise_var
@@ -1687,12 +1752,12 @@ class ImageRecon:
             c_wl = c_meas.sel(wavelength=wavelength)
             c_wl = c_wl.sel(channel=W_wl.channel.values)
 
+            if self.sbf is not None:
+                # pseudo-inverse in image space: G.T @ W, see _get_image_noise_conc
+                W_wl = self.sbf.kernel_to_image_space_mua(W_wl)  # (vertex, channel)
+
             # noise variance: diag(W @ C_meas @ W.T)
             noise_wl = self._propagate_variance(W_wl, c_wl, "channel")
-
-            # Apply spatial basis transformation if needed
-            if self.sbf is not None:
-                noise_wl = self.sbf.kernel_to_image_space_mua(noise_wl)
 
             noise_var_list.append(noise_wl)
 
@@ -1711,7 +1776,8 @@ class ImageRecon:
         Calculates the diagonal of the posterior covariance matrix:
         Cov(X|y) = R - R * A^T @ (F + λ*C)^(-1) @ A * R
         where R is the spatial prior. Returns only the diagonal (variance at each
-        vertex).
+        vertex). With spatial basis functions the posterior covariance of the
+        kernel weights is transformed to image space: diag(G^T Cov(X|y) G).
 
         Parameters:
             c_meas : Measurement covariance matrix.
@@ -1741,26 +1807,91 @@ class ImageRecon:
         else:
             raise ValueError()  # unreachable
 
+
+    def _posterior_prior_R(self, A: xr.DataArray, lambda_R: float) -> xr.DataArray:
+        """The prior variance of the image/kernel weights used by the pseudo-inverse.
+
+        Without spatial regularization the pseudo-inverse corresponds to an
+        identity prior.
+        """
+        R = self._calculate_prior_R(A)
+        if self.alpha_spatial is None:
+            R = xr.ones_like(R)
+        return lambda_R * R
+
+
+    def _posterior_variance(
+        self, W: xr.DataArray, A: xr.DataArray, R: xr.DataArray, brain_only: bool
+    ) -> xr.DataArray:
+        """Diagonal of the posterior covariance diag(R) - W @ A @ diag(R).
+
+        Args:
+            W: pseudo-inverse with dims (vertex|kernel, channel)
+            A: sensitivity with dims (channel, vertex|kernel)
+            R: prior variances with dim (vertex|kernel)
+            brain_only: whether vertices/kernels are restricted to the brain
+
+        Returns:
+            Posterior variances. In kernel space (spatial basis functions) the full
+            posterior covariance is transformed to image space.
+        """
+        spatial_dim = W.dims[0]
+        W = W.transpose(spatial_dim, ...)
+        A = A.transpose(..., spatial_dim)
+
+        if self.sbf is None:
+            # mse_post(j) = R_j * (1 - (W A)_{jj})
+            s = np.einsum("ji,ij->j", W.values, A.values)
+            mse_post = R * (1.0 - s)
+            return mse_post
+
+        # full posterior covariance of the kernel weights
+        cov = np.diag(R.values) - (W.values @ A.values) * R.values[None, :]
+
+        variance = self.sbf.kernel_covariance_to_image_variance(cov, brain_only)
+
+        is_brain = np.ones(len(variance), dtype=bool)
+        if not brain_only:
+            is_brain[self.sbf.nvertices_brain :] = False
+
+        return xr.DataArray(
+            variance,
+            dims=["vertex"],
+            coords={
+                "vertex": np.arange(len(variance)),
+                "is_brain": ("vertex", is_brain),
+            },
+        )
+
+
     def _get_posterior_cov_conc(self):
         A = self._get_sensitivity(self._W_channels)
         Adot_stacked = fwm.ForwardModel.compute_stacked_sensitivity(A)
 
         W = self._W
-        R = self._calculate_prior_R(Adot_stacked)
         lambda_R = 1.0 if self.lambda_R_conc is None else self.lambda_R_conc
-        R = lambda_R * R
+        R = self._posterior_prior_R(Adot_stacked, lambda_R)
 
-        # ---------------------------------------------------------
-        # Posterior variance (diagonal only)
-        # mse_post(j) = R_j * (1 - (W A^T)_{jj})
-        # ---------------------------------------------------------
-        s = np.sum(W * Adot_stacked.T, axis=1)  # elementwise multiply row i with col. i
-        mse_post = R * (1.0 - s)
-
-        if self.sbf is not None:
-            mse_post = self.sbf.kernel_to_image_space_conc(mse_post).T
-        else:
+        if self.sbf is None:
+            mse_post = self._posterior_variance(W, Adot_stacked, R, self.brain_only)
             mse_post = fwm.unstack_flat_vertex(mse_post)
+        else:
+            # transform the posterior covariance of each chromophore's kernel
+            # weights separately to image space
+            chromos = np.unique(W.chromo.values)
+            mse_lst = []
+            for chromo in chromos:
+                mask = W.chromo.values == chromo
+                mse_lst.append(
+                    self._posterior_variance(
+                        W.isel(flat_kernel=mask),
+                        Adot_stacked.isel(flat_kernel=mask),
+                        R.isel(flat_kernel=mask),
+                        self.brain_only,
+                    )
+                )
+            mse_post = xr.concat(mse_lst, dim="chromo")
+            mse_post = mse_post.assign_coords({"chromo": chromos})
 
         # FIXME should probably not assume units here
         mse_post = mse_post.pint.quantify("molar**2")
@@ -1781,26 +1912,18 @@ class ImageRecon:
 
         for wl in A.wavelength:
 
-            lambda_R_wl = lambda_R_indirect.sel(wavelength=wl).values
+            lambda_R_wl = float(lambda_R_indirect.sel(wavelength=wl).values)
 
             A_wl = A.sel(wavelength=wl)
             W_wl = W.sel(wavelength=wl)
 
-            R = self._calculate_prior_R(A_wl)
-            R = lambda_R_wl * R
+            R = self._posterior_prior_R(A_wl, lambda_R_wl)
 
-            # ---------------------------------------------------------
-            # Posterior variance (diagonal only)
-            # mse_post(j) = R_j * (1 - (W A^T)_{jj})
-            # ---------------------------------------------------------
-            s = np.sum(W_wl * A_wl.T, axis=1)  # elementwise multiply row i with col. i
-            mse_post = R * (1.0 - s)
+            mse_post = self._posterior_variance(W_wl, A_wl, R, self.brain_only)
             mse_lst.append(mse_post)
 
         mse_post_xr = xr.concat(mse_lst, dim='wavelength')
-
-        if self.sbf is not None:
-            mse_post_xr = self.sbf.kernel_to_image_space_mua(mse_post_xr)
+        mse_post_xr = mse_post_xr.assign_coords({"wavelength": A.wavelength.values})
 
         return mse_post_xr
 
