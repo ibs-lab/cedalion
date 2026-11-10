@@ -42,7 +42,7 @@ class GaussianKernelsWithTails(TemporalBasisFunction):
     The basis functions have the form:
 
     .. math::
-        f(t) = \exp( -(t-\mu)^2/t_{std}^2)
+        f(t) = \exp( -(t-\mu)^2 / (2 t_{std}^2))
 
     The user specifies a time interval around the stimuls onset via the parameters
     t_pre and t_post. Over this time interval a series of gaussian basis functions is
@@ -98,7 +98,7 @@ class GaussianKernelsWithTails(TemporalBasisFunction):
 
         # build regressors. shape: (n_times, n_regressors)
         regressors = np.exp(
-            -((t_hrf[:, None] - mu[None, :]) ** 2) / (2 * self.t_std) ** 2
+            -((t_hrf[:, None] - mu[None, :]) ** 2) / (2 * self.t_std**2)
         )
         regressors /= regressors.max(axis=0)  # normalize gaussian peaks to 1
         regressors = regressors.to_base_units().magnitude
@@ -121,7 +121,7 @@ class GaussianKernels(TemporalBasisFunction):
     The basis functions have the form:
 
     .. math::
-        f(t) = \exp( -(t-\mu)^2/t_{std}^2)
+        f(t) = \exp( -(t-\mu)^2 / (2 t_{std}^2))
 
     The user specifies a time interval around the stimuls onset via the parameters
     t_pre and t_post. Over this time interval a series of gaussian basis functions is
@@ -176,7 +176,7 @@ class GaussianKernels(TemporalBasisFunction):
 
         # build regressors. shape: (n_times, n_regressors)
         regressors = np.exp(
-            -((t_hrf[:, None] - mu[None, :]) ** 2) / (2 * self.t_std) ** 2
+            -((t_hrf[:, None] - mu[None, :]) ** 2) / (2 * self.t_std**2)
         )
         regressors /= regressors.max(axis=0)  # normalize gaussian peaks to 1
         regressors = regressors.to_base_units().magnitude
