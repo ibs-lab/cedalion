@@ -10,7 +10,7 @@ from scipy.interpolate import interp1d
 
 import cedalion.typing as cdt
 import cedalion.xrutils as xrutils
-from cedalion import Quantity
+from cedalion import Quantity, units
 
 from .frequency import sampling_rate
 
@@ -51,9 +51,11 @@ def to_epochs(
     # reduce df_stim to only the selected trial types
     df_stim = df_stim[df_stim.trial_type.isin(trial_types)]
 
-    # get time axis in seconds
-    if ts.time.pint.units is not None:
-        time = ts.time.to("s").pint.dequantify().values
+    # get time axis in seconds. cedalion stores the units of the time coordinate
+    # in its attrs.
+    if "units" in ts.time.attrs:
+        time_units = units.Unit(ts.time.attrs["units"])
+        time = (ts.time.values * time_units).to("s").magnitude
     else:
         # assume time coords are already in seconds
         time = ts.time.values
@@ -87,7 +89,7 @@ def to_epochs(
     dT = np.round(1 / fs, 3)  # millisecond precision
     reltime = np.arange(-before_samples, after_samples + 1) * dT
 
-    units = ts.pint.units
+    value_units = ts.pint.units
     ts = ts.pint.dequantify()
 
     interpolator = interp1d(
@@ -149,6 +151,6 @@ def to_epochs(
         )
 
     # add units back
-    epochs = epochs.pint.quantify(units)
+    epochs = epochs.pint.quantify(value_units)
 
     return epochs
