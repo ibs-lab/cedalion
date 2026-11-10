@@ -364,16 +364,29 @@ class TrimeshSurface(Surface):
         return normals
 
     def fix_vertex_normals(self):
-        """Flip any vertex normals that point inward (towards the mesh centroid).
+        """Orient the mesh so that its normals point outward (away from the centroid).
+
+        If the majority of the vertex normals point inward, the face winding of the
+        mesh is inverted. This orientation is a property of the faces and survives
+        :meth:`copy` and :meth:`apply_transform`, which recompute the normals from
+        the faces. Remaining inward-pointing vertex normals (of inconsistently wound
+        meshes) are flipped in the cached vertex normals as before.
 
         Returns:
             A new :class:`TrimeshSurface` with consistently outward-pointing
             vertex normals.
         """
-        mesh = self.mesh
-        # again make sure, that normals face outside
+        mesh = self.mesh.copy()
+
         cog2vert = mesh.vertices - np.mean(mesh.vertices, axis=0)
         projected_normals = (cog2vert * mesh.vertex_normals).sum(axis=1)
+
+        if (projected_normals < 0).mean() > 0.5:
+            # invert the winding; normals are recomputed from the new faces
+            mesh = trimesh.Trimesh(mesh.vertices, mesh.faces[:, ::-1])
+            projected_normals = (cog2vert * mesh.vertex_normals).sum(axis=1)
+
+        # again make sure, that normals face outside
         flip = np.where(projected_normals < 0, -1.0, 1.0)[:, None]
         flipped_normals = mesh.vertex_normals * flip
 
