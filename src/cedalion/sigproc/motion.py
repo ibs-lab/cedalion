@@ -3,7 +3,7 @@
 from __future__ import annotations
 import numpy as np
 import xarray as xr
-from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import make_smoothing_spline
 from scipy.linalg import svd
 from scipy.signal import savgol_filter
 import pywt
@@ -46,11 +46,18 @@ def spline(
     Args:
         ts: The time series to be motion corrected.
         t_inc_ch: The time series indicating the presence of motion artifacts.
-        p: smoothing factor
+        p: smoothing parameter of the cubic smoothing spline in (0, 1], as in
+            MATLAB's ``csaps``: the spline minimizes
+            ``p * sum((y - f)**2) + (1 - p) * integral(f''**2)``. p=1 yields the
+            interpolating spline, smaller values smoother fits. Homer3 recommends
+            p=0.99.
 
     Returns:
         dodSpline (cdt.NDTimeSeries): The motion-corrected fNIRS data.
     """
+    if not (0 < p <= 1):
+        raise ValueError(f"the smoothing parameter p must be in (0, 1], got {p}.")
+
     dtShort = 0.3
     dtLong = 3
 
@@ -93,11 +100,14 @@ def spline(
                 for ii in range(nbMA):
                     idx = np.arange(lstMs[ii], lstMf[ii])
 
-                    if len(idx) > 3:
-                        splInterp_obj = UnivariateSpline(
-                            t[idx], channel[idx], s=p * len(t[idx])
-                        )
-                        splInterp = splInterp_obj(t[idx])
+                    # make_smoothing_spline minimizes
+                    #   sum((y - f)**2) + lam * integral(f''**2),
+                    # which equals the csaps objective with lam = (1 - p) / p.
+                    # It requires at least 5 samples.
+                    if len(idx) >= 5:
+                        splInterp = make_smoothing_spline(
+                            t[idx], channel[idx], lam=(1 - p) / p
+                        )(t[idx])
 
                         dodSpline_chan[idx] = channel[idx] - splInterp
 
