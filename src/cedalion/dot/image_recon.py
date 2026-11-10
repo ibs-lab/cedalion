@@ -1031,23 +1031,23 @@ class ImageRecon:
 
         # cache intermediate matrices to avoid recomputations
 
-        # These would invalidate when Adot or reg./sbf. params. change. Changing
-        # these requires a new instance of ImageRecon, so they are considered constants
-        # here. Depending on recon_mode they have different shapes.
-        self._D: xr.DataArray = None  # R * A.T
-        self._F: xr.DataArray = None  # A @ R @ A.T
+        # D = R @ A.T and F = A @ R @ A.T depend on Adot, the regularization
+        # parameters and the sbf (all constants for an instance) and on the subset
+        # of channels for which the pseudo-inverse is computed. They are cached per
+        # channel subset. Depending on recon_mode they have different shapes.
+        self._DF_cache: dict = {}
+        self._D: xr.DataArray = None  # R @ A.T for all channels
+        self._F: xr.DataArray = None  # A @ R @ A.T for all channels
 
         # The matrix to transform from absorption changes to concentrations
         self._mua2conc : xr.DataArray = None
 
-        # W invalidates when C_meas changes
+        # W invalidates when C_meas or the channel subset changes
         self._W: xr.DataArray = None  # the pseudo_inverse (W=D@inv(F + lambda_meas C))
-        self._W_input_hash: str = None  # a hash of C_meas. recompute W on C_meas change
+        self._W_channels: tuple | None = None  # channel subset for which W was computed
+        self._W_input_hash: tuple | None = None  # (hash of C_meas, channel subset)
 
-        if self.sbf is not None:
-            self._prepare(self.sbf.H)
-        else:
-            self._prepare(self.Adot)
+        self._prepare()
 
 
     def reconstruct(
@@ -1057,10 +1057,18 @@ class ImageRecon:
     ) -> cdt.NDTimeSeries:
         """Reconstruct images from measurement data.
 
+        Channels and wavelengths of ``y`` are matched to the sensitivity matrix by
+        their coordinate labels, so ``y`` may list them in any order. ``y`` may also
+        contain only a subset of the sensitivity matrix's channels (e.g. after
+        pruning). In this case the pseudo-inverse is computed from the sensitivity
+        matrix restricted to these channels, i.e. pruned channels do not contribute
+        to the reconstruction.
+
         Args:
-            y: optical density time series or time point data.
+            y: optical density time series or time point data with dimensions
+                ``channel`` and ``wavelength``.
             c_meas: Diagonal elements of the measurement covariance matrix (optional).
-                dims: wavelength x channel.
+                dims: channel x wavelength. Must contain the channels of ``y``.
 
         Returns:
             Reconstructed images.
@@ -1069,14 +1077,11 @@ class ImageRecon:
         # y is optical density and dimensionless. Dequantify.
         y = y.pint.dequantify()
 
-        # check if c_meas changed
-        c_meas, new_W_input_hash = self._update_and_hash_cmeas(c_meas)
+        channels = self._channel_subset(y)
+        c_meas = self._prepare_cmeas(c_meas)
 
-        # (re-)calculate W when C_meas is new
-        if (self._W_input_hash is None) or (new_W_input_hash != self._W_input_hash):
-            self._W_input_hash = new_W_input_hash
-            self._W = self._get_W(c_meas)
-
+        # (re-)calculate W when c_meas or the channel subset is new
+        self._ensure_W(c_meas, channels)
 
         if self.recon_mode == "conc":
             conc_img = self._get_image_conc(y)
@@ -1098,22 +1103,30 @@ class ImageRecon:
     def get_image_noise(self, c_meas: xr.DataArray):
         """Compute image noise/variance estimates.
 
+        Propagates the measurement variances ``c_meas`` through the pseudo-inverse:
+        ``diag(W @ diag(c_meas) @ W.T)``. If ``apply_c_meas`` is set, the (time
+        averaged) ``c_meas`` is also used for the measurement regularization of W.
+
         Args:
-            c_meas: Measurement covariance matrix.
+            c_meas: Diagonal elements of the measurement covariance matrix with
+                dimensions ``channel`` and ``wavelength`` and optionally a time
+                dimension. Channels may be a subset of the sensitivity matrix's
+                channels and may be in any order.
 
         Returns:
             xr.DataArray: Image noise estimates.
         """
 
-        c_meas, new_W_input_hash = self._update_and_hash_cmeas(c_meas)
+        if c_meas is None:
+            raise ValueError("c_meas cannot be None for noise computation")
 
-        # (re-)calculate W when C_meas is new
-        if (self._W_input_hash is None) or (new_W_input_hash != self._W_input_hash):
-            self._W_input_hash = new_W_input_hash
-            self._W = self._get_W(c_meas)
+        c_meas = self._prepare_cmeas(c_meas)
+        channels = self._channel_subset(c_meas)
+
+        # (re-)calculate W when c_meas or the channel subset is new
+        self._ensure_W(c_meas, channels)
 
         if self.recon_mode == "conc":
-            c_meas = fwm.stack_flat_channel(c_meas)
             conc_img = self._get_image_noise_conc(c_meas)
             return conc_img
 
@@ -1132,117 +1145,230 @@ class ImageRecon:
 
     # --- PREPARATION METHODS ---
 
-    def _update_and_hash_cmeas(self, c_meas):
+    def _prepare(self):
+        """Precompute everything that depends only on inputs in the constructor."""
+
+        # D and F for the full set of channels
+        self._D, self._F = self._get_DF(None)
+
+        if self.recon_mode == "mua2conc":
+            # calculate _mua2conc, which transforms absorption to concentration
+            # changes
+            E = nirs.get_extinction_coefficients("prahl", self.Adot.wavelength)
+            self._mua2conc = xrutils.pinv(E)
+
+
+    def _channel_subset(self, array: xr.DataArray) -> tuple | None:
+        """Determine the subset of sensitivity channels present in ``array``.
+
+        Args:
+            array: DataArray with a ``channel`` dimension and optionally a
+                ``wavelength`` dimension.
+
+        Returns:
+            None if array contains all channels of the sensitivity matrix. Otherwise
+            a tuple of the channel labels in array, in the order of the sensitivity
+            matrix.
+
+        Raises:
+            ValueError: if array contains channels or wavelengths that are not in
+                the sensitivity matrix.
+        """
+
+        A_channels = list(self.Adot.channel.values)
+        channels = set(array.channel.values)
+
+        unknown = sorted(channels - set(A_channels))
+        if unknown:
+            raise ValueError(
+                "This data contains channel(s) which is/are not in the "
+                f"sensitivity matrix: {unknown}"
+            )
+
+        if "wavelength" in array.dims:
+            A_wavelengths = set(self.Adot.wavelength.values)
+            if set(array.wavelength.values) != A_wavelengths:
+                raise ValueError(
+                    "The wavelengths of this data do not match the wavelengths of "
+                    "the sensitivity matrix!"
+                )
+
+        if channels == set(A_channels):
+            return None
+
+        return tuple(c for c in A_channels if c in channels)
+
+
+    def _prepare_cmeas(self, c_meas: xr.DataArray | None) -> xr.DataArray | None:
+        """Dequantify c_meas and check its dimensions."""
+
+        if c_meas is None:
+            return None
+
+        c_meas = c_meas.pint.dequantify()
+
+        for dim in ["channel", "wavelength"]:
+            if dim not in c_meas.dims:
+                raise ValueError(f"c_meas must have a '{dim}' dimension.")
+
+        return c_meas
+
+
+    def _ensure_W(self, c_meas: xr.DataArray | None, channels: tuple | None):
+        """(Re-)calculate the pseudo-inverse W if c_meas or the channel subset changed.
+
+        Args:
+            c_meas: prepared measurement variances or None.
+            channels: channel subset as returned by :meth:`_channel_subset`.
+        """
+
         if self.apply_c_meas:
             if c_meas is None:
-                raise NotImplementedError(
-                    "c_meas must be provided when apply_c_meas is set."
-                )
-            else:
-                c_meas = c_meas.pint.dequantify()
-        else:
-            # override any provided c_meas if apply_c_meas == False
-            c_meas = None
+                raise ValueError("c_meas must be provided when apply_c_meas is set.")
 
-        if c_meas is not None:
             # average over time if c_meas should still have a time dimension
             time_dim = self._get_time_dimension(c_meas)
             if time_dim is not None:
                 c_meas = c_meas.mean(time_dim)
 
+            # bring c_meas into a canonical order before hashing
+            if channels is None:
+                sel_channels = list(self.Adot.channel.values)
+            else:
+                sel_channels = list(channels)
+
+            try:
+                c_meas = c_meas.sel(
+                    channel=sel_channels, wavelength=self.Adot.wavelength.values
+                )
+            except KeyError as e:
+                raise ValueError(
+                    "c_meas must contain all channels and wavelengths of the data."
+                ) from e
+
+            c_meas = c_meas.transpose("channel", "wavelength")
+
             # calculate a hash value for c_meas
-            new_W_input_hash = hashlib.blake2b(
-                c_meas.pint.dequantify().values.tobytes()
+            c_hash = hashlib.blake2b(
+                np.ascontiguousarray(c_meas.values).tobytes()
             ).hexdigest()
         else:
-            new_W_input_hash = "no_c_meas"
+            # ignore any provided c_meas if apply_c_meas == False
+            c_meas = None
+            c_hash = "no_c_meas"
 
-        return c_meas, new_W_input_hash
+        key = (c_hash, channels)
 
+        if self._W_input_hash != key:
+            D, F = self._get_DF(channels)
 
+            if self.recon_mode == "conc":
+                self._W = self._calculate_W_conc(D, F, c_meas)
+            elif self.recon_mode in ["mua", "mua2conc"]:
+                self._W = self._calculate_W_mua(D, F, c_meas)
+            else:
+                raise ValueError()  # unreachable
 
-    def _prepare(self, Adot):
-        """Precompute everything that depends only on inputs in the constructor."""
-
-        if self.brain_only:
-            Adot = self.Adot.sel(vertex=self.Adot.is_brain.values)
-
-        # calculate D and F for the selected choice of recon_mode and sbf.
-        if self.recon_mode == "conc":
-            #Adot_stacked = get_stacked_sensitivity(Adot)
-            Adot_stacked = fwm.ForwardModel.compute_stacked_sensitivity(Adot)
-            self._D, self._F = self._calculate_DF_conc(Adot_stacked)
-
-        elif self.recon_mode in ["mua", "mua2conc"]:
-            self._D, self._F = self._calculate_DF_mua(Adot)
-
-        else:
-            raise ValueError()  # unreachable
-
-        if self.recon_mode == "mua2conc":
-            # calculate _mua2conc, which transforms absorption to concentration
-            # changes
-            E = nirs.get_extinction_coefficients("prahl", Adot.wavelength)
-            self._mua2conc = xrutils.pinv(E)
+            self._W_channels = channels
+            self._W_input_hash = key
 
 
-    def _get_W(self, C_meas=None):
-        """Get the pseudoinverse matrix W for reconstruction.
+    def _get_sensitivity(self, channels: tuple | None = None) -> xr.DataArray:
+        """The sensitivity matrix for the selected vertices/kernels and channels.
 
         Args:
-            C_meas: Measurement covariance matrix (optional).
+            channels: subset of channels (tuple) or None for all channels.
 
         Returns:
-            xr.DataArray: pseudoinverse matrix W.
+            Adot with dims (channel, vertex, wavelength) or - if spatial basis
+            functions are used - H with dims (channel, kernel, wavelength).
+            If brain_only is set, scalp vertices/kernels are removed.
         """
 
-        D = None
-
-        # without spatial regularization:
-        if self.alpha_spatial is None:
-            # with spatial basis functions:
-            if self.sbf is not None:
-                if self.recon_mode == "conc":
-                    if self.brain_only:
-                        D = fwm.ForwardModel.compute_stacked_sensitivity(
-                            self.sbf.H.sel(kernel=self.sbf.H.is_brain.values)
-                        ).T
-                    else:
-                        D = fwm.ForwardModel.compute_stacked_sensitivity(
-                            self.sbf.H
-                        ).T
-                else:
-                    if self.brain_only:
-                        D = self.sbf.H.sel(kernel=self.sbf.H.is_brain.values)
-                    else:
-                        D = self.sbf.H
-                    D = D.transpose('kernel', 'channel', 'wavelength')
-            # without spatial basis functions:
-            else:
-                if self.recon_mode == "conc":
-                    if self.brain_only:
-                        D = fwm.ForwardModel.compute_stacked_sensitivity(
-                            self.Adot.sel(vertex=self.Adot.is_brain.values)
-                        ).T
-                    else:
-                        D = fwm.ForwardModel.compute_stacked_sensitivity(
-                            self.Adot
-                        ).T
-                else:
-                    if self.brain_only:
-                        D = self.Adot.sel(vertex=self.Adot.is_brain.values)
-                    else:
-                        D = self.Adot
-
-                    D = D.transpose('vertex', 'channel', 'wavelength')
-        # with spatial regularization:
+        if self.sbf is not None:
+            A = self.sbf.H
+            spatial_dim = "kernel"
         else:
-            D = self._D
+            A = self.Adot
+            spatial_dim = "vertex"
 
-        if self.recon_mode == "conc":
-            return self._calculate_W_conc(D, C_meas)
-        if self.recon_mode in ["mua", "mua2conc"]:
-            return self._calculate_W_mua(D, C_meas)
+        A = A.transpose("channel", spatial_dim, "wavelength")
+
+        if self.brain_only:
+            A = A.sel({spatial_dim: A.is_brain.values})
+
+        if channels is not None:
+            A = A.sel(channel=list(channels))
+
+        return A
+
+
+    def _get_DF(self, channels: tuple | None = None):
+        """Get D = R @ A.T and F = A @ R @ A.T for a subset of channels.
+
+        Results are cached per channel subset.
+
+        Args:
+            channels: subset of channels (tuple) or None for all channels.
+
+        Returns:
+            D with dims (vertex|kernel|flat_vertex|flat_kernel, channel|flat_channel
+            [, wavelength]) and F.
+        """
+
+        if channels not in self._DF_cache:
+            A = self._get_sensitivity(channels)
+
+            if self.recon_mode == "conc":
+                A_stacked = fwm.ForwardModel.compute_stacked_sensitivity(A)
+                D, F = self._calculate_DF_conc(A_stacked)
+                if D is None:
+                    # without spatial regularization D = A.T
+                    D = A_stacked.transpose(A_stacked.dims[1], A_stacked.dims[0])
+
+            elif self.recon_mode in ["mua", "mua2conc"]:
+                D, F = self._calculate_DF_mua(A)
+                if D is None:
+                    # without spatial regularization D = A.T
+                    D = A.transpose(A.dims[1], "channel", "wavelength")
+            else:
+                raise ValueError()  # unreachable
+
+            self._DF_cache[channels] = (D, F)
+
+        return self._DF_cache[channels]
+
+
+    @staticmethod
+    def _align_to_flat_channel(array: xr.DataArray, W: xr.DataArray) -> xr.DataArray:
+        """Select (wavelength, channel) pairs of array in the order of W's flat_channel.
+
+        Args:
+            array: DataArray with dimensions ``channel`` and ``wavelength`` and
+                optionally others.
+            W: DataArray with a ``flat_channel`` dimension that carries ``wavelength``
+                and ``channel`` coordinates.
+
+        Returns:
+            array with the dimensions ``channel`` and ``wavelength`` replaced by a
+            ``flat_channel`` dimension (without index) ordered like W.
+
+        Raises:
+            ValueError: if array misses a (wavelength, channel) pair of W.
+        """
+
+        wavelength = xr.DataArray(W.wavelength.values, dims="flat_channel")
+        channel = xr.DataArray(W.channel.values, dims="flat_channel")
+
+        try:
+            result = array.sel(wavelength=wavelength, channel=channel)
+        except KeyError as e:
+            raise ValueError(
+                "This data does not contain all (wavelength, channel) pairs of the "
+                "pseudo-inverse."
+            ) from e
+
+        return result.drop_vars(["wavelength", "channel"], errors="ignore")
 
 
     # --- MATRIX COMPUTATION METHODS ---
@@ -1411,29 +1537,31 @@ class ImageRecon:
         return W_xr
 
 
-    def _calculate_W_conc(self, A, c_meas=None):
+    def _calculate_W_conc(self, D, F, c_meas=None):
         """Calculate pseudoinverse W for concentration reconstruction.
 
         Args:
-            A: Stacked sensitivity matrix.
-            c_meas: Measurement covariance matrix (optional).
+            D: R @ A.T with dims (flat_vertex|flat_kernel, flat_channel)
+            F: A @ R @ A.T
+            c_meas: Measurement variances with dims (channel, wavelength) (optional).
 
         Returns:
             xr.DataArray: Pseudoinverse matrix for concentration reconstruction.
         """
         if c_meas is not None:
-            c_meas = fwm.stack_flat_channel(c_meas)
-            c_meas = np.diag(c_meas)
+            c_meas = self._align_to_flat_channel(c_meas, D)
+            c_meas = np.diag(c_meas.values)
 
-        return self._calculate_W(A, self._F, self.lambda_R_conc, c_meas)
+        return self._calculate_W(D, F, self.lambda_R_conc, c_meas)
 
 
-    def _calculate_W_mua(self, A, c_meas=None):
+    def _calculate_W_mua(self, D, F, c_meas=None):
         """Calculate pseudoinverse W for mua reconstruction.
 
         Args:
-            A: Sensitivity matrix with wavelength dimension.
-            c_meas: Measurement covariance matrix (optional).
+            D: R @ A.T with dims (vertex|kernel, channel, wavelength)
+            F: A @ R @ A.T with a wavelength dimension
+            c_meas: Measurement variances with dims (channel, wavelength) (optional).
 
         Returns:
             xr.DataArray: Pseudoinverse matrix for mua reconstruction with wavelength
@@ -1441,44 +1569,44 @@ class ImageRecon:
         """
         W = []
         lambda_R_indirect = self.compute_lambda_R_indirect()
-        for wavelength in A.wavelength:
+        for wavelength in D.wavelength:
+            D_w = D.sel(wavelength=wavelength)
             if c_meas is not None:
+                # order channels of c_meas like D
                 c_meas_w = c_meas.sel(wavelength=wavelength)
-                c_meas_w = np.diag(c_meas_w)
+                c_meas_w = c_meas_w.sel(channel=D_w.channel.values)
+                c_meas_w = np.diag(c_meas_w.values)
             else:
                 c_meas_w = None
 
             W_xr = self._calculate_W(
-                A.sel(wavelength=wavelength),
-                self._F.sel(wavelength=wavelength),
+                D_w,
+                F.sel(wavelength=wavelength),
                 lambda_R_indirect.sel(wavelength=wavelength).values,
                 c_meas_w,
             )
             W.append(W_xr)
 
         W_xr = xr.concat(W, dim="wavelength")
-        W_xr = W_xr.assign_coords({"wavelength": A.wavelength})
+        W_xr = W_xr.assign_coords({"wavelength": D.wavelength})
 
         return W_xr
 
     # --- IMAGE RECONSTRUCTION METHODS ---
     def _get_image_conc(self, y: cdt.NDTimeSeries) -> cdt.NDTimeSeries:
-        y = fwm.stack_flat_channel(y)
-        y = y.reset_index("flat_channel")
+        """Compute concentration image from measurements.
 
-        # make sure that ordering of channels is consistent
-        # y may contain less channels then W due to pruning
-        try:
-            sel_channels = [
-                i for i in self._W.flat_channel.values if i in y.flat_channel.values
-            ]
-            y = y.sel(flat_channel = sel_channels)
-            W = self._W.sel(flat_channel = sel_channels)
-        except KeyError:
-            raise ValueError(
-                "This time series contains channel(s) which is/are not in the "
-                "sensitivity matrix!"
-            )
+        Args:
+            y: Optical density data with channel and wavelength dimensions. Channels
+                and wavelengths are matched to W by their labels.
+
+        Returns:
+            xr.DataArray: Concentration image.
+        """
+        W = self._W  # dims (flat_vertex|flat_kernel, flat_channel)
+
+        # order the (wavelength, channel) pairs of y like W's flat_channel dimension
+        y = self._align_to_flat_channel(y, W)
 
         conc_img = xrutils.contract(W, y, "flat_channel")
 
@@ -1495,23 +1623,16 @@ class ImageRecon:
         """Compute absorption coefficient image from measurements.
 
         Args:
-            y: Optical density measurement data with wavelength dimension.
+            y: Optical density measurement data with channel and wavelength
+                dimensions. Channels and wavelengths are matched to W by their labels.
 
         Returns:
             xr.DataArray: Absorption coefficient image.
         """
+        W = self._W  # dims (wavelength, vertex|kernel, channel)
 
-        # make sure that ordering of channels is consistent y may contain less channels
-        # then W due to pruning.
-        try:
-            sel_channels = [i for i in self._W.channel.values if i in y.channel.values]
-            y = y.sel(channel=sel_channels)
-            W = self._W.sel(channel=sel_channels)
-        except KeyError:
-            raise ValueError(
-                "This time series contains channel(s) which is/are not in the "
-                "sensitivity matrix!"
-            )
+        # order channels and wavelengths of y like W
+        y = y.sel(channel=W.channel.values, wavelength=W.wavelength.values)
 
         mua_img = xrutils.contract(W, y, dim="channel")
 
@@ -1521,74 +1642,53 @@ class ImageRecon:
         return mua_img
 
 
-    def _get_image_noise_conc(self, c_meas: xr.DataArray | None = None):
+    def _get_image_noise_conc(self, c_meas: xr.DataArray):
         """Compute concentration image noise/variance.
 
         Args:
-            c_meas: Measurement covariance matrix
+            c_meas: Measurement variances with channel and wavelength dimensions
+                and optionally a time dimension.
 
         Returns:
-            xr.DataArray: Image noise with proper dimensions and coordinates
+            xr.DataArray: Image noise with dimensions (chromo, vertex[, time])
         """
-        if c_meas is None:
-            raise ValueError("c_meas cannot be None for noise computation")
+        W = self._W  # dims (flat_vertex|flat_kernel, flat_channel)
 
-        # Detect time dimension
-        time_dim = self._get_time_dimension(c_meas)
-        has_time = time_dim is not None
+        c_meas = self._align_to_flat_channel(c_meas, W)
 
-        # Compute noise variance: diag(W @ C_meas @ W.T)
-        if has_time:
-            # Vectorized computation over time
-            c_meas = c_meas.transpose('flat_channel', time_dim)
-            noise_var = self._compute_time_varying_noise(self._W, c_meas)
-        else:
-            # Single timepoint
-            noise_var = self._compute_single_noise(self._W, c_meas)
+        # noise variance: diag(W @ C_meas @ W.T)
+        noise_var = self._propagate_variance(W, c_meas, "flat_channel")
 
         # Apply spatial basis transformation if needed
         if self.sbf is not None:
             noise_var = self.sbf.kernel_to_image_space_conc(noise_var)
-            # if has_time:
-            #     noise_var = noise_var  # Transpose back to (vertex, time)
         else:
-            # Reshape for HbO/HbR concentration
-            # = self._reshape_conc(noise_var, has_time)
             noise_var = fwm.unstack_flat_vertex(noise_var)
 
         return noise_var
-        # Create properly formatted xarray
-        #return self._create_conc_dataarray(noise_var, c_meas, time_dim)
 
 
-    def _get_image_noise_mua(self, c_meas: xr.DataArray | None = None):
+    def _get_image_noise_mua(self, c_meas: xr.DataArray):
         """Compute absorption coefficient image noise/variance.
 
         Args:
-            c_meas: Measurement covariance matrix
+            c_meas: Measurement variances with channel and wavelength dimensions
+                and optionally a time dimension.
 
         Returns:
-            xr.DataArray: Image noise with proper dimensions and coordinates
+            xr.DataArray: Image noise with dimensions (wavelength, vertex[, time])
         """
-        if c_meas is None:
-            raise ValueError("c_meas cannot be None for noise computation")
-
-        # Detect time dimension
-        time_dim = self._get_time_dimension(c_meas)
-        has_time = time_dim is not None
 
         noise_var_list = []
 
         # Process each wavelength separately
         for wavelength in self._W.wavelength:
-            W_wl = self._W.sel(wavelength=wavelength)
+            W_wl = self._W.sel(wavelength=wavelength)  # dims (vertex|kernel, channel)
             c_wl = c_meas.sel(wavelength=wavelength)
+            c_wl = c_wl.sel(channel=W_wl.channel.values)
 
-            # Compute noise for this wavelength
-            if has_time:
-                noise_wl = self._compute_time_varying_noise(W_wl, c_wl)
-            else:
-                noise_wl = self._compute_single_noise(W_wl, c_wl)
+            # noise variance: diag(W @ C_meas @ W.T)
+            noise_wl = self._propagate_variance(W_wl, c_wl, "channel")
 
             # Apply spatial basis transformation if needed
             if self.sbf is not None:
@@ -1597,15 +1697,13 @@ class ImageRecon:
             noise_var_list.append(noise_wl)
 
         # Combine wavelengths
-        #noise_var = np.stack(noise_var_list, axis=0)  # (wavelength, vertex, time)
         noise_var = xr.concat(noise_var_list, dim="wavelength")
         noise_var = noise_var.assign_coords({
             "wavelength" : self._W.wavelength.values
         })
 
         return noise_var
-        # Create properly formatted xarray
-        #return self._create_mua_dataarray(noise_var, c_meas, time_dim)
+
 
     def get_image_noise_posterior(self, c_meas : xr.DataArray | None = None):
         """Compute posterior variance of reconstructed images.
@@ -1622,12 +1720,11 @@ class ImageRecon:
             xr.DataArray: Posterior variance of reconstructed images.
         """
 
-        c_meas, new_W_input_hash = self._update_and_hash_cmeas(c_meas)
+        c_meas = self._prepare_cmeas(c_meas)
+        channels = self._channel_subset(c_meas) if c_meas is not None else None
 
-        # (re-)calculate W when C_meas is new
-        if (self._W_input_hash is None) or (new_W_input_hash != self._W_input_hash):
-            self._W_input_hash = new_W_input_hash
-            self._W = self._get_W(c_meas)
+        # (re-)calculate W when c_meas or the channel subset is new
+        self._ensure_W(c_meas, channels)
 
         if self.recon_mode == "conc":
             conc_img = self._get_posterior_cov_conc()
@@ -1645,16 +1742,13 @@ class ImageRecon:
             raise ValueError()  # unreachable
 
     def _get_posterior_cov_conc(self):
-        if self.sbf is not None:
-            A = self.sbf.H
-            Adot_stacked = fwm.ForwardModel.compute_stacked_sensitivity(A)
-        else:
-            A = self.Adot
-            Adot_stacked = fwm.ForwardModel.compute_stacked_sensitivity(A)
+        A = self._get_sensitivity(self._W_channels)
+        Adot_stacked = fwm.ForwardModel.compute_stacked_sensitivity(A)
 
         W = self._W
         R = self._calculate_prior_R(Adot_stacked)
-        R = self.lambda_R_conc * R
+        lambda_R = 1.0 if self.lambda_R_conc is None else self.lambda_R_conc
+        R = lambda_R * R
 
         # ---------------------------------------------------------
         # Posterior variance (diagonal only)
@@ -1679,10 +1773,7 @@ class ImageRecon:
         It use spatial regularization (via column scaling) and measurement
         regularization in data space.
         """
-        if self.sbf is not None:
-            A = self.sbf.H
-        else:
-            A = self.Adot
+        A = self._get_sensitivity(self._W_channels)
 
         lambda_R_indirect = self.compute_lambda_R_indirect()
         mse_lst = []
@@ -1728,35 +1819,22 @@ class ImageRecon:
                 return dim
         return None
 
-    def _compute_single_noise(
-        self, W: xr.DataArray, c_meas: xr.DataArray
+    @staticmethod
+    def _propagate_variance(
+        W: xr.DataArray, c_meas: xr.DataArray, dim: str
     ) -> xr.DataArray:
-        """Compute noise for single timepoint: diag(W @ C @ W.T)."""
-        return ((W * np.sqrt(c_meas))**2).sum(axis=1)
-
-    def _compute_time_varying_noise(
-        self, W: xr.DataArray, c_meas: xr.DataArray
-    ) -> np.ndarray:
-        """Compute noise for multiple timepoints efficiently.
-
-        This unified method works for both:
-        - Full multi-wavelength case (concentration reconstruction)
-        - Single wavelength case (mua reconstruction)
+        """Propagate measurement variances through W: diag(W @ diag(c_meas) @ W.T).
 
         Args:
-            W: Weight matrix with dims (vertex, flat_channel) or (vertex, channel)
-            c_meas: Covariance with dims (time, flat_channel) or (time, channel)
+            W: pseudo-inverse with dims (vertex|kernel|flat_vertex|flat_kernel, dim)
+            c_meas: measurement variances with dims (dim[, time]). Must be ordered
+                like W along dim.
+            dim: the channel dimension to contract over.
 
         Returns:
-            np.ndarray: Noise variance with dims (vertex, time)
+            xr.DataArray: variances with dims (vertex|..., [time])
         """
-        # Vectorized computation over time
-        c_sqrt = np.sqrt(c_meas.values)  # (time, flat_channel) or (time, channel)
-        W_expanded = W.values[:, :, np.newaxis]  # (vertex, flat_channel/channel, 1)
-
-        # Broadcasting: (vertex, flat_channel/channel, time)
-        weighted = W_expanded * c_sqrt
-        return np.nansum(weighted**2, axis=1)  # (vertex, time)
+        return xrutils.contract(W**2, c_meas, dim)
 
     def compute_lambda_R_indirect(self):
         """Compute wavelength-specific prior scaling parameter for indirect recon.
