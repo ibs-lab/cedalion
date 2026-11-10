@@ -570,3 +570,180 @@ def test_scale_to_landmarks_with_colliding_crs_name():
     assert scaled.t_ijk2ras.shape == (4, 4)
     assert scaled.t_ras2ijk.shape == (4, 4)
     assert len(set(scaled.t_ijk2ras.dims)) == 2  # no duplicate dim names
+
+
+# --- adjoint sensitivity normalization -------------------------------------------
+#
+# For a uniform change of the absorption coefficient the sensitivities of a channel
+# have to sum up to the mean photon pathlength <L> = -d ln(Phi_s(d)) / d mu_a. The
+# finite difference reference is obtained from the same forward solver with a
+# slightly increased absorption.
+
+
+def _slab_head_and_probe(tmp_dir):
+    """A two layer slab (scalp above brain) with a source-detector pair on top."""
+    import nibabel as nib
+    import pandas as pd
+
+    nx, ny, nz = 50, 40, 30
+    scalp = np.zeros((nx, ny, nz), np.uint8)
+    gm = np.zeros((nx, ny, nz), np.uint8)
+    scalp[:, :, 2:7] = 1
+    gm[:, :, 7:] = 1
+    for name, mask in [("scalp", scalp), ("gm", gm)]:
+        nib.save(nib.Nifti1Image(mask, np.eye(4)), os.path.join(tmp_dir, f"{name}.nii"))
+
+    head = fw.TwoSurfaceHeadModel.from_segmentation(
+        tmp_dir,
+        mask_files={"scalp": "scalp.nii", "gm": "gm.nii"},
+        brain_seg_types=["gm"],
+        scalp_seg_types=["scalp"],
+        smoothing=0,
+        brain_face_count=None,
+        scalp_face_count=None,
+    )
+
+    geo3d = cdc.build_labeled_points(
+        np.array([[15.0, 20.0, 2.0], [35.0, 20.0, 2.0]]),
+        labels=["S1", "D1"],
+        types=[cdc.PointType.SOURCE, cdc.PointType.DETECTOR],
+        crs="ijk",
+        units="1",
+    )
+    meas_list = pd.DataFrame(
+        {
+            "source": ["S1"],
+            "detector": ["D1"],
+            "channel": ["S1D1"],
+            "wavelength": [760.0],
+        }
+    )
+    return head, geo3d, meas_list
+
+
+def _mcx_backend():
+    """Return a pmcx-like module that can run on this machine or None."""
+    probe = dict(
+        nphoton=1000,
+        vol=np.ones((10, 10, 10), np.uint8),
+        tstart=0,
+        tend=5e-9,
+        tstep=5e-9,
+        srcpos=[5, 5, 0.5],
+        srcdir=[0, 0, 1],
+        prop=np.array([[0, 0, 1, 1], [0.02, 1.0, 0.01, 1.0]]),
+        issrcfrom0=1,
+        isnormalized=1,
+        outputtype="fluence",
+        issavedet=0,
+        unitinmm=1.0,
+    )
+    for name, cuda in [("pmcx", True), ("pmcxcl", False)]:
+        try:
+            module = __import__(name)
+            module.run(probe)
+            return module, cuda
+        except Exception:
+            continue
+    return None, None
+
+
+def _mcx_mean_pathlength(module, fwm, delta_mua=0.002, nphoton=2e7, seed=4711):
+    """-d ln(Phi_s(d)) / d mu_a by finite differences with correlated sampling.
+
+    With a fixed RNG seed MCX traces identical photon paths for both absorption
+    values (absorption is applied as analytic weighting), so the derivative of the
+    fluence in the detector voxel is almost free of Monte Carlo noise.
+    """
+    src = fwm.optode_pos.values[0] + 0.5
+    det = tuple(fwm.optode_pos.values[1].astype(int))
+    fluences = []
+    for dmua in [0.0, delta_mua]:
+        prop = fwm.tissue_properties[:, :, 0].copy()
+        prop[1:, 0] += dmua
+        cfg = dict(
+            nphoton=nphoton,
+            vol=fwm.volume,
+            tstart=0,
+            tend=5e-9,
+            tstep=5e-9,
+            srcpos=src,
+            srcdir=fwm.optode_dir.values[0],
+            srctype="isotropic",
+            prop=prop,
+            issrcfrom0=1,
+            isnormalized=1,
+            outputtype="fluence",
+            issavedet=0,
+            unitinmm=fwm.unitinmm,
+            seed=seed,
+        )
+        fluences.append(module.run(cfg)["flux"][:, :, :, 0][det])
+    return (np.log(fluences[0]) - np.log(fluences[1])) / delta_mua
+
+
+def test_mcx_sensitivity_sums_to_mean_pathlength():
+    """sum_v Adot[v] must equal the mean photon pathlength of the channel.
+
+    Regression test: with pencil beam sources the sum exceeded the finite difference
+    reference by a geometry dependent factor of about 2.
+    """
+    module, cuda = _mcx_backend()
+    if module is None:
+        pytest.skip("neither pmcx nor pmcxcl can run on this machine")
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        head, geo3d, meas_list = _slab_head_and_probe(tmp_dir)
+        fwm = fw.ForwardModel(head, geo3d, meas_list)
+
+        fluence_fname = os.path.join(tmp_dir, "fluence.h5")
+        sens_fname = os.path.join(tmp_dir, "Adot.nc")
+        fwm.compute_fluence_mcx(fluence_fname, nphoton=2e7, cuda=cuda, seed=1234)
+        fwm.compute_sensitivity(fluence_fname, sens_fname)
+        Adot = cedalion.io.forward_model.load_Adot(sens_fname)
+
+        sum_adot = float(Adot.sel(channel="S1D1", wavelength=760.0).sum())
+        mean_pathlength = _mcx_mean_pathlength(module, fwm)
+
+    # the normalization uses the fluence in a single voxel, which carries Monte
+    # Carlo noise of a few percent at 2e7 photons
+    assert abs(sum_adot / mean_pathlength - 1) < 0.2
+
+
+@skip_if_nirfaster_unavailable
+def test_nirfaster_sensitivity_sums_to_mean_pathlength():
+    """sum_v Adot[v] must equal the mean photon pathlength of the channel.
+
+    Regression test: normalizing with the boundary amplitude instead of the fluence
+    at the (moved) source position doubled the sensitivity.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        head, geo3d, meas_list = _slab_head_and_probe(tmp_dir)
+        fwm = fw.ForwardModel(head, geo3d, meas_list)
+
+        fluence_fname = os.path.join(tmp_dir, "fluence.h5")
+        sens_fname = os.path.join(tmp_dir, "Adot.nc")
+        fwm.compute_fluence_nirfaster(fluence_fname)
+        fwm.compute_sensitivity(fluence_fname, sens_fname)
+        Adot = cedalion.io.forward_model.load_Adot(sens_fname)
+        sum_adot = float(Adot.sel(channel="S1D1", wavelength=760.0).sum())
+
+        # finite difference reference: the fluence at the detector position for a
+        # slightly increased absorption, computed with the same solver
+        with cedalion.io.forward_model.FluenceFile(fluence_fname, "r") as f:
+            phi_s_at_d = float(
+                f.get_fluence_at_optodes().loc["S1", "D1", 760.0].values
+            )
+
+        delta_mua = 0.002
+        fwm.tissue_properties[1:, 0, :] += delta_mua
+        fluence_fname2 = os.path.join(tmp_dir, "fluence2.h5")
+        fwm.compute_fluence_nirfaster(fluence_fname2)
+        with cedalion.io.forward_model.FluenceFile(fluence_fname2, "r") as f:
+            phi_s_at_d2 = float(
+                f.get_fluence_at_optodes().loc["S1", "D1", 760.0].values
+            )
+
+    mean_pathlength = (np.log(phi_s_at_d) - np.log(phi_s_at_d2)) / delta_mua
+
+    assert abs(sum_adot / mean_pathlength - 1) < 0.1
