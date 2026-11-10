@@ -229,7 +229,7 @@ class PointsAccessor:
             units = obj.pint.units
             obj = obj.pint.dequantify()
             was_quantified = True
-        elif unit_str := obj.attrs.get("units", None) is not None:
+        elif (unit_str := obj.attrs.get("units", None)) is not None:
             # units = cedalion.units.Unit(unit_str)
             was_quantified = False
         else:
