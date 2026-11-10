@@ -710,8 +710,9 @@ class TwoSurfaceHeadModel:
             step_size: Fraction of the net force vector applied per
                 iteration.  Reduce if the relaxation is numerically unstable.
             convergence_tol: Early-stop threshold: halt when the maximum
-                surface-projection displacement across all optodes falls
-                below this value (in scalp units, typically mm).
+                displacement of an optode within one iteration (force step plus
+                projection onto the scalp) falls below this value (in scalp
+                units, typically mm).
             initial_align_mode: Global alignment method applied before
                 relaxation.  One of ``"general"`` (12-DOF full affine),
                 ``"trans_rot_isoscale"`` (7-DOF), ``"trans_rot"`` (6-DOF),
