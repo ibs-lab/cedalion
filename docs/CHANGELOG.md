@@ -1,8 +1,12 @@
 # Changelog
 
-<!--
 ## Unreleased changes (available on the `dev` branch)
---> 
+
+- Added the argument `mask` to `glm.fit` to exclude time segments, e.g. motion artifacts or NaNs, from the fit. NaNs outside the mask now raise an error, by [Elsa-Henriette Harms](https://github.com/elsahh). ([#191](https://github.com/ibs-lab/cedalion/pull/191))
+
+- Added `DesignMatrix.fill_nonfinite` to handle NaNs in regressors, e.g. in short-channel regressors. `max_corr_short_channel_regressor` now also selects short channels with NaNs, by [Elsa-Henriette Harms](https://github.com/elsahh). ([#191](https://github.com/ibs-lab/cedalion/pull/191))
+
+- The AR model order selected by the AR-IRLS noise model no longer depends on the units of the data, by [Elsa-Henriette Harms](https://github.com/elsahh). ([#191](https://github.com/ibs-lab/cedalion/pull/191))
 
 ## Version 26.8.0-rc1 
 

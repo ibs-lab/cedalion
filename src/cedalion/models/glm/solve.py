@@ -14,14 +14,25 @@ from cedalion.models.glm.design_matrix import DesignMatrix
 
 import statsmodels.api
 import pandas as pd
-from scipy.linalg import toeplitz
 
 from tqdm import tqdm
 from joblib import Parallel, delayed, parallel_config
 import cedalion.math.ar_irls
 
 
-def _channel_fit(y, x, noise_model="ols", ar_order=30):
+_NOISE_MODELS = ("ols", "rls", "wls", "ar_irls", "gls", "glsar")
+
+
+def _check_noise_model(noise_model: str):
+    """Raise a ValueError if noise_model is not one of _NOISE_MODELS."""
+    if noise_model not in _NOISE_MODELS:
+        raise ValueError(
+            f"unsupported noise_model '{noise_model}'. Please select one "
+            f"of these: {', '.join(_NOISE_MODELS)}"
+        )
+
+
+def _channel_fit(y, x, noise_model="ols", ar_order=30, mask=None):
     """Fit a single channel's time series with the specified linear noise model.
 
     Args:
@@ -30,50 +41,200 @@ def _channel_fit(y, x, noise_model="ols", ar_order=30):
         noise_model: Regression model to use.  One of ``"ols"``, ``"rls"``,
             ``"wls"``, ``"ar_irls"``, ``"gls"``, ``"glsar"``.
         ar_order: AR model order used by ``"ar_irls"`` and ``"glsar"``.
+        mask: Optional 1-D boolean array. Samples that are ``False`` are ignored in
+            the fit. If ``None``, all samples are used.
 
     Returns:
         Fitted statsmodels regression result object.
 
     Raises:
         ValueError: If ``noise_model`` is not one of the supported options.
+        NotImplementedError: If ``noise_model`` is ``"glsar"`` and the mask contains
+            gaps between unmasked samples.
     """
-    available_models = ["ols", "rls", "wls", "ar_irls", "gls", "glsar"]
+    _check_noise_model(noise_model)
 
-    if noise_model not in available_models:
-        raise ValueError(
-            f"unsupported noise_model '{noise_model}'. Please select one"
-            f"of these: {', '.join(available_models)}"
-        )
+    if mask is None:
+        mask = np.ones(len(x), dtype=bool)
+    else:
+        mask = np.asarray(mask, dtype=bool)
+
+    if noise_model == "ar_irls":
+        return cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=ar_order, mask=mask)
+
+    # Masked samples are dropped. Labeling y with the index of x lets per-sample
+    # results (e.g. resid) keep the positions of the samples in the time series.
+    y = pd.Series(np.asarray(y), index=x.index)
 
     if noise_model == "ols":
-        reg_result = statsmodels.api.OLS(y, x).fit()
+        reg_result = statsmodels.api.OLS(y[mask], x[mask]).fit()
     elif noise_model == "rls":
+        # The state space model treats NaNs in y as missing observations, which,
+        # unlike dropped samples, keeps the time index intact.
         reg_result = statsmodels.api.RecursiveLS(
-            y,
+            y.where(mask),
             x,
             initialization="known",
             initial_state=np.zeros(x.shape[1]),
             initial_state_cov=np.eye(x.shape[1]) * 1e6,
         ).fit()
     elif noise_model == "wls":
-        reg_result = statsmodels.api.WLS(y, x).fit()
-    elif noise_model == "ar_irls":
-        reg_result = cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=ar_order)
+        reg_result = statsmodels.api.WLS(y[mask], x[mask]).fit()
     elif noise_model == "gls":
+        y, x = y[mask], x[mask]
+        idx = np.flatnonzero(mask)
         ols_resid = statsmodels.api.OLS(y, x).fit().resid.values  # need a numpy array
+        # estimate the lag-1 autocorrelation only from pairs of adjacent samples
+        adjacent = np.diff(idx) == 1
+        if adjacent.sum() < 2:
+            raise ValueError(
+                "noise_model 'gls' needs at least two pairs of adjacent unmasked "
+                "samples to estimate the autocorrelation."
+            )
         resid_fit = statsmodels.api.OLS(
-            ols_resid[1:],
-            statsmodels.api.add_constant(ols_resid[:-1]),
+            ols_resid[1:][adjacent],
+            statsmodels.api.add_constant(ols_resid[:-1][adjacent], has_constant="add"),
         ).fit()
         rho = resid_fit.params[1]
-        order = toeplitz(range(len(ols_resid)))
+        # AR(1) covariance from the lags between the original sample positions,
+        # so that gaps left by masked samples are accounted for.
+        order = np.subtract.outer(idx, idx)
+        np.abs(order, out=order)
         reg_result = statsmodels.api.GLS(y, x, sigma=rho**order).fit()
     elif noise_model == "glsar":
-        reg_result = statsmodels.api.GLSAR(y, x, ar_order).iterative_fit(4)
+        idx = np.flatnonzero(mask)
+        if idx[-1] - idx[0] + 1 != len(idx):
+            raise NotImplementedError(
+                "noise_model 'glsar' does not support masks with gaps between "
+                "unmasked samples. Use 'ar_irls' instead."
+            )
+        reg_result = statsmodels.api.GLSAR(y[mask], x[mask], ar_order).iterative_fit(4)
     else:
         raise NotImplementedError()
 
     return reg_result
+
+
+def _labeled_channel_fit(label: str, *args):
+    """Call :func:`_channel_fit` and name the fitted time series if the fit fails.
+
+    The name is added as a note to the exception, so its type is preserved.
+    """
+    try:
+        return _channel_fit(*args)
+    except Exception as e:
+        e.add_note(f"Raised while fitting {label}.")
+        raise
+
+
+def _labels_where(bad: xr.DataArray, coord: xr.DataArray) -> str:
+    """Join the labels in coord at which the 1-D boolean array bad is True."""
+    return ", ".join(map(str, coord.values[bad.values]))
+
+
+def _prepare_mask(ts: cdt.NDTimeSeries, mask: xr.DataArray | None) -> xr.DataArray:
+    """Validate the mask passed to :func:`fit` and broadcast it to the shape of ts.
+
+    Args:
+        ts: The (dequantified) time series to be modeled.
+        mask: Boolean mask or ``None``.
+
+    Returns:
+        A boolean mask with the same dimensions and shape as ``ts``.
+
+    Raises:
+        TypeError: If the mask is not a boolean DataArray.
+        ValueError: If the mask's dimensions or coordinates don't match ``ts``, e.g.
+            if the mask has labels that ``ts`` doesn't have or vice versa, or if
+            ``ts`` contains non-finite values that are not masked.
+    """
+    if mask is None:
+        mask = xr.ones_like(ts, dtype=bool)
+    else:
+        if not isinstance(mask, xr.DataArray):
+            raise TypeError(
+                f"mask must be an xr.DataArray but is a {type(mask).__name__}, "
+                "e.g. mask=np.isfinite(ts) instead of mask=np.isfinite(ts.values)."
+            )
+
+        if mask.dtype != bool:
+            raise TypeError(f"mask must be boolean but has dtype '{mask.dtype}'.")
+
+        if "time" not in mask.dims:
+            raise ValueError("mask must have a 'time' dimension.")
+
+        extra_dims = [d for d in mask.dims if d not in ts.dims]
+        if extra_dims:
+            raise ValueError(
+                f"mask has dimensions {extra_dims} that the time series does not "
+                f"have. Collapse them first, e.g. with mask.all({extra_dims})."
+            )
+
+        # The mask must have exactly the labels of the time series, e.g. a mask of
+        # all channels is not silently cut down to the long channels being fitted.
+        for d in mask.dims:
+            if d == "time" or d not in mask.indexes or d not in ts.indexes:
+                continue
+            only_mask = mask.indexes[d].difference(ts.indexes[d])
+            only_ts = ts.indexes[d].difference(mask.indexes[d])
+            if len(only_mask) or len(only_ts):
+                raise ValueError(
+                    f"The '{d}' coordinates of mask and time series don't match "
+                    f"(only in mask: {', '.join(map(str, only_mask)) or '-'}; "
+                    f"only in time series: {', '.join(map(str, only_ts)) or '-'}). "
+                    f"Select the matching labels, e.g. mask.sel({d}=ts.{d})."
+                )
+
+        try:
+            # Align labeled dimensions by label, e.g. channels in a different order.
+            mask = mask.sel(
+                {
+                    d: ts[d].values
+                    for d in mask.dims
+                    if d != "time" and d in mask.indexes and d in ts.indexes
+                }
+            )
+            _, mask = xr.align(ts, mask, join="exact")
+        except (KeyError, ValueError) as e:
+            raise ValueError(
+                "The coordinates of mask and time series don't match."
+            ) from e
+
+        mask = mask.broadcast_like(ts).transpose(*ts.dims)
+
+    unmasked_nonfinite = ~np.isfinite(ts) & mask
+    if unmasked_nonfinite.any():
+        spatial_dim = cdc.get_spatial_dimension(ts)
+        other_dims = [d for d in ts.dims if d != spatial_dim]
+        bad = unmasked_nonfinite.any(other_dims)
+        raise ValueError(
+            "The time series contains NaNs or infs that are not masked "
+            f"({spatial_dim}: {_labels_where(bad, ts[spatial_dim])}). "
+            "To exclude them from the fit, pass mask=np.isfinite(ts)."
+        )
+
+    return mask
+
+
+def _check_design_matrix_is_finite(design_matrix: DesignMatrix):
+    """Raise a ValueError if any regressor contains NaNs or infs."""
+
+    arrays = [] if design_matrix.common is None else [design_matrix.common]
+    arrays.extend(design_matrix.channel_wise)
+
+    for array in arrays:
+        array = array.pint.dequantify()
+        other_dims = [d for d in array.dims if d != "regressor"]
+        bad = (~np.isfinite(array)).any(other_dims)
+        if bad.any():
+            raise ValueError(
+                "The design matrix must be finite, but these regressors contain NaNs "
+                f"or infs: {_labels_where(bad, array.regressor)}. "
+                "Replace them with finite values and exclude the affected samples "
+                "with the mask argument, e.g. with "
+                "design_matrix, dm_mask = design_matrix.fill_nonfinite(ts) and "
+                "mask=np.isfinite(ts) & dm_mask."
+            )
 
 
 def fit(
@@ -83,12 +244,13 @@ def fit(
     ar_order: int = 30,
     max_jobs: int = -1,
     verbose: bool = False,
+    mask: xr.DataArray | None = None,
 ):
     """Fit design matrix to data.
 
     Args:
         ts: the time series to be modeled
-        design_matrix: DataArray with dims time, regressor, chromo
+        design_matrix: the design matrix. It must not contain NaNs or infs.
         noise_model: specifies the linear regression model
 
             - ols: ordinary least squares
@@ -103,11 +265,41 @@ def fit(
         max_jobs: controls the number of jobs in parallel execution. Set to -1 for
             all available cores. Set it to 1 to disable parallel execution.
         verbose: display progress information if True.
+        mask: optional boolean array that marks which samples of ``ts`` enter the
+            fit. ``True`` (:data:`cedalion.sigproc.quality.CLEAN`) means the sample
+            is used, ``False`` (``TAINTED``) means it is ignored. The mask must have
+            a time dimension. Its dimensions must be a subset of ``ts.dims``, and
+            missing dimensions are broadcast: a mask with only a time dimension
+            masks the same segments everywhere, a mask with dimensions time and
+            channel (or parcel, vertex) and optionally chromo (or wavelength)
+            masks segments individually. Labeled dimensions are matched by label and
+            must have exactly the labels of ``ts``, e.g. a mask computed for all
+            channels must be reduced to the fitted channels with
+            ``mask.sel(channel=ts.channel)``. Masked samples may contain NaNs,
+            unmasked samples must be finite. To exclude all NaNs and infs in ``ts``,
+            pass ``mask=np.isfinite(ts)``. The design matrix is not masked, so
+            :func:`predict` still yields predictions for masked segments.
 
     Returns:
         thetas as a DataArray
 
+    Raises:
+        ValueError: If ``noise_model`` is not supported, if the design matrix or the
+            unmasked samples of ``ts`` contain NaNs or infs, if the mask doesn't
+            match ``ts``, or if a channel (or parcel, vertex) has too few unmasked
+            samples to estimate all regressors. With ``noise_model="gls"``, also if
+            fewer than two pairs of adjacent unmasked samples remain to estimate
+            the autocorrelation. With ``noise_model="ar_irls"``, also if too few
+            samples remain after excluding the filtered samples that follow masked
+            samples.
+        NotImplementedError: If ``noise_model`` is ``"glsar"`` and the mask has gaps
+            between unmasked samples.
+
+        Errors raised while fitting a single channel (or parcel, vertex) carry a
+        note that names it.
     """
+
+    _check_noise_model(noise_model)
 
     cite("Barker2013")
     # FIXME: unit handling?
@@ -117,6 +309,19 @@ def fit(
     spatial_dim = cdc.get_spatial_dimension(ts)
 
     dim3_name = xrutils.other_dim(design_matrix.common, "time", "regressor")
+
+    _check_design_matrix_is_finite(design_matrix)
+    mask = _prepare_mask(ts, mask)
+
+    n_regressors = len(design_matrix.regressors)
+    too_few = (mask.sum("time") <= n_regressors).any(
+        [d for d in mask.dims if d not in ("time", spatial_dim)]
+    )
+    if too_few.any():
+        raise ValueError(
+            f"Too few unmasked samples to estimate {n_regressors} regressors "
+            f"({spatial_dim}: {_labels_where(too_few, ts[spatial_dim])})."
+        )
 
 
     reg_results = xr.DataArray(
@@ -134,23 +339,42 @@ def fit(
         group_y = ts.sel({spatial_dim: group_channels, dim3_name: dim3}).transpose(
             "time", spatial_dim
         )
+        group_mask = mask.sel(
+            {spatial_dim: group_channels, dim3_name: dim3}
+        ).transpose("time", spatial_dim)
         x = pd.DataFrame(
             group_design_matrix.values, columns=group_design_matrix.regressor.values
         )
 
         if max_jobs == 1:
             for chan in tqdm(group_y[spatial_dim].values, disable=not verbose):
-                result = _channel_fit(group_y.loc[:, chan], x, noise_model, ar_order)
+                result = _labeled_channel_fit(
+                    f"{spatial_dim} {chan}, {dim3_name} {dim3}",
+                    group_y.loc[:, chan],
+                    x,
+                    noise_model,
+                    ar_order,
+                    group_mask.loc[:, chan].values,
+                )
                 reg_results.loc[chan, dim3] = result
         else:
             args_list = []
             for chan in group_y[spatial_dim].values:
-                args_list.append([group_y.loc[:, chan], x, noise_model, ar_order])
+                args_list.append(
+                    [
+                        f"{spatial_dim} {chan}, {dim3_name} {dim3}",
+                        group_y.loc[:, chan],
+                        x,
+                        noise_model,
+                        ar_order,
+                        group_mask.loc[:, chan].values,
+                    ]
+                )
 
             with parallel_config(backend='threading', n_jobs=max_jobs):
                 batch_results = tqdm(
                     Parallel(return_as="generator")(
-                        delayed(_channel_fit)(*args) for args in args_list
+                        delayed(_labeled_channel_fit)(*args) for args in args_list
                     ),
                     total=len(args_list)
                 )

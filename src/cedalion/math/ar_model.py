@@ -10,6 +10,12 @@ def bic_arfit(dd, pmax=30):
 
     BIC is used to select the model
 
+    All model orders are compared on the same samples, i.e. without the first
+    ``pmax`` samples (see ``hold_back`` in ``statsmodels.tsa.ar_model.AutoReg``).
+    Otherwise, the BICs would not be comparable and the selected order would depend
+    on the units of the data. The search stops at the first order for which the BIC
+    increases. The selected model is then refitted on all available samples.
+
     Args:
         dd: pd.Series
         pmax: int (default 30)
@@ -20,18 +26,15 @@ def bic_arfit(dd, pmax=30):
 
     dd = dd - dd.mean()
 
-    last_bic = np.inf
+    best_p, best_bic = 0, np.inf
     for p in range(pmax + 1):
-        model = sm.tsa.AutoReg(dd, lags=p).fit()
-        if model.bic > last_bic:
+        bic = sm.tsa.AutoReg(dd, lags=p, hold_back=pmax).fit().bic
+        if bic > best_bic:
             break
-        else:
-            last_bic = model.bic
+        best_p, best_bic = p, bic
     else:
         warn("pmax was reached before finding the optimal BIC.")
 
-    # Select the best model order
-    best_p = p - 1
     return sm.tsa.AutoReg(dd, lags=best_p).fit()
 
 
