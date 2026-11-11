@@ -2,15 +2,11 @@
 
 ## Unreleased changes (available on the `dev` branch)
 
-- Added the argument `mask` to `glm.fit` to exclude time segments, e.g. motion artifacts, from the fit (see the example notebook `37_glm_masking`). The mask follows the `CLEAN`/`TAINTED` convention of `cedalion.sigproc.quality` and must have the same labels as the time series, by [Elsa-Henriette Harms](https://github.com/elsahh).
+- Added the argument `mask` to `glm.fit` to exclude time segments, e.g. motion artifacts or NaNs, from the fit. NaNs outside the mask now raise an error, by [Elsa-Henriette Harms](https://github.com/elsahh). ([#191](https://github.com/ibs-lab/cedalion/pull/191))
 
-- `glm.fit` now raises a `ValueError` if the time series contains NaNs or infs outside the mask or if the design matrix is not finite. Previously, depending on the noise model, NaNs were skipped silently, produced NaN results or caused errors. Pass `mask=np.isfinite(ts)` to exclude NaNs from the fit, by [Elsa-Henriette Harms](https://github.com/elsahh).
+- Added `DesignMatrix.fill_nonfinite` to handle NaNs in regressors, e.g. in short-channel regressors. `max_corr_short_channel_regressor` now also selects short channels with NaNs, by [Elsa-Henriette Harms](https://github.com/elsahh). ([#191](https://github.com/ibs-lab/cedalion/pull/191))
 
-- The AR-IRLS noise model compares all AR model orders on the same samples. Previously, each order was evaluated on a different number of samples, so the selected order depended on the units of the data, and data with small values, e.g. OD or molar concentrations, could get too low orders. `pmax=None` in `ar_irls_GLM` no longer fails, by [Elsa-Henriette Harms](https://github.com/elsahh).
-
-- Added `DesignMatrix.fill_nonfinite`, which replaces NaNs and infs in the regressors and returns a mask that excludes the affected samples from `glm.fit`. This handles, e.g., short-channel regressors of short channels with NaNs, see the example notebook `37_glm_masking`, by [Elsa-Henriette Harms](https://github.com/elsahh).
-
-- `max_corr_short_channel_regressor` correlates each pair of long and short channels over the samples at which both are finite. Previously, short channels with NaNs or infs were never selected, and a time point at which all short channels were NaN raised an error, by [Elsa-Henriette Harms](https://github.com/elsahh).
+- The AR model order selected by the AR-IRLS noise model no longer depends on the units of the data, by [Elsa-Henriette Harms](https://github.com/elsahh). ([#191](https://github.com/ibs-lab/cedalion/pull/191))
 
 ## Version 26.8.0-rc1 
 
