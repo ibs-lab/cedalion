@@ -268,11 +268,21 @@ class MultimodalSourceDecomposition:
     def unflatten_trials(self, A: xr.DataArray, ref: xr.DataArray) -> xr.DataArray:
         """Restore (trial, sample) dims from a sample dim produced by flatten_trials.
 
+        The (trial, sample) dims take the position of the flattened sample dim (unstack
+        alone would append them after all other dims), so e.g. sources come back as
+        (trial, sample, component), as (sample, component) for continuous data.
         Coords of the original input `ref` (e.g. a trial_type label on the trial dim)
         are copied back, since unstack would otherwise broadcast them to 2D.
         """
 
+        # Final dim order: as now, with (trial, sample) replacing the flattened sample
+        trial_name = A.indexes[self.sample_name].names[0]
+        order = []
+        for d in A.dims:
+            order += [trial_name, self.sample_name] if d == self.sample_name else [d]
+
         A = A.unstack(self.sample_name).rename({ '_flat': self.sample_name})
+        A = A.transpose(*order)
         coords = {c: ref[c] for c in ref.coords if set(ref[c].dims) <= set(A.dims)}
         A = A.assign_coords(coords)
 
