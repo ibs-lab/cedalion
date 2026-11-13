@@ -416,11 +416,17 @@ def ledoit_wolf_shrinkage(X : np.ndarray,
         G = B @ B.T if len(B) < p else B.T @ B
         sq += np.sum(G**2) / len(B) ** 2
 
+    # C already equals its target (always the case for a single feature, where
+    # C = m): there is nothing to shrink, and b2 / d2 would be 0 / 0
+    if d2 == 0:
+        return 0.0
+
     # sum_k ||C_k - C||^2 = sum_k ||C_k||^2 - K ||C||^2, as C is the mean of the C_k
     b2 = (sq - n_units * np.sum(C**2)) / n_units**2
 
-    # Clip gamma to [0, 1]
-    b2 = min(b2, d2)
+    # Clip gamma to [0, 1]. With units of unequal size C is only approximately the
+    # mean of the C_k, so the difference above can come out slightly negative
+    b2 = min(max(b2, 0.0), d2)
 
     gamma = b2 / d2
 
