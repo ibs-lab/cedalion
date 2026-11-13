@@ -18,6 +18,7 @@ from scipy.linalg import cho_solve, eigh, eigvalsh
 # 'A'      c'w                    = 0    any      closed form: B^-1 c, normalized
 # 'B'      c'w - lam|w|_1         > 0    any      FISTA on the composite problem
 # 'B_eye'  c'w - lam|w|_1         > 0    I        closed form: one soft-threshold
+# 'B_one'  c'w - lam|w|_1         >= 2|c|_inf  any  closed form: best 1-sparse filter
 # 'C0'     w'A w                  = 0    any      GEVD: eigh(A, B), leading vector
 # 'C1'     w'A w - lam|w|_1       > 0    any      shift A by rho*B, then MM -> 'B'
 #
@@ -182,11 +183,23 @@ def solve_linear_l1(c, B, kappa, w_init=None, L_B=None, lam=None, B_is_eye=False
     `lam` overrides the kappa-derived threshold. Callers that invoke this inside
     an outer loop MUST pass a fixed lam: re-deriving it from ||c||_inf every
     iteration makes the penalty chase its own tail (c grows as w sparsifies).
+
+    With the kappa-derived threshold, lam < 2||c||_inf for every kappa in [0, 1).
+    A fixed lam, however, can reach 2||c||_inf when c changes between calls (the
+    MM iterations of solve_quadratic_l1). The penalized form then thresholds every
+    entry and returns w = 0, which is not on the constraint surface w'Bw = 1, so
+    that case is solved exactly by solve_linear_l1_one_sparse instead.
     """
 
     # scale-free threshold
     if lam is None:
         lam = kappa * 2.0 * np.abs(c).max()
+
+    # Penalty at or above every entry of the linear term: the filter cannot be zero
+    # (w'Bw = 1), and the optimum on the constraint surface is 1-sparse.
+    c_max = np.abs(c).max()
+    if c_max > 0.0 and lam >= 2.0 * c_max:
+        return solve_linear_l1_one_sparse(c, B, lam, B_is_eye=B_is_eye)
 
     # special case: B = I -> smooth part = ||w - c||^2 -> no gradient loop needed.
     if B_is_eye:
@@ -207,8 +220,40 @@ def solve_linear_l1(c, B, kappa, w_init=None, L_B=None, lam=None, B_is_eye=False
                 break
 
     nrm = np.linalg.norm(w) if B_is_eye else np.sqrt(w @ B @ w)
-    assert nrm > 1e-12, "solve_linear_l1 collapsed to w = 0: lam exceeds 2*||c||_inf, so kappa is too large"
+    if nrm <= 1e-12:
+        # Everything was thresholded although lam < 2||c||_inf (lam within rounding
+        # of the bound): take the 1-sparse limit. Only c = 0 has no solution.
+        assert c_max > 0.0, "solve_linear_l1 has no solution: the linear term c is zero"
+        return solve_linear_l1_one_sparse(c, B, lam, B_is_eye=B_is_eye)
     w /= nrm
+
+    return w
+
+
+def solve_linear_l1_one_sparse(c, B, lam, B_is_eye=False):
+    """Problem B when lam >= 2||c||_inf: the optimum is a 1-sparse filter.
+
+    With a_i = lam/2 - |c_i| >= 0, the objective obeys
+
+        c'w - (lam/2)||w||_1  <=  -sum_i a_i |w_i|  =:  -h(w),
+
+    with equality when every non-zero w_i has the sign of c_i. Minimizing the
+    weighted L1 norm h over the ellipsoid w'Bw = 1 is the same as maximizing the
+    convex function w'Bw over the polytope h(w) <= 1, whose maximum is attained at a
+    vertex, i.e. at a 1-sparse w = +-e_j / sqrt(B_jj). There h = a_j / sqrt(B_jj), and
+    the bound above is attained with the sign of c_j, so the solution is
+
+        j = argmax_j (|c_j| - lam/2) / sqrt(B_jj),    w = sign(c_j) e_j / sqrt(B_jj).
+
+    This is the limit of the FISTA solution for lam -> 2||c||_inf from below (only
+    the largest entry of c survives the threshold), so the solver is continuous in
+    lam and never returns the infeasible w = 0.
+    """
+    b = np.ones(len(c)) if B_is_eye else np.diag(B)
+    j = np.argmax((np.abs(c) - lam / 2.0) / np.sqrt(b))
+
+    w = np.zeros(len(c))
+    w[j] = (1.0 if c[j] >= 0 else -1.0) / np.sqrt(b[j])
 
     return w
 
