@@ -12,6 +12,7 @@ from cedalion.sigdecomp.multimodal.utils import (
     validate_time_coverage,
     validate_time_shifts,
     embed_lags,
+    lag_to_samples,
     validate_l1_reg,
     validate_l2_reg,
     shrink_cov,
@@ -487,7 +488,7 @@ class mSPoC:
         window = self.power_window
 
         # First non-padded sample of the largest lag copy (as in temporal_embedding)
-        first = np.searchsorted(tx, tx[0] + self.time_lags.max())
+        first = lag_to_samples(tx, self.time_lags.max())
         if first == len(tx):
             raise ValueError("The time lags are longer than the data.")
 
