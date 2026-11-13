@@ -91,13 +91,99 @@ def estimate_alpha_meas(C_meas, K=0.01):
     return K / np.median(C_meas)
 
 
+def _as_list(arrays: xr.DataArray | list[xr.DataArray]) -> list[xr.DataArray]:
+    """Wrap a single DataArray into a list."""
+    if isinstance(arrays, xr.DataArray):
+        return [arrays]
+    return list(arrays)
+
+
+def _measurement_rows(sensitivities: list[xr.DataArray]) -> pd.MultiIndex:
+    """The (wavelength, channel) pairs measured by a list of sensitivities."""
+    return pd.MultiIndex.from_tuples(
+        [
+            (wavelength, channel)
+            for S in sensitivities
+            for wavelength in S.wavelength.values
+            for channel in S.channel.values
+        ],
+        names=["wavelength", "channel"],
+    )
+
+
+def _check_sensitivities(sensitivities: list[xr.DataArray], dim: str):
+    """Check that a list of sensitivities can be combined into one inverse problem.
+
+    In probes in which not all channels share the same wavelengths, each group of
+    channels with identical wavelengths has its own sensitivity. These must describe
+    the same unknowns and each (wavelength, channel) pair may occur only once.
+
+    Args:
+        sensitivities: Each with dims (channel, dim, wavelength).
+        dim: The dimension of the unknowns, i.e. 'vertex' or 'kernel'.
+    """
+
+    first = sensitivities[0]
+
+    for other in sensitivities[1:]:
+        same_unknowns = other.sizes[dim] == first.sizes[dim] and all(
+            (name in other.coords)
+            and np.array_equal(other.coords[name].values, coord.values)
+            for name, coord in first.coords.items()
+            if coord.dims == (dim,)
+        )
+        if not same_unknowns:
+            raise ValueError(f"All sensitivities must have the same '{dim}' coords.")
+
+    if not _measurement_rows(sensitivities).is_unique:
+        raise ValueError(
+            "Each (wavelength, channel) pair may occur in only one sensitivity."
+        )
+
+
+def _concat_flat_channels(arrays: list[xr.DataArray]) -> xr.DataArray:
+    """Concatenate arrays along their flat_channel dimension."""
+    if len(arrays) == 1:
+        return arrays[0]
+
+    return xr.concat(
+        arrays, dim="flat_channel", join="exact", coords="minimal", compat="override"
+    )
+
+
+def _stack_measurements(arrays: list[xr.DataArray]) -> xr.DataArray:
+    """Stack the wavelength and channel dims of one or more arrays into flat_channel.
+
+    Args:
+        arrays: Arrays with wavelength and channel dims, e.g. time series of channel
+            groups with different wavelengths. All other dims must match.
+
+    Returns:
+        The combined array with a (wavelength, channel) multi-index on its
+        flat_channel dim. dims: (..., flat_channel)
+    """
+
+    stacked = _concat_flat_channels([fwm.stack_flat_channel(a) for a in arrays])
+
+    if not stacked.indexes["flat_channel"].is_unique:
+        raise ValueError(
+            "Each (wavelength, channel) pair may occur in only one time series."
+        )
+
+    return stacked
+
+
 class SpatialBasisFunctions(ABC):
     """Base for SBF implementations."""
 
     @property
     @abstractmethod
-    def H(self) -> xr.DataArray:
-        """The sensitivity in kernel space."""
+    def H(self) -> xr.DataArray | list[xr.DataArray]:
+        """The sensitivity in kernel space.
+
+        A list, if the spatial basis functions were built from a list of
+        sensitivities.
+        """
         pass
 
     @abstractmethod
@@ -563,7 +649,8 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
 
     Args:
         head_model: a TwoSurfaceHeadModel with brain and scalp surfaces
-        Adot : the sensitivity matrix
+        Adot : the sensitivity matrix or, for probes in which not all channels share
+            the same wavelengths, a list of sensitivity matrices (see ImageRecon).
         threshold_brain: the distance between kernel centers on the brain
         threshold_scalp: the distance between kernel centers on scalp
         sigma_brain: the width of the gaussians on the brain
@@ -575,7 +662,7 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
     def __init__(
         self,
         head_model: TwoSurfaceHeadModel,
-        Adot: xr.DataArray,
+        Adot: xr.DataArray | list[xr.DataArray],
         threshold_brain: cdt.QLength,
         threshold_scalp: cdt.QLength,
         sigma_brain: cdt.QLength,
@@ -593,7 +680,8 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         self._mask: xr.DataArray = None  # shape (vertex)
 
         # H integrates Adot, i.e. it describes each kernel's influence on each channel
-        self._H: xr.DataArray = None  # shape(channel, kernel, wavelength)
+        # shape(channel, kernel, wavelength). A list if Adot is a list.
+        self._H: xr.DataArray | list[xr.DataArray] = None
 
         # G contains the kernel's value for each vertex
         self._G: csr_array = None  # shape (kernel, vertex)
@@ -626,18 +714,27 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         of all channels is above 10^(mask_threshold).
 
         Args:
-            Adot: Sensitivity matrix.
-            wavelength_idx: Index of wavelength to use for mask computation.
+            Adot: Sensitivity matrix or list of sensitivity matrices.
+            wavelength_idx: Index of wavelength to use for mask computation. For a
+                list of sensitivities it indexes the wavelengths of each sensitivity.
         """
 
+        Adots = _as_list(Adot)
+        _check_sensitivities(Adots, "vertex")
+
+        # sum over all channels of all sensitivities
+        intensity = sum(
+            A.isel(wavelength=wavelength_idx).sum("channel") # FIXME maybe min over wl?
+            for A in Adots
+        )
+
         intensity = np.log10(
-            Adot.isel(wavelength=wavelength_idx) # FIXME maybe min over wavelengths?
-            .sum("channel")
-            .clip(min=10 ** (self.mask_threshold - 1))  # avoid log10(0)
+            intensity.clip(min=10 ** (self.mask_threshold - 1))  # avoid log10(0)
         )
 
         mask = intensity > self.mask_threshold
-        mask = mask.drop_vars("wavelength")  # but keep the is_brain coordinate
+        # but keep the is_brain coordinate
+        mask = mask.drop_vars("wavelength", errors="ignore")
         self._mask = mask
 
 
@@ -830,13 +927,29 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
             )
 
 
-    def _compute_H(self, Adot : xr.DataArray):
+    def _compute_H(self, Adot : xr.DataArray | list[xr.DataArray]):
         """Compute the H matrix for spatial basis functions.
 
         Transforms the sensitivity matrix into the spatial basis space.
 
         Args:
+            Adot: Sensitivity matrix shape=(channel, vertex, wavelength) or a list
+                of these.
+        """
+        if isinstance(Adot, xr.DataArray):
+            self._H = self._to_kernel_space(Adot)
+        else:
+            self._H = [self._to_kernel_space(A) for A in Adot]
+
+
+    def _to_kernel_space(self, Adot : xr.DataArray) -> xr.DataArray:
+        """Transform a sensitivity matrix into the spatial basis space.
+
+        Args:
             Adot: Sensitivity matrix shape=(channel, vertex, wavelength)
+
+        Returns:
+            The sensitivity in kernel space. shape=(channel, kernel, wavelength)
         """
         assert Adot.dims == ("channel", "vertex", "wavelength")
 
@@ -849,7 +962,7 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
             }
         )
 
-        self._H = H
+        return H
 
 
     def kernel_to_image_space_mua(self, X : np.ndarray) -> np.ndarray:
@@ -997,7 +1110,12 @@ class ImageRecon:
     """Implements image reconstruction methods for diffuse optical tomography.
 
     Args:
-        Adot: the sensitivity matrix
+        Adot: the sensitivity matrix. In probes in which not all channels share the
+            same wavelengths, read_snirf splits the time series into groups of
+            channels with identical wavelengths (e.g. 'amp_690_830' and
+            'amp_760_850'). For these, pass a list with one sensitivity matrix per
+            group. All of them must have the same vertices. Spatial basis functions
+            must then be built from the same list.
         recon_mode: select reconstruction method
 
             - 'conc': directly reconstruct hemoglobin concentrations from OD
@@ -1006,6 +1124,7 @@ class ImageRecon:
                 wavelength separately.
             - 'mua2conc': reconstruct absorption changes for each wavelength separately.
                 Afterwards transform these to hemoglobin concentration changes.
+                Requires that all channels share the same wavelengths.
 
         brain_only: if set to true, scalp vertices in Adot are ignored and the
             reconstruction is constrained to brain vertices
@@ -1030,7 +1149,7 @@ class ImageRecon:
     """
     def __init__(
         self,
-        Adot,
+        Adot: xr.DataArray | list[xr.DataArray],
         *,
         alpha_meas: float = 0.001,
         alpha_spatial: float | None = None,
@@ -1061,6 +1180,25 @@ class ImageRecon:
         self.Adot = Adot # dims: (channel, vertex, wavelength) FIXME can we remove this?
         self.brain_only = brain_only
 
+        Adots = _as_list(Adot)
+        _check_sensitivities(Adots, "vertex")
+
+        # the wavelengths of all channels
+        if len(Adots) == 1:
+            self._wavelengths = list(Adots[0].wavelength.values)
+        else:
+            self._wavelengths = sorted(
+                set(np.concatenate([A.wavelength.values for A in Adots]))
+            )
+
+        if recon_mode == "mua2conc" and any(
+            A.sizes["wavelength"] != len(self._wavelengths) for A in Adots
+        ):
+            raise ValueError(
+                "recon_mode 'mua2conc' requires that all channels share the same "
+                "wavelengths. Use 'conc' instead."
+            )
+
         # cache intermediate matrices to avoid recomputations
 
         # These would invalidate when Adot or reg./sbf. params. change. Changing
@@ -1072,7 +1210,7 @@ class ImageRecon:
         self._mua2conc : xr.DataArray = None # dims: (wavelength, chromo)
 
         if self.recon_mode == "mua2conc":
-            E = nirs.get_extinction_coefficients("prahl", self.Adot.wavelength)
+            E = nirs.get_extinction_coefficients("prahl", self._wavelengths)
             self._mua2conc = xrutils.pinv(E)
 
         # W invalidates when C_meas changes
@@ -1084,22 +1222,28 @@ class ImageRecon:
 
     def reconstruct(
         self,
-        y: cdt.NDTimeSeries,
-        c_meas: xr.DataArray | None = None,
+        y: cdt.NDTimeSeries | list[cdt.NDTimeSeries],
+        c_meas: xr.DataArray | list[xr.DataArray] | None = None,
     ) -> cdt.NDTimeSeries:
         """Reconstruct images from measurement data.
 
+        Measurements are matched to the sensitivity by their wavelength and channel
+        labels. y may contain fewer channels than the sensitivity, e.g. after pruning,
+        but no channels that the sensitivity lacks.
+
         Args:
-            y: optical density time series or time point data.
+            y: optical density time series or time point data. In probes in which not
+                all channels share the same wavelengths, a list of time series, e.g.
+                one per group of channels. The order of the list does not matter.
             c_meas: Diagonal elements of the measurement covariance matrix (optional).
-                dims: wavelength x channel.
+                dims: wavelength x channel. May be a list like y.
 
         Returns:
             Reconstructed images.
         """
 
         # y is optical density and dimensionless. Dequantify.
-        y = y.pint.dequantify()
+        y = [ts.pint.dequantify() for ts in _as_list(y)]
 
         self._update_W(c_meas)
 
@@ -1117,11 +1261,11 @@ class ImageRecon:
         return conc_img.pint.to("uM")
 
 
-    def get_image_noise(self, c_meas: xr.DataArray):
+    def get_image_noise(self, c_meas: xr.DataArray | list[xr.DataArray]):
         """Compute image noise/variance estimates.
 
         Args:
-            c_meas: Measurement covariance matrix.
+            c_meas: Measurement covariance matrix. A list of these if Adot is a list.
 
         Returns:
             xr.DataArray: Image noise estimates.
@@ -1150,16 +1294,19 @@ class ImageRecon:
                     "c_meas must be provided when apply_c_meas is set."
                 )
             else:
-                c_meas = c_meas.pint.dequantify()
+                c_meas = [c.pint.dequantify() for c in _as_list(c_meas)]
         else:
             # override any provided c_meas if apply_c_meas == False
             c_meas = None
 
         if c_meas is not None:
             # average over time if c_meas should still have a time dimension
-            time_dim = self._get_time_dimension(c_meas)
-            if time_dim is not None:
-                c_meas = c_meas.mean(time_dim)
+            averaged = []
+            for c in c_meas:
+                time_dim = self._get_time_dimension(c)
+                averaged.append(c if time_dim is None else c.mean(time_dim))
+
+            c_meas = _stack_measurements(averaged)  # dims: (flat_channel,)
 
             # calculate a hash value for c_meas
             new_W_input_hash = hashlib.blake2b(
@@ -1191,29 +1338,49 @@ class ImageRecon:
             otherwise.
         """
 
-        # dims: (channel, kernel, wavelength) or (channel, vertex, wavelength)
-        A = self.sbf.H if self.sbf is not None else self.Adot
+        # each with dims: (channel, kernel, wavelength) or (channel, vertex, wavelength)
+        if self.sbf is not None:
+            dim = "kernel"
+            sensitivities = _as_list(self.sbf.H)
+            _check_sensitivities(sensitivities, dim)
+
+            if set(_measurement_rows(sensitivities)) != set(
+                _measurement_rows(_as_list(self.Adot))
+            ):
+                raise ValueError(
+                    "The spatial basis functions were built from different "
+                    "sensitivities."
+                )
+        else:
+            dim = "vertex"
+            sensitivities = _as_list(self.Adot)
 
         if self.brain_only:
-            dim = "kernel" if self.sbf is not None else "vertex"
-            A = A.sel({dim: A.is_brain.values})
+            sensitivities = [S.sel({dim: S.is_brain.values}) for S in sensitivities]
 
         if self.recon_mode == "conc":
             # dims: (flat_channel, flat_kernel) or (flat_channel, flat_vertex)
-            return [
-                self._make_problem(fwm.ForwardModel.compute_stacked_sensitivity(A))
-            ]
+            A = _concat_flat_channels(
+                [fwm.ForwardModel.compute_stacked_sensitivity(S) for S in sensitivities]
+            )
+            return [self._make_problem(A)]
 
-        A_flat = fwm.stack_flat_channel(A).reset_index("flat_channel")
-        A_flat = A_flat.transpose("flat_channel", ...)  # dims: (flat_channel, kernel)
-                                                        # or (flat_channel, vertex)
+        # dims: (flat_channel, kernel) or (flat_channel, vertex)
+        A_flat = _concat_flat_channels(
+            [
+                fwm.stack_flat_channel(S)
+                .reset_index("flat_channel")
+                .transpose("flat_channel", ...)
+                for S in sensitivities
+            ]
+        )
 
         return [
             self._make_problem(
                 A_flat.isel(flat_channel=A_flat.wavelength.values == wavelength),
                 wavelength,
             )
-            for wavelength in A.wavelength.values
+            for wavelength in self._wavelengths
         ]
 
 
@@ -1308,9 +1475,16 @@ class ImageRecon:
     def _cmeas_of_rows(
         self, c_meas: xr.DataArray, problem: _LinearProblem
     ) -> np.ndarray:
-        """Select the elements of c_meas that belong to the rows of a problem."""
+        """Select the elements of stacked c_meas that belong to the rows of a problem.
 
-        c_meas = fwm.stack_flat_channel(c_meas)  # dims: (flat_channel,)
+        Args:
+            c_meas: Measurement variances. dims: (flat_channel,)
+            problem: The problem whose rows are selected.
+
+        Returns:
+            The variances of the problem's rows.
+        """
+
         indices = c_meas.indexes["flat_channel"].get_indexer(problem.rows)
 
         if np.any(indices < 0):
@@ -1320,22 +1494,31 @@ class ImageRecon:
 
 
     # --- IMAGE RECONSTRUCTION METHODS ---
-    def _apply_W(self, y: cdt.NDTimeSeries) -> list[xr.DataArray]:
+    def _apply_W(self, y: list[cdt.NDTimeSeries]) -> list[xr.DataArray]:
         """Multiply each problem's W with its measurements.
 
         Measurements are matched to W by their (wavelength, channel) labels. y may
         contain less channels than W due to pruning.
 
         Args:
-            y: Optical density measurement data with wavelength dimension.
+            y: Optical density measurement data with wavelength dimension. A list,
+                e.g. of time series of channel groups with different wavelengths.
 
         Returns:
             The unknowns of each problem.
         """
 
-        y = fwm.stack_flat_channel(y)  # dims: (..., flat_channel)
+        y = _stack_measurements(y)  # dims: (..., flat_channel)
         y_rows = y.indexes["flat_channel"]
         y = y.reset_index("flat_channel")
+
+        problem_rows = [p.rows for p in self._problems]
+        unknown = ~y_rows.isin(problem_rows[0].append(problem_rows[1:]))
+        if np.any(unknown):
+            raise ValueError(
+                "y contains channels which are not in the sensitivity matrix: "
+                + ", ".join(f"{ch} ({wl} nm)" for wl, ch in y_rows[unknown][:5])
+            )
 
         unknowns = []  # each with dims: (unknowns, ...)
         for problem, W in zip(self._problems, self._W):
@@ -1392,7 +1575,9 @@ class ImageRecon:
         return xrutils.contract(self._mua2conc**2, img / units.mm**2, "wavelength")
 
 
-    def get_image_noise_posterior(self, c_meas : xr.DataArray | None = None):
+    def get_image_noise_posterior(
+        self, c_meas : xr.DataArray | list[xr.DataArray] | None = None
+    ):
         """Compute posterior variance of reconstructed images.
 
         Calculates the diagonal of the posterior covariance matrix:
@@ -1401,7 +1586,7 @@ class ImageRecon:
         vertex).
 
         Parameters:
-            c_meas : Measurement covariance matrix.
+            c_meas : Measurement covariance matrix. A list of these if Adot is a list.
 
         Returns:
             xr.DataArray: Posterior variance of reconstructed images.
@@ -1467,18 +1652,26 @@ class ImageRecon:
         # FIXME catch earlier?
         if self.lambda_R_conc is None:
             return xr.DataArray(
-                [1.0, 1.0],
+                np.ones(len(self._wavelengths)),
                 dims=["wavelength"],
-                coords={"wavelength": self.Adot.wavelength},
+                coords={"wavelength": self._wavelengths},
             )
 
+        Adots = _as_list(self.Adot)
+        if len(Adots) > 1:
+            raise NotImplementedError(
+                "lambda_R_conc is not yet supported for lists of sensitivities in "
+                "recon modes 'mua' and 'mua2conc'."
+            )
+        Adot = Adots[0]
+
         # dims: (chromo, wavelength)
-        conc2mua = nirs.get_extinction_coefficients("prahl", self.Adot.wavelength)
+        conc2mua = nirs.get_extinction_coefficients("prahl", Adot.wavelength)
 
         # dims: (flat_channel, flat_vertex)
-        A_stacked = fwm.ForwardModel.compute_stacked_sensitivity(self.Adot)
-        nV_brain = self.Adot.is_brain.sum().values
-        nV_head = self.Adot.shape[1]
+        A_stacked = fwm.ForwardModel.compute_stacked_sensitivity(Adot)
+        nV_brain = Adot.is_brain.sum().values
+        nV_head = Adot.shape[1]
 
         # dims: (flat_vertex). All HbO vertices first, then all HbR vertices.
         R_direct = self._calculate_prior_R(A_stacked)
@@ -1490,8 +1683,8 @@ class ImageRecon:
         ]
 
         # Convert direct prior to indirect (OD space). dims: (vertex)
-        R_indirect_wl1 = self._calculate_prior_R(self.Adot.isel(wavelength=0))
-        R_indirect_wl2 = self._calculate_prior_R(self.Adot.isel(wavelength=1))
+        R_indirect_wl1 = self._calculate_prior_R(Adot.isel(wavelength=0))
+        R_indirect_wl2 = self._calculate_prior_R(Adot.isel(wavelength=1))
 
         conc2mua = conc2mua.pint.dequantify()  # FIXME: check units
         R_indirect_converted = conc2mua.values**2 @ R_direct_max  # / units.mm**2
@@ -1502,7 +1695,7 @@ class ImageRecon:
         lambda_R_indirect = xr.DataArray(
             [lambda_wl1, lambda_wl2],
             dims=["wavelength"],
-            coords={"wavelength": self.Adot.wavelength},
+            coords={"wavelength": Adot.wavelength},
         )
 
         return lambda_R_indirect
