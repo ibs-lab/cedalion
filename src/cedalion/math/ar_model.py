@@ -8,13 +8,10 @@ from warnings import warn
 def bic_arfit(dd, pmax=30):
     """This function computes the ar coefficients up to a max model order.
 
-    BIC is used to select the model
-
-    All model orders are compared on the same samples, i.e. without the first
-    ``pmax`` samples (see ``hold_back`` in ``statsmodels.tsa.ar_model.AutoReg``).
-    Otherwise, the BICs would not be comparable and the selected order would depend
-    on the units of the data. The search stops at the first order for which the BIC
-    increases. The selected model is then refitted on all available samples.
+    The model order in 0..pmax with the minimum BIC is selected
+    (:cite:t:`Barker2013`). The BICs of all orders are evaluated on the same
+    samples (the first pmax samples are held back for every order) to make them
+    comparable.
 
     Args:
         dd: pd.Series
@@ -25,14 +22,16 @@ def bic_arfit(dd, pmax=30):
     """
 
     dd = dd - dd.mean()
+    pmax = int(pmax)
 
-    best_p, best_bic = 0, np.inf
-    for p in range(pmax + 1):
-        bic = sm.tsa.AutoReg(dd, lags=p, hold_back=pmax).fit().bic
-        if bic > best_bic:
-            break
-        best_p, best_bic = p, bic
-    else:
+    bics = [
+        sm.tsa.AutoReg(dd, lags=p, hold_back=pmax).fit().bic for p in range(pmax + 1)
+    ]
+
+    # Select the best model order: the global BIC minimum
+    best_p = int(np.argmin(bics))
+
+    if best_p == pmax:
         warn("pmax was reached before finding the optimal BIC.")
 
     return sm.tsa.AutoReg(dd, lags=best_p).fit()

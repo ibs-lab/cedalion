@@ -83,8 +83,8 @@ def ar_irls_GLM(
         mask = np.asarray(mask, dtype=bool)
 
     if pmax is None:
-        fs = sampling_rate(y).to(units.Hz)
-        pmax = int(2 * np.ceil(fs.magnitude))
+        fs = sampling_rate(y).to(units.Hz).magnitude
+        pmax = int(2 * np.ceil(fs))
 
     # Keep all samples to preserve their temporal order for the AR filter. The values
     # of masked samples are replaced but never enter the fit.

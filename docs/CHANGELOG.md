@@ -6,7 +6,7 @@
 
 - Added `DesignMatrix.fill_nonfinite` to handle NaNs in regressors, e.g. in short-channel regressors. `max_corr_short_channel_regressor` now also selects short channels with NaNs, by [Elsa-Henriette Harms](https://github.com/elsahh). ([#191](https://github.com/ibs-lab/cedalion/pull/191))
 
-- The AR model order selected by the AR-IRLS noise model no longer depends on the units of the data, by [Elsa-Henriette Harms](https://github.com/elsahh). ([#191](https://github.com/ibs-lab/cedalion/pull/191))
+- The AR-IRLS noise model selects the AR model order with the minimum BIC over all orders up to `pmax`, and the order no longer depends on the units of the data. Before, the search stopped at the first increase of the BIC and could select too low orders, by [Alexander von Lühmann](https://github.com/avolu) and [Elsa-Henriette Harms](https://github.com/elsahh). ([#191](https://github.com/ibs-lab/cedalion/pull/191), [#202](https://github.com/ibs-lab/cedalion/pull/202))
 
 ## Version 26.8.0-rc1 
 

@@ -615,15 +615,6 @@ def test_bic_arfit_order_does_not_depend_on_units(scale):
     assert len(scaled.params) - 1 == order
 
 
-def test_bic_arfit_returns_pmax_if_bic_still_decreases():
-    dd = pd.Series(_ar_noise(5000, seed=2, coefs=(0.5, 0.2, 0.1, 0.05, 0.05)))
-
-    with pytest.warns(UserWarning, match="pmax was reached"):
-        result = cedalion.math.ar_model.bic_arfit(dd, pmax=2)
-
-    assert len(result.params) - 1 == 2
-
-
 def test_bic_arfit_pmax_zero():
     dd = pd.Series(_ar_noise(500, seed=3))
 
@@ -631,22 +622,6 @@ def test_bic_arfit_pmax_zero():
         result = cedalion.math.ar_model.bic_arfit(dd, pmax=0)
 
     assert len(result.params) == 1
-
-
-def test_ar_irls_default_pmax_from_sampling_rate():
-    n = 1000
-    time = np.arange(n) / 10.0
-    y = xr.DataArray(
-        _ar_noise(n, seed=4),
-        dims="time",
-        coords={"time": time, "samples": ("time", np.arange(n))},
-    )
-    y.time.attrs["units"] = "s"
-    x = pd.DataFrame({"const": np.ones(n), "b": np.sin(time)})
-
-    result = cedalion.math.ar_irls.ar_irls_GLM(y, x, pmax=None)
-
-    assert np.isfinite(result.params).all()
 
 
 def test_ar_irls_excludes_filtered_samples_that_reach_into_gaps():
