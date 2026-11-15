@@ -1,0 +1,19 @@
+rule blockaverage:
+    input:
+        input_snirf=lambda wc: [
+            f"{wc.sample}.snirf"
+        ]
+
+    output:
+        output_snirf="{sample}_blockaverage.snirf"
+
+    params:
+        func="cedalion.sigproc.steps:blockaverage",
+        config={
+            "t_pre": "2 s",
+            "t_post": "30 s",
+            "ts_name": "amp",
+        }
+
+    script:
+        "scripts/run_step.py"
