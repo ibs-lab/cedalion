@@ -455,8 +455,9 @@ def contract(a1: xr.DataArray, a2: xr.DataArray, dim: str | list[str]) -> xr.Dat
         the result of xr.dot.
     """
 
+    # optimize=True lets np.einsum use BLAS
     with xr.set_options(arithmetic_join="exact"):
-        return xr.dot(a1, a2, dim=dim)
+        return xr.dot(a1, a2, dim=dim, optimize=True)
 
 def transpose_like(
     a: xr.DataArray, target: xr.DataArray, dim_map: dict[str, str] | None = None

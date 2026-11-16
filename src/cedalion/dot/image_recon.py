@@ -1457,7 +1457,7 @@ class ImageRecon:
 
         A, F = problem.A, problem.F
 
-        lambda_meas = self.alpha_meas * np.max(np.linalg.eigh(F)[0])
+        lambda_meas = self.alpha_meas * np.max(np.linalg.eigvalsh(F))
 
         # shape: (flat_channel, flat_channel)
         if c_meas is not None:
