@@ -215,7 +215,7 @@ def solve_linear_l1(c, B, kappa, w_init=None, L_B=None, lam=None, B_is_eye=False
 
 # ==== PROBLEM C with lam = 0: max w'Aw  s.t.  w'Bw = 1 =======================
 
-def solve_quadratic(A, B, B_is_eye=False, return_all=False, **kw):
+def solve_quadratic(A, B, B_is_eye=False, return_all=False, select="max", **kw):
     """Non-convex, but exactly solvable via GEVD.
 
     The stationarity condition is the generalized eigenvalue problem:
@@ -225,6 +225,11 @@ def solve_quadratic(A, B, B_is_eye=False, return_all=False, **kw):
     A need NOT be PSD, only symmetric: B^-1/2 A B^-1/2 is symmetric for any such
     A, so the spectrum is real and the eigenvectors B-orthogonal. Indefinite A is
     the normal case when A is a signed-weighted sum of PSD matrices.
+
+    select="max" returns the largest mu, i.e. the true maximizer of w'Aw.
+    select="abs" returns the largest |mu| instead: use it when the sign of A is
+    arbitrary, e.g. a coupling whose polarity another filter can absorb, so that a
+    strongly negative mu counts as good a solution as a strongly positive one.
     """
     if B_is_eye:
         mu, V = np.linalg.eigh(A)
@@ -234,6 +239,8 @@ def solve_quadratic(A, B, B_is_eye=False, return_all=False, **kw):
     # all filters, best first (for deflation)
     if return_all:
         return V[:, ::-1], mu[::-1]
+    elif select == "abs":
+        return V[:, np.argmax(np.abs(mu))]
     else:
         return V[:, -1]
 
@@ -241,7 +248,7 @@ def solve_quadratic(A, B, B_is_eye=False, return_all=False, **kw):
 # ==== PROBLEM C with lam > 0: max w'Aw - lam||w||_1  s.t.  w'Bw = 1 ==========
 
 def solve_quadratic_l1(A, B, kappa, w_init=None, L_B=None, B_is_eye=False,
-                       max_iter=100, tol=1e-6, **kw):
+                       max_iter=100, tol=1e-6, select="max", **kw):
     """Non-convex AND non-smooth :cite:t:`sriperumbudur_majorization-minimization_2011`.
 
     Two reductions:
@@ -254,12 +261,21 @@ def solve_quadratic_l1(A, B, kappa, w_init=None, L_B=None, B_is_eye=False,
                    therefore Problem B with c = Ã w_k.
 
     Monotone ascent to a stationary point only; the caller supplies restarts.
+    select="abs" flips A when its dominant eigenvalue is negative, so the sparse
+    path follows the same convention as the dense one. Flipping before the shift
+    matters: the shift annihilates the most negative eigenvector, which would drive
+    the frozen L1 threshold to zero and silently remove all sparsity.
     """
     p = A.shape[0]
     eye = B_is_eye
 
-    # ---- step 1: shift A to PSD using the generalized spectrum of (A, B) ----
+    # ---- step 0: with select="abs", maximizing |w'Aw| is the same as maximizing
+    #      w'(-A)w when the dominant eigenvalue is negative, so just flip A ----
     mu = np.linalg.eigvalsh(A) if eye else eigvalsh(A, B)
+    if select == "abs" and abs(mu[0]) > abs(mu[-1]):
+        A, mu = -A, -mu[::-1]
+
+    # ---- step 1: shift A to PSD using the generalized spectrum of (A, B) ----
     rho = max(0.0, -mu[0]) + 1e-8 * max(np.abs(mu[-1]), 1.0)
     A_shift = A + rho * (np.eye(p) if eye else B)
 

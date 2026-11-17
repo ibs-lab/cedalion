@@ -48,7 +48,7 @@ class mSPoC:
         N_restarts (int): Number of times the algorithm is repeated.
         max_iter (int): Maximum number of iterations.
         tol (float): Tolerance value used for convergence criterion when comparing
-            correlations of consecutive runs.
+            absolute correlations of consecutive runs.
         random_state (int, optional): Seed for the random initialization of the
             filters and the "orthogonal" deflation bases, making fits reproducible.
             Defaults to None (not reproducible).
@@ -641,6 +641,11 @@ class mSPoC:
 
         In the wx step, A = sum_{i, n} wt_i sy(n) Cxxe(i, n) / NE, i.e. the temporal
         filter is applied together with sy, and h(Cxxe) is never built for efficiency.
+        That step takes the eigenvector with the largest |eigenvalue| rather than the
+        largest signed one, because the polarity of the coupling is arbitrary and wt
+        absorbs it: a strongly negative covariance is as good a solution as a positive
+        one. Convergence, restart selection and component ranking all use |correlation|
+        for the same reason.
 
         Args:
             Cxxe (ndarray): Covariances of the lagged copies of X within each epoch,
@@ -687,13 +692,14 @@ class mSPoC:
                 sy = Y @ wy
                 # Spatial filter wx (quadratic problem, metric Cxx), wt applied with sy
                 Ax = np.tensordot(np.outer(wt, sy), Cxxe, axes=2) / NE
-                wx = solve_filter(A=Ax, B=Cxx, kappa=self.l1_reg[0])
+                # Largest |eigenvalue|: the coupling polarity is arbitrary, wt absorbs it
+                wx = solve_filter(A=Ax, B=Cxx, kappa=self.l1_reg[0], select="abs")
                 # Epoch-wise bandpower with temporal embedding
                 Phi_x = embedded_power(wx)
                 # Compute correlation
                 corr = np.corrcoef(wt @ Phi_x, sy)[0, 1]
                 # Check for convergence
-                if np.abs(corr - corr_old) < self.tol:
+                if np.abs(np.abs(corr) - np.abs(corr_old)) < self.tol:
                     converged = True
                     break
                 corr_old = corr
