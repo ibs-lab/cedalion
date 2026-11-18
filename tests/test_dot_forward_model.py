@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 
@@ -133,6 +134,40 @@ def test_TwoSurfaceHeadModel_scaled_roundtrip():
         # pint units, an orthogonal latent issue).
         assert np.allclose(iu(reloaded.landmarks), iu(scaled.landmarks))
         repr(reloaded)
+
+
+def test_TwoSurfaceHeadModel_from_manifest(tmp_path):
+    """A manifest listing only masks and landmarks yields derived surfaces."""
+    (
+        SEG_DATADIR,
+        mask_files,
+        landmarks_file,
+    ) = cedalion.data.get_colin27_segmentation(downsampled=True)
+
+    # absolute paths override the manifest's folder as base directory
+    manifest = {
+        "format_version": 1,
+        "name": "colin27_downsampled",
+        "mask_files": {k: os.path.join(SEG_DATADIR, v) for k, v in mask_files.items()},
+        "landmarks_ras_file": os.path.join(SEG_DATADIR, landmarks_file),
+        "ras_crs": "subject",
+    }
+    fname = tmp_path / "headmodel_manifest.json"
+    fname.write_text(json.dumps(manifest))
+
+    head = fw.TwoSurfaceHeadModel.from_manifest(fname)
+
+    assert head.crs == "ijk"
+    assert head.t_ijk2ras.dims == ("subject", "ijk")
+    assert head.t_ras2ijk.dims == ("ijk", "subject")
+    assert head.landmarks is not None
+    assert head.brain.nvertices > 0
+    assert head.scalp.nvertices > 0
+
+    manifest["format_version"] = 2
+    fname.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="format_version"):
+        fw.TwoSurfaceHeadModel.from_manifest(fname)
 
 
 @skip_if_nirfaster_unavailable

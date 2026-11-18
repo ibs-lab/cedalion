@@ -38,7 +38,8 @@ from cedalion.geometry.segmentation import (
     surface_from_segmentation,
     voxels_from_segmentation,
 )
-from cedalion.io import read_mrk_json, read_segmentation_masks
+from cedalion.io import HeadModelFiles, read_mrk_json, read_segmentation_masks
+from cedalion.io.anatomy import HEADMODEL_MANIFEST
 
 
 @dataclass
@@ -401,6 +402,43 @@ class TwoSurfaceHeadModel:
             voxel_to_vertex_brain=voxel_to_vertex_brain,
             voxel_to_vertex_scalp=voxel_to_vertex_scalp,
         )
+
+    @classmethod
+    def from_manifest(cls, fname: str | Path) -> "TwoSurfaceHeadModel":
+        """Construct a head model from the files listed in a head model manifest.
+
+        Surfaces and voxel-to-vertex mappings that the manifest does not list are
+        derived from the segmentation masks (see :meth:`from_surfaces`).
+
+        Args:
+            fname: Path to a ``headmodel_manifest.json``
+                (see :class:`cedalion.io.anatomy.HeadModelFiles`).
+
+        Returns:
+            The head model in voxel space (``ijk``).
+        """
+        f = HeadModelFiles.from_manifest(fname)
+
+        head_ijk = cls.from_surfaces(
+            segmentation_dir=f.basedir,
+            mask_files=f.mask_files,
+            brain_surface_file=f.path("brain_surface_obj"),
+            scalp_surface_file=f.path("scalp_surface_obj"),
+            landmarks_ras_file=f.path("landmarks_ras_file"),
+            coordinates_file=f.path("brain_vertex_coordinates"),
+            voxel_to_vertex_mapping_file_brain=f.path("voxel_to_vertex_mapping"),
+            brain_face_count=None,
+            scalp_face_count=None,
+            smoothing=0,
+            surfaces_are_zero_based=f.surfaces_are_zero_based,
+        )
+
+        if f.ras_crs is not None:
+            crs_ras = head_ijk.t_ijk2ras.dims[0]
+            head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({crs_ras: f.ras_crs})
+            head_ijk.t_ras2ijk = head_ijk.t_ras2ijk.rename({crs_ras: f.ras_crs})
+
+        return head_ijk
 
 
     def __repr__(self):
@@ -1153,51 +1191,14 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
 
     if model == "colin27":
         f = cedalion.data.get_colin27_headmodel_files()
-
-        head_ijk = TwoSurfaceHeadModel.from_surfaces(
-            segmentation_dir=f.basedir,
-            mask_files=f.mask_files,
-            brain_surface_file=f.basedir / f.brain_surface_obj,
-            scalp_surface_file=f.basedir / f.scalp_surface_obj,
-            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
-            coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
-            brain_face_count=None,
-            scalp_face_count=None,
-            smoothing=0,
-            surfaces_are_zero_based=False,
-        )
-
-        head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})
-        head_ijk.t_ras2ijk = head_ijk.t_ras2ijk.rename({"aligned" : "mni"})
-
-
     elif model == "icbm152":
         f = cedalion.data.get_icbm152_headmodel_files()
-
-        head_ijk = TwoSurfaceHeadModel.from_surfaces(
-            segmentation_dir=f.basedir,
-            mask_files=f.mask_files,
-            brain_surface_file=f.basedir / f.brain_surface_obj,
-            scalp_surface_file=f.basedir / f.scalp_surface_obj,
-            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
-            coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
-            brain_face_count=None,
-            scalp_face_count=None,
-            smoothing=0,
-            surfaces_are_zero_based=False,
-        )
-
-        head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})
-        head_ijk.t_ras2ijk = head_ijk.t_ras2ijk.rename({"aligned" : "mni"})
-
     else:
         raise ValueError(
             "Unknown head model. Available models are: " + ", ".join(AVAILABLE_MODELS)
         )
 
-    return head_ijk
+    return TwoSurfaceHeadModel.from_manifest(f.basedir / HEADMODEL_MANIFEST)
 
 
 @lru_cache
@@ -1227,7 +1228,7 @@ def get_inflated_cortex_surface(model : str) -> cdc.TrimeshSurface:
         )
 
     return cdc.TrimeshSurface(
-        trimesh.load(f.basedir / "cortex_pial_inflated.obj"),
+        trimesh.load(f.path("inflated_surface_obj")),
         crs="inflated",
         units=cedalion.units(None).units,
     )
