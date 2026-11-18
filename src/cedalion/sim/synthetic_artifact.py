@@ -273,11 +273,9 @@ def add_artifacts(
         )
         alphas = amplitudes.median(dim="time").pint.dequantify()
     elif mode == "manual":
-        alphas = {
-            (channel, dim_value): 1
-            for dim_value in dim_values
-            for channel in channels
-        }
+        # unit alphas with the same channel/wavelength or channel/chromo coords as in
+        # auto mode, so that artifacts are scaled only by the scale parameter
+        alphas = xr.ones_like(ts_copy.isel(time=0, drop=True).pint.dequantify())
     else:
         raise ValueError("Invalid mode. Must be 'auto' or 'manual'.")
 
