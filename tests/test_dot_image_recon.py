@@ -111,6 +111,30 @@ def test_image_recon(
     assert not np.iscomplex(x_reco.data).any()
 
 
+@pytest.mark.parametrize("recon_mode", ["conc", "mua2conc"])
+def test_image_noise_posterior_requires_lambda_R_conc(recon_data, recon_mode):
+    def posterior(lambda_R_conc):
+        recon = dot.ImageRecon(
+            recon_data.Adot,
+            recon_mode=recon_mode,
+            alpha_meas=1e-6,
+            alpha_spatial=1.0,
+            apply_c_meas=True,
+            lambda_R_conc=lambda_R_conc,
+        )
+        recon.reconstruct(recon_data.y, recon_data.c_meas)
+        return recon.get_image_noise_posterior(recon_data.c_meas)
+
+    with pytest.raises(ValueError, match="lambda_R_conc"):
+        posterior(None)
+
+    # the posterior variance is non-negative and scales with the prior variance
+    noise1 = posterior(1.0).pint.to("molar**2").pint.dequantify()
+    noise2 = posterior(2.0).pint.to("molar**2").pint.dequantify()
+    assert (noise1 >= 0).all()
+    np.testing.assert_allclose(noise2.values, 2 * noise1.values, rtol=1e-6)
+
+
 def test_gaussian_sbf_downsample_mesh_uses_mask_positionally():
     from cedalion import units
 

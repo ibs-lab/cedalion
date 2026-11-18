@@ -359,6 +359,25 @@ def _patch_image_reconstruction(monkeypatch):
                 },
             )
 
+        def _noise(self, method, c_meas):
+            calls["noise"] = (method, c_meas)
+            return xr.DataArray(
+                np.full((2, 3), 0.5),
+                dims=("chromo", "vertex"),
+                coords={
+                    "chromo": ["HbO", "HbR"],
+                    "vertex": [0, 1, 2],
+                    "is_brain": ("vertex", [True, True, False]),
+                    "parcel": ("vertex", ["p1", "p2", "p1"]),
+                },
+            )
+
+        def get_image_noise_posterior(self, c_meas=None):
+            return self._noise("posterior", c_meas)
+
+        def get_image_noise(self, c_meas):
+            return self._noise("measurement", c_meas)
+
     monkeypatch.setattr(steps, "ImageRecon", FakeImageRecon)
 
     return calls
@@ -422,6 +441,75 @@ def test_image_reconstruction_restrict_to_sensitive_parcels(monkeypatch, tmp_pat
 
     # vertex 2 is scalp; vertex 1 belongs to insensitive parcel p2.
     assert saved.vertex.values.tolist() == [0]
+
+
+@pytest.mark.parametrize("noise_method", ["posterior", "measurement"])
+def test_image_reconstruction_noise(monkeypatch, tmp_path, noise_method):
+    import xarray as xr
+
+    calls = _patch_image_reconstruction(monkeypatch)
+
+    output_noise = tmp_path / "noise.nc"
+
+    steps.image_reconstruction(
+        input_snirf=tmp_path / "input.snirf",
+        input_sensitivity=tmp_path / "sensitivity.h5",
+        output_image=tmp_path / "image.nc",
+        output_noise=output_noise,
+        noise_method=noise_method,
+        restrict_to_sensitive_parcels=True,
+    )
+
+    method, c_meas = calls["noise"]
+    assert method == noise_method
+    assert c_meas is calls["c_meas"]
+
+    # the noise covers the same vertices as the restricted image
+    noise = xr.load_dataarray(output_noise)
+    assert noise.dims == ("chromo", "vertex")
+    assert noise.vertex.values.tolist() == [0]
+
+
+def test_image_reconstruction_without_noise_output(monkeypatch, tmp_path):
+    calls = _patch_image_reconstruction(monkeypatch)
+
+    steps.image_reconstruction(
+        input_snirf=tmp_path / "input.snirf",
+        input_sensitivity=tmp_path / "sensitivity.h5",
+        output_image=tmp_path / "image.nc",
+    )
+
+    assert "noise" not in calls
+
+
+def test_image_reconstruction_rejects_unknown_noise_method(monkeypatch, tmp_path):
+    _patch_image_reconstruction(monkeypatch)
+
+    with pytest.raises(ValueError, match="noise_method"):
+        steps.image_reconstruction(
+            input_snirf=tmp_path / "input.snirf",
+            input_sensitivity=tmp_path / "sensitivity.h5",
+            output_image=tmp_path / "image.nc",
+            output_noise=tmp_path / "noise.nc",
+            noise_method="unknown",
+        )
+
+
+def test_image_reconstruction_c_meas_min(monkeypatch, tmp_path):
+    import numpy as np
+
+    calls = _patch_image_reconstruction(monkeypatch)
+
+    steps.image_reconstruction(
+        input_snirf=tmp_path / "input.snirf",
+        input_sensitivity=tmp_path / "sensitivity.h5",
+        output_image=tmp_path / "image.nc",
+        c_meas_min=2.0,
+    )
+
+    # the fake measurement variance is 1 everywhere and is raised to the bound
+    assert np.all(calls["c_meas"].values == 2.0)
+    assert np.all(calls["alpha_values"] == 2.0)
 
 
 def test_image_blockaverage_preserves_vertices_and_recovers_time_units(

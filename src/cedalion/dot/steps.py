@@ -306,6 +306,9 @@ def image_reconstruction(
     restrict_to_sensitive_parcels: bool = False,
     head_model: str | Path = "colin27",
     input_optodes: str | Path | None = None,
+    output_noise: str | Path | None = None,
+    noise_method: str = "posterior",
+    c_meas_min: float | None = None,
 ) -> None:
     """Reconstruct a brain time series in image space.
 
@@ -322,7 +325,20 @@ def image_reconstruction(
     ``input_optodes``, the probe registration used to compute the sensitivity matrix
     (see :func:`register_probe`), is given, the basis functions are constructed on the
     registered (e.g. scaled) head model. Otherwise the unregistered head model is used.
+
+    If ``output_noise`` is given, the variance of the reconstructed image is
+    estimated from the measurement variance and saved to this file. ``noise_method``
+    selects :meth:`ImageRecon.get_image_noise_posterior` (``"posterior"``) or
+    :meth:`ImageRecon.get_image_noise` (``"measurement"``). The variance is
+    time-independent and covers the same vertices as the image.
+
+    ``c_meas_min`` sets a lower bound for the measurement variance (in OD²), so that
+    channels with an implausibly low variance do not dominate the reconstruction
+    and the noise estimate.
     """
+    if noise_method not in ("posterior", "measurement"):
+        raise ValueError("noise_method must be either 'posterior' or 'measurement'.")
+
     output_image = Path(output_image)
     output_image.parent.mkdir(parents=True, exist_ok=True)
 
@@ -384,6 +400,12 @@ def image_reconstruction(
     # ImageRecon expects the diagonal measurement variance for this path.
     c_meas = measurement_variance(y, calc_covariance=False)
 
+    if c_meas_min is not None:
+        c_meas_units = c_meas.pint.units
+        c_meas = c_meas.pint.dequantify().clip(min=c_meas_min)
+        if c_meas_units is not None:
+            c_meas = c_meas.pint.quantify(c_meas_units)
+
     if alpha_meas is None:
         alpha_meas = float(
             estimate_alpha_meas(
@@ -434,15 +456,25 @@ def image_reconstruction(
         apply_c_meas=apply_c_meas,
     )
 
-    result = recon.reconstruct(y, c_meas=c_meas)
+    def restrict(image: xr.DataArray) -> xr.DataArray:
+        if restrict_to_sensitive_parcels:
+            image = image.where(image.is_brain, drop=True)
+            if sensitive_parcels is not None:
+                image = image.where(image.parcel.isin(sensitive_parcels), drop=True)
+        return image
 
-    if restrict_to_sensitive_parcels:
-        result = result.where(result.is_brain, drop=True)
-        if sensitive_parcels is not None:
-            result = result.where(
-                result.parcel.isin(sensitive_parcels),
-                drop=True,
-            )
+    result = restrict(recon.reconstruct(y, c_meas=c_meas))
+
+    if output_noise is not None:
+        output_noise = Path(output_noise)
+        output_noise.parent.mkdir(parents=True, exist_ok=True)
+
+        if noise_method == "posterior":
+            noise = recon.get_image_noise_posterior(c_meas)
+        else:
+            noise = recon.get_image_noise(c_meas)
+
+        restrict(noise).pint.dequantify().to_netcdf(output_noise)
 
     result = result.pint.dequantify()
     if "units" in y.time.attrs:
