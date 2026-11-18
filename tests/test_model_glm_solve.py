@@ -178,6 +178,7 @@ BASIS_CONFIGS = [
 # SIGNAL_DIMS = ["channel", "parcel", "vertex"]
 SIGNAL_DIMS = ["channel"]
 DRIFT_ORDERS = [0, 1, 2]
+
 # Only include noise models that currently support this test path.
 # "gls" currently fails inside glm.fit with index-alignment errors.
 # "rls" returns result objects that are not compatible with result.sm.params.

@@ -225,7 +225,6 @@ class Gamma(TemporalBasisFunction):
         self,
         ts: cdt.NDTimeSeries,
     ) -> xr.DataArray:
-
         cite("Strangman2002")
         # other_dim = xrutils.other_dim(ts, "time", "channel")
         spatial = cdc.get_spatial_dimension(ts)
