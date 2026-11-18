@@ -102,6 +102,71 @@ class DesignMatrix:
             channel_wise=[i.copy() for i in self.channel_wise]
         )
 
+    def fill_nonfinite(
+        self, ts: cdt.NDTimeSeries, fill_value: float = 0.0
+    ) -> tuple[DesignMatrix, xr.DataArray]:
+        """Replace NaNs and infs in the regressors and mask the affected samples.
+
+        A regressor can contain NaNs where its source signal is missing, e.g. a
+        short-channel regressor where the short channel has NaNs. :func:`glm.fit
+        <cedalion.models.glm.solve.fit>` requires a finite design matrix, and samples
+        at which a regressor is unknown must not enter the fit. This method returns
+        a finite copy of the design matrix together with a mask that excludes these
+        samples. Combine it with other masks and pass it to ``glm.fit``. The fill
+        value does not affect the fit, because the filled samples are masked, but it
+        does affect predictions in these samples.
+
+        Args:
+            ts (:class:`NDTimeSeries`, (time, *)): The time series to be modeled,
+                with the spatial and spectral dimensions of the design matrix. The
+                mask gets its dimensions and coordinates.
+            fill_value: Value that replaces NaNs and infs in the regressors.
+
+        Returns:
+            A tuple of the finite copy of the design matrix and a boolean mask with
+            the dimensions of ``ts``. The mask is ``False`` (``TAINTED``) at samples
+            at which any regressor used for that channel (or parcel, vertex) and
+            chromophore (or wavelength) is not finite, and ``True`` (``CLEAN``)
+            elsewhere. Non-finite values in a common regressor mask all channels,
+            those in a channel-wise regressor only the channels concerned.
+
+        Raises:
+            ValueError: If the coordinates of the design matrix and ``ts`` don't
+                match.
+
+        Example:
+            >>> dms, dm_mask = dms.fill_nonfinite(ts_long)
+            >>> result = glm.fit(ts_long, dms, mask=np.isfinite(ts_long) & dm_mask)
+        """
+        ts = ts.pint.dequantify()
+        mask = xr.ones_like(ts, dtype=bool).reset_coords(drop=True)
+
+        filled = []  # common part first, then the channel-wise regressors
+        for array in [self.common, *self.channel_wise]:
+            if array is None:
+                filled.append(None)
+                continue
+
+            values = array.pint.dequantify()
+            finite = np.isfinite(values)
+            bad = (~finite).any("regressor").reset_coords(drop=True)
+            try:
+                mask, bad = xr.align(mask, bad, join="exact")
+            except ValueError as e:
+                raise ValueError(
+                    "The coordinates of the design matrix and the time series "
+                    "don't match."
+                ) from e
+            mask = mask & ~bad
+
+            values = values.where(finite, fill_value).assign_attrs(values.attrs)
+            if array.pint.units is not None:
+                values = values.pint.quantify()
+            filled.append(values)
+
+        mask = mask.transpose(*ts.dims).assign_coords(ts.coords)
+        return DesignMatrix(common=filled[0], channel_wise=filled[1:]), mask
+
 
     def iter_computational_groups(
         self,
@@ -634,6 +699,11 @@ def closest_short_channel_regressor(
 
     Returns:
         regressors (xr.DataArray): Channel-wise regressor
+
+    Note:
+        NaNs in the selected short channel remain in the regressor. Use
+        :meth:`DesignMatrix.fill_nonfinite` to obtain a finite design matrix and a
+        mask that excludes these samples from the fit.
     """
     cite("Huppert2009")
     # calculate midpoints between channel optode pairs. dims: (channel, crs)
@@ -673,30 +743,51 @@ def max_corr_short_channel_regressor(
 
     Returns:
         xr.DataArray: channel-wise regressors
+
+    Raises:
+        ValueError: If the correlations of a long channel with all short channels are
+            undefined, e.g. because the long channel has no finite samples.
+
+    Note:
+        Each pair of long and short channels is correlated over the samples at which
+        both are finite. NaNs and infs in the selected short channel remain in the
+        regressor. Use :meth:`DesignMatrix.fill_nonfinite` to obtain a finite design
+        matrix and a mask that excludes these samples from the fit.
     """
 
     cite("Huppert2009")
     dim3 = xrutils.other_dim(ts_long, "channel", "time")
 
-    z_long = (ts_long - ts_long.mean("time")) / ts_long.std("time")
-    z_short = (ts_short - ts_short.mean("time")) / ts_short.std("time")
+    def to_frame(ts, label):
+        values = ts.sel({dim3: label}).pint.dequantify().transpose("time", "channel")
+        return values.where(np.isfinite(values)).to_pandas()
 
-    # calculate correleation coefficients between all long and short channels
-    # dims: (chromo|wavelength, ch_long, ch_short)
-    corr_coeff = (
-        xr.dot(
-            z_long.rename({"channel": "ch_long"}),
-            z_short.rename({"channel": "ch_short"}),
-            dim="time",
-        )
-        / z_long.sizes["time"]
+    # Pearson correlation of all long and short channels, computed by pandas over the
+    # samples at which both channels are finite. dims: (dim3, ch_long, ch_short)
+    corr_coeff = np.stack(
+        [
+            pd.concat(
+                {"long": to_frame(ts_long, i), "short": to_frame(ts_short, i)}, axis=1
+            )
+            .corr()
+            .loc["long", "short"]
+            .to_numpy()
+            for i in ts_long[dim3].values
+        ]
     )
 
     # for each long channel find the short channel with the highest correlation
     # in *any* chromophore/wavelength. Makes sure that different chromophores
     # don't get different short channels assigned.
-
-    max_corr_short_ch_indices = corr_coeff.max(dim3).argmax("ch_short").values
+    max_corr = np.fmax.reduce(corr_coeff, axis=0)  # ignores NaNs
+    undefined = np.isnan(max_corr).all(axis=1)
+    if undefined.any():
+        raise ValueError(
+            "The correlations of these long channels with all short channels are "
+            f"undefined: {', '.join(ts_long.channel.values[undefined])}. They may "
+            "have no finite samples or be constant. Remove them first."
+        )
+    max_corr_short_ch_indices = np.nanargmax(max_corr, axis=1)
 
     regressors = _regressors_from_selected_short_channels(
         ts_long, ts_short, max_corr_short_ch_indices
@@ -716,6 +807,12 @@ def average_short_channel_regressor(ts_short: cdt.NDTimeSeries):
 
     Returns:
         xr.DataArray: regressors
+
+    Note:
+        NaNs are skipped when averaging. The regressor is NaN only at samples at
+        which all short channels are NaN. Use :meth:`DesignMatrix.fill_nonfinite` to
+        obtain a finite design matrix and a mask that excludes these samples from
+        the fit.
     """
 
     cite("Huppert2009")

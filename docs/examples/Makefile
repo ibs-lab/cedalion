@@ -16,6 +16,7 @@ EXAMPLE_NOTEBOOKS = getting_started_io/00_test_installation.ipynb \
 					modeling/33_glm_illustrative_example.ipynb \
 					modeling/35_statsmodels_overview.ipynb \
 					modeling/36_glm_workshop.ipynb \
+					modeling/37_glm_masking.ipynb \
 					signal_quality/20_scalp_coupling_index.ipynb \
 					signal_quality/21_data_quality_and_pruning.ipynb \
 					signal_quality/22_motion_artefacts_and_correction.ipynb \

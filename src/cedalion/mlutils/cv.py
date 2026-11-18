@@ -50,6 +50,11 @@ def mask_design_matrix(
     parameters. Because the masked segment is continuous, the train-test split must be
     chosen such that the test trials are consecutive.
 
+    Zeroing the design matrix keeps the test segment out of the estimated parameters
+    only for ordinary least squares. Other noise models still use the samples of the
+    test segment, e.g. AR-IRLS to estimate its prewhitening filter. To exclude the
+    test segment for all noise models, pass a time mask to ``glm.fit`` instead.
+
     Args:
         dms: The design matrix to mask
         df_stim_test: test set of stimulus events.
