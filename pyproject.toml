@@ -25,6 +25,7 @@ dependencies = [
   "h5py==3.14.*",
   "joblib==1.5.*",
   "matplotlib==3.10.*",
+  "netcdf4==1.7.*",
   "nibabel==5.3.*",
   "nilearn==0.11.*",
   "numpy==2.2.*",

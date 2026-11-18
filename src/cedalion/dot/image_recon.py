@@ -662,7 +662,7 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         threshold = threshold.to(mesh_units).magnitude
 
         mesh = mesh.rename({"label": "vertex"}).pint.dequantify()
-        mesh_masked = mesh[mask, :].values
+        mesh_masked = mesh[np.asarray(mask, dtype=bool), :].values
         nmasked = mesh_masked.shape[0]
 
         sel_indices = [0]
@@ -1615,12 +1615,26 @@ class ImageRecon:
         where R is the spatial prior. Returns only the diagonal (variance at each
         vertex).
 
+        The prior R is scaled by ``lambda_R_conc``, the expected magnitude of the image
+        variance. Other than the reconstructed images, the posterior variance is
+        proportional to it, so ``lambda_R_conc`` must be set.
+
         Parameters:
             c_meas : Measurement covariance matrix.
 
         Returns:
             xr.DataArray: Posterior variance of reconstructed images.
+
+        Raises:
+            ValueError: If ``lambda_R_conc`` is not set.
         """
+
+        if self.lambda_R_conc is None:
+            raise ValueError(
+                "The posterior image variance scales with the prior variance "
+                "lambda_R_conc, which is not set. Set lambda_R_conc or use "
+                "get_image_noise."
+            )
 
         c_meas, new_W_input_hash = self._update_and_hash_cmeas(c_meas)
 
