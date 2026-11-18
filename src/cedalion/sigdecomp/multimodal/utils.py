@@ -470,12 +470,15 @@ def inv_sqrt_cov(C : np.ndarray,
     """Compute the inverse square root of a covariance matrix C.
 
     Given a (symmetric) covariance matrix C, it computes C^{-1/2} = U Lambda^{-1/2} U^T
-    using eigen-decomposition and clipping the inverse diagonal entries to eps to avoid
-    division by zero and instabilities.
+    using eigen-decomposition and clipping the eigenvalues from below to avoid
+    division by zero and instabilities. The floor is relative to the largest
+    eigenvalue, eps * lambda_max, so the result does not depend on the scale (units)
+    of the data: inv_sqrt_cov(a * C) = inv_sqrt_cov(C) / sqrt(a).
 
     Args:
         C (ndarray): Convariance matrix. Expected to be square and symmetric.
-        eps (float, optional): Small value to avoid division by zero during inversion.
+        eps (float, optional): Smallest eigenvalue kept, relative to the largest one.
+            Smaller (or negative) eigenvalues are clipped to eps * lambda_max.
 
     Returns:
         Inverse square root of C of the same size as input matrix.
@@ -483,7 +486,10 @@ def inv_sqrt_cov(C : np.ndarray,
 
     # Perform eigenvalue decomposition
     eigvals, U = np.linalg.eigh(C)
-    eigvals_reg = np.clip(eigvals, eps, None)  # Avoid zero values
+    # Avoid zero values, with a floor relative to the scale of C (absolute only if C
+    # has no positive eigenvalue at all)
+    scale = eigvals[-1] if eigvals[-1] > 0 else 1.0
+    eigvals_reg = np.clip(eigvals, eps * scale, None)
 
     # Inverse square root
     D_inv_sqrt = np.diag(1.0 / np.sqrt(eigvals_reg))
