@@ -859,10 +859,18 @@ def spatially_smoothed_pca_global_component_regressor(
 ) -> DesignMatrix:
     """Create a GLM regressor from a spatially smoothed PCA global component.
 
+    The global field is computed with the principal component spatial filter of
+    :cite:t:`Zhang2016` (:func:`cedalion.sigproc.physio.compute_Hglobal_from_PCA`
+    with a kernel from
+    :func:`cedalion.sigproc.physio.get_spatial_smoothing_kernel`). The field is
+    then averaged over the spatial dimension, so the design matrix contains one
+    common regressor per spectral value (e.g. one for HbO and one for HbR).
+
     Args:
         ts: Time-series data.
         vertices: Spatial coordinates for the spatial dimension, shape
-            ``(n_spatial, 3)``.
+            ``(n_spatial, 3)``. Quantified DataArrays are converted to
+            millimetres; plain arrays are assumed to be in millimetres.
         sigma_mm: Gaussian smoothing width in millimeters.
         spatial_dim: Spatial dimension name. If ``None``, inferred from ``ts``.
         spectral_dim: Spectral dimension name. If ``None``, inferred from
