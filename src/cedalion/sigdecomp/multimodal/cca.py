@@ -28,7 +28,7 @@ from cedalion.sigdecomp.multimodal.utils import (
     shrink_cov,
     inv_sqrt_cov,
 )
-from cedalion.sigdecomp.multimodal.solvers import solve_filter
+from cedalion.sigdecomp.multimodal.solvers import factorize_metric, solve_filter
 
 
 class MultimodalSourceDecomposition:
@@ -463,6 +463,10 @@ class MultimodalSourceDecomposition:
         # A new generator on each fit, so every fit is reproducible on its own
         rng = np.random.default_rng(self.random_state)
 
+        # The metrics are the same for every sub-problem of the fit (deflation only
+        # changes Cxy): check and factorize them once, not once per call
+        metric_x, metric_y = factorize_metric(Cxx), factorize_metric(Cyy)
+
         Wx = np.zeros((X.shape[1], self.N_components))
         Wy = np.zeros((Y.shape[1], self.N_components))
         for k in range(self.N_components):
@@ -474,8 +478,10 @@ class MultimodalSourceDecomposition:
                 wx_old, wy_old = wx, wy
 
                 # Alternate one filter at a time, each step being a linear sub-problem
-                wx = solve_filter(c=Cxy @ wy, B=Cxx, kappa=l1_reg[0], w_init=wx_old)
-                wy = solve_filter(c=Cxy.T @ wx, B=Cyy, kappa=l1_reg[1], w_init=wy_old)
+                wx = solve_filter(c=Cxy @ wy, kappa=l1_reg[0], w_init=wx_old,
+                                  metric=metric_x)
+                wy = solve_filter(c=Cxy.T @ wx, kappa=l1_reg[1], w_init=wy_old,
+                                  metric=metric_y)
 
                 # Check convergence via relative change in wx and wy
                 tol_x = self.tol * np.linalg.norm(wx)
