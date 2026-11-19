@@ -5,18 +5,20 @@ import pytest
 import xarray as xr
 
 from cedalion.sigdecomp.multimodal.cca import CCA
+from cedalion.sigdecomp.multimodal.mspoc import mSPoC
 from cedalion.sigdecomp.multimodal.tcca import tCCA
 
 N_TRIALS, N_TIME, FS = 12, 50, 10.0
 
 
-def make_trials(n_features: int, seed: int) -> xr.DataArray:
+def make_trials(n_features: int, seed: int, upsample: int = 1) -> xr.DataArray:
     rng = np.random.default_rng(seed)
+    n_time, fs = N_TIME * upsample, FS * upsample
     return xr.DataArray(
-        rng.standard_normal((N_TRIALS, N_TIME, n_features)),
+        rng.standard_normal((N_TRIALS, n_time, n_features)),
         dims=("epoch", "time", "channel"),
         coords={
-            "time": np.arange(N_TIME) / FS,
+            "time": np.arange(n_time) / fs,
             "channel": [f"c{seed}{i}" for i in range(n_features)],
             "trial_type": ("epoch", ["a", "b"] * (N_TRIALS // 2)),
         },
@@ -91,3 +93,20 @@ def test_tcca_trial_sources_are_trial_sample_component(trials, shift_source):
     assert Sx.dims == ("epoch", "time", "tCCA_X")
     assert Sy.dims == ("epoch", "time", "tCCA_Y")
     assert Sx.sizes["epoch"] == N_TRIALS and Sx.sizes["tCCA_X"] == 2
+
+
+def test_mspoc_trial_sources_are_trial_sample_component():
+    """mSPoC already returned the canonical order; this guards the shared convention."""
+    X, Y = make_trials(4, seed=2, upsample=10), make_trials(3, seed=3)
+    mspoc = mSPoC(N_components=2, time_lags=[0.0, 0.5, 1.0], random_state=0,
+                  l2_reg="lw")
+    mspoc.fit(X, Y, trial_name="epoch")
+
+    Sx, Sy, Px, sx = mspoc.transform(
+        X, Y, trial_name="epoch", return_unfiltered=True
+    )
+
+    # Px and sx follow the same order, so a shared feature extraction can use any
+    assert Sx.dims == Px.dims == sx.dims == ("epoch", "time", "mSPoC_X")
+    assert Sy.dims == ("epoch", "time", "mSPoC_Y")
+    assert Sx.sizes["epoch"] == N_TRIALS and Sx.sizes["mSPoC_X"] == 2
