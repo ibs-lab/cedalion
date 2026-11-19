@@ -16,7 +16,7 @@ from cedalion.sigdecomp.multimodal.utils import (
     validate_l2_reg,
     shrink_cov,
 )
-from cedalion.sigdecomp.multimodal.solvers import solve_filter
+from cedalion.sigdecomp.multimodal.solvers import factorize_metric, solve_filter
 
 
 class mSPoC:
@@ -674,6 +674,10 @@ class mSPoC:
             Phi_x = Phi_x - Phi_x.mean(axis=1, keepdims=True)
             return Phi_x
 
+        # The metrics are the same for every step of every restart: check and
+        # factorize them once, not once per call
+        metric_x, metric_y = factorize_metric(Cxx), factorize_metric(Cyy)
+
         # To keep track of best model
         corr_best = 0.0
         wx_best = wy_best = wt_best = None
@@ -692,12 +696,12 @@ class mSPoC:
                 wt = solve_filter(c=ct)
                 # Spatial filter wy (linear problem, metric Cyy)
                 cy = Y.T @ (wt @ Phi_x) / NE
-                wy = solve_filter(c=cy, B=Cyy, kappa=self.l1_reg[1], w_init=wy)
+                wy = solve_filter(c=cy, kappa=self.l1_reg[1], w_init=wy, metric=metric_y)
                 sy = Y @ wy
                 # Spatial filter wx (quadratic problem, metric Cxx), wt applied with sy
                 Ax = np.tensordot(np.outer(wt, sy), Cxxe, axes=2) / NE
                 # Largest |eigenvalue|: the coupling polarity is arbitrary, wt absorbs it
-                wx = solve_filter(A=Ax, B=Cxx, kappa=self.l1_reg[0], select="abs")
+                wx = solve_filter(A=Ax, kappa=self.l1_reg[0], select="abs", metric=metric_x)
                 # Epoch-wise bandpower with temporal embedding
                 Phi_x = embedded_power(wx)
                 # Compute correlation

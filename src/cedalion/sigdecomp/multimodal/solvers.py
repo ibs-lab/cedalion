@@ -55,9 +55,42 @@ def _check_metric_pd(B, name):
     return L
 
 
+# ==== METRIC, FACTORIZED ONCE ================================================
+
+def factorize_metric(B):
+    """Validate a metric once and precompute what the solvers reuse.
+
+    In an alternating scheme the metric (Cxx or Cyy) is the same for every
+    sub-problem of a fit, so checking it, factorizing it and computing its
+    largest eigenvalue on every call repeats O(p^3) work thousands of times.
+    Pass the result to solve_filter as `metric` instead of `B`.
+
+    Parameters
+    ----------
+    B : (p,p) ndarray or None
+        The constraint metric. None means identity.
+
+    Returns
+    -------
+    metric : dict
+        B (symmetrized), B_is_eye, L_B (Cholesky factor, None for the identity) and
+        lip (Lipschitz constant of the FISTA gradient, 2 * largest eigenvalue).
+    """
+    if B is None:
+        return {"B": None, "B_is_eye": True, "L_B": None, "lip": None}
+    p = B.shape[0]
+    if B.shape == (p, p) and np.abs(B - np.eye(p)).max() <= EYE_TOL:
+        return {"B": B, "B_is_eye": True, "L_B": None, "lip": None}
+    B = _check_square_symmetric(B, 'B', p)
+    L_B = _check_metric_pd(B, 'B')
+    lip = 2.0 * np.linalg.eigvalsh(B)[-1]
+    return {"B": B, "B_is_eye": False, "L_B": L_B, "lip": lip}
+
+
 # ==== DISPATCHER =============================================================
 
-def solve_filter(A=None, c=None, B=None, kappa=0.0, w_init=None, checks=True, **solver_kwargs):
+def solve_filter(A=None, c=None, B=None, kappa=0.0, w_init=None, checks=True, metric=None,
+                 **solver_kwargs):
     """Solve one single-filter sub-problem and return the filter w.
 
     Parameters
@@ -81,6 +114,9 @@ def solve_filter(A=None, c=None, B=None, kappa=0.0, w_init=None, checks=True, **
     checks : bool
         Run the consistency checks. Set False inside hot loops once the caller
         knows the inputs are well formed.
+    metric : dict or None
+        The metric factorized once by factorize_metric, used instead of B: its checks,
+        Cholesky factor and Lipschitz constant are then not recomputed per call.
     **solver_kwargs
         Passed straight through (max_iter, tol, n_mm_steps, ...).
 
@@ -104,14 +140,23 @@ def solve_filter(A=None, c=None, B=None, kappa=0.0, w_init=None, checks=True, **
             assert np.all(np.isfinite(c)), "c contains NaN or inf"
         if w_init is not None:
             assert w_init.shape == (p,), f"w_init must have shape ({p},), got {w_init.shape}"
+        if metric is not None:
+            assert B is None, "pass either B or metric, not both"
+            if metric["B"] is not None:
+                assert metric["B"].shape == (p, p), (
+                    f"metric is {metric['B'].shape[0]}-dim, problem is {p}-dim")
 
     # ---- resolve the metric: B = None means identity --> closed-form solution ----
-    B_is_eye = B is None or (B.shape == (p, p) and np.abs(B - np.eye(p)).max() <= EYE_TOL)
-    L_B = None
-    if not B_is_eye:
-        if checks:
-            B = _check_square_symmetric(B, 'B', p)
-            L_B = _check_metric_pd(B, 'B')              # also gives the solvers a free factorization
+    if metric is not None:
+        # factorized once by the caller: already checked, factorized and bounded
+        B, B_is_eye, L_B, lip = metric["B"], metric["B_is_eye"], metric["L_B"], metric["lip"]
+    else:
+        B_is_eye = B is None or (B.shape == (p, p) and np.abs(B - np.eye(p)).max() <= EYE_TOL)
+        L_B = lip = None
+        if not B_is_eye:
+            if checks:
+                B = _check_square_symmetric(B, 'B', p)
+                L_B = _check_metric_pd(B, 'B')          # also gives the solvers a free factorization
 
     sparse = kappa > 0.0
 
@@ -123,8 +168,8 @@ def solve_filter(A=None, c=None, B=None, kappa=0.0, w_init=None, checks=True, **
     if not quadratic and sparse:
         # Problem B: convex but non-smooth -> proximal gradient (FISTA), or a
         # single soft-threshold when B = I (the solver branches internally).
-        return solve_linear_l1(c, B, kappa, w_init=w_init, L_B=L_B, B_is_eye=B_is_eye, 
-                               **solver_kwargs)
+        return solve_linear_l1(c, B, kappa, w_init=w_init, L_B=L_B, B_is_eye=B_is_eye,
+                               lip=lip, **solver_kwargs)
 
     if quadratic and not sparse:
         # Problem C with lam = 0: non-convex, but closed GEVD solution.
@@ -133,8 +178,8 @@ def solve_filter(A=None, c=None, B=None, kappa=0.0, w_init=None, checks=True, **
     # Problem C with lam > 0: non-convex AND non-smooth. Shift A by rho*B to make
     # it PSD (a constant offset on the constraint surface), then minorize the
     # quadratic by its tangent, which turns each MM step into Problem B.
-    return solve_quadratic_l1(A, B, kappa, w_init=w_init, L_B=L_B, B_is_eye=B_is_eye, 
-                              **solver_kwargs)
+    return solve_quadratic_l1(A, B, kappa, w_init=w_init, L_B=L_B, B_is_eye=B_is_eye,
+                              lip=lip, **solver_kwargs)
 
 
 # ==== SHARED PROX ============================================================
@@ -167,7 +212,7 @@ def solve_linear(c, B, L_B=None, B_is_eye=False, **kw):
 # ==== PROBLEM B: max c'w - lam||w||_1  s.t.  w'Bw <= 1 =======================
 
 def solve_linear_l1(c, B, kappa, w_init=None, L_B=None, lam=None, B_is_eye=False,
-                    max_iter=2000, tol=1e-10, **kw):
+                    lip=None, max_iter=2000, tol=1e-10, **kw):
     """Convex but non-smooth -> FISTA :cite:t:`beck_fast_2009`.
 
     FISTA on the penalized form:
@@ -182,6 +227,9 @@ def solve_linear_l1(c, B, kappa, w_init=None, L_B=None, lam=None, B_is_eye=False
     `lam` overrides the kappa-derived threshold. Callers that invoke this inside
     an outer loop MUST pass a fixed lam: re-deriving it from ||c||_inf every
     iteration makes the penalty chase its own tail (c grows as w sparsifies).
+
+    `lip` is the Lipschitz constant 2 * lambda_max(B); pass it (factorize_metric) when
+    B is the same for many calls, so it is not recomputed.
     """
 
     # scale-free threshold
@@ -192,7 +240,8 @@ def solve_linear_l1(c, B, kappa, w_init=None, L_B=None, lam=None, B_is_eye=False
     if B_is_eye:
         w = soft_threshold(c, lam / 2.0)
     else:
-        lip = 2.0 * np.linalg.eigvalsh(B)[-1]        # Lipschitz constant of grad(w'Bw - 2c'w)
+        if lip is None:
+            lip = 2.0 * np.linalg.eigvalsh(B)[-1]    # Lipschitz constant of grad(w'Bw - 2c'w)
         w = np.zeros_like(c) if w_init is None else w_init.copy()
         u, t = w.copy(), 1.0                         # u = momentum point, t = Nesterov sequence
 
@@ -248,7 +297,7 @@ def solve_quadratic(A, B, B_is_eye=False, return_all=False, select="max", **kw):
 # ==== PROBLEM C with lam > 0: max w'Aw - lam||w||_1  s.t.  w'Bw = 1 ==========
 
 def solve_quadratic_l1(A, B, kappa, w_init=None, L_B=None, B_is_eye=False,
-                       max_iter=100, tol=1e-6, select="max", **kw):
+                       lip=None, max_iter=100, tol=1e-6, select="max", **kw):
     """Non-convex AND non-smooth :cite:t:`sriperumbudur_majorization-minimization_2011`.
 
     Two reductions:
@@ -292,8 +341,8 @@ def solve_quadratic_l1(A, B, kappa, w_init=None, L_B=None, B_is_eye=False,
     for _ in range(max_iter):
         # tangent of the shifted quadratic at w
         c = A_shift @ w
-        w_new = solve_linear_l1(c, B, kappa, w_init=w, L_B=L_B, lam=lam, B_is_eye=eye, 
-                                **kw)
+        w_new = solve_linear_l1(c, B, kappa, w_init=w, L_B=L_B, lam=lam, B_is_eye=eye,
+                                lip=lip, **kw)
         # Sign is free (both the objective and the constraint are even in w),
         # so align before measuring the step, or a flip reads as non-convergence.
         if w_new @ w < 0:
