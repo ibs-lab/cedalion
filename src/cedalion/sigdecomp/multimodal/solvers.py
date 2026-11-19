@@ -130,6 +130,10 @@ def solve_filter(A=None, c=None, B=None, kappa=0.0, w_init=None, checks=True, me
     quadratic = A is not None
     p = A.shape[0] if quadratic else c.shape[0]
 
+    # Either B or metric, never both: inside `checks` this would be skipped when the
+    # caller turns them off, and `metric` would silently win over the B that was passed
+    assert metric is None or B is None, "pass either B or metric, not both"
+
     # ---- validate inputs ----
     if checks:
         assert 0.0 <= kappa < 1.0, f"kappa must lie in [0,1), got {kappa}"
@@ -140,11 +144,9 @@ def solve_filter(A=None, c=None, B=None, kappa=0.0, w_init=None, checks=True, me
             assert np.all(np.isfinite(c)), "c contains NaN or inf"
         if w_init is not None:
             assert w_init.shape == (p,), f"w_init must have shape ({p},), got {w_init.shape}"
-        if metric is not None:
-            assert B is None, "pass either B or metric, not both"
-            if metric["B"] is not None:
-                assert metric["B"].shape == (p, p), (
-                    f"metric is {metric['B'].shape[0]}-dim, problem is {p}-dim")
+        if metric is not None and metric["B"] is not None:
+            assert metric["B"].shape == (p, p), (
+                f"metric is {metric['B'].shape[0]}-dim, problem is {p}-dim")
 
     # ---- resolve the metric: B = None means identity --> closed-form solution ----
     if metric is not None:
@@ -229,7 +231,7 @@ def solve_linear_l1(c, B, kappa, w_init=None, L_B=None, lam=None, B_is_eye=False
     iteration makes the penalty chase its own tail (c grows as w sparsifies).
 
     The momentum is restarted whenever it points uphill (gradient adaptive restart,
-    O'Donoghue and Candes, 2015). Without it, FISTA oscillates on a poorly
+    :cite:t:`odonoghue_adaptive_2015`). Without it, FISTA oscillates on a poorly
     conditioned B and needs thousands of iterations; with it, it converges linearly.
     `lip` is the Lipschitz constant 2 * lambda_max(B); pass it (factorize_metric) when
     B is the same for many calls, so it is not recomputed.

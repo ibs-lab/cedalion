@@ -591,6 +591,7 @@ class mSPoC:
         # L1 sub-problems use FISTA (inside majorization-minimization for wx)
         if self.l1_reg[0] or self.l1_reg[1]:
             cite("beck_fast_2009")
+            cite("odonoghue_adaptive_2015")
         if self.l1_reg[0]:
             cite("sriperumbudur_majorization-minimization_2011")
 

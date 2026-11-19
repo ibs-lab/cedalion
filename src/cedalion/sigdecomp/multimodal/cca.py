@@ -459,6 +459,8 @@ class MultimodalSourceDecomposition:
         # L1 sub-problems: If Identify metric-> soft-thresholding, otherwise FISTA
         if l1_reg[0] or l1_reg[1]:
             cite("beck_fast_2009" if Cxx is not None else "witten_penalized_2009")
+            if Cxx is not None:
+                cite("odonoghue_adaptive_2015")  # the restart inside FISTA
 
         # A new generator on each fit, so every fit is reproducible on its own
         rng = np.random.default_rng(self.random_state)
