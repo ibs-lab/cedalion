@@ -11,3 +11,21 @@ ul.xr-var-list li.xr-var-item label {
 div.citation .label {
     width: 5em;
 }
+/* Sidebar in IBS colours (navy #173553, cyan #11c1cf, as on cedalion.tools)
+   instead of the theme's default blue. */
+.wy-side-nav-search,
+.wy-side-nav-search img,
+.wy-nav-top,
+.wy-nav-top img {
+    background-color: #173553;
+}
+
+.wy-side-nav-search input[type=text] {
+    border-color: #0f2438;
+}
+
+.wy-menu-vertical header,
+.wy-menu-vertical p.caption,
+.wy-nav .wy-menu-vertical header {
+    color: #11c1cf;
+}

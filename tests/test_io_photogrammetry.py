@@ -44,6 +44,9 @@ def test_opt_fid_to_xr():
             else:
                 assert opt.shape == (0, 3)
 
+            assert fid.points.crs == "digitized"
+            assert opt.points.crs == "digitized"
+
             assert (opt.type == cdc.PointType.SOURCE).all()
             optodes = {l.replace("S", "D"): o for l, o in optodes.items()}
             fid, opt = opt_fid_to_xr(fiducials, optodes)
@@ -63,6 +66,8 @@ def test_read_photogrammetry_einstar():
     assert_array_almost_equal(opt.values, optodes)
     assert sum(opt.type == cdc.PointType.SOURCE) == 10
     assert sum(opt.type == cdc.PointType.DETECTOR) == 90
+    assert fid.points.crs == "digitized"
+    assert opt.points.crs == "digitized"
 
 
 def write_test_photo_fn(fid, opt):

@@ -3,6 +3,7 @@
 import warnings
 
 import numpy as np
+import pandas as pd
 import pint
 import xarray as xr
 import scipy.sparse
@@ -404,7 +405,19 @@ def unstack(
 
 
     if unstack_dim not in array.indexes:
-        array = array.set_xindex(stacked_dims)
+        # set_xindex would build the MultiIndex with sorted levels, so that the
+        # unstacked dimensions come out in sorted order. Build the MultiIndex
+        # explicitly with levels in order of first appearance to preserve the
+        # original ordering of the coordinates.
+        levels = [pd.unique(array[c].values) for c in stacked_dims]
+        codes = [
+            pd.Index(lv).get_indexer(array[c].values)
+            for lv, c in zip(levels, stacked_dims)
+        ]
+        mindex = pd.MultiIndex(levels=levels, codes=codes, names=list(stacked_dims))
+        array = array.drop_vars(list(stacked_dims)).assign_coords(
+            xr.Coordinates.from_pandas_multiindex(mindex, unstack_dim)
+        )
 
     unstacked = array.unstack(unstack_dim)
 

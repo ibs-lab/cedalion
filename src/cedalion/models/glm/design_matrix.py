@@ -16,9 +16,15 @@ import cedalion.xrutils as xrutils
 import cedalion.dataclasses as cdc
 from cedalion import cite
 
+
 from cedalion.sigproc.frequency import sampling_rate
+from cedalion.sigproc.physio import (compute_Hglobal_from_PCA,
+                                     get_spatial_smoothing_kernel,
+                                     global_component_subtract,
+                                     )
 
 from .basis_functions import TemporalBasisFunction
+
 
 
 @dataclass
@@ -45,7 +51,6 @@ class DesignMatrix:
 
     def __repr__(self):
         """Return a compact string representation listing common and channel-wise regressors."""  # noqa: E501
-
         cregs = (
             ",".join([f"'{r}'" for r in self.common.regressor.values])
             if self.common is not None
@@ -93,6 +98,7 @@ class DesignMatrix:
             common=common,
             channel_wise=self.channel_wise + other.channel_wise
         )
+
 
     def copy(self):
         """Create a copy of this design matrix."""
@@ -294,19 +300,7 @@ def hrf_regressors(
 
                 regressors[:, i_reg, i_other] = regressor
 
-    regressors = xr.DataArray(
-        regressors,
-        dims=["time", "regressor", other_dim],
-        coords={
-            "time": ts.time.values,
-            "regressor": regressor_names,
-            other_dim: ts[other_dim].values,
-        },
-    )
-
-    # hrf_regs = hrf_regs.pint.quantify("micromolar")
-
-    return DesignMatrix(common=regressors, channel_wise=[])
+    return common_regressor_from_array(ts, regressors, regressor_names)
 
 # FIXME reduce overlap with hrf_regressors
 
@@ -384,17 +378,12 @@ def hrf_extract_regressors(
 
                 regressors[:, i_reg, i_other] = regressor
 
-    regressors = xr.DataArray(
+    return common_regressor_from_array(
+        ts,
         regressors,
-        dims=["time", "regressor", other_dim],
-        coords={
-            "time": basis.time.values,
-            "regressor": regressor_names,
-            other_dim: ts[other_dim].values,
-        },
+        regressor_names,
+        time=basis.time.values,
     )
-
-    return DesignMatrix(common=regressors, channel_wise=[])
 
 
 
@@ -434,13 +423,7 @@ def drift_regressors(ts: cdt.NDTimeSeries, drift_order) -> DesignMatrix:
 
     regressor_names = [f"Drift {i}" for i in range(drift_order + 1)]
 
-    drift_regressors = xr.DataArray(
-        drift_regressors,
-        dims=["time", "regressor", dim3],
-        coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
-    )
-
-    return DesignMatrix(common=drift_regressors, channel_wise=[])
+    return common_regressor_from_array(ts, drift_regressors, regressor_names)
 
 
 def drift_legendre_regressors(ts : cdt.NDTimeSeries, order : int) -> DesignMatrix:
@@ -475,13 +458,7 @@ def drift_legendre_regressors(ts : cdt.NDTimeSeries, order : int) -> DesignMatri
 
     regressor_names = [f"Drift LP {i}" for i in range(order + 1)]
 
-    drift_regressors = xr.DataArray(
-        drift_regressors,
-        dims=["time", "regressor", dim3],
-        coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
-    )
-
-    return DesignMatrix(common=drift_regressors, channel_wise=[])
+    return common_regressor_from_array(ts, drift_regressors, regressor_names)
 
 
 def drift_cosine_regressors(ts: cdt.NDTimeSeries, fmax: cdt.QFrequency) -> DesignMatrix:
@@ -512,13 +489,7 @@ def drift_cosine_regressors(ts: cdt.NDTimeSeries, fmax: cdt.QFrequency) -> Desig
 
     regressor_names = [f"Drift Cos {i}" for i in range(ncosines)]
 
-    drift_regressors = xr.DataArray(
-        drift_regressors,
-        dims=["time", "regressor", dim3],
-        coords={"time": ts.time, "regressor": regressor_names, dim3: ts[dim3].values},
-    )
-
-    return DesignMatrix(common=drift_regressors, channel_wise=[])
+    return common_regressor_from_array(ts, drift_regressors, regressor_names)
 
 
 
@@ -720,32 +691,211 @@ def average_short_channel_regressor(ts_short: cdt.NDTimeSeries):
 
     cite("Huppert2009")
     ts_short = ts_short.pint.dequantify()
-    regressor = ts_short.mean("channel", skipna=True).expand_dims("regressor")
-    regressor = regressor.assign_coords({"regressor": ["short"]})
-    regressor = regressor.transpose("time", "regressor", ...)
+    regressor = ts_short.mean("channel", skipna=True)
 
-    return DesignMatrix(common=regressor, channel_wise=[])
+    return common_regressor_from_array(ts_short, regressor, "short")
 
 
 def global_mean_regressor(ts: cdt.NDTimeSeries) -> DesignMatrix:
     """Create a global regressor by averaging over the spatial dimension.
 
     Args:
-        ts (NDTimeSeries): time series data (time x spatial_dim x chromo)
+        ts (NDTimeSeries): time series data.
 
     Returns:
-        DesignMatrix: design matrix with one global regressor
+        DesignMatrix: design matrix with one global regressor.
     """
-    # detect the spatial dimension dynamically (channel, parcel, or vertex)
     spatial_dim = cdc.get_spatial_dimension(ts)
 
-    # regressors are dequantified
     ts = ts.pint.dequantify()
+    regressor = ts.mean(spatial_dim, skipna=True)
 
-    # mean over spatial dimension → global signal
-    regressor = ts.mean(spatial_dim, skipna=True).expand_dims("regressor")
-    regressor = regressor.assign_coords({"regressor": ["global"]})
-    regressor = regressor.transpose("time", "regressor", ...)
+    return common_regressor_from_array(ts, regressor, "global")
 
-    return DesignMatrix(common=regressor, channel_wise=[])
 
+def common_regressor_from_array(
+    ts: cdt.NDTimeSeries,
+    regressors: xr.DataArray | np.ndarray,
+    regressor_names: str | list[str],
+    time: ArrayLike | None = None,
+) -> DesignMatrix:
+    """Create common GLM regressors from a precomputed array.
+
+    Args:
+        ts: Time-series data whose third-dimension coordinates are used.
+        regressors: Regressor array with shape either
+            ``(n_times, n_regressors, n_dim3)`` or, for a single regressor,
+            ``(n_times, n_dim3)``. If an ``xr.DataArray`` is passed, it is
+            dequantified before packaging.
+        regressor_names: Name or names for the regressors. A single string is
+            allowed only when there is one regressor.
+        time: Optional time coordinate for the regressors. Defaults to ``ts.time``.
+
+    Returns:
+        Design matrix containing the regressors as common regressors.
+    """
+
+    spatial_dim = cdc.get_spatial_dimension(ts)
+    dim3 = xrutils.other_dim(ts, spatial_dim, "time")
+
+    if isinstance(regressors, xr.DataArray):
+        regressors = regressors.pint.dequantify()
+
+        if regressors.ndim == 2:
+            regressors = regressors.transpose("time", dim3).values
+        elif regressors.ndim == 3:
+            regressors = regressors.transpose("time", "regressor", dim3).values
+        else:
+            regressors = regressors.values
+    else:
+        regressors = np.asarray(regressors)
+
+    if regressors.ndim == 2:
+        regressors = regressors[:, None, :]
+
+    if regressors.ndim != 3:
+        raise ValueError(
+            "regressors must have shape (n_times, n_regressors, n_dim3) "
+            "or (n_times, n_dim3) for a single regressor."
+        )
+
+    if time is None:
+        time = ts.time
+
+    if regressors.shape[0] != len(time):
+        raise ValueError(
+            "regressors time dimension does not match time coordinate: "
+            f"{regressors.shape[0]} != {len(time)}."
+        )
+
+    if regressors.shape[2] != ts.sizes[dim3]:
+        raise ValueError(
+            f"regressors {dim3!r} dimension does not match ts: "
+            f"{regressors.shape[2]} != {ts.sizes[dim3]}."
+        )
+
+    n_regressors = regressors.shape[1]
+
+    if isinstance(regressor_names, str):
+        regressor_names = [regressor_names]
+
+    if len(regressor_names) != n_regressors:
+        raise ValueError(
+            "Number of regressor names must match the regressor dimension: "
+            f"{len(regressor_names)} != {n_regressors}."
+        )
+
+    regressors = xr.DataArray(
+        regressors,
+        dims=["time", "regressor", dim3],
+        coords={
+            "time": time,
+            "regressor": regressor_names,
+            dim3: ts[dim3].values,
+        },
+    )
+
+    return DesignMatrix(common=regressors, channel_wise=[])
+
+
+def global_component_regressor(
+    ts: cdt.NDTimeSeries,
+    ts_weights: xr.DataArray | None = None,
+    k: float = 0,
+    spatial_dim: str | None = None,
+    spectral_dim: str | None = None,
+    regressor_names: str | list[str] = "global",
+) -> DesignMatrix:
+    """Create common GLM regressors from the global physiological component.
+
+    The global component is computed with
+    :func:`cedalion.sigproc.physio.global_component_subtract`. The corrected
+    time series returned by that function is discarded, and only the global
+    component is used as a common GLM regressor.
+
+    Args:
+        ts: Time-series data.
+        ts_weights: Optional per-spatial/spectral weights passed to
+            ``global_component_subtract``.
+        k: Component-removal mode passed to ``global_component_subtract``.
+            ``k=0`` uses weighted-mean subtraction. ``k>0`` uses PCA-based
+            component removal.
+        spatial_dim: Spatial dimension name. If ``None``, it is inferred from
+            ``ts``.
+        spectral_dim: Spectral dimension name. If ``None``, it is inferred by
+            ``global_component_subtract``.
+        regressor_names: Name or names for the regressors.
+
+    Returns:
+        Design matrix containing the global component as common regressors.
+    """
+
+    if spatial_dim is None:
+        spatial_dim = cdc.get_spatial_dimension(ts)
+
+    if spectral_dim is None:
+        spectral_dim = xrutils.other_dim(ts, spatial_dim, "time")
+
+    _, global_component = global_component_subtract(
+        ts,
+        ts_weights=ts_weights,
+        k=k,
+        spatial_dim=spatial_dim,
+        spectral_dim=spectral_dim,
+    )
+
+    global_component = global_component.transpose("time", spectral_dim)
+
+    return common_regressor_from_array(ts, global_component, regressor_names)
+
+
+def spatially_smoothed_pca_global_component_regressor(
+    ts: cdt.NDTimeSeries,
+    vertices: xr.DataArray | np.ndarray,
+    sigma_mm: float = 80.0,
+    spatial_dim: str | None = None,
+    spectral_dim: str | None = None,
+    regressor_names: str | list[str] = "global_smoothed_pca",
+) -> DesignMatrix:
+    """Create a GLM regressor from a spatially smoothed PCA global component.
+
+    The global field is computed with the principal component spatial filter of
+    :cite:t:`Zhang2016` (:func:`cedalion.sigproc.physio.compute_Hglobal_from_PCA`
+    with a kernel from
+    :func:`cedalion.sigproc.physio.get_spatial_smoothing_kernel`). The field is
+    then averaged over the spatial dimension, so the design matrix contains one
+    common regressor per spectral value (e.g. one for HbO and one for HbR).
+
+    Args:
+        ts: Time-series data.
+        vertices: Spatial coordinates for the spatial dimension, shape
+            ``(n_spatial, 3)``. Quantified DataArrays are converted to
+            millimetres; plain arrays are assumed to be in millimetres.
+        sigma_mm: Gaussian smoothing width in millimeters.
+        spatial_dim: Spatial dimension name. If ``None``, inferred from ``ts``.
+        spectral_dim: Spectral dimension name. If ``None``, inferred from
+            ``ts``.
+        regressor_names: Name or names for the regressors.
+
+    Returns:
+        Design matrix containing the spatially smoothed PCA global component.
+    """
+
+    if spatial_dim is None:
+        spatial_dim = cdc.get_spatial_dimension(ts)
+
+    if spectral_dim is None:
+        spectral_dim = xrutils.other_dim(ts, spatial_dim, "time")
+
+    smoothing_kernel = get_spatial_smoothing_kernel(vertices, sigma_mm)
+
+    smoothed_global_field = compute_Hglobal_from_PCA(
+        ts,
+        smoothing_kernel=smoothing_kernel,
+        spatial_dim=spatial_dim,
+        spectral_dim=spectral_dim,
+    )
+
+    global_component = smoothed_global_field.mean(spatial_dim, skipna=True)
+
+    return common_regressor_from_array(ts, global_component, regressor_names)

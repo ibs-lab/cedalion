@@ -1,4 +1,5 @@
 import pyvista as pv
+import cedalion
 from cedalion.dataclasses import PointType
 import cedalion.dataclasses as cdc
 import numpy as np
@@ -35,6 +36,20 @@ class OptodeSelector:
         - Masha Iudina | mashayudi@gmail.com | 2024
     """
     def __init__(self, surface, points, normals=None, plotter=None, labels = None):
+        if surface.units != cedalion.units.mm:
+            raise NotImplementedError(
+                "OptodeSelector currently requires a surface in mm; got "
+                f"units={surface.units}. Convert the surface to mm before "
+                "picking (e.g. `surface.mesh.apply_scale(factor); "
+                "surface.units = cedalion.units.mm`)."
+            )
+        if points.pint.units != cedalion.units.mm:
+            raise NotImplementedError(
+                "OptodeSelector currently requires points in mm; got "
+                f"units={points.pint.units}. Convert with "
+                "`points = points.pint.to('mm')` first."
+            )
+
         self.points = points
         self.normals = normals
         self.surface = surface
@@ -65,8 +80,6 @@ class OptodeSelector:
             PointType.ELECTRODE: 3,
         }
 
-        # points = points.pint.to("mm").pint.dequantify()  # FIXME unit handling
-        # points = points.pint.dequantify()  # FIXME unit handling
         for type, x in points.groupby("type"):
             for i_point in range(len(x)):
 

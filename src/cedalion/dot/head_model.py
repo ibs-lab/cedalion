@@ -31,13 +31,15 @@ from cedalion.geometry.registration import (
     register_general_affine,
     register_trans_rot_isoscale,
     register_optodes_spring_icp,
-    register_identity
+    register_identity,
+    SpringICPResult
 )
 from cedalion.geometry.segmentation import (
     surface_from_segmentation,
     voxels_from_segmentation,
 )
-from cedalion.io import read_mrk_json, read_segmentation_masks
+from cedalion.io import HeadModelFiles, read_mrk_json, read_segmentation_masks
+from cedalion.io.anatomy import HEADMODEL_MANIFEST
 
 
 @dataclass
@@ -237,17 +239,27 @@ class TwoSurfaceHeadModel:
         fill_holes: bool = False,
         coordinates_file: Path | str | None = None,
         voxel_to_vertex_mapping_file_brain : Path | None = None,
-
+        surfaces_are_zero_based: bool = False,
     ) -> "TwoSurfaceHeadModel":
         """Constructor from seg.masks, brain and head surfaces as gained from MRI scans.
+
+        Surface files must be given in voxel (ijk) coordinates of the segmentation
+        masks, where a voxel coordinate denotes the voxel's centre. Cedalion indexes
+        voxels zero-based, whereas surfaces exported from 1-based environments
+        (e.g. MATLAB, Brainstorm) are offset by one voxel in each axis. By default
+        (``surfaces_are_zero_based=False``) the surfaces are assumed to be 1-based and
+        are shifted into cedalion's zero-based system; pass
+        ``surfaces_are_zero_based=True`` for surfaces that are already zero-based.
 
         Args:
             segmentation_dir: Folder containing the segmentation masks in NIFTI
                 format.
             mask_files: Dictionary mapping segmentation types to NIFTI
                 filenames.
-            brain_surface_file: Path to the brain surface.
-            scalp_surface_file: Path to the scalp surface.
+            brain_surface_file: Path to the brain surface in ijk coordinates. See
+                ``surfaces_are_zero_based``.
+            scalp_surface_file: Path to the scalp surface in ijk coordinates. See
+                ``surfaces_are_zero_based``.
             landmarks_ras_file: Filename of the landmarks in RAS space.
             brain_seg_types: List of segmentation types to be included in
                 the brain surface.
@@ -259,6 +271,9 @@ class TwoSurfaceHeadModel:
             fill_holes: Whether to fill holes in the segmentation masks.
             coordinates_file: path to file with additional vertex coordinates.
             voxel_to_vertex_mapping_file_brain : precomputed voxel to vertex mapping
+            surfaces_are_zero_based: Whether the voxel coordinates in the surface
+                files are zero-based. If False (default), they are interpreted as
+                1-based and shifted by -1 in each axis.
 
         Returns:
             TwoSurfaceHeadModel: An instance of the TwoSurfaceHeadModel class.
@@ -300,10 +315,16 @@ class TwoSurfaceHeadModel:
         else:
             landmarks_ijk = None
 
+        def load_surface_ijk(fname):
+            mesh = trimesh.load(fname)
+            if not surfaces_are_zero_based:
+                # translate 1-based voxel coordinates into cedalion's 0-based system
+                mesh.vertices = mesh.vertices - 1.0
+            return cdc.TrimeshSurface(mesh, "ijk", cedalion.units.Unit("1"))
+
         # derive surfaces from segmentation masks
         if brain_surface_file is not None:
-            brain_ijk = trimesh.load(brain_surface_file)
-            brain_ijk = cdc.TrimeshSurface(brain_ijk, 'ijk', cedalion.units.Unit("1"))
+            brain_ijk = load_surface_ijk(brain_surface_file)
         else:
             brain_ijk = surface_from_segmentation(
                 segmentation_masks, brain_seg_types, fill_holes_in_mask=fill_holes
@@ -313,8 +334,7 @@ class TwoSurfaceHeadModel:
         # grouped together, yielding a uniformly filled head volume.
 
         if scalp_surface_file is not None:
-            scalp_ijk = trimesh.load(scalp_surface_file)
-            scalp_ijk = cdc.TrimeshSurface(scalp_ijk, 'ijk', cedalion.units.Unit("1"))
+            scalp_ijk = load_surface_ijk(scalp_surface_file)
         else:
             all_seg_types = segmentation_masks.segmentation_type.values
             scalp_ijk = surface_from_segmentation(
@@ -382,6 +402,43 @@ class TwoSurfaceHeadModel:
             voxel_to_vertex_brain=voxel_to_vertex_brain,
             voxel_to_vertex_scalp=voxel_to_vertex_scalp,
         )
+
+    @classmethod
+    def from_manifest(cls, fname: str | Path) -> "TwoSurfaceHeadModel":
+        """Construct a head model from the files listed in a head model manifest.
+
+        Surfaces and voxel-to-vertex mappings that the manifest does not list are
+        derived from the segmentation masks (see :meth:`from_surfaces`).
+
+        Args:
+            fname: Path to a ``headmodel_manifest.json``
+                (see :class:`cedalion.io.anatomy.HeadModelFiles`).
+
+        Returns:
+            The head model in voxel space (``ijk``).
+        """
+        f = HeadModelFiles.from_manifest(fname)
+
+        head_ijk = cls.from_surfaces(
+            segmentation_dir=f.basedir,
+            mask_files=f.mask_files,
+            brain_surface_file=f.path("brain_surface_obj"),
+            scalp_surface_file=f.path("scalp_surface_obj"),
+            landmarks_ras_file=f.path("landmarks_ras_file"),
+            coordinates_file=f.path("brain_vertex_coordinates"),
+            voxel_to_vertex_mapping_file_brain=f.path("voxel_to_vertex_mapping"),
+            brain_face_count=None,
+            scalp_face_count=None,
+            smoothing=0,
+            surfaces_are_zero_based=f.surfaces_are_zero_based,
+        )
+
+        if f.ras_crs is not None:
+            crs_ras = head_ijk.t_ijk2ras.dims[0]
+            head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({crs_ras: f.ras_crs})
+            head_ijk.t_ras2ijk = head_ijk.t_ras2ijk.rename({crs_ras: f.ras_crs})
+
+        return head_ijk
 
 
     def __repr__(self):
@@ -821,7 +878,7 @@ class TwoSurfaceHeadModel:
         Args:
             target_landmarks: Target landmark positions (e.g. from a digitizer)
                 in any CRS.  Must contain the same label subset as the model's
-                landmarks. 
+                landmarks.
             mode: method to derive the affine transform. Could be either
                 'trans_rot_isoscale' or 'general'. See cedalion.geometry.registraion
                 for details.
@@ -1000,9 +1057,7 @@ class TwoSurfaceHeadModel:
 
         ijk2mni152 = ijk2mni152.pint.dequantify()  # FIXME?
 
-        voxel_coords = cedalion.io.anatomy.cell_coordinates(
-            img, ijk2mni152, center=True
-        )
+        voxel_coords = cedalion.io.anatomy.cell_coordinates(img, ijk2mni152)
         voxel_coords = voxel_coords.pint.dequantify()
 
         flat_voxel_coords = voxel_coords.values.reshape(-1, 3)
@@ -1036,6 +1091,89 @@ class TwoSurfaceHeadModel:
 
         return hm
 
+    def parcel_summary_from_vertex_coordinate(
+        self,
+        atlas_coord,
+        head_model_name: str,
+        exclude_pattern: str | None = "Background|Medial_Wall",
+    ):
+        vertices = self.brain.vertices
+        coords = vertices.coords
+        mni152 = self.get_brain_mni152_coords().pint.dequantify().values
+
+        df = pd.DataFrame({
+            "vertex": vertices.label.values,
+            "parcel": coords["parcel"].values,
+            "atlas_label": coords[atlas_coord].values,
+            "mni152_r": mni152[:, 0],
+            "mni152_a": mni152[:, 1],
+            "mni152_s": mni152[:, 2],
+        })
+
+        if "fsaverage_vertex" in coords:
+            df["fsaverage_vertex"] = coords["fsaverage_vertex"].values
+        elif "fsaverage_vertex_id" in coords:
+            df["fsaverage_vertex"] = coords["fsaverage_vertex_id"].values
+        else:
+            df["fsaverage_vertex"] = pd.NA
+
+        df["parcel"] = df["parcel"].astype(str)
+        df = df[df["parcel"] != ""]
+
+        if exclude_pattern is not None:
+            excluded = df["parcel"].str.contains(exclude_pattern, case=False, na=False)
+            df = df[~excluded]
+
+        counts = (
+            df.groupby(["parcel", "atlas_label"], dropna=False)
+            .size()
+            .reset_index(name="matching_vertices")
+        )
+        parcel_totals = (
+            df.groupby("parcel").size().rename("parcel_vertices").reset_index()
+        )
+        summary = counts.merge(parcel_totals, on="parcel", how="left")
+        summary["fraction_of_parcel"] = (
+            summary["matching_vertices"] / summary["parcel_vertices"]
+        )
+        summary = summary.sort_values(
+            ["parcel", "matching_vertices", "atlas_label"],
+            ascending=[True, False, True],
+        ).drop_duplicates("parcel")
+
+        representative = df.sort_values("vertex").drop_duplicates(
+            ["parcel", "atlas_label"]
+        )[
+            [
+                "parcel",
+                "atlas_label",
+                "vertex",
+                "fsaverage_vertex",
+                "mni152_r",
+                "mni152_a",
+                "mni152_s",
+            ]
+        ]
+        summary = summary.merge(
+            representative, on=["parcel", "atlas_label"], how="left"
+        )
+        summary.insert(0, "model", head_model_name)
+        return summary[
+            [
+                "model",
+                "parcel",
+                "atlas_label",
+                "vertex",
+                "fsaverage_vertex",
+                "mni152_r",
+                "mni152_a",
+                "mni152_s",
+                "matching_vertices",
+                "parcel_vertices",
+                "fraction_of_parcel",
+            ]
+        ]
+
 
 @lru_cache
 def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
@@ -1053,51 +1191,14 @@ def get_standard_headmodel(model : str) -> TwoSurfaceHeadModel:
 
     if model == "colin27":
         f = cedalion.data.get_colin27_headmodel_files()
-
-        head_ijk = TwoSurfaceHeadModel.from_surfaces(
-            segmentation_dir=f.basedir,
-            mask_files=f.mask_files,
-            brain_surface_file=f.basedir / f.brain_surface_obj,
-            scalp_surface_file=f.basedir / f.scalp_surface_obj,
-            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
-            coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            # FIXME: disabled while investigating the voxel parcel labels
-            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
-            brain_face_count=None,
-            scalp_face_count=None,
-            smoothing=0,
-        )
-
-        head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})
-        head_ijk.t_ras2ijk = head_ijk.t_ras2ijk.rename({"aligned" : "mni"})
-
-
     elif model == "icbm152":
         f = cedalion.data.get_icbm152_headmodel_files()
-
-        head_ijk = TwoSurfaceHeadModel.from_surfaces(
-            segmentation_dir=f.basedir,
-            mask_files=f.mask_files,
-            brain_surface_file=f.basedir / f.brain_surface_obj,
-            scalp_surface_file=f.basedir / f.scalp_surface_obj,
-            landmarks_ras_file=f.basedir / f.landmarks_ras_file,
-            coordinates_file=f.basedir / f.brain_vertex_coordinates,
-            # FIXME: disabled while investigating the voxel parcel labels
-            #voxel_to_vertex_mapping_file_brain= f.basedir / f.voxel_to_vertex_mapping,
-            brain_face_count=None,
-            scalp_face_count=None,
-            smoothing=0,
-        )
-
-        head_ijk.t_ijk2ras = head_ijk.t_ijk2ras.rename({"aligned" : "mni"})
-        head_ijk.t_ras2ijk = head_ijk.t_ras2ijk.rename({"aligned" : "mni"})
-
     else:
         raise ValueError(
             "Unknown head model. Available models are: " + ", ".join(AVAILABLE_MODELS)
         )
 
-    return head_ijk
+    return TwoSurfaceHeadModel.from_manifest(f.basedir / HEADMODEL_MANIFEST)
 
 
 @lru_cache
@@ -1127,7 +1228,7 @@ def get_inflated_cortex_surface(model : str) -> cdc.TrimeshSurface:
         )
 
     return cdc.TrimeshSurface(
-        trimesh.load(f.basedir / "cortex_pial_inflated.obj"),
+        trimesh.load(f.path("inflated_surface_obj")),
         crs="inflated",
         units=cedalion.units(None).units,
     )

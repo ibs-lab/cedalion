@@ -5,6 +5,7 @@ from cedalion.models.glm.design_matrix import DesignMatrix
 import cedalion
 import cedalion.typing as cdt
 from typing import Generator
+from cedalion import cite
 
 
 def create_cv_splits(
@@ -42,7 +43,7 @@ def mask_design_matrix(
     """Mask a segment of the design matrix by setting it to zero.
 
     When using GLM parameters as features, the fit must not have access to the test
-    trials. This function zeros out a contiguous segment of the design matrix, ensuring
+    trials (see :cite:`vonLuhmann2020`). This function zeros out a contiguous segment of the design matrix, ensuring
     that the model cannot explain the time course in the masked segment for any choice
     of parameters. The segment extends from the earliest to the latest trial in
     `df_stim_test`, padded by additional time specified by the `before` and `after`
@@ -58,6 +59,8 @@ def mask_design_matrix(
     Returns:
         A copy of the design matrix with the masked segment set to zero.
     """
+    cite("vonLuhmann2020")
+
     if len(dms.channel_wise) > 0:
         raise NotImplementedError(
             "masking of channel-wise regressors is not implemented, yet."

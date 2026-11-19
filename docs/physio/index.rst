@@ -21,6 +21,14 @@ in the GLM, or by using decomposition methods that separate neural from systemic
 components. When modelled correctly, the systemic signals become additional outcome
 measures that enrich the analysis rather than distortions to be discarded.
 
+Systemic signals can also be separated from cortical activation by their spatial
+extent: they affect the whole head, while cortical activation is focal. The principal
+component spatial filter of :cite:t:`Zhang2016` estimates the global component by
+strongly smoothing the data in space and keeps the focal remainder as the local
+component. Unlike temporal methods, this also works when the systemic signal is
+correlated with the task. It requires a probe that covers a much larger area than
+the expected activation.
+
 
 .. autosummary::
    :toctree: _autosummary_models
@@ -28,6 +36,9 @@ measures that enrich the analysis rather than distortions to be discarded.
 
     cedalion.sigproc.physio.ampd
     cedalion.sigproc.physio.global_component_subtract
+    cedalion.sigproc.physio.get_spatial_smoothing_kernel
+    cedalion.sigproc.physio.compute_Hglobal_from_PCA
+    cedalion.models.glm.design_matrix.spatially_smoothed_pca_global_component_regressor
 
 
 Examples
@@ -37,4 +48,5 @@ Examples
    :glob:
 
    ../examples/physio/*
+   ../examples/modeling/37_spatially_smoothed_pca_global_component.ipynb
    ../examples/signal_quality/24_downweighting_noisy_channels.ipynb

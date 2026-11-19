@@ -194,7 +194,11 @@ class ColoredStickerProcessor(ScanProcessor):
             surface normal vectors
             aux. detail object if detail == True
         """
-        assert surface.units == units.mm  # FIXME Einstar yields mm. Allow other units.
+        if surface.units != units.mm:
+            raise NotImplementedError(
+                "ColoredStickerProcessor currently supports mm-scale "
+                f"surfaces only; got units={surface.units}."
+            )
 
         vertex_colors, h, s, v = self._extract_vertex_color_data(surface)
 

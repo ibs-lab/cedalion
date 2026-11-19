@@ -1,0 +1,59 @@
+/* Tiles on docs/tutorial_videos.rst. Layout (max. two per row) comes from the
+   sphinx-design grids in the page; colours are set in landing.css. */
+
+.sd-card.video-card {
+    border-radius: 10px;
+    border-color: #dbe7ef;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+}
+
+.sd-card.video-card .sd-card-img-top {
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+}
+
+.sd-card.video-card .sd-card-body {
+    padding: 0.6rem 0.9rem;
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+.rst-content .sd-card.video-card .sd-card-body p {
+    margin-bottom: 0.2rem;
+}
+
+.sd-card.video-card .sd-card-footer {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #0a8f9a;
+}
+
+.sd-card.video-card-available {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sd-card.video-card-available:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
+}
+
+.sd-card.tutorial-placeholder {
+    border: 2px dashed #c9d1d9;
+    border-radius: 6px;
+    background: #f8f9fa;
+    box-shadow: none;
+    color: #6a737d;
+    font-style: italic;
+    text-align: center;
+    margin: 0.5rem 0 1.5rem;
+}
+
+.sd-card.tutorial-placeholder .sd-card-body {
+    padding: 0.75rem 1rem;
+}
+
+.rst-content .sd-card.tutorial-placeholder p {
+    margin: 0;
+}

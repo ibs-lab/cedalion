@@ -96,6 +96,9 @@ def od2conc(
     validators.has_wavelengths(dpf)
     validators.has_positions(geo3d, npos=3)
 
+    if not np.all(sorted(od.wavelength.values) == sorted(dpf.wavelength.values)):
+        raise ValueError("the wavelength coordinates of od and dpf do not match!")
+
     E = get_extinction_coefficients(spectrum, od.wavelength)
 
     Einv = xrutils.pinv(E)

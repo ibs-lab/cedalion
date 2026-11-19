@@ -42,6 +42,17 @@ Decomposition Methods
     cedalion.sigdecomp.unimodal
     cedalion.sigdecomp.multimodal
 
+ML Utilities
+------------
+
+.. autosummary::
+   :toctree: _autosummary_mlutils
+   :nosignatures:
+   :recursive:
+
+   cedalion.mlutils.cv
+   cedalion.mlutils.features
+
 Examples
 --------
 

@@ -10,6 +10,7 @@ dependencies:
   - jupyter
   - jupyter_client
   - matplotlib=3.10
+  - netcdf4=1.7
   - nibabel=5.3
   - nilearn=0.11
   - notebook
@@ -49,6 +50,7 @@ dependencies:
   - sphinx-autodoc-typehints
   - sphinx_rtd_theme=3.0
   - sphinx-autoapi
+  - sphinx-design
 
   - hatchling
   - hatch-vcs
@@ -71,4 +73,6 @@ dependencies:
       - snirf2bids @ git+https://github.com/emiddell/snirf2bids.git@v0.8.8
       - hatch-conda
       - pymeshlab
+      - "-e ./workflows[orchestration]"
+
       

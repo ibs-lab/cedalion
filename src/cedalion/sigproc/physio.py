@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import cedalion.dataclasses as cdc
 import cedalion.typing as cdt
 from cedalion import cite
 from sklearn.decomposition import PCA
+from scipy.spatial.distance import cdist
 import xarray as xr
 
 @cdc.validate_schemas
@@ -238,6 +241,207 @@ def global_component_subtract(
     global_comp.attrs = {"description": "Global physiological component removed"}
 
     return corrected, global_comp
+
+
+def get_spatial_smoothing_kernel(
+    vertices: xr.DataArray | np.ndarray,
+    sigma_mm: float = 80.0,
+) -> np.ndarray:
+    r"""Build a Gaussian spatial smoothing kernel over vertices.
+
+    This is the spatial low-pass filter used by the principal component spatial
+    filter of :cite:t:`Zhang2016` (see :func:`compute_Hglobal_from_PCA`). The
+    kernel entries are
+
+    .. math::
+
+        K_{ij} = \frac{\exp(-d_{ij}^2 / \sigma^2)}
+                      {\sum_k \exp(-d_{ik}^2 / \sigma^2)},
+
+    where :math:`d_{ij}` is the Euclidean distance between vertices *i* and
+    *j*. Weights below ``1e-3`` (before normalization) are set to zero. Each row
+    sums to one, so ``K @ x`` is a local weighted average of ``x`` and a
+    spatially constant pattern passes through unchanged.
+
+    Note that the exponent has no factor 2, so the kernel corresponds to a
+    Gaussian with standard deviation ``sigma_mm / sqrt(2)``. :cite:t:`Zhang2016`
+    use :math:`\exp(-r^2 / 2\sigma^2)` with :math:`\sigma = 50°` of arc length
+    on a sphere centred at the anterior commissure; here straight-line
+    distances in millimetres are used instead.
+
+    Args:
+        vertices: Spatial coordinates with shape ``(n_vertices, 3)``, e.g.
+            vertex positions of a brain surface or channel midpoints. If a
+            quantified ``xr.DataArray`` is passed, it is converted to
+            millimetres first; plain arrays and unitless DataArrays are assumed
+            to be in millimetres already.
+        sigma_mm: Width parameter :math:`\sigma` of the kernel in millimetres.
+            It must be much larger than the expected extent of task-related
+            activation and smaller than the probe coverage.
+
+    Returns:
+        Row-normalized spatial smoothing kernel with shape
+        ``(n_vertices, n_vertices)`` and dtype ``float32``.
+    """
+
+    if isinstance(vertices, xr.DataArray):
+        if vertices.pint.units is not None:
+            vertices = vertices.pint.to("mm")
+        vertices = vertices.pint.dequantify().values
+
+    vertices = np.asarray(vertices, dtype=np.float32)
+
+    distances = cdist(vertices, vertices)
+
+    np.square(distances, out=distances)
+    distances /= sigma_mm**2
+    np.negative(distances, out=distances)
+    np.exp(distances, out=distances)
+    distances[distances < 1e-3] = 0
+
+    row_sums = distances.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1.0
+    distances /= row_sums
+
+    return distances
+
+
+def compute_Hglobal_from_PCA(
+    data: cdt.NDTimeSeries,
+    smoothing_kernel: np.ndarray,
+    spatial_dim: str | None = None,
+    spectral_dim: str | None = None,
+) -> cdt.NDTimeSeries:
+    r"""Compute a spatially smoothed PCA global component.
+
+    Implements the principal component spatial filter of :cite:t:`Zhang2016`.
+    For each slice along ``spectral_dim``, the ``(time, space)`` data matrix
+    :math:`H` is decomposed with a singular value decomposition
+    :math:`H = U \Sigma V^T`. The spatial patterns (columns of :math:`V`) are
+    smoothed with ``smoothing_kernel`` :math:`K`, which removes spatially
+    localized structure and keeps only widespread structure, and the data are
+    reconstructed from the smoothed patterns:
+
+    .. math::
+
+        H_\mathrm{global} = U \Sigma (K V)^T .
+
+    The local ("neuronal") component is then
+    :math:`H_\mathrm{local} = H - H_\mathrm{global}`, which the caller
+    computes.
+
+    Before the decomposition, the spatial mean of each time sample is
+    subtracted and added back afterwards. Because all components are kept and
+    the rows of :math:`K` sum to one (as returned by
+    :func:`get_spatial_smoothing_kernel`), the result equals
+    :math:`H K^T`, i.e. the data spatially low-pass filtered at each time
+    sample.
+
+    The method assumes that the probe covers an area much larger than the
+    expected activation and that ``smoothing_kernel`` is much wider than the
+    activation. Otherwise, part of the task response ends up in the global
+    component and the local component shows artificial negative surround
+    activity. Spatially localized artefacts (e.g. from large superficial
+    vessels) are not removed.
+
+    Args:
+        data: Time-series data with dimensions ``"time"``, one spatial
+            dimension, and one spectral dimension.
+        smoothing_kernel: Spatial smoothing matrix with shape
+            ``(n_spatial, n_spatial)``.
+        spatial_dim: Spatial dimension name. If ``None``, inferred from
+            ``data``.
+        spectral_dim: Spectral dimension name. If ``None``, inferred from
+            ``data``.
+
+    Returns:
+        Spatially smoothed PCA global component with the same dimensions as
+        ``data``.
+
+    Raises:
+        ValueError: If ``data`` lacks a ``"time"`` or the requested spatial or
+            spectral dimension, if ``spectral_dim`` cannot be inferred, or if
+            ``smoothing_kernel`` does not match the spatial dimension.
+    """
+    cite("Zhang2016")
+
+    if spatial_dim is None:
+        spatial_dim = cdc.get_spatial_dimension(data)
+
+    if spectral_dim is None:
+        other_dims = [d for d in data.dims if d not in ("time", spatial_dim)]
+        if len(other_dims) != 1:
+            raise ValueError(
+                f"Could not infer spectral_dim from data.dims {data.dims}. "
+                "Please supply spectral_dim explicitly."
+            )
+        spectral_dim = other_dims[0]
+
+    if "time" not in data.dims:
+        raise ValueError("Input data must have a 'time' dimension.")
+
+    if spatial_dim not in data.dims:
+        raise ValueError(f"Spatial dimension {spatial_dim!r} not found in data.")
+
+    if spatial_dim != "vertex":
+        warnings.warn(
+            "Spatial smoothing is primarily intended for spatial_dim='vertex'.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    if spectral_dim not in data.dims:
+        raise ValueError(f"Spectral dimension {spectral_dim!r} not found in data.")
+
+    data_values = data.pint.dequantify()
+    data_values = data_values.transpose("time", spatial_dim, spectral_dim)
+
+    smoothing_kernel = np.asarray(smoothing_kernel, dtype=np.float32)
+
+    n_spatial = data_values.sizes[spatial_dim]
+    if smoothing_kernel.shape != (n_spatial, n_spatial):
+        raise ValueError(
+            "smoothing_kernel shape must match the spatial dimension: "
+            f"{smoothing_kernel.shape} != {(n_spatial, n_spatial)}."
+        )
+
+    kernel_t = smoothing_kernel.T.astype(np.float32, copy=False)
+
+    result = xr.zeros_like(data_values)
+
+    for spectral_value in data_values[spectral_dim].values:
+        matrix = (
+            data_values.sel({spectral_dim: spectral_value})
+            .transpose("time", spatial_dim)
+            .values
+            .astype(np.float32, copy=False)
+        )
+
+        mean = matrix.mean(axis=1, keepdims=True)
+        matrix_centered = matrix - mean
+
+        u, singular_values, vt = np.linalg.svd(matrix_centered, full_matrices=False)
+
+        vt_smoothed = vt @ kernel_t
+        reconstructed = (u * singular_values) @ vt_smoothed
+        reconstructed = reconstructed + mean
+
+        result.loc[{spectral_dim: spectral_value}] = xr.DataArray(
+            reconstructed,
+            dims=("time", spatial_dim),
+            coords={
+                "time": data_values.time.values,
+                spatial_dim: data_values[spatial_dim].values,
+            },
+        )
+
+    if hasattr(data, "pint") and data.pint.units is not None:
+        result = result.pint.quantify(data.pint.units)
+
+    result.attrs = data.attrs.copy()
+    result.attrs["description"] = "Spatially smoothed PCA global component"
+
+    return result.transpose(*data.dims)
 
 
 @cdc.validate_schemas

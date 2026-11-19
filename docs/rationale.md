@@ -93,7 +93,7 @@ University and released under the MIT licence. The project website is
 Contributions are welcome — see the [contributing guide](getting_started/contributing_code/contributing_code.md).
 If you use Cedalion in published work, please cite:
 
-> Middell, E., Carlton, L., Moradi, S., Codina, T., Fischer, T., Cutler, J., Kelley, S., Behrendt, J., Dissanayake, T., Harmening, N., Yücel, M. A., Boas, D. A., & von Lühmann, A. (2026). Cedalion Tutorial: A Python-based framework for comprehensive analysis of multimodal fNIRS &amp; DOT from the lab to the everyday world (Version 1). arXiv. https://doi.org/10.48550/ARXIV.2601.05923
+> Middell, E., Carlton, L. B., Moradi, S., Fischer, T., Cutler, J., Kelley, S. M., Behrendt, J., Dissanayake, T., Yücel, M. A., Boas, D. A., & von Lühmann, A. (2026). Cedalion tutorial: A Python-based framework for comprehensive analysis of multimodal fNIRS and DOT from the lab to the everyday world. *Neurophotonics*, 13(S3), 1–27. https://doi.org/10.1117/1.NPh.13.S3.S32602
 
 
 
