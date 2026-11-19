@@ -228,6 +228,9 @@ def solve_linear_l1(c, B, kappa, w_init=None, L_B=None, lam=None, B_is_eye=False
     an outer loop MUST pass a fixed lam: re-deriving it from ||c||_inf every
     iteration makes the penalty chase its own tail (c grows as w sparsifies).
 
+    The momentum is restarted whenever it points uphill (gradient adaptive restart,
+    O'Donoghue and Candes, 2015). Without it, FISTA oscillates on a poorly
+    conditioned B and needs thousands of iterations; with it, it converges linearly.
     `lip` is the Lipschitz constant 2 * lambda_max(B); pass it (factorize_metric) when
     B is the same for many calls, so it is not recomputed.
     """
@@ -248,6 +251,9 @@ def solve_linear_l1(c, B, kappa, w_init=None, L_B=None, lam=None, B_is_eye=False
         for _ in range(max_iter):
             grad = 2.0 * (B @ u - c)                 # gradient of the smooth part only
             w_new = soft_threshold(u - grad / lip, lam / lip)
+            # Adaptive restart: the step and the momentum disagree, so drop the momentum
+            if (u - w_new) @ (w_new - w) > 0:
+                t = 1.0
             t_new = 0.5 * (1.0 + np.sqrt(1.0 + 4.0 * t * t))
             u = w_new + ((t - 1.0) / t_new) * (w_new - w)
             converged = np.linalg.norm(w_new - w) <= tol * max(np.linalg.norm(w), 1e-12)
