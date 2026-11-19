@@ -325,12 +325,16 @@ class mSPoC:
             {self.latent_featureX_name: self.Wx[self.latent_featureX_name].data}
         )
 
+        # Canonical source order (..., sample, component), mirroring the input order
+        Sx = Sx.transpose(..., self.sample_name, self.latent_featureX_name)
+        Sy = Sy.transpose(..., self.sample_name, self.latent_featureY_name)
+
         if not return_unfiltered:
             return Sx, Sy
         else:
             # Unfiltered sources: the unshifted X source, and its bandpower in each epoch
             sx = xr.dot(X0, self.Wx, dim=self.featureX_name)
-            sx = sx.transpose(..., self.latent_featureX_name)
+            sx = sx.transpose(..., self.sample_name, self.latent_featureX_name)
             Csx = epoch_covariances(sx.data, epochs)
             phi_x = np.diagonal(Csx, axis1=-2, axis2=-1)
             Px = Sx.copy(data=phi_x)

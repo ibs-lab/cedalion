@@ -412,6 +412,10 @@ class MultimodalSourceDecompositionWithTemporalEmbedding(MultimodalSourceDecompo
             X_new = X_new.sel(time=X_new.time <= X_new.time[-1].data - minimal_shift)
             Y_new = Y_new.sel(time=Y_new.time <= Y_new.time[-1].data - minimal_shift)
 
+        # Canonical source order (..., sample, component), mirroring the input order
+        X_new = X_new.transpose(..., self.sample_name, self.latent_featureX_name)
+        Y_new = Y_new.transpose(..., self.sample_name, self.latent_featureY_name)
+
         return X_new, Y_new
 
 

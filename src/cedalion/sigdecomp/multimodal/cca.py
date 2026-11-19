@@ -599,10 +599,14 @@ class MultimodalSourceDecomposition:
         X_new = X @ self.Wx
         Y_new = Y @ self.Wy
 
-        # Restore the trial axis -> (trial, sample, component)
+        # Restore the trial axis
         if trial_name is not None:
             X_new = self.unflatten_trials(X_new, X_in)
             Y_new = self.unflatten_trials(Y_new, Y_in)
+
+        # Canonical source order (..., sample, component), mirroring the input order
+        X_new = X_new.transpose(..., self.sample_name, self.latent_featureX_name)
+        Y_new = Y_new.transpose(..., self.sample_name, self.latent_featureY_name)
 
         return X_new, Y_new
 
