@@ -131,3 +131,14 @@ def test_compute_Hglobal_from_PCA_rejects_wrong_kernel_shape():
             spatial_dim="vertex",
             spectral_dim="chromo",
         )
+
+
+@pytest.mark.parametrize(
+    "sigma_mm",
+    [0.0, -80.0, np.nan, np.inf, -np.inf],
+)
+def test_get_spatial_smoothing_kernel_rejects_invalid_sigma(sigma_mm):
+    vertices = np.zeros((2, 3))
+
+    with pytest.raises(ValueError, match="sigma_mm"):
+        physio.get_spatial_smoothing_kernel(vertices, sigma_mm=sigma_mm)

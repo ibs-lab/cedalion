@@ -284,6 +284,9 @@ def get_spatial_smoothing_kernel(
         ``(n_vertices, n_vertices)`` and dtype ``float32``.
     """
 
+    if not np.isfinite(sigma_mm) or sigma_mm <= 0:
+        raise ValueError("sigma_mm must be a positive, finite number.")
+
     if isinstance(vertices, xr.DataArray):
         if vertices.pint.units is not None:
             vertices = vertices.pint.to("mm")
