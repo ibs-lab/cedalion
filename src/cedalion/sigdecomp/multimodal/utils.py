@@ -491,6 +491,27 @@ def inv_sqrt_cov(C : np.ndarray,
 
     return C_inv_sqrt
 
+def lag_to_samples(time: np.ndarray, lag: float) -> int:
+    """Number of samples that a time lag spans on a time axis.
+
+    It is the index of the first sample at or after time[0] + lag, i.e. lags between
+    two samples are rounded up. A tolerance of 1e-6 sampling periods absorbs floating
+    point errors in the lag and in the time coordinates (e.g. 3 * 0.1 > 3 / 10), which
+    would otherwise shift a lag that lies on the time grid by one sample too many.
+
+    Args:
+        time (np.ndarray): Sorted time points.
+        lag (float): Non-negative time lag, in the units of time.
+
+    Returns:
+        int: Number of samples spanned by the lag, between 0 and len(time).
+    """
+
+    time = np.asarray(time)
+    tol = 1e-6 * (time[1] - time[0]) if len(time) > 1 else 0.0
+
+    return int(np.searchsorted(time, time[0] + lag - tol))
+
 def temporal_embedding(X: xr.DataArray, time_lags: np.ndarray) -> xr.DataArray:
     """Construct a time-embedded version of a matrix X.
 
@@ -508,14 +529,12 @@ def temporal_embedding(X: xr.DataArray, time_lags: np.ndarray) -> xr.DataArray:
         DataArray: Time-embedded version of X with dimensions (time_shift, *X.dims).
     """
 
-    # Read initial time
-    ti = X.time[0].data
-
     # Build temporal embeddings one by one (shifting along time, whatever its position
     # among the dims of X) and append to list
+    time = X.time.values
     X_emb_list = []
     for shift in time_lags:
-        start = X.time.searchsorted(shift + ti)
+        start = lag_to_samples(time, shift)
         X_emb = X.shift(time=start, fill_value=0)
         X_emb_list.append(X_emb)
 

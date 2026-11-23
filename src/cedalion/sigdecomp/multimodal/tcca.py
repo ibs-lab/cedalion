@@ -22,6 +22,7 @@ from cedalion.sigdecomp.multimodal.utils import (
     validate_sample_alignment,
     validate_time_shifts,
     embed_lags,
+    lag_to_samples,
     filter_to_pattern,
     validate_l1_reg,
     validate_l2_reg,
@@ -315,11 +316,11 @@ class MultimodalSourceDecompositionWithTemporalEmbedding(MultimodalSourceDecompo
         dims = X.dims
         X = X.transpose(self.sample_name, self.latent_featureX_name, ...)
 
-        ti = X.time[0].data
-        Nt = len(X.time)
+        time = X.time.values
+        Nt = len(time)
         X_shifted = xr.zeros_like(X)
         for i in range(self.N_components):
-            start = X.time.searchsorted(ti + self.optimal_shift[i])
+            start = lag_to_samples(time, self.optimal_shift[i])
             X_shifted[: Nt - start, i] = X[start:, i].data
 
         return X_shifted.transpose(*dims)
