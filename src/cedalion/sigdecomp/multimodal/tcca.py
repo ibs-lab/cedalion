@@ -263,7 +263,9 @@ class MultimodalSourceDecompositionWithTemporalEmbedding(MultimodalSourceDecompo
               (:cite:t:`haufe_interpretation_2014`) is strongest, i.e. the lag with
               the largest L2 norm of the pattern over X features.
             - "correlation": picks the time-shifted X that produces the biggest
-              correlation between reconstructed sources sx and sy.
+              correlation between reconstructed sources sx and sy. Lags whose
+              filter is zero for all X features (L1 sparsity) have a constant
+              source and are never picked.
 
         Args:
             X_emb (DataArray): Normalized time-embedded version of X with dimensions
@@ -301,11 +303,15 @@ class MultimodalSourceDecompositionWithTemporalEmbedding(MultimodalSourceDecompo
         # Iterate over components
         self.optimal_shift = np.zeros(self.N_components)
         for i in range(self.N_components):
-            # Calculate correlations
-            corrxy = [np.corrcoef(s[:, i], sy[:, i])[0, 1] for s in sx_list]
+            # Calculate correlations. A lag with an all-zero filter (L1 sparsity) has
+            # a constant source, whose correlation is undefined (NaN): count it as 0,
+            # otherwise argmax would return the first of those lags
+            with np.errstate(invalid="ignore", divide="ignore"):
+                corrxy = [np.corrcoef(s[:, i], sy[:, i])[0, 1] for s in sx_list]
+            corrxy = np.nan_to_num(np.abs(corrxy), nan=0.0)
 
             # Find optimal lag
-            max_corr_ndx = np.argmax(np.abs(corrxy))
+            max_corr_ndx = np.argmax(corrxy)
             self.optimal_shift[i] = self.time_lags[max_corr_ndx]
 
     def shift_by_optimal(self, X: xr.DataArray) -> xr.DataArray:
