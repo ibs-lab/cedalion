@@ -83,6 +83,9 @@ class mSPoC:
         N_lags (int): Number of time lags.
         lag_name (str): Name of the lag dim of Wt, i.e. lag_name in fit, or
             "time_shift" if X is embedded by the model.
+        power_window (float): Epoch length used for the bandpower: the one given at
+            initialization or, by default, one sampling period of the Y seen in the
+            last fit.
         optimal_shift (ndarray): Time lag where |Wt| peaks, for each component. Only
             informative: Wt already accounts for the lags, so Sx and Sy are aligned.
         gamma_x, gamma_y (float): Shrinkage intensities used for Cxx and Cyy (0
@@ -119,7 +122,10 @@ class mSPoC:
                 f"deflation must be 'orthogonal' or 'schur', but got {deflation!r}."
             )
         self.deflation = deflation
-        # Epoch length for the bandpower (see epoch_mapping)
+        # Epoch length for the bandpower (see epoch_mapping). The value given here is
+        # kept apart from the one resolved in fit, so the default follows the sampling
+        # period of Y on every fit
+        self.init_power_window = power_window
         self.power_window = power_window
         self.Ntx = None
         self.Nty = None
@@ -216,7 +222,7 @@ class mSPoC:
 
         # Defaults power_window to one sampling period of Y, if not given
         dty = (Y.time[1] - Y.time[0]).item()
-        self.power_window = self.power_window or dty
+        self.power_window = self.init_power_window or dty
 
         # Drop the Y samples whose epochs overlap the zero padding of a raw X
         # (avoids artificial, biased, lower powers)
