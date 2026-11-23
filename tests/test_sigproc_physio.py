@@ -2,8 +2,8 @@ import pytest
 import cedalion.sigproc.physio as physio
 import cedalion.data
 from cedalion import units
-import numpy as np
 import xarray as xr
+import numpy as np
 
 np.random.seed(42)
 
@@ -113,3 +113,21 @@ def test_compute_Hglobal_from_PCA_equals_spatial_smoothing_of_data():
     np.testing.assert_allclose(
         result.pint.dequantify().values, expected, atol=1e-4
     )
+
+
+def test_compute_Hglobal_from_PCA_rejects_wrong_kernel_shape():
+    data = xr.DataArray(
+        np.ones((10, 4, 1)),
+        dims=("time", "vertex", "chromo"),
+        coords={"chromo": ["HbO"]},
+    ).pint.quantify("uM")
+
+    wrong_kernel = np.eye(3)
+
+    with pytest.raises(ValueError, match="smoothing_kernel shape"):
+        physio.compute_Hglobal_from_PCA(
+            data,
+            smoothing_kernel=wrong_kernel,
+            spatial_dim="vertex",
+            spectral_dim="chromo",
+        )
