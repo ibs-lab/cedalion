@@ -202,9 +202,11 @@ class MultimodalSourceDecompositionWithTemporalEmbedding(MultimodalSourceDecompo
 
         Lags are either time_lags at initialization, or the lag_name coords of an
         already embedded X (in time units), as checked in validate_inputs_fit. In both
-        cases they are validated (positive, sorted, within the data domain), and
-        duplicated lags are removed with a warning (keeping the first lag copy of a
-        pre-embedded X, see embed_lags).
+        cases they are validated (positive, sorted), and duplicated lags are removed
+        with a warning (keeping the first lag copy of a pre-embedded X, see
+        embed_lags). Lags given at initialization must also be shorter than the data
+        (per trial, if any), since the model zero-pads them. Lags of a pre-embedded X
+        hold real signal history, so they can exceed the duration of a trial.
         """
         lags = self.init_time_lags if lag_name is None else X[lag_name].values
         lags = np.asarray(lags)
@@ -220,7 +222,13 @@ class MultimodalSourceDecompositionWithTemporalEmbedding(MultimodalSourceDecompo
             )
             lags = unique_lags
 
-        duration = X.time[-1].item() - X.time[0].item()
+        # Lags embedded by the model are zero padded, so they must fit in the data.
+        # Lags of a pre-embedded X were built outside (e.g. on the continuous
+        # recording, before epoching), so they are not bounded by the trial length
+        if lag_name is None:
+            duration = X.time[-1].item() - X.time[0].item()
+        else:
+            duration = np.inf
         self.time_lags = validate_time_shifts(T=duration, time_shifts=lags)
         self.N_lags = len(self.time_lags)
 
