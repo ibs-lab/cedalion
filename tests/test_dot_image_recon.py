@@ -110,3 +110,29 @@ def test_image_recon(
 
 
     assert not np.iscomplex(x_reco.data).any()
+
+
+def test_alpha_spatial_scalp(recon_data):
+    """Separate scalp parameter: same value reproduces the shared one, and a different
+    value changes the prior of the scalp vertices only."""
+    A = recon_data.Adot.isel(wavelength=0)
+    kw = dict(alpha_spatial=0.1, spatial_normalization="per_compartment")
+    shared = dot.ImageRecon(recon_data.Adot, **kw)._calculate_prior_R(A)
+    same = dot.ImageRecon(recon_data.Adot, alpha_spatial_scalp=0.1, **kw)._calculate_prior_R(A)
+    other = dot.ImageRecon(recon_data.Adot, alpha_spatial_scalp=1e-3, **kw)._calculate_prior_R(A)
+    brain = A.is_brain.values
+    np.testing.assert_allclose(same, shared)
+    np.testing.assert_allclose(np.asarray(other)[brain], np.asarray(shared)[brain])
+    assert not np.allclose(np.asarray(other)[~brain], np.asarray(shared)[~brain])
+
+    # global normalization with alpha equals per compartment with each compartment's
+    # alpha scaled by (largest sensitivity overall) / (largest in the compartment)
+    B = np.asarray((A**2).sum("channel"))
+    glob = dot.ImageRecon(recon_data.Adot, alpha_spatial=1e-3)._calculate_prior_R(A)
+    pc = dot.ImageRecon(recon_data.Adot, alpha_spatial=1e-3 * B.max() / B[brain].max(),
+                        alpha_spatial_scalp=1e-3 * B.max() / B[~brain].max(),
+                        spatial_normalization="per_compartment")._calculate_prior_R(A)
+    np.testing.assert_allclose(np.asarray(pc), np.asarray(glob))
+
+    with pytest.raises(ValueError):
+        dot.ImageRecon(recon_data.Adot, alpha_spatial=0.1, alpha_spatial_scalp=1e-3)

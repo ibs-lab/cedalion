@@ -998,6 +998,15 @@ class ImageRecon:
             Ignored when alpha_spatial is None, and inconsequential when
             brain_only is True, since then only one compartment is present.
 
+        alpha_spatial_scalp: regularization parameter of the scalp compartment when
+            spatial_normalization is 'per_compartment'. alpha_spatial then applies to
+            the brain only. Defaults to alpha_spatial, i.e. the same value for both
+            compartments. When the scalp holds the largest sensitivity, as it does
+            for head models with a scalp compartment, the global normalization with
+            alpha_spatial = a equals the per-compartment one with
+            alpha_spatial_scalp = a and alpha_spatial = a times the ratio of the
+            largest scalp to the largest brain sensitivity.
+
         lambda_R_conc: regularization parameter that sets the expected magnitude of the
             image covariance.
 
@@ -1015,6 +1024,7 @@ class ImageRecon:
         alpha_meas: float = 0.001,
         alpha_spatial: float | None = None,
         spatial_normalization: SpatialNormalization = "global",
+        alpha_spatial_scalp: float | None = None,
         lambda_R_conc: float | None = None,
         apply_c_meas: bool = False,
         recon_mode: ReconMode = "mua",
@@ -1041,6 +1051,11 @@ class ImageRecon:
         self.alpha_meas = alpha_meas
         self.alpha_spatial = alpha_spatial
         self.spatial_normalization = spatial_normalization
+        if alpha_spatial_scalp is not None and spatial_normalization != "per_compartment":
+            raise ValueError(
+                "alpha_spatial_scalp requires spatial_normalization='per_compartment'."
+            )
+        self.alpha_spatial_scalp = alpha_spatial_scalp
         self.apply_c_meas = apply_c_meas
         self.lambda_R_conc = lambda_R_conc
 
@@ -1300,12 +1315,17 @@ class ImageRecon:
             # carries no scalp compartment.
             is_brain = A.is_brain.values.astype(bool)
             Bv = B.values
-            if is_brain.all() or not is_brain.any():
-                b = Bv.max()
+            alpha_scalp = (self.alpha_spatial if self.alpha_spatial_scalp is None
+                           else self.alpha_spatial_scalp)
+            if is_brain.all():
+                b, alpha = Bv.max(), self.alpha_spatial
+            elif not is_brain.any():
+                b, alpha = Bv.max(), alpha_scalp
             else:
                 b = np.where(is_brain, Bv[is_brain].max(), Bv[~is_brain].max())
+                alpha = np.where(is_brain, self.alpha_spatial, alpha_scalp)
 
-            lambda_spatial = self.alpha_spatial * b
+            lambda_spatial = alpha * b
 
         L = np.sqrt(B + lambda_spatial)
         Linv = 1 / L
