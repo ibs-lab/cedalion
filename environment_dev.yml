@@ -10,6 +10,7 @@ dependencies:
   - jupyter
   - jupyter_client
   - matplotlib=3.10
+  - netcdf4=1.7
   - nibabel=5.3
   - nilearn=0.11
   - notebook

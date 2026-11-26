@@ -885,6 +885,7 @@ def export_to_bids_coordsystem_json(
     coordinate_system: str = "Other",
     coordinate_system_description: str | None = None,
     processing_description: str | None = None,
+    extra_fields: dict | None = None,
 ):
     """Export the coordinate system and landmarks to a BIDS _coordsystem.json.
 
@@ -902,6 +903,7 @@ def export_to_bids_coordsystem_json(
             a description naming the CRS of ``points``.
         processing_description: Optional ``NIRSCoordinateProcessingDescription``,
             e.g. ``"surface_projection"``.
+        extra_fields: Optional additional, non-BIDS fields added to the file.
     """
 
     cite("Gorgolewski2016")
@@ -935,6 +937,9 @@ def export_to_bids_coordsystem_json(
             cs["AnatomicalLandmarkCoordinateSystemDescription"] = (
                 coordinate_system_description
             )
+
+    if extra_fields is not None:
+        cs.update(extra_fields)
 
     with open(json_filename, "w") as f:
         json.dump(cs, f, indent=4)
@@ -1029,6 +1034,7 @@ def export_to_bids_probe(
     processing_description: str | None = None,
     channel_type: str = "NIRSCWAMPLITUDE",
     channel_units: str = "n/a",
+    extra_fields: dict | None = None,
 ):
     """Export a probe to BIDS _optodes.tsv, _coordsystem.json and _channels.tsv.
 
@@ -1049,6 +1055,8 @@ def export_to_bids_probe(
         processing_description: Optional processing description of the coordinates.
         channel_type: BIDS type of the channels.
         channel_units: Units of the channel data.
+        extra_fields: Optional additional, non-BIDS fields added to the coordinate
+            system file.
     """
     optodes_tsv_filename = Path(optodes_tsv_filename)
     if not optodes_tsv_filename.name.endswith("_optodes.tsv"):
@@ -1064,6 +1072,7 @@ def export_to_bids_probe(
         coordinate_system=coordinate_system,
         coordinate_system_description=coordinate_system_description,
         processing_description=processing_description,
+        extra_fields=extra_fields,
     )
     if meas_list is not None:
         export_to_bids_channels_tsv(
