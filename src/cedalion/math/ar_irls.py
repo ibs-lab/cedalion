@@ -46,8 +46,8 @@ def ar_irls_GLM(y, x, pmax: int | None = 40, M=sm.robust.norms.TukeyBiweight(c=4
     mask = np.isfinite(y.values)
 
     if pmax is None:
-        fs = sampling_rate(y).to(units.Hz)
-        pmax = 2 * np.ceil(fs)
+        fs = sampling_rate(y).to(units.Hz).magnitude
+        pmax = int(2 * np.ceil(fs))
 
     yorg : pd.Series = pd.Series(y.values[mask].copy())
     xorg : pd.DataFrame = x[mask].reset_index(drop=True)
