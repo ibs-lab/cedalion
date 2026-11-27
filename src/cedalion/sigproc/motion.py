@@ -575,6 +575,11 @@ def tddr(ts: cdt.NDTimeSeries) -> cdt.NDTimeSeries:
         )
         return signal * unit
 
+    # The algorithm below operates on a 1D numpy time course. Make sure that time
+    # is the last dimension so that numpy's positional operations (np.diff,
+    # broadcasting with the DataArray) act on the time axis.
+    signal = signal.transpose(..., "time")
+
     # Preprocess: Separate high and low frequencies
     signal_mean = np.mean(signal)
     signal -= signal_mean
@@ -588,7 +593,7 @@ def tddr(ts: cdt.NDTimeSeries) -> cdt.NDTimeSeries:
     n_iter = 0
 
     # Step 1. Compute temporal derivative of the signal
-    deriv = np.diff(signal_low)
+    deriv = np.diff(np.asarray(signal_low).ravel())
 
     # Step 2. Initialize observation weights
     w = np.ones(deriv.shape)
