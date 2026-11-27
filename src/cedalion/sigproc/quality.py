@@ -706,10 +706,12 @@ def id_motion(
     for ii in range(1, t_motion_samples + 1):
         # Shift the data by X samples to the left in the 'time' dimension
         shifted_data = fNIRSdata.shift(time=-ii, fill_value=0)
-        # zero padding of original data where shifted data is shorter
+        # zero padding of original data where shifted data is shorter. Use a
+        # positional slice of the last `ii` samples: a label-based .loc slice whose
+        # bound is a 0-d time DataArray breaks under pint_xarray (it tries to wrap
+        # the DataArray as a Quantity and raises "cannot wrap upcast type DataArray").
         fNIRSdata0 = fNIRSdata.copy()
-        strt_zeroidx = fNIRSdata0.time[-ii]
-        fNIRSdata0.loc[dict(time=slice(strt_zeroidx, None))] = 0
+        fNIRSdata0[dict(time=slice(-ii, None))] = 0
         # calc absolute differences
         diff.append(abs(shifted_data - fNIRSdata0))
 
