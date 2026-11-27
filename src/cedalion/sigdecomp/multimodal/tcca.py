@@ -88,8 +88,10 @@ class MultimodalSourceDecompositionWithTemporalEmbedding(MultimodalSourceDecompo
                 (sample_name, featureY_name).
         """
 
-        # Normalize
-        X_emb, Y = self.normalization_transform(X_emb, Y)
+        # X_emb and Y are expected to be normalized already (fit() normalizes them
+        # before calling this method). Normalizing again would standardize the
+        # already standardized features a second time with the stored mean and std
+        # of the raw data and distort the correlations between the sources.
 
         # Poject into each set of weights separately
         sx_list = [X_emb[i] @ self.Wx[i] for i in range(self.N_shifts)]
