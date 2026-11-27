@@ -93,8 +93,34 @@ def surface_from_segmentation(
     mesh = trimesh.Trimesh(vertices, faces, vertex_normals=normals)
     mesh.fill_holes()
     mesh.fix_normals()
+    # trimesh.fix_normals makes the winding consistent but inverts inward-facing
+    # meshes only when they are watertight. Masks touching the volume border (e.g. a
+    # head with the neck cut off) yield open meshes whose faces may all point inward.
+    mesh = orient_faces_outward(mesh)
 
     return cdc.TrimeshSurface(mesh, "ijk", cedalion.units.Unit("1"))
+
+
+def orient_faces_outward(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Invert the face winding of a mesh if most faces point inward.
+
+    The orientation is judged by the sign of the projection of each face normal
+    onto the vector from the mesh centroid to the face centre. Inverting the
+    winding (instead of flipping cached normals) makes the orientation survive
+    copies and transformations, which recompute normals from the faces.
+
+    Args:
+        mesh: a consistently wound trimesh.
+
+    Returns:
+        The input mesh, or a new mesh with inverted winding.
+    """
+    centroid = mesh.vertices.mean(axis=0)
+    outward = ((mesh.triangles_center - centroid) * mesh.face_normals).sum(axis=1) > 0
+    if outward.mean() < 0.5:
+        # build a new mesh so that all normals are recomputed from the new winding
+        mesh = trimesh.Trimesh(mesh.vertices, mesh.faces[:, ::-1])
+    return mesh
 
 
 def cell_coordinates(volume, flat: bool = False):
