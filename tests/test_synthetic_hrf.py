@@ -84,3 +84,40 @@ def test_build_stim_df():
     assert "duration" in stim_df.columns
     assert "value" in stim_df.columns
     assert "trial_type" in stim_df.columns
+
+
+def test_random_gaussian_sum_does_not_mutate_its_parameters():
+    """Calling the basis function repeatedly must not change its time window.
+
+    Regression test: t_start/t_end were modified in place on every call, so the
+    HRF support shrank by 4 t_std per call and the second call yielded a different
+    (eventually degenerate) basis.
+    """
+    fs = 10.0
+    t = np.arange(0, 60, 1 / fs)
+    ts = xr.DataArray(
+        np.zeros((1, 2, len(t))),
+        dims=["channel", "chromo", "time"],
+        coords={
+            "time": ("time", t, {"units": "s"}),
+            "samples": ("time", np.arange(len(t))),
+            "channel": ["S1D1"],
+            "chromo": ["HbO", "HbR"],
+        },
+    )
+
+    basis = syn.RandomGaussianSum(
+        t_start=0 * units.s,
+        t_end=30 * units.s,
+        t_delta=1 * units.s,
+        t_std=3 * units.s,
+        seed=0,
+    )
+
+    first = basis(ts)
+    second = basis(ts)
+
+    assert basis.t_start == 0 * units.s
+    assert basis.t_end == 30 * units.s
+    np.testing.assert_array_equal(first.time.values, second.time.values)
+    assert first.shape == second.shape
