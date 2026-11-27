@@ -493,8 +493,6 @@ def register_icp(
         surface.vertices.pint.to(units).points.to_homogeneous().pint.dequantify()
     )
 
-    to_crs = landmarks.points.crs
-
     kdtree_vertices = KDTree(vertices_mm.values[:, :3])
 
     common_labels = landmarks_mm.points.common_labels(geo3d_mm)
@@ -503,11 +501,14 @@ def register_icp(
         return m_trans(params[0:3]) @ m_rot(params[6:9]) @ m_scale3(params[3:6])
 
     def loss(params, coords_to, coords_from):
+        # coords_to and coords_from are homogeneous numpy arrays (n, 4)
         M = trafo(params)
-        tmp = coords_from.points._apply_numpy_transform(M, to_crs)
-        return np.power(_subtract(coords_to, tmp), 2).sum()
+        tmp = coords_from[:, :3] @ M[:3, :3].T + M[:3, 3]
+        return np.power(coords_to[:, :3] - tmp, 2).sum()
 
-    params0 = np.zeros(9)
+    # translation, scales, rotation angles. Scales start at 1 (the bounds are
+    # (0.5, 1.5)).
+    params0 = np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
     current_params = params0.copy()
     best_loss = np.inf
 
@@ -551,8 +552,6 @@ def register_icp(
             (-2 * np.pi, 2 * np.pi),
             (-2 * np.pi, 2 * np.pi),
         ]
-
-        print(coords)
 
         result = minimize(
             loss, current_params, args=(coords_true, coords), bounds=bounds
@@ -898,9 +897,9 @@ def register_optodes_spring_icp(
             ``k_spring`` to enforce anatomical constraints strongly.
         step_size: Fraction of the net force vector added to each position
             per iteration.  Reduce if the relaxation is unstable.
-        convergence_tol: Stop early when the maximum surface-projection
-            displacement across all optodes is below this value (in scalp
-            units).
+        convergence_tol: Stop early when the maximum displacement of an optode
+            within one iteration (force step plus projection onto the surface)
+            is below this value (in scalp units).
         initial_align_mode: Phase-1 transform type.  One of
             ``"trans_rot_isoscale"`` (7 DOF, default), ``"trans_rot"``
             (6 DOF), ``"general"`` (12 DOF full affine), or ``"identity"`` (only
@@ -1050,15 +1049,25 @@ def register_optodes_spring_icp(
         normal_component = np.sum(forces * normals, axis=1, keepdims=True)
         forces -= normal_component * normals
 
+        pos_before_step = pos_np
         pos_np = pos_np + step_size * forces
 
         # ICP step: project each optode onto the nearest point on the surface
         proj_pts, snap_dists, _ = _mesh_closest_point(scalp.mesh, pos_np)
         max_snap = float(np.max(snap_dists))
         snap_displacement_per_iter.append(max_snap)
+
+        # Convergence is judged by how far the optodes moved in this iteration.
+        # The snap distance alone is not a measure of convergence: the forces are
+        # tangential to the surface, so the projection distance is only second
+        # order in the step length (s**2 / 2R on a sphere of radius R) and falls
+        # below any tolerance while the optodes still move by s per iteration.
+        max_displacement = float(
+            np.max(np.linalg.norm(proj_pts - pos_before_step, axis=1))
+        )
         pos_np = proj_pts
 
-        if max_snap < convergence_tol:
+        if max_displacement < convergence_tol:
             n_iter_actual = i_iter + 1
             converged = True
             break
