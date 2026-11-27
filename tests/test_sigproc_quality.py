@@ -138,3 +138,38 @@ def test_stimulus_mask():
 
     assert all(stim_mask[0,:] == [True, False, True])
     assert all(stim_mask[1, :] == [True, True, False])
+
+
+def test_psp_scaling_of_cardiac_sinusoid():
+    """PSP of a clean cardiac sinusoid equals the power of the correlation peak.
+
+    The normalized cross-correlation of two identical sinusoids of unit variance is
+    a cosine with amplitude 1. With the 'power'/'spectrum' scaling of QT-NIRS its
+    peak spectral power is A**2 / 2 = 0.5. Regression test: a previous
+    implementation returned half of the QT-NIRS value.
+    """
+    fs = 10.0
+    t = np.arange(0, 60, 1 / fs)
+    cardiac = np.cos(2 * np.pi * 1.0 * t)
+    amp = 1.0 + 0.01 * cardiac
+
+    ts = cdc.build_timeseries(
+        np.stack([amp, amp])[None, :, :],
+        dims=["channel", "wavelength", "time"],
+        time=t,
+        channel=["S1D1"],
+        value_units="V",
+        time_units="s",
+        other_coords={
+            "wavelength": [760.0, 850.0],
+            "source": ("channel", ["S1"]),
+            "detector": ("channel", ["D1"]),
+        },
+    )
+
+    psp, psp_mask = quality.psp(ts, 5 * units.s, psp_thresh=0.1)
+
+    # ignore the first windows (partial window, filter transient) and the last one
+    values = psp.values[0, 2:-1]
+    assert_allclose(values, 0.5, rtol=0.1)
+    assert psp_mask.values[0, 2:-1].all()
