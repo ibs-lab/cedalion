@@ -24,7 +24,8 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinxcontrib.bibtex",
-    "sphinx.ext.linkcode"
+    "sphinx.ext.linkcode",
+    "sphinx_design",
     #"autoapi.extension"
 ]
 
@@ -48,6 +49,8 @@ html_theme_options = {
 html_css_files = [
     "css/rtd_fixes.css",
     "css/contributors.css",
+    "css/tutorial_videos.css",
+    "css/landing.css",
 ]
 
 html_js_files = [
@@ -64,12 +67,24 @@ def setup(app):
 
     app.connect("html-page-context", _force_readthedocs, priority=600)
 
+    # tutorial_videos.rst links many notebooks via nbgallery (a toctree). Sphinx
+    # would make it the parent of those notebooks (sidebar, breadcrumbs, prev/next)
+    # because it comes first in the root toctree and is read last. Drop it from the
+    # toctree hierarchy so notebooks keep their parents; nbsphinx renders galleries
+    # from the toctree nodes themselves, so the cards are unaffected.
+    def _detach_tutorial_videos(_app, env):
+        env.toctree_includes.pop("tutorial_videos", None)
+
+    app.connect("env-updated", _detach_tutorial_videos)
+
 # -- Configure MyST -----------------------------------------------------------
 
 myst_enable_extensions = [
     "substitution",
     "dollarmath",
     "amsmath",
+    "colon_fence",  # ::: fences for nested sphinx-design directives
+    "attrs_inline",  # [text]{.class} spans, used for the feature map on index.md
 ]
 
 myst_heading_anchors = 2

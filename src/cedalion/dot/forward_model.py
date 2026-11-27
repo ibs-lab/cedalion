@@ -9,7 +9,9 @@ directory.
 """
 
 from __future__ import annotations
+import contextlib
 import logging
+import os
 import os.path
 import sys
 from pathlib import Path
@@ -29,6 +31,7 @@ import cedalion.xrutils as xrutils
 import cedalion.io
 from cedalion.dot.head_model import TwoSurfaceHeadModel
 from cedalion.dot.voxel_head_model import VoxelHeadModel
+from tqdm import tqdm
 
 from cedalion.io.forward_model import FluenceFile, save_Adot
 
@@ -36,6 +39,37 @@ from .tissue_properties import get_tissue_properties
 
 logger = logging.getLogger("cedalion")
 
+
+@contextlib.contextmanager
+def _redirect_mcx_output(log_file: Path | None):
+    """Redirect pmcx output to a log_file at both the Python and C-library level.
+
+    pmcx prints its config dict via Python's sys.stdout and the MCX banner/stats
+    directly to file descriptor 1 (bypassing sys.stdout).  When `log_file` is given
+    both streams are appended there; when it is None this is a no-op.
+    """
+    if log_file is None:
+        yield
+        return
+
+    with open(log_file, "a") as sink:
+        saved_stdout = os.dup(1)
+        saved_stderr = os.dup(2)
+        os.dup2(sink.fileno(), 1)
+        os.dup2(sink.fileno(), 2)
+        old_sys_stdout = sys.stdout
+        old_sys_stderr = sys.stderr
+        sys.stdout = sink
+        sys.stderr = sink
+        try:
+            yield
+        finally:
+            sys.stdout = old_sys_stdout
+            sys.stderr = old_sys_stderr
+            os.dup2(saved_stdout, 1)
+            os.dup2(saved_stderr, 2)
+            os.close(saved_stdout)
+            os.close(saved_stderr)
 
 
 class ForwardModel:
@@ -66,6 +100,7 @@ class ForwardModel:
         head_model: TwoSurfaceHeadModel | VoxelHeadModel,
         geo3d: cdt.LabeledPoints,
         measurement_list: pd.DataFrame,
+        log_file: Path | None = None,
     ):
         """Constructor for the forward model.
 
@@ -77,7 +112,11 @@ class ForwardModel:
             geo3d (cdt.LabeledPoints): Optode positions and directions.
             measurement_list (pd.DataFrame): List of measurements of experiment with
                 source, detector, channel and wavelength.
+            log_file (Path | None): If given, pmcx output is appended to this file
+                instead of being printed. Subsequent runs append to the same file.
         """
+
+        self.log_file = log_file
 
         assert head_model.crs == geo3d.points.crs
 
@@ -104,7 +143,6 @@ class ForwardModel:
         # Slightly realign the optode positions to the closest scalp voxel
         self.optode_pos = head_model.snap_to_scalp_voxels(self.optode_pos)
 
-
         self.optode_pos = self.optode_pos.pint.dequantify()
         self.optode_dir = self.optode_dir.pint.dequantify()
 
@@ -116,6 +154,51 @@ class ForwardModel:
         self.volume = self.head_model.segmentation_masks.sum("segmentation_type")
         self.volume = self.volume.values.astype(np.uint8)
         self.unitinmm = self._get_unitinmm()
+
+        # The scalp mesh does not coincide with the voxelized skin, so the snapped
+        # voxel can lie several voxels below the surface - and how deep depends on
+        # the side of the head. Move every optode to the outermost tissue voxel
+        # along its normal. optode_pos holds integer voxel indices from here on.
+        # Cedalion's ijk convention: an integer index denotes the voxel centre.
+        self.optode_pos = self._move_to_surface_voxel(self.optode_pos, self.optode_dir)
+
+    def _move_to_surface_voxel(
+        self, pos: xr.DataArray, dir: xr.DataArray
+    ) -> xr.DataArray:
+        """Return integer indices of the outermost tissue voxel along -dir.
+
+        Args:
+            pos: Optode positions in voxel space (integer index = voxel centre).
+            dir: Unit vectors pointing into the head.
+
+        Returns:
+            Copy of pos with the coordinates replaced by the indices of the
+            outermost tissue voxel found by walking against dir.
+        """
+        pos = pos.copy()
+        shape = np.array(self.volume.shape)
+
+        def in_volume(q):
+            return (q >= 0).all() and (q < shape).all()
+
+        for i in range(len(pos)):
+            p = np.round(pos.values[i]).astype(int)
+            d = dir.values[i]
+
+            # if the snapped voxel is in air, step inward until tissue is hit
+            while in_volume(p) and self.volume[tuple(p)] == 0:
+                p = np.round(p + d).astype(int)
+
+            # then step outward while the next voxel is still tissue
+            while True:
+                q = np.round(p - d).astype(int)
+                if not in_volume(q) or self.volume[tuple(q)] == 0:
+                    break
+                p = q
+
+            pos.values[i] = p
+
+        return pos
 
     def _get_voxel_dimensions(self) -> pint.Quantity:
         """Calculate the x,y and z voxel dimensions in scanner space.
@@ -160,13 +243,19 @@ class ForwardModel:
         kwargs.setdefault("nphoton", 1e8)
         kwargs.setdefault("cuda", True)
 
+        # MCX (with issrcfrom0=1) places voxel [i,j,k] at [i,i+1]x[j,j+1]x[k,k+1],
+        # whereas cedalion's integer index denotes the voxel centre. Launch from
+        # the voxel centre: at an integer MCX position (a voxel corner) the result
+        # depends on the sign of srcdir.
+        srcpos = self.optode_pos.values[i_optode] + 0.5
+
         cfg = {
             "nphoton": kwargs['nphoton'],
             "vol": self.volume,
             "tstart": 0,
             "tend": 5e-9,
             "tstep": 5e-9,
-            "srcpos": self.optode_pos.values[i_optode],
+            "srcpos": srcpos,
             "srcdir": self.optode_dir.values[i_optode],
             "prop": self.tissue_properties[:,:,i_wl],
             "issrcfrom0": 1,
@@ -184,10 +273,12 @@ class ForwardModel:
 
         if "cuda" in cfg and cfg["cuda"]:
             import pmcx
-            result = pmcx.run(cfg)
+            with _redirect_mcx_output(self.log_file):
+                result = pmcx.run(cfg)
         else:
             import pmcxcl
-            result = pmcxcl.run(cfg)
+            with _redirect_mcx_output(self.log_file):
+                result = pmcxcl.run(cfg)
 
         fluence = result["flux"][:, :, :, 0]  # there is only one time bin
 
@@ -217,7 +308,8 @@ class ForwardModel:
         for i_opt in range(n_optodes):
             for i_step in range(MAX_STEPS):
                 pos = self.optode_pos[i_opt] + i_step * self.optode_dir[i_opt]
-                i, j, k = np.floor(pos.values).astype(int)
+                # integer index = voxel centre, so round to find the voxel
+                i, j, k = np.round(pos.values).astype(int)
 
                 if fluence[i, j, k] > 0:
                     result[i_opt] = fluence[i, j, k]
@@ -232,11 +324,23 @@ class ForwardModel:
 
         return result
 
-    def compute_fluence_mcx(self, fluence_fname : str | Path, **kwargs):
+    def compute_fluence_mcx(
+        self,
+        fluence_fname : str | Path,
+        optodes : list[str] | None = None,
+        **kwargs,
+    ):
         """Compute fluence for each channel and wavelength using MCX package.
 
         Args:
             fluence_fname : the output hdf5 file to store the fluence
+            optodes: Labels of the emitting optodes to simulate. Defaults to all
+                optodes. Simulating a subset produces a partial fluence file whose
+                ``fluence_all`` contains only these optodes, while
+                ``fluence_at_optodes`` still samples all optode positions. Partial
+                files can be merged, e.g. with
+                :func:`cedalion.dot.steps.merge_fluence`, which allows splitting
+                large probes across several jobs.
             kwargs: key-value pairs are passed to MCX's configuration dict. For example
                 nphoton (int) to control the number of photons to simulate.
                 See https://pypi.org/project/pmcx for further options.
@@ -267,14 +371,22 @@ class ForwardModel:
         cite("Yan2020")
         wavelengths = self.measurement_list.wavelength.unique()
         n_wavelength = len(wavelengths)
-        n_optodes = len(self.optode_pos)
+        all_labels = self.optode_pos.label.values.tolist()
+
+        if optodes is None:
+            emitting = list(range(len(all_labels)))
+        else:
+            unknown = [o for o in optodes if o not in all_labels]
+            if unknown:
+                raise ValueError(f"unknown optode labels: {unknown}")
+            emitting = [all_labels.index(o) for o in optodes]
 
         units = "1 / millimeter ** 2"
 
         fluence_at_optodes = xr.DataArray(
             dims=["optode1", "optode2", "wavelength"],
             coords={
-                "optode1": self.optode_pos.label.values,
+                "optode1": self.optode_pos.label.values[emitting],
                 "optode2": self.optode_pos.label.values,
                 "wavelength": wavelengths,
             },
@@ -283,15 +395,15 @@ class ForwardModel:
 
         with FluenceFile(fluence_fname, "w") as fluence_file:
             fluence_file.create_fluence_dataset(
-                self.optode_pos,
+                self.optode_pos[emitting],
                 wavelengths,
                 self.volume.shape,
                 units
             )
 
-            for i_opt in range(n_optodes):
-                label = self.optode_pos.label.values[i_opt]
-                print(f"simulating fluence for {label}. {i_opt+1} / {n_optodes}")
+            for i_out, i_opt in enumerate(
+                tqdm(emitting, desc="simulating fluence")
+            ):
 
                 # run MCX or MCXCL
                 # shape: [i,j,k]
@@ -301,11 +413,11 @@ class ForwardModel:
                 # currently tissue props are wavelength independent -> copy
                 for i_wl in range(n_wavelength):
                     # calculate fluence at all optode positions. used for normalization
-                    fluence_at_optodes[i_opt, :, i_wl] = self._fluence_at_optodes(
+                    fluence_at_optodes[i_out, :, i_wl] = self._fluence_at_optodes(
                         fluence, i_opt
                     )
 
-                    fluence_file.set_fluence_by_index(i_opt,i_wl, fluence)
+                    fluence_file.set_fluence_by_index(i_out, i_wl, fluence)
 
             fluence_file.set_fluence_at_optodes(fluence_at_optodes)
 
@@ -493,8 +605,9 @@ class ForwardModel:
         with FluenceFile(fluence_fname, "r") as fluence_file:
             fluence_at_optodes = fluence_file.get_fluence_at_optodes()
 
-
-            for _, r in self.measurement_list.iterrows():
+            for _, r in tqdm(
+                self.measurement_list.iterrows(), total=len(self.measurement_list)
+            ):
                 # using the adjoint monte carlo method
                 # see YaoIntesFang2018 and BoasDale2005
 

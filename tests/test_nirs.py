@@ -50,21 +50,19 @@ def test_int2od(ts):
 
 
 def test_od2int(ts):
-    od, baseline = cedalion.nirs.cw.int2od(ts, return_baseline = True)
-    amp =  cedalion.nirs.cw.od2int(od, baseline=baseline)
+    od, baseline = cedalion.nirs.cw.int2od(ts, return_baseline=True)
+    amp = cedalion.nirs.cw.od2int(od, baseline=baseline)
     assert_allclose(ts, amp, rtol=1e-6, equal_nan=True)
 
 
 def test_od2conc2od():
     rec = cedalion.data.get_snirf_test_data()[0]
 
-    for wl1,wl2 in [(760., 850.), (700, 900), (810, 820)]:
+    for wl1, wl2 in [(760.0, 850.0), (700, 900), (810, 820)]:
         amp = rec["amp"].copy()
         amp.wavelength.values[:] = [wl1, wl2]
 
-        dpf = xr.DataArray(
-            [6, 6], dims="wavelength", coords={"wavelength": [wl1, wl2]}
-        )
+        dpf = xr.DataArray([6, 6], dims="wavelength", coords={"wavelength": [wl1, wl2]})
 
         od1 = cedalion.nirs.cw.int2od(rec["amp"])
         conc = cedalion.nirs.cw.od2conc(od1, rec.geo3d, dpf, "prahl")
@@ -78,3 +76,16 @@ def test_od2conc2od():
         od1.transpose("channel", "wavelength", "time"),
         od2.transpose("channel", "wavelength", "time"),
     )
+
+
+def test_od2conc_wavelength_mismatch():
+    rec = cedalion.data.get_snirf_test_data()[0]
+    od = cedalion.nirs.cw.int2od(rec["amp"])
+
+    wl1, _ = od.wavelength.values
+    wl3 = 999
+
+    dpf = xr.DataArray([6, 6], dims="wavelength", coords={"wavelength": [wl1, wl3]})
+
+    with pytest.raises(ValueError):
+        cedalion.nirs.cw.od2conc(od, rec.geo3d, dpf, "prahl")

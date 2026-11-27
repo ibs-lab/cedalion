@@ -54,6 +54,46 @@ def trimesh_to_vtk_polydata(mesh: trimesh.Trimesh):
     return vtk_mesh
 
 
+def trimesh_to_pv_textured_polydata(
+    mesh: trimesh.Trimesh,
+) -> tuple[pv.PolyData, "pv.Texture | None"]:
+    """Convert a textured trimesh to a UV-mapped PyVista PolyData.
+
+    Preserves the mesh's UV coordinates as active texture coordinates and
+    returns the texture image as a ``pv.Texture`` so callers can UV-map the
+    texture image at pixel resolution instead of sampling it once per vertex
+    (as :func:`trimesh_to_vtk_polydata` does). This matters on coarse meshes
+    where per-vertex sampling smears sub-vertex texture features.
+
+    Args:
+        mesh: The input trimesh. UVs are read from ``mesh.visual.uv`` and the
+            texture image from ``mesh.visual.image`` or
+            ``mesh.visual.material.image``.
+
+    Returns:
+        Tuple of (PyVista PolyData with active texture coordinates set when
+        available, pv.Texture for the mesh's image or ``None`` if the mesh
+        has no usable UV+image combination).
+    """
+    faces = np.hstack(
+        [np.full((len(mesh.faces), 1), 3, dtype=np.int64), mesh.faces]
+    ).ravel()
+    poly = pv.PolyData(np.asarray(mesh.vertices, dtype=np.float64), faces)
+
+    visual = mesh.visual
+    uv = getattr(visual, "uv", None)
+    img = getattr(visual, "image", None) or getattr(
+        getattr(visual, "material", None), "image", None
+    )
+
+    if uv is None or img is None:
+        return poly, None
+
+    poly.active_texture_coordinates = np.asarray(uv, dtype=np.float32)
+    texture = pv.Texture(np.asarray(img.convert("RGB")))
+    return poly, texture
+
+
 def pyvista_polydata_to_trimesh(polydata: pv.PolyData) -> trimesh.Trimesh:
     """Convert a PyVista PolyData object to a Trimesh object.
 

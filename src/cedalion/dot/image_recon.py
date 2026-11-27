@@ -610,6 +610,8 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         self._compute_G_gaussian_kernels(head_model)
         self._compute_H(Adot)
 
+        cite("Carlton2026")
+
     @property
     def H(self):
         return self._H
@@ -660,7 +662,7 @@ class GaussianSpatialBasisFunctions(SpatialBasisFunctions):
         threshold = threshold.to(mesh_units).magnitude
 
         mesh = mesh.rename({"label": "vertex"}).pint.dequantify()
-        mesh_masked = mesh[mask, :].values
+        mesh_masked = mesh[np.asarray(mask, dtype=bool), :].values
         nmasked = mesh_masked.shape[0]
 
         sel_indices = [0]
@@ -1007,6 +1009,9 @@ class ImageRecon:
         brain_only: bool = False,
         spatial_basis_functions: SpatialBasisFunctions | None = None,
     ):
+        cite("Carlton2026")
+        cite("Markow2025")
+
         if recon_mode not in ["conc", "mua", "mua2conc"]:
             raise ValueError(
                 "recon_mode must be set to either 'conc', 'mua' or 'mua2conc'!"
@@ -1611,12 +1616,26 @@ class ImageRecon:
         where R is the spatial prior. Returns only the diagonal (variance at each
         vertex).
 
+        The prior R is scaled by ``lambda_R_conc``, the expected magnitude of the image
+        variance. Other than the reconstructed images, the posterior variance is
+        proportional to it, so ``lambda_R_conc`` must be set.
+
         Parameters:
             c_meas : Measurement covariance matrix.
 
         Returns:
             xr.DataArray: Posterior variance of reconstructed images.
+
+        Raises:
+            ValueError: If ``lambda_R_conc`` is not set.
         """
+
+        if self.lambda_R_conc is None:
+            raise ValueError(
+                "The posterior image variance scales with the prior variance "
+                "lambda_R_conc, which is not set. Set lambda_R_conc or use "
+                "get_image_noise."
+            )
 
         c_meas, new_W_input_hash = self._update_and_hash_cmeas(c_meas)
 

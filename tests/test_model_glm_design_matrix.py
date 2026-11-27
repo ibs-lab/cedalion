@@ -1,14 +1,18 @@
+import itertools
+import functools
+import operator
+
 import pytest
 from pint.testsuite.helpers import assert_quantity_almost_equal as assert_approx
+import pandas as pd
 
 import cedalion
-import cedalion.data
+import cedalion.dataclasses as cdc
 import cedalion.models.glm as glm
+import cedalion.models.glm.basis_functions as bfuncs
 import cedalion.models.glm.design_matrix as dm
 import cedalion.nirs as nirs
-
 from cedalion import units
-
 
 def test_avg_short_channel(rec):
     ts_long, ts_short = nirs.split_long_short_channels(
@@ -25,6 +29,59 @@ def test_avg_short_channel(rec):
 
     assert_approx(regressor.sel(chromo="HbO", time="0").item(), mean_hbo_0.magnitude)
     assert_approx(regressor.sel(chromo="HbR", time="0").item(), mean_hbr_0.magnitude)
+
+
+def test_global_component_regressor_orders_component_before_packaging(rec, monkeypatch):
+    ts = rec["conc"]
+
+    component = ts.mean("channel").transpose("chromo", "time")
+
+    captured = {}
+
+    def fake_global_component_subtract(*args, **kwargs):
+        return ts, component
+
+    def fake_common_regressor_from_array(
+        ts_arg,
+        regressors,
+        regressor_names,
+        time=None,
+    ):
+        captured["dims"] = regressors.dims
+        return dm.DesignMatrix(common=regressors, channel_wise=[])
+
+    monkeypatch.setattr(
+        dm,
+        "global_component_subtract",
+        fake_global_component_subtract,
+    )
+    monkeypatch.setattr(
+        dm,
+        "common_regressor_from_array",
+        fake_common_regressor_from_array,
+    )
+
+    dm.global_component_regressor(ts)
+
+    assert captured["dims"] == ("time", "chromo")
+
+
+@pytest.mark.parametrize("as_dataarray", [False, True])
+def test_common_regressor_from_2d_array(rec, as_dataarray):
+    ts = rec["conc"]
+
+    values = ts.mean("channel").pint.dequantify().transpose("time", "chromo")
+
+    regressors = values if as_dataarray else values.values
+
+    design = dm.common_regressor_from_array(
+        ts,
+        regressors,
+        regressor_names="global",
+    )
+
+    assert design.common.dims == ("time", "regressor", "chromo")
+    assert design.common.sizes["regressor"] == 1
 
 
 def test_make_design_matrix_channel_only(rec):
@@ -64,21 +121,69 @@ def test_short_channel_regressors_raise_in_parcel_space(rec):
         dm.average_short_channel_regressor(ts_short_parcel)
 
 
-@pytest.mark.parametrize("ts_key, spectral_dim", [("conc", "chromo"), ("od", "wavelength")])
-def test_make_design_matrix_parcel(rec, ts_key, spectral_dim):
-    ts_parcel = rec[ts_key].copy().rename({"channel": "parcel"})
 
-    dms = (
-        dm.hrf_regressors(
-            ts_parcel,
-            rec.stim,
-            glm.Gamma(tau=0 * units.s, sigma=3 * units.s, T=3 * units.s),
-        )
-        & dm.drift_regressors(ts_parcel, drift_order=1)
+
+@pytest.mark.parametrize(
+    "ts_key, spectral_dim, spatial_dim",
+    [
+        ("conc", "chromo", "channel"),
+        ("conc", "chromo", "parcel"),
+        ("conc", "chromo", "vertex"),
+        ("od", "wavelength", "channel"),
+        ("od", "wavelength", "parcel"),
+        ("od", "wavelength", "vertex"),
+    ],
+)
+def test_make_design_matrix_combinations(rec, ts_key, spectral_dim, spatial_dim):
+    ts = rec[ts_key].copy().rename({"channel": spatial_dim})
+
+    stim = pd.DataFrame(
+        {
+            "onset": [3.0, 6.0],
+            "duration": [2.0, 2.0],
+            "value": [1.0, 1.0],
+            "trial_type": ["A", "B"],
+        }
     )
 
-    assert "time" in dms.common.dims
-    assert "regressor" in dms.common.dims
-    assert spectral_dim in dms.common.dims
+    basis_functions = [
+        bfuncs.GaussianKernels(
+            t_pre=5 * units.s,
+            t_post=30 * units.s,
+            t_delta=3 * units.s,
+            t_std=3 * units.s,
+        ),
+        bfuncs.GaussianKernelsWithTails(
+            t_pre=5 * units.s,
+            t_post=30 * units.s,
+            t_delta=3 * units.s,
+            t_std=3 * units.s,
+        ),
+        bfuncs.Gamma(tau=0 * units.s, sigma=3 * units.s),
+        bfuncs.GammaDeriv(tau=2 * units.s, sigma=2 * units.s),
+        bfuncs.AFNIGamma(p=1, q=0.7 * units.s),
+        bfuncs.DiracDelta()
+    ]
+
+    hrf_regressors = [dm.hrf_regressors(ts, stim, bf) for bf in basis_functions]
+
+    nuisance_regressors = [
+        dm.drift_regressors(ts, 1),
+        dm.drift_regressors(ts, 2),
+        dm.drift_regressors(ts, 3),
+        dm.drift_legendre_regressors(ts, 1),
+        dm.drift_legendre_regressors(ts, 2),
+        dm.drift_legendre_regressors(ts, 3),
+        dm.drift_cosine_regressors(ts, 0.02 * cedalion.units.Hz),
+        dm.global_mean_regressor(ts),
+    ]
+
+    for reg_combo in itertools.product(hrf_regressors, nuisance_regressors):
+
+        dms = functools.reduce(operator.and_, reg_combo)
+
+        assert "time" in dms.common.dims
+        assert "regressor" in dms.common.dims
+        assert spectral_dim in dms.common.dims
 
 

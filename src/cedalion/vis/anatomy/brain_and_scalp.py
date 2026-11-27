@@ -1,15 +1,17 @@
-from cedalion.dataclasses import PointType
+import sys
+
+import matplotlib.colors
+import matplotlib.pyplot as p
 import numpy as np
 import pyvista as pv
-import matplotlib.colors
-from matplotlib.typing import ColorType
-import cedalion.typing as cdt
-from numpy.typing import ArrayLike
-import cedalion.dataclasses as cdc
 import xarray as xr
-import sys
-import matplotlib.pyplot as p
+from matplotlib.typing import ColorType
+from numpy.typing import ArrayLike
 
+import cedalion.dataclasses as cdc
+import cedalion.typing as cdt
+import cedalion.vis.blocks as vbx
+from cedalion.dataclasses import PointType
 
 
 def plot_brain_and_scalp(
@@ -113,6 +115,7 @@ def plot_brain_in_axes(
     bad_color: ColorType = [0.7, 0.7, 0.7],
     cb_label: str = "",
     camera_pos: ArrayLike | str | None = None,
+    **kwargs
 ):
     """Using pyvista render a brain, colored by a metric, and display it in MPL axes."""
 
@@ -133,6 +136,14 @@ def plot_brain_in_axes(
     brain_surface = cdc.VTKSurface.from_trimeshsurface(brain_surface)
     brain_surface = pv.wrap(brain_surface.mesh)
 
+    if "smooth_shading" not in kwargs:
+        kwargs["smooth_shading"] = True
+    if "split_sharp_edges" not in kwargs:
+        kwargs["split_sharp_edges"] = True
+    if "feature_angle" not in kwargs:
+        kwargs["feature_angle"] = 90
+
+
     plt = pv.Plotter(off_screen=True)
 
     plt.add_mesh(
@@ -141,7 +152,7 @@ def plot_brain_in_axes(
         cmap=cmap,
         clim=(vmin, vmax),
         scalar_bar_args={"title": cb_label},
-        smooth_shading=True,
+        **kwargs
     )
 
     if camera_pos is not None:
@@ -181,3 +192,147 @@ def plot_brain_in_axes(
     ax.xaxis.set_ticks([])
     ax.yaxis.set_ticks([])
 
+
+def camera_for_view(center, view, distance=350):
+    """Return camera parameters for a named orthogonal brain view.
+
+    Args:
+        center: 3-element array-like with the focal point coordinates (e.g. brain
+            centroid) in the same units as ``distance``.
+        view: One of ``"superior"``, ``"left"``, ``"right"``, ``"anterior"``,
+            ``"posterior"``.
+        distance: Distance from ``center`` to the camera position along the view
+            axis. Defaults to 350.
+
+    Returns:
+        tuple: ``(position, focal_point, up)`` where each element is a numpy
+        array suitable for assignment to ``pyvista.Camera`` attributes.
+    """
+    cameras = {
+        "superior": ([0, 0, distance], [0, 1, 0]),
+        "left": ([-distance, 0, 0], [0, 0, 1]),
+        "right": ([distance, 0, 0], [0, 0, 1]),
+        "anterior": ([0, distance, 0], [0, 0, 1]),
+        "posterior": ([0, -distance, 0], [0, 0, 1]),
+    }
+    position_offset, up = cameras[view]
+    return center + np.asarray(position_offset), center, up
+
+
+def plot_brain_views_grid(
+    brain_surface, vertex_colors, window_size=(1000, 600), reset_camera=False
+):
+    """Render the brain surface from five standard views in a grid layout.
+
+    Displays superior, anterior, posterior, left, and right views arranged in a
+    2-row PyVista plotter window.
+
+    Args:
+        brain_surface: A surface object whose ``.vertices`` attribute is a
+            pint-aware xarray with a ``"label"`` dimension.
+        vertex_colors: Per-vertex color array passed to ``vbx.plot_surface``.
+        window_size: ``(width, height)`` in pixels for the plotter window.
+            Defaults to ``(1000, 600)``.
+        reset_camera: If ``True``, call ``plt.reset_camera()`` after setting
+            each view to fit the surface tightly. Defaults to ``False``.
+    """
+    brain_center = brain_surface.vertices.pint.dequantify().mean("label").values
+    plt = pv.Plotter(
+        shape=(2, 6),
+        groups=(
+            (0, slice(0, 2)),
+            (0, slice(2, 4)),
+            (0, slice(4, 6)),
+            (1, slice(0, 3)),
+            (1, slice(3, 6)),
+        ),
+        window_size=window_size,
+    )
+    views = ("superior", "anterior", "posterior", "left", "right")
+    positions = [(0, 0), (0, 2), (0, 4), (1, 0), (1, 3)]
+    for view, subplot in zip(views, positions):
+        plt.subplot(*subplot)
+        vbx.plot_surface(
+            plt,
+            brain_surface,
+            color=vertex_colors,
+        )
+        plt.add_text(view, font_size=10)
+        plt.camera.position, plt.camera.focal_point, plt.camera.up = camera_for_view(
+            brain_center, view
+        )
+        if reset_camera:
+            plt.reset_camera()
+    plt.subplot(1, 2)
+    plt.add_text("", font_size=10)
+    plt.show()
+
+
+def get_vertex_colors_from_coord(
+    brain_surface : cdc.TrimeshSurface,
+    label_coord: str,
+    color_mapping: dict,
+    default_color="w",
+    labels: list[str] | None = None,
+):
+    """Build a per-vertex color list from a named coordinate on the brain surface.
+
+    Each vertex is colored according to the value of ``label_coord`` at that vertex,
+    looked up in ``color_mapping``. Vertices whose coordinate value is not present
+    in the mapping (or whose label is filtered out) receive ``default_color``.
+
+    Args:
+        brain_surface: Surface object whose ``.vertices`` attribute is an xarray
+            DataArray with named coordinates.
+        label_coord: Name of the coordinate on ``brain_surface.vertices`` whose
+            values are used as keys into ``color_mapping``.
+        color_mapping: Controls how coordinate values map to colors:
+            * ``None`` — generate a deterministic random color per unique label.
+            * ``dict`` — map each label to a matplotlib-compatible color spec.
+            * Any other single color spec assigns the same color to every label.
+        default_color: Matplotlib-compatible color used for vertices whose label
+            is absent from the resolved mapping. Defaults to ``"w"`` (white).
+        labels: If provided, only labels in this list are kept in the mapping;
+            all other vertices fall back to ``default_color``.
+
+    Returns:
+        list: One RGB tuple per vertex, in the same order as
+        ``brain_surface.vertices``.
+    """
+    coords = brain_surface.vertices.coords[label_coord].values
+    default_color = matplotlib.colors.to_rgb(default_color)
+
+    def normalize_colors(c):
+        if (isinstance(c, tuple) or isinstance(c, list)) and all(
+            [isinstance(v, int) for v in c]
+        ):
+            c = [k/255. for k in c]
+
+        return matplotlib.colors.to_rgb(c)
+
+    if color_mapping is None:
+        # generate random colors
+        rng = np.random.default_rng(43)
+        color_mapping = {
+            k: rng.uniform(0.3, 1.0, size=3).tolist() for k in sorted(set(coords))
+        }
+    elif isinstance(color_mapping, dict):
+        color_mapping = {
+            k: normalize_colors(v) for k, v in color_mapping.items()
+        }
+    elif not isinstance(color_mapping, dict):
+        # all coord values get the same color
+        c = matplotlib.colors.to_rgb(color_mapping)
+        color_mapping = {k: c for k in coords}
+    elif callable(color_mapping):
+        # support any kind of mapping
+        raise not NotImplementedError()
+    else:
+        raise ValueError("could not interprete color_mapping")
+
+    if labels is not None:
+        color_mapping = {k: v for k, v in color_mapping.items() if k in labels}
+
+    vertex_colors = [color_mapping.get(pp, default_color) for pp in coords]
+
+    return vertex_colors

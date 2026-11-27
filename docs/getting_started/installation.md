@@ -5,6 +5,7 @@ below and then descibed in more detail in the following section.
 
 ## Summary
 
+0. **Install a Python Coding Environment** - Install any IDE of your choice, many of us are using [VSCode](https://code.visualstudio.com/). 
 1. **Install conda** – Install either Miniconda or Anaconda for environment and package 
    management.
 2. **Get the source code** – Clone the Cedalion GitHub repository. 
@@ -120,9 +121,9 @@ $ conda activate <environment_name>
 $ jupyter notebook
 ```
 
-To test your installation, you can use the example notebook [examples/00_test_installation.ipynb](../examples/getting_started_io/00_test_installation.ipynb).
+To test your installation, you can use the example notebook [examples/getting_started_io/00_test_installation.ipynb](../examples/getting_started_io/00_test_installation.ipynb).
 
-Alternatively, integrated development environments (IDEs) like **VSCode** have builtin 
+Alternatively, integrated development environments (IDEs) like **VSCode** have built-in 
 support for [managing environments](https://code.visualstudio.com/docs/python/environments) and 
 [working with Jupyter notebooks](https://code.visualstudio.com/docs/datascience/jupyter-notebooks). Make sure that you select the correct environment and Jupyter kernel.
 
@@ -132,7 +133,7 @@ support for [managing environments](https://code.visualstudio.com/docs/python/en
 
 In the past, you cloned the git repository to a local directory using the last released 
 version on the main branch. During installation, you created a conda environment and 
-added cedalion from that directory to the environment.
+added Cedalion from that directory to the environment.
 
 Updating to a newer version is easiest done by cloning the git repository again to a 
 different folder and creating a new environment. This way, the installed version remains 
@@ -148,7 +149,7 @@ $ conda activate cedalion_v25.1.0
 $ pip install -e . --no-deps
 ```
 
-Switching between different cedalion versions is then possible by activating the 
+Switching between different Cedalion versions is then possible by activating the 
 corresponding environment.
 
 
@@ -156,11 +157,11 @@ corresponding environment.
 
 Cedalion's development happens in the dev branch. The cloned git repository contains the
 complete development history and maintains the connection to our main repository at
-GitHub. By pulling the recent changes from there or by checking out a commit from the past
-the cedalion directory can be brought to any desired version. The conda environment
+GitHub. By pulling the recent changes from there or by checking out a commit from the
+past the Cedalion directory can be brought to any desired version. The conda environment
 will then use the checked out version. 
 
-Keep in mind that cedalion's dependencies changed over time. When pulling recent
+Keep in mind that Cedalion's dependencies changed over time. When pulling recent
 changes from dev you might need to update or recreate the environment.
 
 
@@ -233,4 +234,43 @@ $ apptainer run --nv --bind `pwd`/xkb:/var/lib/xkb,`pwd`/cedalion:/app cedalion.
 
 ### Docker
 
-- WIP: see [Nils' branch](https://github.com/ibs-lab/cedalion/tree/docker)
+The `Dockerfile` in the repository root builds an image that contains the conda
+environment described by `environment_dev.yml`, cedalion installed in editable mode and
+an X virtual framebuffer for pyvista's 3D plotting.
+
+Build the image from the repository root:
+
+```
+$ docker build -t cedalion .
+```
+
+To additionally install the NIRFASTer photon propagator (see step 6 above):
+
+```
+$ docker build -t cedalion --build-arg INSTALL_NIRFASTER=CPU .
+```
+
+Run an interactive shell with the `cedalion` environment activated:
+
+```
+$ docker run -it --rm cedalion
+```
+
+Run a jupyter notebook server and open it at the URL that is printed:
+
+```
+$ docker run -it --rm -p 8888:8888 cedalion \
+    jupyter notebook --ip 0.0.0.0 --no-browser --allow-root
+```
+
+To work on the source code from the host, mount your clone over `/cedalion`. The editable
+install picks the changes up:
+
+```
+$ docker run -it --rm -v `pwd`:/cedalion -p 8888:8888 cedalion
+```
+
+The entrypoint starts an X virtual framebuffer on `DISPLAY=:99`, so that pyvista renders
+offscreen without further setup. Shells opened with `docker exec` inherit that display and
+can render too. Should 3D plotting fail, the output of the X server is kept in
+`/tmp/xvfb.log` inside the container.

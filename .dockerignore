@@ -1,0 +1,31 @@
+# Build context for the cedalion docker image (see Dockerfile).
+#
+# NOTE: .git is deliberately NOT excluded. pyproject.toml uses hatch-vcs, so
+# `pip install -e .` derives cedalion's version from the git metadata and fails
+# without it.
+
+.github/
+.vscode/
+.idea/
+
+# build, test and documentation artefacts
+build/
+dist/
+*.egg-info/
+docs/_build/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# downloaded by install_nirfaster.sh inside the image
+plugins/
+
+# container definitions are not needed inside the image
+Dockerfile
+.dockerignore
+cedalion.def

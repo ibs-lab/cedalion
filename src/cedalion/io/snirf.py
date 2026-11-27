@@ -633,13 +633,155 @@ def add_number_to_name(name : str, keys : list[str]):
     return f"{name}_{max_number+1:02d}"
 
 
+def _other_dim_suffix(values: tuple) -> str:
+    """Builds a name suffix like '760_850' or 'HbO_HbR' from other_dim values."""
+    labels = []
+    for v in values:
+        if isinstance(v, DataTypeLabel):
+            labels.append(v.value)
+        elif isinstance(v, (float, np.floating)):
+            labels.append(f"{v:g}")
+        else:
+            labels.append(str(v))
+    return "_".join(labels)
+
+
+def _check_complete(df: pd.DataFrame, shape: tuple[int, ...]):
+    """Raises if the rows in df don't fill an array of the given shape exactly.
+
+    Only the number of measurement list entries is checked, not the data values.
+    """
+    if len(df) != np.prod(shape):
+        raise ValueError(
+            f"measurement list has {len(df)} entries for an array of shape {shape}. "
+            "It may contain duplicate entries."
+        )
+
+
+def _build_timeseries(
+    df: pd.DataFrame,
+    other_dim: str,
+    is_hrf: bool,
+    data_type_group: str,
+    time: np.ndarray,
+    samples: np.ndarray,
+    trial_types: np.ndarray,
+    data_element: DataElement,
+    nirs_element: NirsElement,
+    opts: ReadSnirfOptions,
+) -> NDTimeSeries:
+    """Assembles a time series from the measurement list rows in df.
+
+    Each channel in df must provide the same set of other_dim values (and trial
+    types for HRFs), such that the resulting array has no missing entries.
+    """
+    df_coords = {}
+    df_coords["channel"] = df[["channel", "source", "detector"]].drop_duplicates()
+    df_coords[other_dim] = df[[other_dim]].drop_duplicates()
+
+    unique_channel = list(df_coords["channel"]["channel"])
+    unique_other_dim = list(df[other_dim].drop_duplicates())
+
+    df["index_channel"] = [unique_channel.index(c) for c in df.channel]
+    df["index_other_dim"] = [unique_other_dim.index(c) for c in df[other_dim]]
+
+    coords = {}
+    coords["time"] = ("time", time)
+    coords["samples"] = ("time", samples)
+    coords["channel"] = ("channel", df_coords["channel"]["channel"])
+    coords["source"] = ("channel", df_coords["channel"]["source"])
+    coords["detector"] = ("channel", df_coords["channel"]["detector"])
+    coords[other_dim] = (other_dim, unique_other_dim)
+
+    ts2d = data_element.dataTimeSeries
+
+    units = df.dataUnit.unique().item()
+    # FIXME treat unspecified units as dimensionless quantities.
+    if units is None:
+        units = "1"
+
+    dtype = data_element.dataTimeSeries.dtype
+    fill_value = np.nan if np.issubdtype(dtype, np.floating) else 0
+
+    if is_hrf:
+        channel_trial_types = trial_types[df["dataTypeIndex"].values - 1]
+        used_trial_types = np.unique(channel_trial_types).tolist()
+        df["index_trial_type"] = [
+            used_trial_types.index(i) for i in channel_trial_types
+        ]
+
+        shape = (
+            len(unique_channel),
+            len(unique_other_dim),
+            len(used_trial_types),
+            len(time),
+        )
+        _check_complete(df, shape[:-1])
+        ts4d = np.full(shape, fill_value, dtype=dtype)
+
+        for index, row in df.iterrows():
+            ts4d[
+                row.index_channel, row.index_other_dim, row.index_trial_type, :
+            ] = ts2d[:, index]
+
+        coords["trial_type"] = used_trial_types
+
+        da = xr.DataArray(
+            ts4d,
+            dims=["channel", other_dim, "trial_type", "time"],
+            coords=coords,
+            attrs={
+                "units": units,
+                "data_type_group": data_type_group,
+            },
+        )
+
+    else:
+        shape = (len(unique_channel), len(unique_other_dim), len(time))
+        _check_complete(df, shape[:-1])
+        ts3d = np.full(shape, fill_value, dtype=dtype)
+
+        for index, row in df.iterrows():
+            ts3d[row.index_channel, row.index_other_dim, :] = ts2d[:, index]
+
+        da = xr.DataArray(
+            ts3d,
+            dims=["channel", other_dim, "time"],
+            coords=coords,
+            attrs={
+                "units": units,
+                "data_type_group": data_type_group,
+            },
+        )
+
+    da = da.pint.quantify()
+
+    if opts.time_units is not None:
+        time_units = opts.time_units # overrides existing time units
+    else:
+        time_units = nirs_element.metaDataTags.TimeUnit  # may not be set
+
+    try:
+        da = da.pint.quantify({"time": time_units})
+    except ValueError:
+        pass  # if all fails return time coords without units
+
+    return da
+
+
 def read_data_elements(
     data_element: DataElement,
     nirs_element: NirsElement,
     stim: pd.DataFrame,
     opts: ReadSnirfOptions,
-) -> list[tuple[str, NDTimeSeries]]:
+) -> list[tuple[str, NDTimeSeries, pd.DataFrame]]:
     """Reads the data elements from a nirs element into a list of DataArrays.
+
+    The flat data block is split into several time series if the measurement list
+    contains more than one data type group or if not all channels share the same
+    wavelengths (or chromophores). In the latter case, channels with identical
+    sets of wavelengths are grouped together and the canonical name of each group
+    is suffixed with these wavelengths, e.g. 'amp_760_850'.
 
     Args:
         data_element (DataElement): DataElement obj. from the snirf file.
@@ -649,8 +791,11 @@ def read_data_elements(
         opts : Options passed to read_snirf.
 
     Returns:
-        list[tuple[str, NDTimeSeries]]: List of tuples containing the canonical name
-            of the data element and the DataArray.
+        list[tuple[str, NDTimeSeries, pd.DataFrame]]: List of tuples containing the
+            canonical name of the time series, the DataArray and the subset of the
+            measurement list from which the DataArray was built. The index of the
+            measurement list subset refers to columns in the data element's
+            dataTimeSeries.
     """
 
     time = data_element.time[:].squeeze()
@@ -664,6 +809,7 @@ def read_data_elements(
 
     df_ml = measurement_list_to_dataframe(data_element.measurementList)
     df_ml = denormalize_measurement_list(df_ml, nirs_element)
+    ml_columns = list(df_ml.columns)
 
     # unique_data_types = df_ml[["dataType", "dataTypeLabel"]].drop_duplicates()
     data_types = df_ml[["dataType", "dataTypeLabel", "dataTypeIndex"]]
@@ -683,13 +829,15 @@ def read_data_elements(
 
     data_arrays = []
 
-    for data_type_group, df in df_ml.groupby("data_type_group"):
+    for data_type_group, df_dtg in df_ml.groupby("data_type_group"):
         canonical_name = CANONICAL_NAMES[data_type_group]
 
-        has_wavelengths = not pd.isna(df.wavelength).all()
-        has_chromo = not pd.isna(df.chromo).all()
+        has_wavelengths = not pd.isna(df_dtg.wavelength).all()
+        has_chromo = not pd.isna(df_dtg.chromo).all()
 
-        is_hrf = (not pd.isna(df.dataTypeIndex).all()) and ("HRF" in data_type_group)
+        is_hrf = (not pd.isna(df_dtg.dataTypeIndex).all()) and (
+            "HRF" in data_type_group
+        )
 
         if has_wavelengths and not has_chromo:
             other_dim = "wavelength"
@@ -706,97 +854,56 @@ def read_data_elements(
                 "and chromophore are defined."
             )
 
-        df_coords = {}
-        df_coords["channel"] = df[["channel", "source", "detector"]].drop_duplicates()
-        df_coords[other_dim] = df[[other_dim]].drop_duplicates()
-
-        unique_channel = list(df_coords["channel"]["channel"])
-        unique_other_dim = list(df[other_dim].drop_duplicates())
-
-        df["index_channel"] = [unique_channel.index(c) for c in df.channel]
-        df["index_other_dim"] = [unique_other_dim.index(c) for c in df[other_dim]]
-
-        coords = {}
-        coords["time"] = ("time", time)
-        coords["samples"] = ("time", samples)
-        coords["channel"] = ("channel", df_coords["channel"]["channel"])
-        coords["source"] = ("channel", df_coords["channel"]["source"])
-        coords["detector"] = ("channel", df_coords["channel"]["detector"])
-        coords[other_dim] = (other_dim, unique_other_dim)
-
-        ts2d = data_element.dataTimeSeries
-
-        units = df.dataUnit.unique().item()
-        # FIXME treat unspecified units as dimensionless quantities.
-        if units is None:
-            units = "1"
-
+        # Channels may not share the same wavelengths (or chromophores). Group
+        # channels by the set of other_dim values (and trial types for HRFs) they
+        # provide and build a separate time series for each group.
         if is_hrf:
-            channel_trial_types = trial_types[df["dataTypeIndex"].values - 1]
-            used_trial_types = np.unique(channel_trial_types).tolist()
-            df["index_trial_type"] = [
-                used_trial_types.index(i) for i in channel_trial_types
-            ]
-
-            ts4d = np.zeros(
-                (
-                    len(unique_channel),
-                    len(unique_other_dim),
-                    len(used_trial_types),
-                    len(time),
-                ),
-                dtype=data_element.dataTimeSeries.dtype,
-            )
-
-            for index, row in df.iterrows():
-                ts4d[
-                    row.index_channel, row.index_other_dim, row.index_trial_type, :
-                ] = ts2d[:, index]
-
-            coords["trial_type"] = used_trial_types
-
-            da = xr.DataArray(
-                ts4d,
-                dims=["channel", other_dim, "trial_type", "time"],
-                coords=coords,
-                attrs={
-                    "units": units,
-                    "data_type_group": data_type_group,
-                },
-            )
-
+            entries = zip(df_dtg[other_dim], df_dtg["dataTypeIndex"].astype(int))
         else:
-            ts3d = np.zeros(
-                (len(unique_channel), len(unique_other_dim), len(time)),
-                dtype=data_element.dataTimeSeries.dtype,
+            entries = zip(df_dtg[other_dim], [None] * len(df_dtg))
+
+        channel_entries = {}
+        for channel, entry in zip(df_dtg["channel"], entries):
+            channel_entries.setdefault(channel, set()).add(entry)
+
+        channel_signature = {
+            ch: tuple(sorted(e, key=lambda x: (x[0], x[1] or 0)))
+            for ch, e in channel_entries.items()
+        }
+        signatures = sorted(set(channel_signature.values()))
+        split = len(signatures) > 1
+
+        if split:
+            log.warning(
+                f"channels of data type group '{data_type_group}' don't share the "
+                f"same {other_dim}s. They will be split into {len(signatures)} "
+                "time series."
             )
 
-            for index, row in df.iterrows():
-                ts3d[row.index_channel, row.index_other_dim, :] = ts2d[:, index]
+        df_signature = df_dtg["channel"].map(channel_signature)
 
-            da = xr.DataArray(
-                ts3d,
-                dims=["channel", other_dim, "time"],
-                coords=coords,
-                attrs={
-                    "units": units,
-                    "data_type_group": data_type_group,
-                },
+        for signature in signatures:
+            df = df_dtg[df_signature == signature].copy()
+
+            name = canonical_name
+            if split:
+                other_dim_values = sorted({value for value, _ in signature})
+                name = f"{canonical_name}_{_other_dim_suffix(other_dim_values)}"
+
+            da = _build_timeseries(
+                df,
+                other_dim,
+                is_hrf,
+                data_type_group,
+                time,
+                samples,
+                trial_types,
+                data_element,
+                nirs_element,
+                opts,
             )
 
-        da = da.pint.quantify()
-
-        if opts.time_units is not None:
-            time_units = opts.time_units # overrides existing time units
-        else:
-            time_units = nirs_element.metaDataTags.TimeUnit  # may not be set
-
-        try:
-            da = da.pint.quantify({"time": time_units})
-        except ValueError:
-            pass  # if all fails return time coords without units
-
-        data_arrays.append((canonical_name, da))
+            data_arrays.append((name, da, df[ml_columns]))
 
     return data_arrays
 
@@ -899,11 +1006,13 @@ def read_nirs_element(nirs_element: NirsElement, opts : ReadSnirfOptions):
             measurement_lists[name] = df_ml
             continue
 
-        for name, ts in read_data_elements(data_element, nirs_element, stim, opts):
+        for name, ts, df_ml_subset in read_data_elements(
+            data_element, nirs_element, stim, opts
+        ):
             if name in timeseries:
                 name = add_number_to_name(name, timeseries.keys())
             timeseries[name] = ts
-            measurement_lists[name] = df_ml
+            measurement_lists[name] = df_ml_subset
 
     aux = read_aux(nirs_element, opts)
 
@@ -1102,7 +1211,9 @@ def measurement_list_from_stacked(
         raise ValueError(f"unhandeled data_type={data_type}")
 
     if "wavelength" in stacked_array.coords:
-        wavelengths = list(np.unique(stacked_array.wavelength.values))
+        # wavelengthIndex refers to the probe's wavelengths, which may comprise
+        # more wavelengths than this array, e.g. if channels with different
+        # wavelengths are stored in separate time series.
         ml["wavelengthIndex"] = [
             wavelengths.index(w) + 1 for w in stacked_array.wavelength.values
         ]
@@ -1347,7 +1458,7 @@ def compress_snirf(
                     shuffle=shuffle,
                 )
             # if it fails (e.g. for var. length string arrays) copy as is
-            except:
+            except Exception:
                 dst.create_dataset(
                     name,
                     data=obj[()],

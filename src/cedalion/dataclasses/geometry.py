@@ -90,6 +90,10 @@ class Surface(ABC):
         raise NotImplementedError()
 
     @abstractmethod
+    def copy(self):
+        raise NotImplementedError()
+
+    @abstractmethod
     def apply_transform(self, transform: cdt.AffineTransform):
         """Return a new surface with all vertices transformed by *transform*.
 
@@ -254,6 +258,14 @@ class TrimeshSurface(Surface):
     @property
     def nfaces(self) -> int:
         return len(self.mesh.faces)
+
+    def copy(self) -> "TrimeshSurface":
+        return TrimeshSurface(
+            self.mesh.copy(),
+            self.crs,
+            self.units,
+            vertex_coords=deepcopy(self.vertex_coords),
+        )
 
     def _build_kdtree(self):
         self._kdtree = KDTree(self.mesh.vertices)
@@ -431,6 +443,9 @@ class VTKSurface(Surface):
     def apply_transform(self, transform: cdt.AffineTransform):
         raise NotImplementedError()
 
+    def copy(self):
+        raise NotImplementedError()
+
     @classmethod
     def from_trimeshsurface(cls, tri_mesh: TrimeshSurface):
         mesh = tri_mesh.mesh
@@ -517,6 +532,9 @@ class PycortexSurface(Surface):
     @property
     def nfaces(self) -> int:
         return len(self.mesh.polys)
+
+    def copy(self):
+        raise NotImplementedError()
 
     def _build_kdtree(self):
         self._kdtree = KDTree(self.mesh.pts)

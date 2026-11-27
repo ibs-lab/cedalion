@@ -5,6 +5,7 @@ import xarray as xr
 from scipy.sparse import csr_matrix
 
 import cedalion
+import cedalion.dataclasses as cdc
 import cedalion.xrutils as xrutils
 
 
@@ -160,6 +161,48 @@ def test_unit_stripping_is_error():
 
     with pytest.warns(pint.errors.UnitStrippedWarning):
         a.values
+
+
+def test_compose_affine_with_colliding_outer_dims():
+    """Regression for the head_model.scale_to_landmarks scalar collapse.
+
+    xr `@`/`xr.dot` collapses to a scalar when both outer dim names also
+    appear as inner dims. compose_affine must produce a 4x4 matrix matching
+    numpy matmul.
+    """
+    rng = np.random.default_rng(0)
+    A_np = rng.normal(size=(4, 4))
+    B_np = rng.normal(size=(4, 4))
+
+    A = cdc.affine_transform_from_numpy(
+        A_np, from_crs="mni", to_crs="ijk", from_units="mm", to_units="mm"
+    )
+    B = cdc.affine_transform_from_numpy(
+        B_np, from_crs="ijk", to_crs="mni", from_units="mm", to_units="mm"
+    )
+
+    # sanity: xr `@` does the wrong thing here (collapses both shared dims)
+    bad = A @ B
+    assert bad.shape == ()
+
+    composed = xrutils.compose_affine(A, B)
+
+    assert composed.shape == (4, 4)
+    # outer dims here happen to both be "ijk" (the to_crs of A and from_crs of B);
+    # what matters is that the values are a real 4x4 matmul, not a scalar.
+    assert composed.dims == ("ijk", "ijk")
+    np.testing.assert_allclose(composed.pint.dequantify().values, A_np @ B_np)
+
+
+def test_compose_affine_inner_dims_mismatch():
+    A = cdc.affine_transform_from_numpy(
+        np.eye(4), from_crs="mni", to_crs="ijk", from_units="mm", to_units="mm"
+    )
+    B = cdc.affine_transform_from_numpy(
+        np.eye(4), from_crs="ras", to_crs="aligned", from_units="mm", to_units="mm"
+    )
+    with pytest.raises(ValueError, match="inner dims"):
+        xrutils.compose_affine(A, B)
 
 
 def test_unit_stripping_is_quiet(recwarn):
