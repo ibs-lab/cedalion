@@ -102,6 +102,52 @@ def register_identity(
     return trafo
 
 
+def _umeyama(src: np.ndarray, dst: np.ndarray, estimate_scale: bool) -> np.ndarray:
+    """Closed-form least-squares similarity transform dst ~ c R src + t.
+
+    Implements :cite:t:`Umeyama1991`: the rotation follows from the SVD of the
+    cross-covariance of the centred point sets, with a reflection guard that
+    keeps det(R) = +1.
+
+    Args:
+        src: source points, shape (n, 3)
+        dst: target points, shape (n, 3)
+        estimate_scale: if False the scale c is fixed to 1
+
+    Returns:
+        4x4 affine matrix mapping src to dst.
+    """
+    src = np.asarray(src, dtype=float)
+    dst = np.asarray(dst, dtype=float)
+    n = src.shape[0]
+
+    mu_src = src.mean(axis=0)
+    mu_dst = dst.mean(axis=0)
+    src_c = src - mu_src
+    dst_c = dst - mu_dst
+
+    cov = dst_c.T @ src_c / n
+    U, D, Vt = np.linalg.svd(cov)
+
+    S = np.eye(3)
+    if np.linalg.det(U) * np.linalg.det(Vt) < 0:
+        S[2, 2] = -1.0
+
+    R = U @ S @ Vt
+
+    if estimate_scale:
+        var_src = (src_c**2).sum() / n
+        c = np.trace(np.diag(D) @ S) / var_src
+    else:
+        c = 1.0
+
+    M = np.eye(4)
+    M[:3, :3] = c * R
+    M[:3, 3] = mu_dst - c * R @ mu_src
+
+    return M
+
+
 @cdc.validate_schemas
 def register_trans_rot(
     coords_target: cdt.LabeledPoints,
@@ -138,39 +184,10 @@ def register_trans_rot(
     coords_trafo = coords_trafo.sel(label=common_labels).pint.dequantify()
     coords_target = coords_target.sel(label=common_labels).pint.dequantify()
 
-    # calculate difference between centers of gravity. Use this as initial
-    # parameters for the translational component.
-    delta_cog = (
-        coords_target.mean("label").values
-        - coords_trafo.mean("label").values * unit_scale_factor
-    )
-
-    def trafo(params):
-        return m_rot(params[3:6]) @ m_trans(params[0:3]) @ m_scale1([unit_scale_factor])
-
-    def loss(params, coords_target, coords_trafo):
-        M = trafo(params)
-        tmp = coords_trafo.points._apply_numpy_transform(M, to_crs)
-        return np.power(_subtract(coords_target, tmp), 2).sum()
-
-    bounds = [
-        (None, None),
-        (None, None),
-        (None, None),
-        (-2 * np.pi, 2 * np.pi),
-        (-2 * np.pi, 2 * np.pi),
-        (-2 * np.pi, 2 * np.pi),
-    ]
-
-    result = minimize(
-        loss,
-        [delta_cog[0], delta_cog[1], delta_cog[2], 0.0, 0.0, 0.0],
-        args=(coords_target, coords_trafo),
-        bounds=bounds,
-        options={"disp": False},
-    )
-
-    trafo_opt = trafo(result.x)
+    # closed-form solution (Umeyama); the unit conversion is applied first
+    src = coords_trafo.values[:, :3] * unit_scale_factor
+    dst = coords_target.values[:, :3]
+    trafo_opt = _umeyama(src, dst, estimate_scale=False) @ m_scale1([unit_scale_factor])
 
     trafo_opt = cdc.affine_transform_from_numpy(
         trafo_opt,
@@ -306,32 +323,10 @@ def register_trans_rot_isoscale(
     coords_trafo = coords_trafo.sel(label=common_labels).pint.dequantify()
     coords_target = coords_target.sel(label=common_labels).pint.dequantify()
 
-    std_trafo = _std_distance_to_cog(coords_trafo)
-    std_target = _std_distance_to_cog(coords_target)
-
-    scale0 = std_target / std_trafo
-
-    # calculate difference between centers of gravity. Use this as initial
-    # parameters for the translational component.
-    delta_cog = (
-        coords_target.mean("label").values - coords_trafo.mean("label").values * scale0
-    )
-
-    def trafo(params):
-        return m_rot(params[3:6]) @ m_trans(params[0:3]) @ m_scale1([params[6]])
-
-    def loss(params, coords_target, coords_trafo):
-        M = trafo(params)
-        tmp = coords_trafo.points._apply_numpy_transform(M, to_crs)
-        return np.power(_subtract(coords_target, tmp), 2).sum()
-
-    result = minimize(
-        loss,
-        [delta_cog[0], delta_cog[1], delta_cog[2], 0.0, 0.0, 0.0, scale0],
-        args=(coords_target, coords_trafo),
-    )
-
-    trafo_opt = trafo(result.x)
+    # closed-form solution (Umeyama) with isotropic scale
+    src = coords_trafo.values[:, :3]
+    dst = coords_target.values[:, :3]
+    trafo_opt = _umeyama(src, dst, estimate_scale=True)
 
     trafo_opt = cdc.affine_transform_from_numpy(
         trafo_opt,
