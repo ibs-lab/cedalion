@@ -31,6 +31,7 @@ from scipy.sparse import coo_array
 
 import cedalion
 import cedalion.dataclasses as cdc
+import cedalion.io.utils as ioutils
 import cedalion.typing as cdt
 from cedalion import units, xrutils
 from cedalion.dot.utils import (
@@ -312,11 +313,11 @@ class VoxelHeadModel:
             os.path.join(foldername, "scalp.ply"), file_type="ply"
         )
         if self.landmarks is not None:
-            xrutils.save_dataarray_quantified(
+            ioutils.save_dataarray_quantified(
                 self.landmarks.drop_vars("type"),
                 os.path.join(foldername, "landmarks.nc"),
             )
-        xrutils.save_dataarray_quantified(
+        ioutils.save_dataarray_quantified(
             self.t_ijk2ras, os.path.join(foldername, "t_ijk2ras.nc")
         )
         scipy.sparse.save_npz(
@@ -370,7 +371,7 @@ class VoxelHeadModel:
         landmarks_path = os.path.join(foldername, "landmarks.nc")
         if os.path.exists(landmarks_path):
             # landmarks are stored in the dimensionless ijk space
-            landmarks = xrutils.load_dataarray_quantified(
+            landmarks = ioutils.load_dataarray_quantified(
                 landmarks_path, fallback_units="dimensionless"
             )
             landmarks = landmarks.assign_coords(
@@ -379,7 +380,7 @@ class VoxelHeadModel:
         else:
             landmarks = None
 
-        t_ijk2ras = xrutils.load_dataarray_quantified(
+        t_ijk2ras = ioutils.load_dataarray_quantified(
             os.path.join(foldername, "t_ijk2ras.nc"), fallback_units="mm"
         )
         # pinv inverts the units, so t_ras2ijk is quantified as well
