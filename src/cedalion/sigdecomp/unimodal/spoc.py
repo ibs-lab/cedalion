@@ -86,8 +86,9 @@ class SPoC:
         Cxx = Cxxe.mean(axis=0)
         Cxxz = (Cxxe * z.values.reshape(-1, 1, 1)).mean(axis=0)
 
-        # Restrict to number of components
-        subset = [self.Nx - 1 - self.n_comp, self.Nx - 1] if self.n_comp else None
+        # Restrict to number of components. subset_by_index is inclusive on both
+        # ends, so the n_comp largest eigenvalues are indices Nx-n_comp .. Nx-1.
+        subset = [self.Nx - self.n_comp, self.Nx - 1] if self.n_comp else None
         # Solve generalized eigenvalue problem
         self.scores, W = eigh(Cxxz, Cxx, eigvals_only=False, subset_by_index=subset)
         # Bring to decreasing order
@@ -136,7 +137,7 @@ class SPoC:
         s = standardize(self.W.T @ x, dim="time")
 
         if get_bandpower:
-            epochs = np.linspace(s.time[0], s.time[-1], Ne)
+            epochs = np.linspace(s.time[0].item(), s.time[-1].item(), Ne)
             # Split into epochs, estimate bandpower, and standardize
             s_power = s.groupby_bins(group="time", bins=Ne).var()
             s_power = s_power.rename({"time_bins": "time"}).assign_coords(
