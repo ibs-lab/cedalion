@@ -138,3 +138,51 @@ def test_stimulus_mask():
 
     assert all(stim_mask[0,:] == [True, False, True])
     assert all(stim_mask[1, :] == [True, True, False])
+
+
+def test_pad_time_keeps_sampling_rate():
+    """Padding along time must not change the sampling rate derived from the time axis.
+
+    Regression test: DataArray.pad replicated the edge time stamps, so the sampling
+    rate of the padded series (mean time difference) was overestimated, e.g. 12 Hz
+    instead of 10 Hz for a 2 min record padded by 12 s. This propagated into the
+    low-pass filter of detect_baselineshift and the window lengths of spline_sg.
+    """
+    import cedalion.sigproc.frequency as freq
+
+    fs = 10.0
+    t = np.arange(0, 120, 1 / fs)
+    ts = cdc.build_timeseries(
+        np.random.default_rng(0).standard_normal((1, 2, len(t))),
+        dims=["channel", "wavelength", "time"],
+        time=t,
+        channel=["S1D1"],
+        value_units="1",
+        time_units="s",
+        other_coords={
+            "wavelength": [760.0, 850.0],
+            "source": ("channel", ["S1"]),
+            "detector": ("channel", ["D1"]),
+        },
+    )
+
+    pad_samples = 120
+    padded = quality.pad_time(ts, pad_samples, mode="edge")
+
+    assert padded.sizes["time"] == ts.sizes["time"] + 2 * pad_samples
+    assert_allclose(
+        freq.sampling_rate(padded).to("Hz").magnitude, fs, rtol=1e-9
+    )
+    assert_allclose(np.diff(padded.time.values), 1 / fs, rtol=1e-9)
+    assert_allclose(padded.time.values[pad_samples], t[0])
+    assert padded.time.attrs == ts.time.attrs
+    # edge values replicated
+    assert_allclose(
+        padded.values[..., :pad_samples],
+        np.broadcast_to(ts.values[..., :1], (1, 2, pad_samples)),
+    )
+
+    # unequal padding
+    padded2 = quality.pad_time(ts, (10, 20), mode="edge")
+    assert padded2.sizes["time"] == ts.sizes["time"] + 30
+    assert_allclose(padded2.time.values[10], t[0])
