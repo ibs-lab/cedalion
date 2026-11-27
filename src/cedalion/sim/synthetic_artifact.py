@@ -273,11 +273,11 @@ def add_artifacts(
         )
         alphas = amplitudes.median(dim="time").pint.dequantify()
     elif mode == "manual":
-        alphas = {
-            (channel, dim_value): 1
-            for dim_value in dim_values
-            for channel in channels
-        }
+        alphas = xr.DataArray(
+            np.ones((len(channels), len(dim_values))),
+            dims=["channel", dim_name],
+            coords={"channel": channels, dim_name: dim_values},
+        )
     else:
         raise ValueError("Invalid mode. Must be 'auto' or 'manual'.")
 
