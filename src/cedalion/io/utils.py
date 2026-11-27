@@ -1,8 +1,9 @@
-"""HDF5/xarray serialisation helpers for cedalion I/O."""
+"""HDF5/netCDF/xarray serialisation helpers for cedalion I/O."""
 
 import h5py
 import xarray as xr
 import numpy as np
+
 
 def _has_string_dtype(array):
     """Return True if *array* contains string-typed elements."""
@@ -45,7 +46,7 @@ def xarray_to_hdfgroup(f: h5py.File, array: xr.DataArray, name: str):
 
 
 def xarray_from_hdfgroup(f: h5py.File, path: str):
-    """Deserialise an xr.DataArray from an HDF5 group written by :func:`xarray_to_hdfgroup`.
+    """Deserialise a DataArray from an HDF5 group written by :func:`xarray_to_hdfgroup`.
 
     Args:
         f: Open HDF5 file object.
@@ -67,3 +68,52 @@ def xarray_from_hdfgroup(f: h5py.File, path: str):
         coords[cname] = (dimname, values)
 
     return xr.DataArray(ds[:], dims=ds.attrs["dims"], coords=coords)
+
+
+def save_dataarray_quantified(array: xr.DataArray, path: str) -> None:
+    """Write a DataArray to netCDF without losing its pint units.
+
+    netCDF cannot store a pint quantity: passing a quantified DataArray to
+    ``to_netcdf`` silently strips the units, emitting only a
+    ``UnitStrippedWarning``. Dequantifying first moves the units into
+    ``attrs["units"]``, where netCDF keeps them and from where
+    :func:`load_dataarray_quantified` restores them.
+
+    Args:
+        array: DataArray to write. May be quantified or not; an unquantified
+            array is written unchanged.
+        path: Destination netCDF file.
+    """
+    array.pint.dequantify().to_netcdf(path)
+
+
+def load_dataarray_quantified(
+    path: str, fallback_units: str | None = None
+) -> xr.DataArray:
+    """Read a DataArray from netCDF and restore its pint units.
+
+    Counterpart of :func:`save_dataarray_quantified`, which parks the units in
+    ``attrs["units"]`` where netCDF can keep them.
+
+    Dimension names — which encode the coordinate reference system for
+    cedalion's affine transforms and point clouds — are preserved by netCDF and
+    are taken from the file, never guessed.
+
+    Args:
+        path: netCDF file to read.
+        fallback_units: Units to assume if the file carries no ``units``
+            attribute, i.e. if it was written before units were stored. If
+            ``None``, such an array is returned unquantified.
+
+    Returns:
+        The DataArray, quantified if unit information was available.
+    """
+    array = xr.load_dataarray(path)
+
+    if array.attrs.get("units", None) is not None:
+        return array.pint.quantify()
+
+    if fallback_units is not None:
+        return array.pint.quantify(fallback_units)
+
+    return array

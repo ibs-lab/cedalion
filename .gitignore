@@ -187,3 +187,4 @@ plugins/
 
 .claude/worktrees/sharp-burnell/
 CLAUDE.md
+examples/**/*.gif
