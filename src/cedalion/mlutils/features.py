@@ -60,11 +60,13 @@ def epoch_features(
 
         match feature_type:
             case "slope":
-                x = sliced.reltime.values
+                # keep x as a DataArray so that it broadcasts along reltime by
+                # name, independent of the position of the reltime dimension
+                x = sliced.reltime
 
                 # Compute deviations from the mean
                 x_dev = x - x.mean()
-                denom = np.sum(x_dev**2)
+                denom = (x_dev**2).sum()
                 # Compute mean_y over 'reltime'
                 y_dev = sliced - sliced.mean("reltime")
                 # Compute numerator: sum over 'reltime' dimension
