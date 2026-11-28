@@ -22,6 +22,7 @@ from scipy.spatial import KDTree
 import cedalion
 import cedalion.data
 import cedalion.dataclasses as cdc
+import cedalion.io.utils as ioutils
 import cedalion.typing as cdt
 from cedalion import xrutils
 from cedalion.dot.utils import map_segmentation_mask_to_surface
@@ -538,8 +539,9 @@ class TwoSurfaceHeadModel:
         self.scalp.mesh.export(os.path.join(foldername, "scalp.ply"),
                                             file_type="ply")
         if self.landmarks is not None:
-            self.landmarks.drop_vars("type").to_netcdf(
-                os.path.join(foldername, "landmarks.nc")
+            ioutils.save_dataarray_quantified(
+                self.landmarks.drop_vars("type"),
+                os.path.join(foldername, "landmarks.nc"),
             )
         self.t_ijk2ras.to_netcdf(os.path.join(foldername, "t_ijk2ras.nc"))
         scipy.sparse.save_npz(os.path.join(foldername, "voxel_to_vertex_brain.npz"),
@@ -586,17 +588,14 @@ class TwoSurfaceHeadModel:
         )
         brain =  trimesh.load(os.path.join(foldername, 'brain.ply'), process=False)
         scalp =  trimesh.load(os.path.join(foldername, 'scalp.ply'), process=False)
-        if os.path.exists(os.path.join(foldername, 'landmarks.nc')):
-            landmarks_ijk = xr.load_dataset(os.path.join(foldername, 'landmarks.nc'))
-            landmarks_ijk = xr.DataArray(
-                landmarks_ijk.to_array()[0],
-                coords={
-                    "label": ("label", landmarks_ijk.label.values),
-                    "type": (
-                        "label",
-                        [cdc.PointType.LANDMARK] * len(landmarks_ijk.label),
-                    ),
-                },
+        landmarks_path = os.path.join(foldername, "landmarks.nc")
+        if os.path.exists(landmarks_path):
+            # landmarks are stored in the dimensionless ijk space
+            landmarks_ijk = ioutils.load_dataarray_quantified(
+                landmarks_path, fallback_units="dimensionless"
+            )
+            landmarks_ijk = landmarks_ijk.assign_coords(
+                type=("label", [cdc.PointType.LANDMARK] * len(landmarks_ijk.label))
             )
         else:
             landmarks_ijk = None

@@ -88,8 +88,10 @@ def test_TwoSurfaceHeadModel():
         assert (head.brain.mesh.faces == head2.brain.mesh.faces).all()
         assert (iu(head.t_ijk2ras) == iu(head2.t_ijk2ras)).all()
         assert (iu(head.t_ras2ijk) == iu(head2.t_ras2ijk)).all()
+        assert head2.landmarks.pint.units == head.landmarks.pint.units
         assert allclose(head.voxel_to_vertex_brain, head2.voxel_to_vertex_brain)
         assert allclose(head.voxel_to_vertex_scalp, head2.voxel_to_vertex_scalp)
+        head2.apply_transform(head2.t_ijk2ras)  # used to raise NotImplementedError
 
 
 def test_TwoSurfaceHeadModel_scaled_roundtrip():
@@ -130,8 +132,7 @@ def test_TwoSurfaceHeadModel_scaled_roundtrip():
         assert reloaded.scalp.units == scaled.scalp.units
         assert reloaded.t_ijk2ras.dims == scaled.t_ijk2ras.dims
         assert (iu(reloaded.t_ijk2ras) == iu(scaled.t_ijk2ras)).all()
-        # landmarks: compare unit-stripped values (netCDF doesn't preserve
-        # pint units, an orthogonal latent issue).
+        assert reloaded.landmarks.pint.units == scaled.landmarks.pint.units
         assert np.allclose(iu(reloaded.landmarks), iu(scaled.landmarks))
         repr(reloaded)
 
