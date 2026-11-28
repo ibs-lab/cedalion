@@ -187,3 +187,51 @@ def test_make_design_matrix_combinations(rec, ts_key, spectral_dim, spatial_dim)
         assert spectral_dim in dms.common.dims
 
 
+def test_spatially_smoothed_pca_global_component_regressor_matches_spatial_mean():
+    import numpy as np
+    import xarray as xr
+
+    values = np.random.default_rng(3).normal(size=(8, 4, 2)).astype(np.float32)
+
+    ts = xr.DataArray(
+        values,
+        dims=("time", "vertex", "chromo"),
+        coords={
+            "time": np.arange(8),
+            "vertex": np.arange(4),
+            "chromo": ["HbO", "HbR"],
+        },
+    ).pint.quantify("uM")
+
+    positions = np.array([
+        [0, 0, 0],
+        [20, 0, 0],
+        [50, 0, 0],
+        [70, 0, 0],
+    ], dtype=float)
+
+    result = dm.spatially_smoothed_pca_global_component_regressor(
+        ts,
+        positions,
+        sigma_mm=40.0,
+        regressor_names="global_test",
+    )
+
+    distances_squared = np.sum(
+        (positions[:, None, :] - positions[None, :, :]) ** 2,
+        axis=-1,
+    )
+    kernel = np.exp(-distances_squared / 40.0**2)
+    kernel /= kernel.sum(axis=1, keepdims=True)
+
+    expected = np.einsum("tvc,wv->twc", values, kernel).mean(axis=1)
+
+    assert result.common.dims == ("time", "regressor", "chromo")
+    assert result.common.sizes["regressor"] == 1
+
+    np.testing.assert_allclose(
+        result.common.sel(regressor="global_test").values,
+        expected,
+        rtol=1e-5,
+        atol=1e-5,
+    )
