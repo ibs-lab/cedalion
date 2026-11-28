@@ -1,8 +1,10 @@
 # Changelog
 
-<!--
 ## Unreleased changes (available on the `dev` branch)
---> 
+
+### Fixes
+
+- Fixed `cedalion.sim.synthetic_artifact.add_artifacts` raising an `AttributeError` with `mode="manual"`, by [Elsa-Henriette Harms](https://github.com/elsahh). ([#190](https://github.com/ibs-lab/cedalion/pull/190))
 
 ## Version 26.8.0-rc1 
 
